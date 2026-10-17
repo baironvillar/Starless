@@ -41,7 +41,7 @@ bun run version:bump patch          # 0.3.0 -> 0.3.1 en los tres manifiestos
 $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content .secrets/starless-updater.key -Raw
 $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "tu contraseña"
 bun run app:build
-$env:STARLESS_REPO = "bairovillar/Starless"
+$env:STARLESS_REPO = "baironvillar/Starless"
 bun run updater:manifest
 ```
 
@@ -81,10 +81,14 @@ y este se cierra gratis.
 
 ## Lo que todavía no funciona, y por qué
 
-**Las instalaciones de 0.3.0 no se van a actualizar solas.** El actualizador tiene
-que existir dentro de la versión instalada. Quien ya tiene 0.3.0 tendrá que bajar
-0.4.0 a mano una vez; desde 0.4.0 en adelante sí. No hay forma de evitarlo: es la
-misma regla para toda app que agrega actualizaciones después de salir.
+**0.3.0 es el primer binario que se publica, y ya viene con el actualizador
+dentro.** La `pubkey` va embebida en el ejecutable, así que una copia instalada
+recibirá sola la primera versión que salga después. Lo que no se puede afirmar
+todavía es que funcione: se prueba recién cuando exista una 0.4.0 publicada, que
+es la primera vez que una copia instalada tiene algo a qué actualizarse. Hasta
+entonces, quien baje 0.3.0 y no la vuelva a abrir no se entera de que hay una
+versión nueva — y eso es exactamente lo que hace el comprobador cuando GitHub no
+responde.
 
 **El endpoint ya apunta al repositorio real.** En `src-tauri/tauri.conf.json`:
 

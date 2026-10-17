@@ -28,7 +28,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "msi"],
+    "targets": [
+      "nsis",
+      "msi"
+    ],
     "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
@@ -47,7 +50,7 @@
     "updater": {
       "active": true,
       "dialog": false,
-      "pubkey": "PENDIENTE: bun run updater:pubkey",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRGM0JGNDIxQjQ5MzQ4OUYKUldTZlNKTzBJZlE3VDN1UitNbXBray8vS0ZwYVFnOVVsSlFUaDhmVjJmT25TNGY2WCs0eEJDYXYK",
       "endpoints": [
         "https://github.com/baironvillar/Starless/releases/latest/download/latest.json"
       ],
