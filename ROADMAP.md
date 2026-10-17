@@ -11,33 +11,79 @@ en [`PRODUCT.md`](PRODUCT.md) y [`DESIGN.md`](DESIGN.md).
 
 ---
 
-## 0.4.0 — La app deja de romperse y deja de olvidarse
+## Cómo se numeran las versiones
 
-Lo que ya está a medio hacer y hoy está roto o directamente incómodo.
+Una release no se numera por lo que costó, sino por lo que cambió. El número es
+una promesa sobre el tamaño del cambio, y esa promesa tiene que ser cierta.
 
-- **Recordar el volumen.** `playback.rs` abría el player en `MAX_VOLUME` en cada
-  arranque. Ahora persiste en `settings.json`. Hecho.
-- **Detectar un crash y poder reportarlo con el log.** Marcador de sesión +
-  hook de panic + log recortado y sin datos personales, con un botón que abre el
-  issue. Hecho.
-- **El auth gate que se quedaba esperando.** El sintoma era conocido: la sesión
-  entra, `login completo: session=true web_token=true`, y no llega ni una sola
-  llamada a la Web API. **Tenía causa raíz y era una línea de código.**
-  `token::ensure_fresh` — que refresca el token, o sea un viaje HTTP bloqueante —
-  se llamaba en el comando `async`, antes del `spawn_blocking`. Construir un
-  cliente bloqueante de reqwest dentro de un runtime async hace panic
-  (*"Cannot drop a runtime in a context where blocking is not allowed"*), el
-  comando moría antes de hacer la petición, y el log no mostraba ninguna línea
-  `webapi:`. Solo pasaba cuando el token guardado ya tenía que renovarse: por eso
-  la app cargaba perfecto durante una hora y después se vaciaba sin explicación.
-  Arreglado moviendo el refresco adentro del closure bloqueante.
-- **Los errores de `reqwest` sin explicar.** `Failed to communicate successful
-  startup: Ok(())` en ráfagas de tres, sin relación aparente con nada. Son el
-  cliente bloqueante de reqwest levantando su runtime interno; el error era ruido
-  pero el cliente **quedaba cacheado como fallo**, así que un solo mal arranque
-  dejaba la biblioteca vacía hasta reiniciar la app. Ahora un fallo al construir
-  el cliente no se recuerda, y tanto esa falla como un request que no llegó a
-  Spotify quedan anotados en el log.
+| Clase | Forma | Qué significa |
+|---|---|---|
+| Un parche | `0.3.3` → `0.3.4` | **Sólo correcciones.** Nada nuevo, nada que haya que aprender, nada que se comporte distinto de lo que ya se sabía. |
+| Una mejora | `0.3.4` → `0.4.0` | **Algo que antes no existía.** Una sección, un ajuste, un canal de pruebas. |
+| Un cambio grande | `0.9.7` → `1.0.0` | **El que corta con lo anterior.** Menos versiones, otra promesa de la app. |
+
+Tres reglas que acompañan al número:
+
+1. **Las notas se escriben antes que el tag**, en `CHANGELOG.md` y en
+   `src/lib/changelog.ts`, siempre en los dos idiomas. Son lo primero que va a
+   leer la persona a la que algo le salió mal, y por eso es el peor lugar para
+   dejarle un idioma que no eligió.
+2. **Una entrada de changelog que describe algo que no llegó al binario es peor
+   que no tener changelog.** Si no se puede escribir la línea, no se sube el
+   tag.
+3. **El tag manda sobre el changelog, nunca al revés.** El workflow se niega a
+   publicar si `v0.4.0` y `tauri.conf.json` no dicen lo mismo.
+
+`bun run version:bump patch|minor|major` mueve el número en los tres manifiestos.
+No decide *cuál* de los tres corresponde: eso lo decide qué cambió.
+
+---
+
+## 0.3.x — Lo que ya salió
+
+History, not a plan. Está acá para que nadie vuelva a planearlo.
+
+- **La biblioteca se vaciaba a la hora.** `token::ensure_fresh` —un viaje HTTP
+  bloqueante— se llamaba en el comando `async`, antes del `spawn_blocking`.
+  Construir un cliente bloqueante de reqwest dentro de un runtime async hace
+  panic, el comando moría antes de pedir nada, y el log no mostraba ninguna
+  línea `webapi:`. Sólo pasaba cuando el token ya estaba por vencer. **Una línea
+  de código.**
+- **Un mal arranque dejaba la biblioteca vacía hasta reiniciar.** `OnceLock`
+  cacheaba el fallo de construcción del cliente HTTP como si fuera un cliente.
+- **El token largo se perdía solo.** Si Spotify respondía a una renovación con
+  un solo token de acceso, el token de refresco se guardaba vacío encima del que
+  sí servía, y al vencimiento siguiente no había con qué volver a entrar.
+- **El vidrio no salía difuminado en la build compilada.** El minificador de
+  Tailwind colapsaba `backdrop-filter` y `-webkit-backdrop-filter` y se quedaba
+  con la prefijada, que es la que WebView2 ignora. `bun run dev` lo escondía
+  porque ahí el CSS no pasa por el minificador.
+- **Personalización.** Opacidad de los menús, aprendida entre arranques, con
+  muestra en vivo.
+- **Reportes.** El log deja de cortarse por el medio, el aviso de caída se abre
+  sin Equis ni Enter, y el feedback se puede escribir sin haber iniciado sesión.
+
+---
+
+## 0.4.0 — Una segunda app que no toca la primera
+
+La primera release que **no agrega una pantalla**. Sube el número menor igual,
+porque agrega algo que antes no existía: la posibilidad de romper una build sin
+que a nadie le avise de una actualización.
+
+- **Rama `develop`.** El trabajo que todavía no está listo vive ahí; `main` es lo
+  que recibe un tag. Las dos se compilan igual, con los mismos chequeos.
+- **El workflow publica prerelease cuando el tag no viene de `main`.** Es lo que
+  convierte la rama en algo más que una carpeta: GitHub no redirige
+  `releases/latest` hacia una prerelease, así que la app instalada no se entera
+  nunca. El tag sigue siendo el disparador; de qué rama salió decide si la
+  release es pública.
+- **Instaladores de `develop`** marcados como prerelease, firmados con la misma
+  clave, para probar sobre Windows de verdad y no sólo con `bun run app`.
+
+Lo que **no** hace: no cambia una sola línea del audio, ni de la sesión, ni de la
+biblioteca. Si una build de `develop` rompe algo, ese algo se arregla en
+`develop` y `main` no se entera hasta que el arreglo esté de vuelta acá.
 
 ---
 
@@ -50,8 +96,10 @@ Lo que ya está a medio hacer y hoy está roto o directamente incómodo.
 - **macOS.** El backend ya es multiplataforma por construcción (rodio → cpal, y
   cpal ya habla CoreAudio); lo que falta es probarlo de verdad, un `.app` firmado
   y los permisos de audio.
-- **Linux.** `libasound2-dev` al compilar, y AppImage o `.deb`. Sin fecha todavía
-  y sin soporte de Wayland.
+- **Linux.** `libasound2-dev` al compilar, y AppImage o `.deb`. Sin soporte de
+  Wayland todavía.
+
+---
 
 ## 0.6.0 — Accesibilidad, que es la deuda que más pesa
 
@@ -62,9 +110,28 @@ menos controversial: no hay ni una decisión que tomar, sólo que hacer.
 
 - Auditoría real: foco visible, navegación por teclado completa en transporte y
   navegación, `aria-label` en todo lo que hoy se comunica sólo por color.
-- Objetivos de contraste fijados y verificados contra `#0A0A12` y contra el vidrio,
-  no contra capturas.
+- Objetivos de contraste fijados y verificados contra `#0A0A12` y contra el
+  vidrio, no contra capturas.
 - Idioma del sistema para lectores de pantalla, no sólo el nuestro.
+
+---
+
+## 1.0.0 — La app al 100% de su primera etapa
+
+Un número mayor promete que algo corta con lo anterior. Acá lo que marca es otra
+cosa, y conviene decirlo: es la primera versión donde **todo lo que `PRODUCT.md`
+promete está medido**, y las promesas dejan de ser objetivos de diseño.
+
+- **Arranque por debajo de un segundo, medido**, con el número en el README en
+  lugar de una promesa.
+- **Memoria medida** mientras reproduce.
+- **Firma de código en los instaladores.** SmartScreen deja de avisar.
+- **Un nivel de accesibilidad declarado**, no un conjunto de preguntas abiertas.
+- **Windows firmado y estable, con macOS y Linux como plataformas de primera
+  clase** y no como «siguen a Windows».
+
+Es el número que significa que la primera etapa está completa. Lo que venga
+después es otra etapa, y este documento se escribe de nuevo entonces.
 
 ---
 
@@ -81,12 +148,9 @@ respuesta. No están en ningún release porque no se han decidido.
 - **¿El vidrio es el único tratamiento de superficie, o hay un modo sólido como
   fallback de rendimiento?** El presupuesto de `DESIGN.md` dice qué cortar si baja
   de 60fps (la animación del bloom primero, el blur a 16px después), pero no dice
-  cómo se le ofrece eso al usuario.
-- **Cuánto tarda de verdad en arrancar, y cuánto memoria usa.** `PRODUCT.md` los
-  tiene como **objetivos de diseño, no como mediciones**. Nadie los ha medido. La
-  sección de honestidad del README lo reconoce, y no debería seguir siendo
-  necesario reconocerlo.
-- **Dominio y logo final.** Sin decidir, y sin fecha.
+  cómo se le ofrece eso al usuario. La opacidad de los menús ya es un primer
+  paso, y no resuelve esta.
+- **Dominio y logo final.** Sin decidir.
 - **Presupuesto y momento de la firma de código.**
 
 ---

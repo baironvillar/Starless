@@ -27,6 +27,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        # Historia completa, no un commit suelto: el paso de más abajo decide si
+        # este tag es una versión pública preguntando si su commit llegó a `main`,
+        # y eso necesita los ancestros, no sólo la punta.
+        with:
+          fetch-depth: 0
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -73,6 +78,29 @@ jobs:
           if ($LASTEXITCODE -ne 0) { Pop-Location; exit $LASTEXITCODE }
           Pop-Location
 
+      # Una release de `develop` es una build de prueba. La diferencia no está en
+      # cómo se compila sino en cómo se publica: GitHub no redirige
+      # `releases/latest` hacia una prerelease, así que marcar la release como tal
+      # es lo que hace que una app instalada nunca se entere de que existe.
+      #
+      # El tag es el disparador siempre; lo que decide si es pública es de qué rama
+      # salió. La pregunta se invierte a propósito —"¿está en `main`?"— para que
+      # un tag desde cualquier otro lado caiga en prerelease y no en una release
+      # pública por descuido. Un tag desde una rama cualquiera es un error, y el
+      # costo de equivocarse sale del lado de la seguridad.
+      - name: ¿Esta release es pública?
+        id: canal
+        shell: pwsh
+        run: |
+          git merge-base --is-ancestor $env:GITHUB_SHA origin/main
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "El tag llegó a main: release normal."
+            "prerelease=false" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "El tag no llegó a main: release como prerelease, invisible para la app instalada."
+            "prerelease=true" >> $env:GITHUB_OUTPUT
+          }
+
       # Hace las cuatro cosas juntas: compila, firma con la clave de los secretos,
       # crea la release y sube los artefactos —los instaladores, los `.sig` y el
       # `latest.json`— con las URLs ya apuntando a esta release.
@@ -93,7 +121,9 @@ jobs:
           # recién cuando los archivos ya están arriba, en vez de unos segundos
           # antes.
           releaseDraft: true
-          prerelease: false
+          # Lo decide el paso de arriba, no el archivo: una release salida de
+          # `develop` se marca prerelease y la app instalada no la ve nunca.
+          prerelease: ${{ steps.canal.outputs.prerelease }}
           generateReleaseNotes: true
           # Se dice explícito para que el default del action no pueda cambiarnos
           # la URL del actualizador sin que lo notemos.

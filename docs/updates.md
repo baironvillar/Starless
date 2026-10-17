@@ -76,6 +76,27 @@ Dos cosas las hace él y hay que saber que están:
 Cuando termine, la release aparece como borrador en la pestaña *Releases*. Revisala
 y le das a **Publish release**. Recién ahí la app instalada la ve.
 
+Qué número corresponde a cada tipo de release está escrito en
+[`ROADMAP.md`](../ROADMAP.md#cómo-se-numeran-las-versiones). En corto: los parches
+sólo corrigen, las mejoras agregan algo que antes no existía, y el número mayor
+significa que corta con lo anterior.
+
+## La rama `develop`
+
+`main` es la app que recibe un tag. `develop` es donde vive el trabajo que todavía
+no está listo, y también se publica — con una diferencia: si el tag **no** viene de
+`main`, el workflow marca la release como prerelease.
+
+Eso no es un detalle cosmético. La app instalada consulta
+`releases/latest/download/latest.json`, y GitHub no redirige `releases/latest`
+hacia una prerelease: es la razón por la que una build de `develop` puede romper lo
+que quiera sin que nadie reciba un aviso de actualización. La pregunta está
+invertida a propósito —"¿este commit llegó a `main`?"— para que un tag desde
+cualquier otro lado caiga en prerelease y no en una release pública por descuido.
+
+El flujo diario es el mismo en las dos ramas; lo único que cambia es de dónde sale
+el tag.
+
 ### Para probarlo antes de que exista una release
 
 El endpoint devuelve 404 hasta que haya una release, así que el comprobador
