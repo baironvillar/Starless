@@ -47,6 +47,23 @@ type TrackListProps = {
  * never clicked, which is why this column carries `failed` and not just the happy
  * paths.
  */
+/**
+ * How the rows arrive, and — the part that matters — where the stagger stops.
+ *
+ * A row enters at `opacity: 0` and takes up its space immediately, so a delay
+ * that is not capped shows the user **blank rows that exist but cannot be seen
+ * yet**. With `0.03 * index` and no ceiling, `Mi playlist n.º 3` — 198 songs —
+ * made row 198 wait 5.9 seconds, and the list looked like it had holes in it
+ * for as long as it took to scroll. The cap keeps the cascade on the first
+ * dozen rows, which is all the eye can follow anyway: past that, staggering is
+ * not an entrance, it is a wait.
+ *
+ * `NumberedTrackList` has always capped this. Two lists of songs rendering the
+ * same list of songs is not a thing that should have needed discovering twice.
+ */
+const STAGGER_STEP = 0.03;
+const STAGGER_CAP = 12;
+
 export function TrackList({
   tracks,
   t,
@@ -122,7 +139,7 @@ export function TrackList({
                 type: "spring",
                 stiffness: 420,
                 damping: 32,
-                delay: 0.03 * index,
+                delay: Math.min(index, STAGGER_CAP) * STAGGER_STEP,
               }}
               className={`group grid w-full cursor-pointer items-center gap-4 border-b border-white/8 px-5 py-2.5 text-left transition-colors duration-200 last:border-b-0 hover:bg-white/6 ${
                 onAddToPlaylist

@@ -48,6 +48,7 @@ export const CHANGELOG: ChangelogEntry[] = [
         {
           title: "Corregido",
           items: [
+            "Las filas de una lista aparecían con huecos entre medio durante unos segundos: la cascada de entrada no tenía tope, así que en una playlist de 198 canciones la última fila esperaba casi seis segundos en ser visible. Ahora la cascada se detiene en la primera docena.",
             "Abrir una playlist mostraba filas de la anterior. Una playlist puede tener la misma canción dos veces, y con esa fila compartida entre dos canciones React dejaba las filas viejas montadas: seguían pintando la lista previa debajo del nombre y el conteo de la nueva. Cuatro canciones repetidas en «Mi playlist n.º 4» eran cuatro filas de más en cada lista que abrieras después.",
             "Pasar el cursor por las playlists volvía a descargar todas sus páginas, una y otra vez: el precargado se guardaba ya vencido, así que el `staleTime` de cinco minutos del hook no llegaba nunca a aplicarse. Una playlist larga se descargó seis veces completas en diez segundos.",
             "Después de una actualización, la app siguiente abría pidiendo el reporte de un crash que nunca hubo. El actualizador entrega el instalador a Windows y el proceso se va antes de que se pueda cerrar la sesión a tiempo, así que el marcador de sesión sobrevive.",
@@ -60,6 +61,7 @@ export const CHANGELOG: ChangelogEntry[] = [
         {
           title: "Fixed",
           items: [
+            "Rows in a list came in with gaps between them for a few seconds: the entrance cascade had no ceiling, so on a 198-song playlist the last row waited almost six seconds to become visible. The cascade now stops at the first dozen.",
             'Opening a playlist showed rows from the previous one. A playlist can hold the same song twice, and with one key shared between two songs React left the old rows mounted: they went on painting the previous list underneath the new name and the new count. Four repeated songs in "Mi playlist n.º 4" were four extra rows on every list you opened afterwards.',
             "Hovering a playlist in the sidebar re-downloaded every page of it, over and over: the prefetch was written already stale, so the hook's five-minute freshness never applied. One long playlist downloaded six times in ten seconds.",
             "After an update, the next launch opened asking for a crash report that never happened. The updater hands the installer to Windows and the process is gone before the session can be closed properly, so the marker survives.",
