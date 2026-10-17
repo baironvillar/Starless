@@ -36,15 +36,15 @@
   /*
    * How opaque the menus are, as the user's own glass.
    *
-   * Default 1: solid. The floor is 55% because that is about how far the blur can
-   * be pushed before what sits behind stops being a smear and turns back into
-   * readable text.
+   * Default 0.55: the glass DESIGN.md is written around, at the bottom of the
+   * slider. The floor is 55% because that is about how far the blur can be pushed
+   * before what sits behind stops being a smear and turns back into readable text.
    *
    * The fallback in `var()` matters: the customizer sets this from a saved setting
    * once the app is up, and the very first frame has to look like the choice
    * already rather than like the default nobody picked.
    */
-  --menu-alpha: 1;
+  --menu-alpha: 0.55;
 }
 
 /*
@@ -93,7 +93,7 @@
  * depth, a collision. That is why the sheet's floor is the user's to cross.
  */
 @utility glass-overlay {
-  background-color: rgb(20 20 32 / var(--menu-alpha, 1));
+  background-color: rgb(20 20 32 / var(--menu-alpha, 0.55));
   backdrop-filter: blur(24px) saturate(180%);
   border: 1px solid rgb(255 255 255 / 0.12);
   box-shadow:
@@ -118,7 +118,7 @@
   border-radius: 7px;
   border: 1px solid rgb(255 255 255 / 0.14);
   background-image:
-    linear-gradient(rgb(20 20 32 / var(--menu-alpha, 1)), rgb(20 20 32 / var(--menu-alpha, 1))),
+    linear-gradient(rgb(20 20 32 / var(--menu-alpha, 0.55)), rgb(20 20 32 / var(--menu-alpha, 0.55))),
     repeating-linear-gradient(
       115deg,
       rgb(255 255 255 / 0.26) 0 2px,
@@ -141,7 +141,7 @@
  * them was ever adjustable.
  */
 @utility glass-sheet {
-  background-color: rgb(20 20 32 / var(--menu-alpha, 1));
+  background-color: rgb(20 20 32 / var(--menu-alpha, 0.55));
   backdrop-filter: blur(24px) saturate(180%);
   border: 1px solid rgb(255 255 255 / 0.12);
   box-shadow:

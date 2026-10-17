@@ -232,7 +232,7 @@ export async function setVolume(volume: number): Promise<void> {
  */
 export const MENU_OPACITY_MIN = 55;
 export const MENU_OPACITY_MAX = 100;
-export const MENU_OPACITY_DEFAULT = 100;
+export const MENU_OPACITY_DEFAULT = 55;
 
 /**
  * `bun run dev` is Vite alone: there is no backend, so `invoke` has nothing to

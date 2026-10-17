@@ -81,11 +81,12 @@ fn update(change: impl FnOnce(&mut Settings)) {
 
 /// How opaque the menus are when nobody has said otherwise.
 ///
-/// Solid on purpose: a first run has nobody's taste behind it, and the safe end of
-/// a range is the end where everything stays readable. It is not a floor — the
-/// slider goes down to [`MENU_OPACITY_MIN`] and the choice is remembered from then
-/// on.
-pub const DEFAULT_MENU_OPACITY: u8 = 100;
+/// Translucent, at the bottom of the range: this is the glass DESIGN.md is written
+/// around, and it was solid only while the packaged build shipped a dead blur — at
+/// 55% with nothing blurring it you could read the library straight through the
+/// settings panel. Now that the blur is back, the translucent surface is the safe
+/// one again, and the slider goes up from here for whoever wants it solid.
+pub const DEFAULT_MENU_OPACITY: u8 = 55;
 
 /// The ends of the slider. The floor is where the blur stops turning what is
 /// behind a menu into a smear and starts letting it back into being text.
