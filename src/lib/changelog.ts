@@ -65,6 +65,8 @@ export const CHANGELOG: ChangelogEntry[] = [
           title: "Cambiado",
           items: [
             "El formulario de feedback y el aviso de caída ya no se apilan sobre otro panel de vidrio, que DESIGN.md prohíbe: ahora llevan un velo plano detrás.",
+            "La build compilada salía con el vidrio sin difuminado. El minificador de Tailwind se comía el `backdrop-filter` estándar y dejaba sólo el prefijo `-webkit-`, que WebView2 ignora: al 55% se leían las canciones de atrás a través del panel, mientras `bun run dev` se veía perfecto porque ahí el CSS no pasa por el minificador. Ahora el vidrio sale difuminado como corresponde, y qué tan opaco es lo elegís vos en Ajustes → Personalización.",
+            "El ajuste de opacidad también alcanza a la cola y a los ajustes, no sólo a los menús flotantes.",
           ],
         },
       ],
@@ -89,7 +91,8 @@ export const CHANGELOG: ChangelogEntry[] = [
           title: "Changed",
           items: [
             "The feedback form and the crash prompt no longer stack on top of another glass panel, which DESIGN.md forbids: they sit on a flat veil instead.",
-            "The menus ship opaque. In the packaged build WebView2 does not draw the backdrop blur, so at 55% you could read the song titles behind the crash prompt straight through the card. The glass is now the user's to set in Settings → Customisation.",
+            "The packaged build shipped glass with a dead blur. Tailwind's minifier swallowed the standard `backdrop-filter` and left only the `-webkit-` prefix, which WebView2 ignores — so at 55% you could read the song titles straight through the settings panel, while `bun run dev` looked perfect because its CSS never goes through the minifier. The glass is properly frosted again, and how opaque it is is yours to set in Settings → Customisation.",
+            "The opacity setting reaches the queue and the settings panel too, not only the floating menus.",
           ],
         },
       ],

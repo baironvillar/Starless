@@ -36,18 +36,28 @@
   /*
    * How opaque the menus are, as the user's own glass.
    *
-   * Default 1: opaque. In the packaged build WebView2 does not render
-   * `backdrop-filter`, so translucency has nothing blurring what sits behind it —
-   * at 0.55 the song titles behind the crash prompt stayed readable straight
-   * through the card. The fallback in `var()` matters: the customizer sets this
-   * from a saved setting once the app is up, and the very first frame has to look
-   * like the choice already rather than like the default nobody picked.
+   * Default 1: solid. The floor is 55% because that is about how far the blur can
+   * be pushed before what sits behind stops being a smear and turns back into
+   * readable text.
+   *
+   * The fallback in `var()` matters: the customizer sets this from a saved setting
+   * once the app is up, and the very first frame has to look like the choice
+   * already rather than like the default nobody picked.
    */
   --menu-alpha: 1;
 }
 
 /*
  * Floating glass.
+ *
+ * **Do not add `-webkit-backdrop-filter` next to these.** Tailwind v4 minifies with
+ * Lightning CSS, and when the standard and the prefixed property carry an identical
+ * value it collapses the pair down to the prefixed one — which is the half WebView2
+ * ignores. The packaged build then shipped glass with no blur at all: at 55% you
+ * read every song title straight through the settings panel, while `bun run dev`
+ * looked perfect because Vite serves the CSS unminified. Lightning CSS adds that
+ * prefix by itself for the Safari targets it assumes, so writing the standard
+ * property alone is what comes out correct.
  *
  * Three stacked layers, never one. The base layer is what guarantees the contrast
  * floor over a bright album cover — omitting it is what makes translucency unreadable.
@@ -61,7 +71,6 @@
 @utility glass {
   background-color: rgb(20 20 32 / 0.55);
   backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
   border: 1px solid rgb(255 255 255 / 0.12);
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 0.1),
@@ -70,26 +79,22 @@
 }
 
 /*
- * Glass for a surface that sits *over* content, in two strengths.
+ * Glass for a surface that sits *over* content.
  *
- * Same recipe, denser base, and the reason is measured rather than preferred.
- * The bars work at 55% because what sits behind them is mostly the bloom, so the
- * blur has little to do. These sit over album art and song titles — and in the
- * packaged build the blur does not render at all: the songs behind the crash
- * prompt stay readable straight through the card. A surface cannot count on a
- * blur that may not arrive for its contrast floor, so these carry their own.
+ * Same recipe, denser base, and the reason is measured rather than preferred: the
+ * bars work at 55% because what sits behind them is mostly the bloom, so the blur
+ * has little to do. These sit over album art and song titles, so the blur is doing
+ * the work that the base layer alone cannot — which is exactly why the base
+ * follows `--menu-alpha` and not the other way round.
  *
- * Two levels because the surfaces are not the same size. A popover is a small
- * card over a list: some translucency still reads as depth. A sheet covers the
- * whole window, and at anything less than opaque the library's own text shows
- * through it *in the same place* as the sheet's own navigation — not depth, a
- * collision. Measured on the packaged build: 82% was still legible enough to
- * read a song title through it.
+ * A popover is a small card over a list, so some translucency still reads as depth.
+ * A sheet covers most of the window, and at anything less than solid the library's
+ * own text shows through it *in the same place* as the sheet's own navigation — not
+ * depth, a collision. That is why the sheet's floor is the user's to cross.
  */
 @utility glass-overlay {
   background-color: rgb(20 20 32 / var(--menu-alpha, 1));
   backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
   border: 1px solid rgb(255 255 255 / 0.12);
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 0.1),
@@ -123,19 +128,13 @@
 
 /*
  * A sheet: the settings panel and the queue. Both cover most of the window, and
- * these are **opaque by default**, not a denser glass.
+ * these follow `--menu-alpha` like every other surface — the floor is the user's,
+ * not ours.
  *
- * The measurement that put them there is real: these sit over the library's own
- * text, in the same pixels as their own navigation, and without the blur — which
- * the packaged build does not draw — even 96% let a song title through. That is a
- * collision, not depth. DESIGN.md asks for legibility when the two conflict, and a
- * navigation you cannot read is worse than a solid one.
- *
- * But the floor belongs to whoever is looking at it, like every other glass here.
- * `--menu-alpha` comes from Settings → Customisation, and anything below 100% takes
- * the library through the settings panel. The measurement above is why the default
- * is 1 and why the slider stops at 55% instead of 0 — not a reason to overrule the
- * choice once it has been made.
+ * What the slider trades is measured: these sit over the library's own text, in
+ * the same pixels as their own navigation, so at the bottom of the range the blur
+ * has to be doing all the work to keep it a smear. That measurement is why the
+ * slider stops at 55% rather than at 0 — not a reason to overrule the choice.
  *
  * The three bars keep their own fixed 55%: they are the signature, they read as
  * depth because there is little behind them to collide with, and nothing about
@@ -144,7 +143,6 @@
 @utility glass-sheet {
   background-color: rgb(20 20 32 / var(--menu-alpha, 1));
   backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
   border: 1px solid rgb(255 255 255 / 0.12);
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 0.1),

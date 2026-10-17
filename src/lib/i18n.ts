@@ -136,7 +136,7 @@ export const strings = {
     sectionCustom: "Personalización",
     menuOpacity: "Opacidad de los menús",
     menuOpacityHint:
-      "Qué tan sólidos se ven los menús: el de búsqueda, el aviso de caída, el formulario de feedback, la cola y hasta los ajustes. La build compilada no dibuja el desenfoque de fondo, así que bajarlo también baja la legibilidad de lo que queda detrás.",
+      "Qué tan sólidos se ven los menús: el de búsqueda, el aviso de caída, el formulario de feedback, la cola y hasta los ajustes. Más sólido es más fácil de leer; más translúcido se ve más profundo.",
     menuOpacitySolid: "Sólido",
     menuOpacityGlass: "Translúcido",
     sectionDiagnostics: "Diagnóstico",
@@ -347,7 +347,7 @@ export const strings = {
     sectionCustom: "Customisation",
     menuOpacity: "Menu opacity",
     menuOpacityHint:
-      "How solid the menus look: the search menu, the crash prompt, the feedback form, the queue, and the settings panel itself. The packaged build does not draw the backdrop blur, so turning this down turns legibility down with it.",
+      "How solid the menus look: the search menu, the crash prompt, the feedback form, the queue, and the settings panel itself. More solid is easier to read; more translucent looks deeper.",
     menuOpacitySolid: "Solid",
     menuOpacityGlass: "Translucent",
     sectionDiagnostics: "Diagnostics",

@@ -98,6 +98,23 @@ docs/updates.md           cómo se publica una versión
   token ya estaba por expirar, o sea una vez por hora y sin explicación.
 - **Un comando sin `async` corre en el hilo principal.** Por eso `submit_*` son
   `async`: treinta segundos de timeout con la ventana congelada.
+- **Nunca escribas `-webkit-backdrop-filter` al lado de `backdrop-filter`.** Es la
+  peor trampa del repo porque **se ve bien en `bun run dev` y está roto en la build
+  compilada**: Vite sirve el CSS sin minificar, así que ahí las dos propiedades
+  llegan y el vidrio se ve perfecto. Pero Tailwind v4 minifica con Lightning CSS, y
+  cuando la estándar y la prefijada llevan el mismo valor las colapsa y se queda
+  **sólo con la prefijada** — que es justo la mitad que WebView2 ignora. El
+  resultado era vidrio sin difuminado: al 55% se leían las canciones de atrás a
+  través del panel de Ajustes. El bug vivió semanas sin que nadie tocara el CSS.
+  La regla: escribí **sólo** la propiedad estándar y dejá que Lightning CSS agregue
+  el prefijo él mismo. Si tocás `src/index.css`, comprobá el CSS emitido en
+  `dist/assets/*.css`, no el fuente.
+- **Un refresh puede volver sin `refresh_token`.** Si Spotify responde a una
+  renovación con un solo token de acceso, y `StoredToken::from_oauth` lo copiaba
+  tal cual: el token de refresco largo quedaba vacío y se guardaba **encima del que
+  sí servía**. La app funcionaba una hora más y después `ensure_fresh` ya no
+  tenía con qué renovar — la única salida era volver a iniciar sesión.
+  `token::keep_refresh_token` lo arrastra; hay tests que lo fijan.
 - **El cliente HTTP no se cachea si falla.** `OnceLock<Result<Client, _>>` suena
   elegante y convierte un arranque lento en una sesión entera sin biblioteca,
   porque un cliente que nunca se construyó tampoco deja línea en el log.

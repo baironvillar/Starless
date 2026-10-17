@@ -223,9 +223,8 @@ export async function setVolume(volume: number): Promise<void> {
 
 /*
  * How opaque the menus are, as a percentage. A setting rather than a constant
- * because `glass-overlay` cannot promise to stay readable on its own: the
- * `backdrop-filter` it leans on is not rendered in the packaged build, so how much
- * translucency someone trades for depth is theirs to choose.
+ * because how far someone is willing to push a translucent surface over their own
+ * library is theirs to choose, not the design system's.
  *
  * These three mirror `settings::MENU_OPACITY_*` on purpose. The Rust side clamps
  * whatever arrives, and a slider that could reach a value the backend silently
