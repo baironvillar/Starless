@@ -65,6 +65,7 @@ export const CHANGELOG: ChangelogEntry[] = [
           items: [
             "Entrar es una sola aprobación. Antes Starless pedía permiso dos veces —una para reproducir y otra para leer tu biblioteca— y la segunda era justamente la que empezaba a devolver errores. Ahora hay una sola pantalla porque sólo hay una identidad.",
             "La pantalla de resultados es una lista de canciones en orden alfabético. El buscador siempre mostró canciones; lo que se fue son las pestañas de álbumes, artistas y playlists, que no tenían una ruta detrás.",
+            "Reproducir desde la pantalla de inicio arma una cola nueva cada vez. Una playlist es una afirmación sobre el orden, así que abrirla y reproducir respeta ese orden; desde cualquier otro lado no. Hasta ahora salía siempre la misma cola y terminabas escuchando las mismas canciones seguidas.",
           ],
         },
         {
@@ -88,6 +89,8 @@ export const CHANGELOG: ChangelogEntry[] = [
             "For almost everyone, the library came up empty and said nothing about why. Spotify stopped handing data to new apps except for five accounts on an allowlist, so everyone else was looking at a signed-in client with no library in it. Starless now reads your library, your playlists, your saved songs and your search through the same session it plays music with: no allowlist, no review, and no dependency that can fall over on its own. And if reading it does fail, the app says so instead of showing an empty shelf.",
             "Two copies of Starless can no longer run at once. They used to compete for the audio keys and the loser handed its bytes to the winner: six songs burned through in fourteen seconds, every one of them reported as a song Spotify would not deliver. The second copy now brings the running window forward and closes.",
             "When the connection to Spotify drops, Starless says so. It used to skip from song to song saying that one could not be played — the song was fine, the connection was gone — and since the session never comes back on its own you ended up reading six errors in a row. Now it says what happened and stops; close and reopen the app.",
+            "Your playlist covers are back. Spotify does not send them when you read the library, but it does keep them somewhere else, and Starless now goes and gets them: these are Spotify's own images, not a mosaic the app draws itself.",
+            "The Home button actually goes home. It used to move the highlight and leave the playlist open on screen.",
           ],
         },
         {
@@ -95,6 +98,7 @@ export const CHANGELOG: ChangelogEntry[] = [
           items: [
             "Signing in is one approval. Starless used to ask twice —once to play, once to read your library— and the second one was the one that started failing. There is one screen now because there is only one identity.",
             "The results screen is a list of songs in alphabetical order. The search box always showed songs; what went away are the album, artist and playlist tabs, which had nothing behind them.",
+            "Playing from the home screen now builds a fresh queue every time. A playlist is a statement about order, so opening one and playing from it keeps that order; anywhere else does not. It used to be the same queue every time and the same songs after every song.",
           ],
         },
         {

@@ -117,6 +117,166 @@ fn image_url(session: &Session, file_id: &FileId) -> Option<String> {
         .map(|hex| template.replace("{file_id}", &hex))
 }
 
+/// Lee un varint de protobuf y devuelve su valor y dónde termina.
+///
+/// A mano porque acá no hay un `.proto` que lo describa: el mensaje de la portada
+/// no viene generado en `librespot-protocol`, y sin él no hay un tipo del que
+/// llamar. Es el mismo camino que el resto del módulo —decodificar a mano lo que
+/// Spotify no publica— y la alternativa sería no tener la foto.
+fn read_varint(bytes: &[u8], from: usize) -> Option<(u64, usize)> {
+    let mut value: u64 = 0;
+    let mut shift = 0;
+    let mut at = from;
+    while at < bytes.len() {
+        let byte = bytes[at];
+        value |= u64::from(byte & 0x7f) << shift;
+        at += 1;
+        if byte & 0x80 == 0 {
+            return Some((value, at));
+        }
+        shift += 7;
+        // Diez bytes es el tope del formato; seguir leyendo sería un bucle
+        // infinito sobre bytes que no son un mensaje.
+        if shift > 63 {
+            return None;
+        }
+    }
+    None
+}
+
+/// Saca las direcciones de un protobuf sin esquema.
+///
+/// No adivina la forma del mensaje: camina el formato y junta todo lo que sea un
+/// texto UTF-8 que empiece por `http`. Para un mensaje que es, esencialmente, "la
+/// foto de esta cosa", eso no puede confundir nada con otra cosa.
+///
+/// Los grupos —tipos 3 y 4— no se usan en proto3 y cortan el recorrido: entrar a
+/// algo que no se entiende es peor que devolver menos.
+fn harvest_urls(bytes: &[u8], out: &mut Vec<String>, depth: usize) {
+    if depth > 8 {
+        return;
+    }
+    let mut at = 0;
+    while at < bytes.len() {
+        let Some((key, next)) = read_varint(bytes, at) else {
+            return;
+        };
+        at = next;
+        match (key & 7) as u8 {
+            // varint
+            0 => match read_varint(bytes, at) {
+                Some((_, next)) => at = next,
+                None => return,
+            },
+            // 64 bits
+            1 => at += 8,
+            // 32 bits
+            5 => at += 4,
+            // longitud variable: el único caso que puede traer algo
+            2 => {
+                let Some((len, next)) = read_varint(bytes, at) else {
+                    return;
+                };
+                at = next;
+                let end = match at.checked_add(len as usize) {
+                    Some(end) if end <= bytes.len() => end,
+                    // Una longitud que no cabe es un mensaje que no es lo que
+                    // decimos que es. Seguir leyendo de acá en adelante es ruido.
+                    _ => return,
+                };
+                let slice = &bytes[at..end];
+                // "¿Es esto una URL?" se responde con los primeros bytes, no
+                // decodificando el mensaje entero: un mensaje que lo envuelve
+                // tiene datos binarios adentro y `from_utf8` fallaría sobre él,
+                // y con él se caería la URL que sí estaba adentro. Acá se pregunta
+                // por el prefijo y se entra igual.
+                if slice.starts_with(b"http") {
+                    if let Ok(text) = std::str::from_utf8(slice) {
+                        out.push(text.to_owned());
+                    }
+                } else {
+                    harvest_urls(slice, out, depth + 1);
+                }
+                at = end;
+            }
+            _ => return,
+        }
+    }
+}
+
+/// La foto que Spotify ya le calculó a cada playlist.
+///
+/// Ni el rootlist con `picture` ni el endpoint de una playlist la traen: para las
+/// playlists del usuario ese campo directamente no viaja. La tiene
+/// `VISUAL_IDENTITY_TRAIT`, que es la extensión con la que Spotify describe hoy
+/// cómo se ve una cosa — la misma idea que una portada— y que devuelve las
+/// direcciones de la imagen ya hecha, mosaico incluido.
+///
+/// Va **batched junto con el resto de la biblioteca**: una sola llamada para todas
+/// las playlists, no una por playlist.
+fn playlist_covers(session: &Session, ids: &[String]) -> HashMap<String, Vec<String>> {
+    let mut covers: HashMap<String, Vec<String>> = HashMap::new();
+    if ids.is_empty() {
+        return covers;
+    }
+
+    for chunk in ids.chunks(DETAILS_BATCH) {
+        let request = BatchedEntityRequest {
+            entity_request: chunk
+                .iter()
+                .map(|id| EntityRequest {
+                    entity_uri: format!("spotify:playlist:{id}"),
+                    query: vec![ExtensionQuery {
+                        extension_kind: EnumOrUnknown::new(ExtensionKind::VISUAL_IDENTITY_TRAIT),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                })
+                .collect(),
+            ..Default::default()
+        };
+
+        let owned = session.clone();
+        let Ok(response) = call(session, async move {
+            owned
+                .spclient()
+                .get_extended_metadata(request)
+                .await
+                .map_err(|e| {
+                    log::error!("spclient: las portadas de las playlists fallaron: {e}");
+                    "network_failed".to_string()
+                })
+        }) else {
+            // La biblioteca entera se muestra igual sin las fotos. Perder las
+            // fotos no puede ser lo mismo que perder la biblioteca.
+            continue;
+        };
+
+        for array in response.extended_metadata {
+            for entry in array.extension_data {
+                let (Some(payload), Ok(id)) = (
+                    entry.extension_data.as_ref(),
+                    SpotifyId::from_base62(&bare_id(&entry.entity_uri)),
+                ) else {
+                    continue;
+                };
+                let mut urls = Vec::new();
+                harvest_urls(&payload.value, &mut urls, 0);
+                if !urls.is_empty() {
+                    log::info!(
+                        "spclient: la portada de {} vino en {} direcciones",
+                        bare_id(&entry.entity_uri),
+                        urls.len()
+                    );
+                    covers.insert(id.to_base62().unwrap_or_default(), urls);
+                }
+            }
+        }
+    }
+
+    covers
+}
+
 /// El mismo tipo que devuelve la Web API, para que el frontend no cambie.
 ///
 /// La popularity viene a cero desde febrero de 2026 en las apps nuevas; acá se
@@ -369,7 +529,7 @@ pub fn playlists(session: &Session) -> Result<Vec<Playlist>, String> {
         return Err("bad_response".to_string());
     }
 
-    Ok(contents
+    let mut library: Vec<Playlist> = contents
         .items
         .iter()
         .zip(contents.meta_items.iter())
@@ -415,7 +575,33 @@ pub fn playlists(session: &Session) -> Result<Vec<Playlist>, String> {
                 collaborative: attributes.is_some_and(|a| a.collaborative()),
             }
         })
-        .collect())
+        .collect();
+
+    // La foto de Spotify va aparte y sólo para las que no traen una. Las de
+    // Spotify tienen un archivo propio y salen del rootlist; las del usuario no,
+    // y son justamente las que se veían en gris.
+    let without_cover: Vec<String> = library
+        .iter()
+        .filter(|playlist| playlist.images.is_empty())
+        .map(|playlist| playlist.id.clone())
+        .collect();
+
+    if !without_cover.is_empty() {
+        for (id, urls) in playlist_covers(session, &without_cover) {
+            if let Some(playlist) = library.iter_mut().find(|p| p.id == id) {
+                playlist.images = urls
+                    .into_iter()
+                    .map(|url| Image {
+                        url,
+                        width: None,
+                        height: None,
+                    })
+                    .collect();
+            }
+        }
+    }
+
+    Ok(library)
 }
 
 /// Una playlist por id, con lo que hay adentro.
@@ -567,6 +753,282 @@ pub fn shapes_requested() -> bool {
     std::env::var("STARLESS_SP_SHAPES")
         .map(|value| value != "0" && !value.is_empty())
         .unwrap_or(false)
+}
+
+/// A third question, and the only one about an image: why do the account's own
+/// playlists come back with no cover at all.
+///
+/// `get_rootlist` asks for a fixed set of decorations —revision, attributes,
+/// length, owner, capabilities, status_code— and `picture` is not one of them.
+/// Spotify's own playlists come back with `picture_size` filled anyway, which is
+/// what made this look like a parsing bug for a while. A playlist without a cover
+/// the owner uploaded has no URL of its own: the service builds one out of the
+/// first four tracks, and that picture is exactly what the missing decoration
+/// would have asked for.
+#[cfg(debug_assertions)]
+pub fn pictures_requested() -> bool {
+    std::env::var("STARLESS_SP_PICTURE")
+        .map(|value| value != "0" && !value.is_empty())
+        .unwrap_or(false)
+}
+
+/// Corre el rootlist con decoraciones elegidas a mano y dice qué trae cada uno.
+///
+/// `SpClient::request` es público, así que la llamada se puede armar acá. No se
+/// reescribe a ciegas el `get_rootlist` de librespot por esto: primero se mide si
+/// la decoración devuelve URLs —que es lo que la pantalla necesita— o bytes
+/// crudos, que obligarían a pasar imágenes por base64 a través del webview.
+#[cfg(debug_assertions)]
+fn rootlist_with(session: &Session, decorate: &str) -> Result<SelectedListContent, String> {
+    // Two copies on purpose: one travels inside the future and one stays out here
+    // to name the call in the log if the answer comes back in a shape we cannot
+    // read. Moving the parameter itself would leave the outer error arm with
+    // nothing to print.
+    let tag = decorate.to_owned();
+    let inside = tag.clone();
+    let owned = session.clone();
+    let body = call(session, async move {
+        let user = owned.username().to_owned();
+        let endpoint = format!(
+            "/playlist/v2/user/{user}/rootlist?decorate={inside}&from=0&length={ROOTLIST_PAGE}"
+        );
+        owned
+            .spclient()
+            .request(&reqwest::Method::GET, &endpoint, None, None)
+            .await
+            .map_err(|e| {
+                log::error!("SP_PICTURE: la llamada con `{inside}` falló: {e}");
+                "network_failed".to_string()
+            })
+    })?;
+
+    SelectedListContent::parse_from_bytes(&body).map_err(|e| {
+        log::error!("SP_PICTURE: `{tag}` vino con otra forma: {e}");
+        "bad_response".to_string()
+    })
+}
+
+/// Una línea por playlist con las dos formas que puede traer una portada.
+///
+/// Se miden las dos porque contestan preguntas distintas: `bytes` dice si el
+/// servicio mandó la imagen, `urls` dice si nos dio una dirección para bajarla.
+/// Con las dos vacías, laplaylist no tiene ninguna de las dos y hay que buscar la
+/// imagen por otro lado —por ejemplo, en la portada del primer disco que hay
+/// adentro— en vez de inventar una.
+#[cfg(debug_assertions)]
+fn report_pictures(tag: &str, message: &SelectedListContent) {
+    let contents = message.contents.get_or_default();
+    log::info!(
+        "SP_PICTURE: [{tag}] {} playlists, {} items",
+        contents.meta_items.len(),
+        contents.items.len()
+    );
+
+    for meta in &contents.meta_items {
+        let attributes = meta.attributes.as_ref();
+        let name = attributes
+            .map(|a| a.name().to_owned())
+            .unwrap_or_else(|| "(sin nombre)".to_owned());
+        let bytes = attributes.map(|a| a.picture().len()).unwrap_or(0);
+        let urls: Vec<String> = attributes
+            .map(|a| {
+                a.picture_size
+                    .iter()
+                    .map(|size| {
+                        let url = size.url();
+                        // La URL entera identifica la imagen y va a la red con el
+                        // id de la cuenta abajo; con la firma dentro es una URL
+                        // temporal y única, y no sirve para comparar dos llamadas.
+                        let base = url.split('?').next().unwrap_or(url);
+                        format!("{}/{}", size.target_name(), base)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        log::info!(
+            "SP_PICTURE: [{tag}] {name:?} → picture={bytes} bytes, {} urls {:?}",
+            urls.len(),
+            urls
+        );
+    }
+}
+
+/// Lo que quedó después de que la decoración no siriera para nada.
+///
+/// `get_rootlist` pidió `picture` y volvió exactamente igual: 0 bytes, 0 URLs,
+/// las seis playlists idénticas. Así que la respuesta no es una lista sin el
+/// campo pedido, es una lista donde ese campo no existe para las playlists del
+/// usuario — Spotify construye su portada como mosaico de las primeras cuatro
+/// pistas y no lo manda en el rootlist. Quedan dos caminos y se prueban juntos:
+/// el endpoint de una playlist, que es otra respuesta, y la metadata extendida
+/// de la URI de la playlist, que es donde Spotify guarda los atributos v2.
+#[cfg(debug_assertions)]
+pub fn run_picture_probe(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(session) = crate::selftest::wait_for_session(&app) else {
+            log::error!("SP_PICTURE: la sesión no llegó a conectar");
+            return;
+        };
+
+        log::info!("=== DIAGNOSTIC: sonda de portadas ===");
+
+        match rootlist_with(&session, "revision,attributes,length,owner,capabilities,status_code") {
+            Ok(message) => report_pictures("sin picture", &message),
+            Err(e) => log::error!("SP_PICTURE: la línea base falló con {e}"),
+        }
+
+        match rootlist_with(&session, "revision,attributes,length,owner,capabilities,status_code,picture")
+        {
+            Ok(message) => report_pictures("con picture", &message),
+            Err(e) => log::error!("SP_PICTURE: la llamada con `picture` falló con {e}"),
+        }
+
+        let Ok(library) = playlists(&session) else {
+            log::error!("SP_PICTURE: no se pudo leer la biblioteca para seguir preguntando");
+            return;
+        };
+        // Dos y sobra: la pregunta es "¿esta forma trae la imagen?", no "¿cada
+        // playlist tiene imagen?".
+        for playlist in library.iter().take(2) {
+            probe_one_playlist(&session, &playlist.id, &playlist.name);
+        }
+    });
+}
+
+/// Un playlist por los dos caminos que quedan.
+///
+/// Los bytes se vuelcan como hexadecimal porque todavía no se sabe qué mensaje
+/// son: el tamaño dice si hay algo, y los primeros bytes dicen cuál es. Volcar
+/// un PNG o un JPEG entero al log sería una forma lenta de no volver a mirar.
+#[cfg(debug_assertions)]
+fn probe_one_playlist(session: &Session, playlist_id: &str, name: &str) {
+    // Camino 1: el context de la playlist. Es la llamada que ya sabemos que
+    // responde y que trae `image_url` para un álbum.
+    probe_playlist_context(session, playlist_id, name);
+
+    // Camino 2: metadata extendida, ahora con las extensiones que hablan de
+    // imágenes.
+    let request = BatchedEntityRequest {
+        entity_request: PICTURE_KINDS
+            .iter()
+            .map(|kind| EntityRequest {
+                entity_uri: format!("spotify:playlist:{playlist_id}"),
+                query: vec![ExtensionQuery {
+                    extension_kind: EnumOrUnknown::new(*kind),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            })
+            .collect(),
+        ..Default::default()
+    };
+
+    let owned = session.clone();
+    let outcome = call(session, async move {
+        owned
+            .spclient()
+            .get_extended_metadata(request)
+            .await
+            .map_err(|e| format!("ERROR: {e}"))
+    });
+
+    let Ok(response) = outcome else {
+        log::error!("SP_PICTURE: {name} → la metadata extendida falló");
+        return;
+    };
+
+    let mut seen = 0;
+    for array in response.extended_metadata {
+        // La clase del extension va en el array, no en cada entrada: una
+        // respuesta trae un array por clase pedida.
+        let kind = array.extension_kind.enum_value_or_default();
+        for entry in array.extension_data {
+            let Some(payload) = entry.extension_data.as_ref() else {
+                continue;
+            };
+            seen += 1;
+            log::info!(
+                "SP_PICTURE: {name} → extension {kind:?}, {} bytes, head={}",
+                payload.value.len(),
+                head_hex(&payload.value)
+            );
+        }
+    }
+    if seen == 0 {
+        log::error!("SP_PICTURE: {name} → la metadata extendida volvió vacía");
+    }
+}
+
+/// `get_playlist` con decoraciones elegidas a mano.
+///
+/// Las extensiones que tienen "imagen" en el nombre, y que no se habían probado.
+///
+/// El enum tiene 195 variantes y siete hablan de imágenes. Cuatro son de contenido
+/// —thumbnail de video, carta con imagen— y tres podrían ser justo lo que se
+/// busca: `COVER_IMAGE`, `ARTWORK_TRAIT` y `VISUAL_IDENTITY_TRAIT`, que es la que
+/// Spotify usa hoy para las portadas de playlists y álbumes. Se prueban todas
+/// juntas porque el costo es una sola llamada por playlist, y adivinar cuál es la
+/// correcta sería volver a dejar un supuesto escrito como un hecho.
+#[cfg(debug_assertions)]
+const PICTURE_KINDS: [ExtensionKind; 7] = [
+    ExtensionKind::COVER_IMAGE,
+    ExtensionKind::ARTWORK_TRAIT,
+    ExtensionKind::VISUAL_IDENTITY_TRAIT,
+    ExtensionKind::LINK_CARD_WITH_IMAGE_TRAIT,
+    ExtensionKind::IMAGE_CUE,
+    ExtensionKind::IMAGE_SPARKLES_HACK,
+    ExtensionKind::VIDEO_THUMBNAIL,
+];
+
+/// La pista más fuerte: el context de un álbum ya devolvió `image_url`.
+///
+/// `/context-resolve/v1/{uri}` es la misma llamada que sabemos que funciona —la
+/// que trae las pistas de una playlist y las del artista— y para un álbum contesta
+/// con un `image_url` en sus metadatos. Si para una playlist contesta lo mismo, la
+/// foto original está ahí y no hay que dibujarla: viene hecha.
+///
+/// Se vuelca **todas** las claves y no las primeras seis, porque en una lista
+/// truncada la que interesa puede ser la que quedó fuera, y volver a correr la
+/// sonda por eso sería la forma más lenta de no mirar.
+#[cfg(debug_assertions)]
+fn probe_playlist_context(session: &Session, playlist_id: &str, name: &str) {
+    let owned = session.clone();
+    let uri = format!("spotify:playlist:{playlist_id}");
+    let owned_uri = uri.clone();
+    let outcome = call(session, async move {
+        owned
+            .spclient()
+            .get_context(&owned_uri)
+            .await
+            .map(|context| context.metadata)
+            .map_err(|e| format!("ERROR: {e}"))
+    });
+
+    match outcome {
+        Ok(metadata) => {
+            log::info!(
+                "SP_PICTURE: context {name} → {} claves: {:?}",
+                metadata.len(),
+                metadata
+            );
+        }
+        Err(e) => log::error!("SP_PICTURE: context {name} → {e}"),
+    }
+}
+
+/// Los primeros bytes en hexadecimal, para reconocer un mensaje sin volcarlo.
+///
+/// Un PNG arranca con `89 50 4e 47` y un JPEG con `ff d8 ff`: si eso aparece, lo
+/// que volvió es una imagen y no un protobuf, y la decisión es otra.
+#[cfg(debug_assertions)]
+fn head_hex(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .take(24)
+        .map(|b| format!("{b:02x}"))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Resumen de un context, para comparar candidatos sin volcar el contenido.

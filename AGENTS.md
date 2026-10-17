@@ -17,6 +17,7 @@ bun run lint         # Biome
 bun run typecheck    # tsc --noEmit
 bun run version      # los tres manifiestos tienen que coincidir
 bun run logo         # regenera el ícono y public/starless.svg
+bun run logo:invert  # el mismo ícono con los colores invertidos, a icons-dev/
 
 cd src-tauri
 cargo check
@@ -25,6 +26,15 @@ cargo test --lib     # sobre todo el limpiado del reporte de crash
 
 `bun run app:build` **falla a propósito** hasta que exista una `pubkey` de firma.
 No es un bug: ver [README](README.md#el-paso-que-casi-nadie-espera).
+
+**`bun run app` lleva `--config src-tauri/tauri.dev.conf.json`**, que sólo cambia
+`bundle.icon` para usar `icons-dev/`. El ícono de desarrollo es el mismo dibujo con
+los dos colores al revés —fondo lima, estrella oscura— y existe por una razón
+concreta: dos copias con el mismo nombre en la misma máquina son la forma más
+rápida de depurar el proceso equivocado. `scripts/logo.ts` escribe los invertidos
+**en otra carpeta**, nunca encima de `icons/`: pisar los de la release dejaría la
+siguiente versión instalada con el ícono de desarrollo, y eso no se ve hasta que
+alguien la instala.
 
 ## Mapa
 

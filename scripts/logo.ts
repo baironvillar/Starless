@@ -8,6 +8,7 @@
  *
  *   bun run logo          writes public/starless.svg and every app icon
  *   bun run logo:svg      just the vector mark
+ *   bun run logo:invert   the same mark with its colours swapped, into icons-dev/
  *
  * Why this file exists instead of a checked-in PNG: an icon nobody can regenerate
  * is an icon nobody can change. The geometry is ~30 lines, so it stays source.
@@ -20,12 +21,23 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const ROOT = join(import.meta.dir, "..");
-const ICONS = join(ROOT, "src-tauri", "icons");
 const PUBLIC = join(ROOT, "public");
 
-/** The palette, from DESIGN.md. Nothing outside these two colours is in the mark. */
-const ACCENT = { r: 0xc9, g: 0xf7, b: 0x3c };
-const GROUND = { r: 0x0a, g: 0x0a, b: 0x12 };
+/**
+ * The palette, from DESIGN.md. Nothing outside these two colours is in the mark.
+ *
+ * `let` rather than `const` because `--invert` swaps them, and a function that
+ * reads them at paint time picks the swap up for free. It is the same two
+ * colours in the opposite roles: the plate becomes the accent and the star becomes
+ * the ground, which is what makes the development build legible as a
+ * development build from across the desk.
+ */
+let ACCENT = { r: 0xc9, g: 0xf7, b: 0x3c };
+let GROUND = { r: 0x0a, g: 0x0a, b: 0x12 };
+
+/** Where the icons land. Development writes somewhere else so it cannot clobber a release. */
+const ICONS = join(ROOT, "src-tauri", "icons");
+const ICONS_DEV = join(ROOT, "src-tauri", "icons-dev");
 
 /** Where the star sits and how far it reaches. */
 const RADIUS = 0.4;
@@ -466,13 +478,24 @@ const PNG_JOBS: [string, number][] = [
 ];
 
 const only = process.argv[2];
+const invert = only === "--invert";
 
-mkdirSync(ICONS, { recursive: true });
+// Swap the two colours, and write next door rather than on top. Overwriting
+// `icons/` would be the worst version of this idea: a stray run would leave the
+// next release carrying the development mark, and nothing about that is visible
+// until someone installs it.
+if (invert) {
+  [ACCENT, GROUND] = [GROUND, ACCENT];
+}
+
+const target = invert ? ICONS_DEV : ICONS;
+
+mkdirSync(target, { recursive: true });
 mkdirSync(PUBLIC, { recursive: true });
 
 if (only !== "--icons") {
-  writeFileSync(join(PUBLIC, "starless.svg"), svgMark(), "utf8");
-  console.log("public/starless.svg");
+  writeFileSync(join(PUBLIC, invert ? "starless-dev.svg" : "starless.svg"), svgMark(), "utf8");
+  console.log(join("public", invert ? "starless-dev.svg" : "starless.svg"));
 }
 
 if (only !== "--svg") {
@@ -487,13 +510,13 @@ if (only !== "--svg") {
   };
 
   for (const [name, size] of PNG_JOBS) {
-    writeFileSync(join(ICONS, name), at(size));
+    writeFileSync(join(target, name), at(size));
   }
-  console.log(`${PNG_JOBS.length} PNG en src-tauri/icons`);
+  console.log(`${PNG_JOBS.length} PNG en ${invert ? "src-tauri/icons-dev" : "src-tauri/icons"}`);
 
   const icoSizes = [16, 24, 32, 48, 64, 128, 256];
   writeFileSync(
-    join(ICONS, "icon.ico"),
+    join(target, "icon.ico"),
     // Every entry is a bitmap, 256 included. A PNG entry at 256 is the modern
     // convention and `RC.EXE` in the bundled Windows SDK still rejects the file
     // with RC2175 for it, which is a build failure with no useful message.
@@ -512,7 +535,7 @@ if (only !== "--svg") {
     ["ic14", 512],
   ];
   writeFileSync(
-    join(ICONS, "icon.icns"),
+    join(target, "icon.icns"),
     icns(icnsEntries.map(([type, size]) => ({ type, data: at(size) }))),
   );
   console.log(`icon.icns (${icnsEntries.length} entradas)`);

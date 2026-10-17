@@ -42,11 +42,14 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Para casi todo el mundo, la biblioteca salía vacía y no decía por qué. Spotify dejó de entregar datos a las apps nuevas salvo a cinco cuentas en una lista. Starless ahora lee la biblioteca, las playlists, las guardadas y la búsqueda por la misma sesión con la que reproduce, y si algo falla al leerla la app lo dice en vez de mostrar un vacío.
 - Dos Starless abiertas a la vez ya no pueden pasar. Antes competían por las claves de audio y la que perdía le pasaba sus bytes a la otra: seis canciones quemadas en catorce segundos, todas reportadas como canciones que Spotify no entregaba. Ahora la segunda copia sube la ventana de la que ya está y se cierra.
 - Se cayó la conexión con Spotify y Starless lo dice. Antes saltaba canción tras canción diciendo que esa canción no se pudo reproducir —la pista estaba bien, lo que faltaba era la conexión—, y como la sesión de reproducción no vuelve sola, terminabas viendo seis errores en catorce segundos. Ahora dice qué pasó y para. Hay que cerrar y abrir la app.
+- Las portadas de tus playlists vuelven. Spotify no las manda al leer la biblioteca, pero sí las tiene en otro lado, y ahora Starless las busca ahí: son las imágenes de Spotify, no un mosaico dibujado por la app.
+- El botón de Inicio vuelve al inicio de verdad. Antes sólo cambiaba una pestaña y dejaba la playlist abierta en pantalla.
 
 ### Changed / Cambiado
 
 - Entrar es una sola aprobación. Antes se pedía permiso dos veces —una para reproducir y otra para leer la biblioteca— y la segunda era la que empezaba a devolver errores.
 - La pantalla de resultados es una lista de canciones en orden alfabético.
+- Reproducir desde la pantalla de inicio ahora arma una cola nueva cada vez. Una playlist es una afirmación sobre el orden, así que abrirla y reproducir respeta ese orden; desde cualquier otro lugar no, y hasta ahora siempre salía la misma cola y terminabas escuchando siempre las mismas canciones seguidas. Las playlists siguen sonando en el orden en que están.
 
 ### Removed / Eliminado
 

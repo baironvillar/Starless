@@ -209,6 +209,47 @@ export default function App() {
     });
   }, []);
 
+  /**
+   * Play from a list that is not a playlist, and decide the order now.
+   *
+   * A playlist is a statement about order, so opening one and playing from it
+   * keeps that order. Anything else is not: in the official client, starting from
+   * anywhere that is not a playlist puts a random run in the queue, and pressing
+   * the same song again gives a different one. Here it was the other way round —
+   * the home screen played in list order, so the queue after a track was the same
+   * queue forever and the app recommended the same songs forever. That is not a
+   * playlist behaving like a playlist, it is a bug wearing the costume of one.
+   *
+   * **This is not the shuffle button.** That one re-picks the next track at
+   * random while leaving the list on screen alone, on purpose: a queue panel that
+   * reshuffles while somebody is reading it reads as the app having lost the
+   * thread. Here the order is decided once, at the moment the user asked for
+   * something to play, and then stays still — which is what they mean when they
+   * ask for a different queue.
+   */
+  const playShuffled = useCallback((tracks: Track[], track: Track) => {
+    const order = [...tracks];
+    for (let at = order.length - 1; at > 0; at--) {
+      const swap = Math.floor(Math.random() * (at + 1));
+      [order[at], order[swap]] = [order[swap], order[at]];
+    }
+
+    // Take out **one** occurrence of the pressed track, not every copy of its id.
+    // A list can hold the same song twice — this account has one — and filtering
+    // by id would drop both and quietly lose a song from the queue.
+    const at =
+      order.indexOf(track) >= 0 ? order.indexOf(track) : order.findIndex((t) => t.id === track.id);
+    if (at >= 0) order.splice(at, 1);
+    order.unshift(track);
+
+    advancedRef.current = null;
+    setLoadedTrack(track);
+    setQueueOverride(order);
+    playTrack(track).catch((e) => {
+      console.error("Starless: no se pudo reproducir", explain(e));
+    });
+  }, []);
+
   // Only once audio is actually flowing. During the load, `loading` is true and
   // the row deliberately shows nothing rather than a dot we cannot justify.
   const nowPlayingId = status?.playing ? status.trackId : null;
@@ -638,6 +679,20 @@ export default function App() {
           libraryOpen={libraryOpen}
           onNavigate={(key) => {
             setActive(key);
+            // "Inicio" es un destino, no un resaltado.
+            //
+            // El contenido principal decide qué pantalla mostrar mirando
+            // `activeItem` —"liked" por defecto— y no `active`: la barra lateral,
+            // la lista y el panel de cola leen `activeItem`. Mover sólo `active`
+            // dejaba la playlist abierta en pantalla con la pestaña "Inicio"
+            // marcada como elegida, que es la forma exacta de un botón que no hace
+            // nada. Volver también tiene que soltar la cola: la lista de la
+            // pantalla de inicio es la suya, no la de la playlist de la que se
+            // viene.
+            if (key === "navHome") {
+              setActiveItem("liked");
+              setQueueOverride(null);
+            }
             leaveResults();
           }}
           onToggleLibrary={() => setLibraryOpen((v) => !v)}
@@ -756,7 +811,10 @@ export default function App() {
               nowPlayingId={nowPlayingId}
               loadingId={loadingId}
               failedId={failedId}
-              onPlay={onPlay}
+              // The home screen gets a fresh order every time, and the callback
+              // takes the list so it can decide one. Playlists below pass `onPlay`
+              // and keep the order they were made in.
+              onPlay={(track) => playShuffled(libraryTracks, track)}
               loading={liked.isLoading}
               error={liked.error ? explain(liked.error) : null}
             />
