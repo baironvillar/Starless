@@ -6,6 +6,7 @@ import {
   largestImage,
   type Track as SpotifyTrack,
   trackArtists,
+  trackRowKeys,
 } from "../lib/spotify";
 
 type TrackListProps = {
@@ -59,6 +60,7 @@ export function TrackList({
   empty,
 }: TrackListProps) {
   const showStatus = Boolean(nowPlayingId) || Boolean(loadingId) || Boolean(onPlay);
+  const rowKeys = trackRowKeys(tracks);
 
   return (
     <div className="overflow-hidden rounded-card border border-white/8 bg-white/4">
@@ -104,7 +106,7 @@ export function TrackList({
 
           return (
             <motion.div
-              key={track.id}
+              key={rowKeys[index]}
               role="button"
               tabIndex={0}
               onClick={() => onPlay?.(track)}

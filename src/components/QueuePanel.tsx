@@ -1,7 +1,13 @@
 import { Play, X } from "lucide-react";
 import { motion } from "motion/react";
 import type { StringKey } from "../lib/i18n";
-import { formatDuration, largestImage, type Track, trackArtists } from "../lib/spotify";
+import {
+  formatDuration,
+  largestImage,
+  type Track,
+  trackArtists,
+  trackRowKeys,
+} from "../lib/spotify";
 
 type QueuePanelProps = {
   t: Record<StringKey, string>;
@@ -49,6 +55,8 @@ function Cover({ track, className }: { track: Track; className: string }) {
  * that was invented would be worse than an honest blank.
  */
 export function QueuePanel({ t, playing, upNext, onPlay, onClose }: QueuePanelProps) {
+  const rowKeys = trackRowKeys(upNext);
+
   return (
     <motion.aside
       initial={{ opacity: 0, x: 18 }}
@@ -82,7 +90,7 @@ export function QueuePanel({ t, playing, upNext, onPlay, onClose }: QueuePanelPr
         <Section label={t.queueNextUp}>
           {upNext.length > 0 ? (
             upNext.map((track, index) => (
-              <QueueRow key={track.id} track={track} position={index + 1} onPlay={onPlay} />
+              <QueueRow key={rowKeys[index]} track={track} position={index + 1} onPlay={onPlay} />
             ))
           ) : (
             <Empty t={t} />

@@ -1,7 +1,13 @@
 import { Play } from "lucide-react";
 import { motion } from "motion/react";
 import type { StringKey } from "../lib/i18n";
-import { formatDuration, largestImage, type Track, trackArtists } from "../lib/spotify";
+import {
+  formatDuration,
+  largestImage,
+  type Track,
+  trackArtists,
+  trackRowKeys,
+} from "../lib/spotify";
 
 const SPRING = { type: "spring" as const, stiffness: 420, damping: 32 };
 
@@ -52,6 +58,7 @@ export function NumberedTrackList({
   showAlbum = true,
 }: NumberedTrackListProps) {
   const columns = showAlbum ? "minmax(0,1.6fr) minmax(0,1fr) 64px" : "minmax(0,1fr) 64px";
+  const rowKeys = trackRowKeys(tracks);
 
   return (
     <div className="overflow-hidden rounded-card border border-white/8 bg-white/4">
@@ -89,7 +96,7 @@ export function NumberedTrackList({
 
           return (
             <motion.div
-              key={track.id}
+              key={rowKeys[index]}
               role="button"
               tabIndex={0}
               onClick={() => onPlay(track)}

@@ -1,7 +1,7 @@
 import { CornerDownLeft, Loader2 } from "lucide-react";
 import { motion } from "motion/react";
 import type { StringKey } from "../lib/i18n";
-import { largestImage, type Track, trackArtists } from "../lib/spotify";
+import { largestImage, type Track, trackArtists, trackRowKeys } from "../lib/spotify";
 
 const SPRING = { type: "spring" as const, stiffness: 420, damping: 32 };
 
@@ -74,6 +74,7 @@ export function SearchMenu({
   onSeeAll,
 }: SearchMenuProps) {
   const allIndex = suggestions.length;
+  const rowKeys = trackRowKeys(suggestions);
 
   return (
     // Centred with layout, not with a transform. `-translate-x-1/2` was the only
@@ -121,7 +122,7 @@ export function SearchMenu({
 
           return (
             <button
-              key={track.id}
+              key={rowKeys[index]}
               type="button"
               role="option"
               aria-selected={active}

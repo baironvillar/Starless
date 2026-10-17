@@ -115,6 +115,16 @@ docs/updates.md           cómo se publica una versión
   sí servía**. La app funcionaba una hora más y después `ensure_fresh` ya no
   tenía con qué renovar — la única salida era volver a iniciar sesión.
   `token::keep_refresh_token` lo arrastra; hay tests que lo fijan.
+- **`track.id` no es una key de React.** Una playlist puede tener la misma canción
+  dos veces — en esta cuenta, `Mi playlist n.º 4` contesta 50 items con 46 ids
+  distintos — y con dos filas compartiendo key React **no avisa y deja los fibers
+  perdedores montados**. No se rompía el render: las filas viejas seguían
+  pintando la lista anterior. Abrir LoL después de n.º 4 mostraba cuatro filas de
+  n.º 4 arriba de las canciones de LoL, bajo un encabezado que decía "LoL" y un
+  conteo que era de LoL. El array estaba bien todo el tiempo; las filas mentían.
+  Por eso `trackRowKeys` cuenta ocurrencias: toda key es única y queda estable
+  mientras el orden no cambie. **Si tocás una lista de canciones, usá
+  `trackRowKeys`, nunca `track.id` pelado.**
 - **El cliente HTTP no se cachea si falla.** `OnceLock<Result<Client, _>>` suena
   elegante y convierte un arranque lento en una sesión entera sin biblioteca,
   porque un cliente que nunca se construyó tampoco deja línea en el log.

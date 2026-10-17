@@ -150,6 +150,30 @@ export function accountName(account: Account): string {
   return account.display_name || account.id;
 }
 
+/**
+ * One React key per row, unique even when the list repeats a song.
+ *
+ * **`track.id` is not a key.** A playlist may legitimately hold the same song
+ * more than once — measured on this account, `Mi playlist n.º 4` answers fifty
+ * items carrying forty-six distinct ids — and React's reconciliation with
+ * duplicate keys does not merely warn in the console. The losing fibers stay
+ * mounted, so when the list underneath them is replaced they keep painting the
+ * *previous* list: opening LoL right after n.º 4 put four rows of n.º 4 above
+ * LoL's own songs, under a header that said "LoL" and a count that was LoL's.
+ * The array was right the whole time. Only the rows were lying.
+ *
+ * Counting occurrences makes every key unique and keeps it stable for as long as
+ * the order holds, which for a playlist is exactly as long as nobody edits it.
+ */
+export function trackRowKeys(tracks: Pick<Track, "id">[]): string[] {
+  const seen = new Map<string, number>();
+  return tracks.map((track) => {
+    const occurrence = seen.get(track.id) ?? 0;
+    seen.set(track.id, occurrence + 1);
+    return `${track.id}#${occurrence}`;
+  });
+}
+
 export function isPremium(account: Account): boolean {
   return account.product === "premium";
 }
