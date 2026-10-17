@@ -13,6 +13,7 @@ import { useRef, useState } from "react";
 import type { Lang, StringKey } from "../lib/i18n";
 import type { Track } from "../lib/spotify";
 import { MIN_QUERY_LENGTH, SEARCH_MENU_ID, SearchMenu, searchOptionId } from "./SearchMenu";
+import { WindowControls } from "./WindowControls";
 
 type TopBarProps = {
   lang: Lang;
@@ -167,6 +168,11 @@ export function TopBar({
         transition={SPRING}
         onBlur={onBlur}
         className="glass pointer-events-auto absolute inset-x-5 top-5 z-20 grid h-16 grid-cols-[1fr_auto_1fr] items-center gap-4 rounded-card px-4"
+        // With `decorations: false` there is no title bar left, so this row is
+        // what moves the window. `"deep"` rather than bare so the whole bar
+        // drags, not only the few pixels that are the bar itself and nothing
+        // else; every control below opts back out with `"false"`.
+        data-tauri-drag-region="deep"
       >
         {/* Home, then the library toggle that controls the sidebar below */}
         <div className="flex min-w-0 items-center gap-2 overflow-hidden">
@@ -177,6 +183,7 @@ export function TopBar({
             transition={SPRING}
             aria-label={t.navHome}
             aria-current={active === "navHome" ? "page" : undefined}
+            data-tauri-drag-region={false}
             className="grid size-10 shrink-0 place-items-center rounded-pill bg-accent text-ground transition-[filter] duration-200 hover:brightness-110"
           >
             <Disc3 className="size-[18px] text-ground" strokeWidth={2.5} />
@@ -192,6 +199,7 @@ export function TopBar({
             aria-label={libraryOpen ? t.hideLibrary : t.showLibrary}
             aria-pressed={libraryOpen}
             title={libraryOpen ? t.hideLibrary : t.showLibrary}
+            data-tauri-drag-region={false}
             className={`hidden min-w-0 items-center gap-2.5 rounded-pill py-2 pr-3.5 pl-2.5 text-[13.5px] font-medium transition-colors duration-200 lg:flex ${
               libraryOpen
                 ? "bg-white/12 text-ink"
@@ -204,7 +212,10 @@ export function TopBar({
         </div>
 
         {/* Centred search */}
-        <div className="glass-control flex h-10 w-[clamp(180px,30vw,420px)] items-center gap-2.5 rounded-pill px-4">
+        <div
+          className="glass-control flex h-10 w-[clamp(180px,30vw,420px)] items-center gap-2.5 rounded-pill px-4"
+          data-tauri-drag-region={false}
+        >
           <Search className="size-4 shrink-0 text-ink-faint" strokeWidth={2} />
           <input
             ref={inputRef}
@@ -265,6 +276,7 @@ export function TopBar({
           <fieldset
             aria-label={t.language}
             className="glass-control m-0 hidden shrink-0 rounded-pill border-0 p-0.5 sm:flex"
+            data-tauri-drag-region={false}
           >
             {(["es", "en"] as const).map((code) => (
               <button
@@ -280,6 +292,17 @@ export function TopBar({
               </button>
             ))}
           </fieldset>
+
+          {/*
+            Last in the row, against the edge.
+
+            The window has `decorations: false`, so this *is* the title bar and
+            there is nowhere else for it to live. Windows convention puts these on
+            the right, so that is where they are — and being last also means they
+            are the hardest to hit by accident.
+          */}
+          <span className="mx-1.5 h-6 w-px shrink-0 bg-white/10" />
+          <WindowControls t={t} />
         </div>
       </motion.header>
 
@@ -325,6 +348,7 @@ function IconButton({
     <motion.button
       type="button"
       onClick={onClick}
+      data-tauri-drag-region={false}
       whileTap={{ scale: 0.9 }}
       transition={SPRING}
       aria-label={label}

@@ -64,6 +64,9 @@ mantiene baja mientras suena.
   tu máquina hasta que aprietas el botón, y lo que se manda ya viene sin tu
   nombre de cuenta, sin tu usuario de Windows y sin identificadores de
   canción.
+- **Sin barra de título.** La ventana no dibuja la del sistema. Sus controles
+  — minimizar, maximizar, cerrar — viven al final de la barra de arriba, y esa
+  barra es lo que mueve la ventana.
 - **Feedback desde adentro.** Ajustes → Diagnóstico tiene un botón para contar
   qué anda lento, qué no encontrás o qué te molesta. El log va **apagado por
   defecto** y se activa con un clic, porque "la búsqueda va lenta" y "mandame el
@@ -255,6 +258,9 @@ music plays.
   you reopen it and offers to send the log. You decide: nothing leaves your
   machine until you press the button, and what does leave has already had your
   account name, your Windows user name and any track identifiers taken out.
+- **No title bar.** The window does not draw the system's. Its own controls —
+  minimise, maximise, close — live at the end of the top bar, and that bar is
+  what moves the window.
 - **Feedback from inside the app.** Settings → Diagnostics has a button to say
   what runs slow, what you could not find, or what keeps getting in the way. The
   log is **off by default** and takes one click to attach, because "the search is

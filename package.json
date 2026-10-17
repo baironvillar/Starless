@@ -14,6 +14,8 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "design:detect": "impeccable detect src/",
+    "logo": "bun run scripts/logo.ts",
+    "logo:icons": "bun run scripts/logo.ts --icons",
     "typecheck": "tsc --noEmit",
     "version": "bun run scripts/version.ts get",
     "version:bump": "bun run scripts/version.ts bump",

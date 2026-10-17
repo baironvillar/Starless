@@ -209,6 +209,12 @@ export const strings = {
       "Se envía la última parte de starless.log, ya sin tu nombre de cuenta ni identificadores. Apagado por defecto.",
     feedbackShowDetail: "Ver qué se enviaría",
     feedbackSend: "Enviar feedback",
+
+    // The window's own controls, since there is no system title bar
+    windowMinimize: "Minimizar",
+    windowMaximize: "Maximizar",
+    windowRestore: "Restaurar",
+    windowClose: "Cerrar",
   },
   en: {
     searchPlaceholder: "Songs, artists, albums",
@@ -404,6 +410,12 @@ export const strings = {
       "Sends the tail of starless.log, with your account name and any identifiers already removed. Off by default.",
     feedbackShowDetail: "See what would be sent",
     feedbackSend: "Send feedback",
+
+    // The window's own controls, since there is no system title bar
+    windowMinimize: "Minimise",
+    windowMaximize: "Maximise",
+    windowRestore: "Restore",
+    windowClose: "Close",
   },
 } satisfies Record<Lang, Record<string, string>>;
 
