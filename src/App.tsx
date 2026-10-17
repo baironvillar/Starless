@@ -24,6 +24,7 @@ import {
   listCount,
   menuOpacity,
   onPlaybackStatus,
+  PLAYLIST_STALE_MS,
   type PlaybackStatus,
   type Playlist,
   playTrack,
@@ -596,12 +597,19 @@ export default function App() {
    * statement of intent that arrives long before the click. This turns the wait
    * into nothing without changing what a click means — no optimistic UI, no
    * half-rendered list, just the answer already being there.
+   *
+   * The `staleTime` is the load-bearing part. Without it the prefetch writes the
+   * answer and marks it stale in the same breath, so the observer that mounts on
+   * the click refetches all over again — and every extra hover does it once
+   * more. For a playlist past fifty songs that is one request per page, per
+   * hover; the log showed a single playlist downloaded six times in ten seconds.
    */
   const onPrefetchPlaylist = useCallback(
     (playlistId: string) => {
       void queryClient.prefetchQuery({
         queryKey: keys.playlistTracks(playlistId),
         queryFn: () => invoke<Track[]>("playlist_tracks", { playlistId }),
+        staleTime: PLAYLIST_STALE_MS,
       });
     },
     [queryClient],

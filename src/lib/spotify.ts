@@ -328,12 +328,28 @@ export function useLikedTracks() {
  * looking at Liked Songs", not the name of a playlist. Firing anyway would put
  * `/playlists//tracks` on the wire and turn a navigation state into a request.
  */
+/**
+ * How long a playlist's tracks count as fresh.
+ *
+ * Shared by the query and the prefetch on purpose, and it is the sharing that
+ * matters. `prefetchQuery` defaults to `staleTime: 0`, which writes the answer
+ * into the cache and immediately marks it stale — so a prefetch does not warm
+ * anything, it just makes the next observer refetch. Pass the same number here
+ * and the prefetch leaves the data *fresh*, which is the whole point of
+ * prefetching.
+ *
+ * The symptom of getting this wrong is a request storm rather than a wrong
+ * list: a playlist past fifty songs costs one round trip per page, so hovering
+ * the sidebar re-downloaded every page of it, several times over, in seconds.
+ */
+export const PLAYLIST_STALE_MS = 5 * 60_000;
+
 export function usePlaylistTracks(playlistId: string | null) {
   return useQuery({
     queryKey: keys.playlistTracks(playlistId ?? ""),
     queryFn: () => invoke<Track[]>("playlist_tracks", { playlistId }),
     enabled: Boolean(playlistId),
-    staleTime: 5 * 60_000,
+    staleTime: PLAYLIST_STALE_MS,
   });
 }
 
