@@ -20,6 +20,14 @@ type AuthStatus = {
 const SPRING = { type: "spring" as const, stiffness: 380, damping: 32 };
 
 /**
+ * How long to keep hoping for a saved session before admitting there isn't one.
+ *
+ * Roughly a minute, because the handshake is seconds and a laptop coming out of
+ * sleep is not. Past it the gate stops waiting and asks.
+ */
+const RESTORE_LIMIT = 45;
+
+/**
  * Rust returns error codes, not sentences, and this map is where they become
  * language. The alternative — writing the messages in Rust — means translating
  * them later, into strings that were never shaped for a layout.
@@ -138,18 +146,18 @@ export function AuthGate({
    * the session appears; the counter stops us asking forever at someone who
    * genuinely needs to log in.
    */
-  const restoreAttempts = useRef(0);
+  const [restoreTried, setRestoreTried] = useState(0);
   useEffect(() => {
     if (!status || status.signedIn) return;
-    if (restoreAttempts.current >= 45) return;
+    if (restoreTried >= RESTORE_LIMIT) return;
     const id = setTimeout(() => {
-      restoreAttempts.current += 1;
+      setRestoreTried((tried) => tried + 1);
       invoke<AuthStatus>("auth_status")
         .then(setStatus)
         .catch(() => {});
     }, 1200);
     return () => clearTimeout(id);
-  }, [status]);
+  }, [status, restoreTried]);
 
   /**
    * The session exists the instant the browser approves, but librespot only fills
@@ -173,7 +181,7 @@ export function AuthGate({
   const connect = async () => {
     // A real sign-in resets the ceiling: the restore poll has already given up by
     // the time a user decides to log in.
-    restoreAttempts.current = 0;
+    setRestoreTried(0);
     setBusy(true);
     setError(null);
     try {
@@ -196,10 +204,34 @@ export function AuthGate({
       .catch(() => {});
   };
 
+  /**
+   * Two states that used to look like one.
+   *
+   * "There is a session on disk and it is still shaking hands" and "this account is
+   * not signed in" both arrive as `signedIn: false`, and the gate answered both
+   * with the login screen. So every launch flashed a sign-in form at someone who
+   * was already signed in and took it away a second later. The poll below was
+   * already waiting for the session to arrive; what was missing is the gate
+   * admitting it did not know yet.
+   *
+   * A stored Web API token is what separates the two, and it is the honest signal:
+   * only an account that completed a sign-in has one, and signing out deletes it.
+   * `webReady` is therefore true from the very first read — long before librespot
+   * finishes connecting — and the login screen is still the right answer to a
+   * machine with no token at all, which is what someone signed out looks like.
+   *
+   * The ceiling bounds the wait: a session that never arrives stops being a
+   * restore and becomes a login.
+   */
+  const restoring =
+    !error && (status === null || (status.webReady && restoreTried < RESTORE_LIMIT));
+
   // Both, not either. A healthy streaming session with a missing Web API token
   // can fetch no library at all, and treating that as "signed in" is what left an
   // earlier build showing an app full of failed requests with no way to fix them.
   if (status?.signedIn && status.webReady) return <>{children}</>;
+
+  if (restoring) return <Restoring t={t} />;
 
   const message = error
     ? t[AUTH_ERRORS[error] ?? "authUnknown"]
@@ -240,20 +272,16 @@ export function AuthGate({
           </p>
         )}
 
-        {status === null && !message ? (
-          <p className="text-[13px] text-ink-faint">…</p>
-        ) : (
-          <motion.button
-            type="button"
-            onClick={connect}
-            disabled={busy || !status?.configured}
-            whileTap={{ scale: 0.98 }}
-            transition={SPRING}
-            className="flex w-full items-center justify-center gap-2 rounded-pill bg-accent px-6 py-3.5 text-[14px] font-semibold text-ground transition-opacity duration-200 disabled:opacity-45"
-          >
-            {busy ? t.authWaiting : t.authConnect}
-          </motion.button>
-        )}
+        <motion.button
+          type="button"
+          onClick={connect}
+          disabled={busy || !status?.configured}
+          whileTap={{ scale: 0.98 }}
+          transition={SPRING}
+          className="flex w-full items-center justify-center gap-2 rounded-pill bg-accent px-6 py-3.5 text-[14px] font-semibold text-ground transition-opacity duration-200 disabled:opacity-45"
+        >
+          {busy ? t.authWaiting : t.authConnect}
+        </motion.button>
 
         <ul className="flex w-full flex-col gap-2.5 border-t border-white/8 pt-6 text-left">
           <Note icon={Crown} tone="text-accent">
@@ -264,6 +292,34 @@ export function AuthGate({
           </Note>
         </ul>
       </motion.div>
+    </div>
+  );
+}
+
+/**
+ * The seconds before the app answers for itself.
+ *
+ * A mark and nothing else. It is not a stripped-down login screen on purpose: the
+ * whole reason this state exists is that asking to sign in is the wrong question,
+ * so putting the question on screen while we are still working it out is what made
+ * the flash look like a bug in the first place.
+ *
+ * It enters once, like the bars, and then it is still. DESIGN.md allows exactly one
+ * thing on screen to move indefinitely and that is the now-playing mark; a spinner
+ * here would be the second, and it would be on screen for a second and a half.
+ */
+function Restoring({ t }: { t: Record<StringKey, string> }) {
+  return (
+    <div className="absolute inset-0 z-30 grid place-items-center">
+      <motion.div
+        role="status"
+        aria-label={t.loading}
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={SPRING}
+        className="size-16 rounded-pill"
+        style={{ background: "linear-gradient(140deg, hsl(78 72% 58%), hsl(18 65% 38%))" }}
+      />
     </div>
   );
 }
