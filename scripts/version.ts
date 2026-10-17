@@ -44,22 +44,67 @@ function readTauri(): Version {
 }
 
 /**
- * Cargo.toml line endings are normalised to LF before any rewrite.
+ * The `[package]` version, never a dependency's.
  *
- * An earlier version of this script used `/^\s*version\s*=\s*"[^"]+"/m`, and `\s`
- * matches newlines — so it happily ate the line break in front of `version` and
- * fused it onto the previous line, producing a file Cargo refuses to parse. The
- * pattern below is anchored to `^version` with no leading whitespace class and a
- * `.*$` that cannot cross a line, so it can only ever replace one whole line.
+ * The block is located rather than inferred from the first `version =` line, and
+ * the lookup stops at the next section header.
  */
 function readCargo(): Version {
-  // The [package] version, not a dependency's.
-  const pkgBlock = readCargoText().split("[dependencies]")[0] ?? "";
-  const m = /^\s*version\s*=\s*"([^"]+)"/m.exec(pkgBlock);
+  const m = /^version[ \t]*=[ \t]*"([^"]+)"/m.exec(cargoPackageBlock(readCargoText()));
   if (!m) throw new Error("Cargo.toml has no [package] version.");
   return parse(m[1] ?? "", "Cargo.toml");
 }
 
+/**
+ * Replace the version inside `[package]` and touch nothing else.
+ *
+ * The obvious implementation splits the file on `[dependencies]` and joins the
+ * pieces back. That does not work: `String.split` *removes* its separator, and
+ * `join` puts it back only when there is more than one piece. This file has one
+ * `[dependencies]`, so the header vanished — turning `tauri` into a build
+ * dependency. The result still parses, still has three manifests agreeing on the
+ * version, and does not compile: `cargo check` panicked inside `tauri-build` with
+ * a message about a missing `cargo:dev`, which says nothing about a deleted
+ * section header.
+ *
+ * So the shape of the file is the thing being edited: keep every section header,
+ * in order, and fail loudly if one goes missing.
+ */
+function rewriteCargo(next: string): string {
+  const text = readCargoText();
+  const start = text.indexOf("[package]");
+  if (start < 0) throw new Error("Cargo.toml has no [package] section.");
+
+  const afterPackage = text.slice(start);
+  const nextHeader = afterPackage.indexOf("\n[");
+  if (nextHeader < 0) throw new Error("Cargo.toml has no section after [package].");
+
+  const block = afterPackage.slice(0, nextHeader);
+  const versionLine = /^version[ \t]*=[ \t]*"[^"]*"/m;
+  if (!versionLine.test(block)) {
+    throw new Error("Cargo.toml [package] has no version line to rewrite.");
+  }
+  const rewritten = block.replace(versionLine, `version = "${next}"`);
+
+  const out = text.slice(0, start) + rewritten + afterPackage.slice(nextHeader);
+
+  const headers = (s: string) =>
+    s
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith("[") && line.endsWith("]"));
+  const before = headers(text);
+  const afterwards = headers(out);
+  if (before.join("|") !== afterwards.join("|")) {
+    throw new Error(
+      `Cargo.toml section headers changed during rewrite:\n  ${before.join(" ")}\n  ${afterwards.join(" ")}`,
+    );
+  }
+
+  return out;
+}
+
+/** Cargo.toml line endings are normalised to LF before any rewrite. */
 function readCargoText(): string {
   return readFileSync(CARGO_TOML, "utf8").replace(/\r\n/g, "\n");
 }
@@ -68,32 +113,48 @@ function readPackage(): Version {
   return parse(JSON.parse(readFileSync(PACKAGE_JSON, "utf8")).version, "package.json");
 }
 
+/** The text of the `[package]` block, section header included. */
+function cargoPackageBlock(text: string): string {
+  const start = text.indexOf("[package]");
+  if (start < 0) return "";
+  const afterPackage = text.slice(start);
+  const nextHeader = afterPackage.indexOf("\n[");
+  return nextHeader < 0 ? afterPackage : afterPackage.slice(0, nextHeader);
+}
+
 function writeAll(next: string): void {
   const parsed = parse(next, "argument");
   const v = format(parsed);
 
-  const conf = JSON.parse(readFileSync(TAURI_CONF, "utf8"));
-  conf.version = v;
-  writeFileSync(TAURI_CONF, `${JSON.stringify(conf, null, 2)}\n`, "utf8");
+  // Both JSON manifests are edited as text, not re-serialised.
+  //
+  // `JSON.stringify(conf, null, 2)` is the obvious way to do this and it reformats
+  // the whole file: arrays it kept inline come back exploded across lines, which is
+  // not Biome's formatting. So every single bump broke `bun run lint`, and the fix
+  // was to reformat by hand afterwards — twice now, including once on the very bump
+  // that was supposed to be a release. Rewriting only the digits means a version
+  // bump is a one-line diff and cannot touch anything else.
+  writeFileSync(
+    TAURI_CONF,
+    replaceVersion(readFileSync(TAURI_CONF, "utf8"), v, "tauri.conf.json"),
+    "utf8",
+  );
+  writeFileSync(
+    PACKAGE_JSON,
+    replaceVersion(readFileSync(PACKAGE_JSON, "utf8"), v, "package.json"),
+    "utf8",
+  );
+  writeFileSync(CARGO_TOML, rewriteCargo(v), "utf8");
+}
 
-  const cargo = readCargoText();
-  const [head, ...rest] = cargo.split("[dependencies]");
-  const nextHead = head.replace(/^version\s*=.*$/m, `version = "${v}"`);
-  const outCargo = `${nextHead}${[...rest].join("[dependencies]")}`;
-
-  // Structural guard. Comparing the three version strings is not enough: they
-  // can agree while the manifest is unusable. Rewriting must never change the
-  // shape of the file, only the digits inside the version.
-  if (cargo.split("\n").length !== outCargo.split("\n").length) {
-    throw new Error(
-      "Cargo.toml line count changed during rewrite — refusing to write a possibly corrupt manifest.",
-    );
-  }
-  writeFileSync(CARGO_TOML, outCargo, "utf8");
-
-  const pkg = JSON.parse(readFileSync(PACKAGE_JSON, "utf8"));
-  pkg.version = v;
-  writeFileSync(PACKAGE_JSON, `${JSON.stringify(pkg, null, 2)}\n`, "utf8");
+/** Replace the first `"version": "x.y.z"` and nothing else. */
+function replaceVersion(text: string, v: string, source: string): string {
+  const field = /("version"[ \t]*:[ \t]*)"[^"]+"/;
+  // Testing the pattern rather than comparing the result, so setting the version
+  // it already has is a no-op instead of an error. CI runs `version` on a tree
+  // where nothing has moved.
+  if (!field.test(text)) throw new Error(`${source} has no "version" field to rewrite.`);
+  return text.replace(field, `$1"${v}"`);
 }
 
 function report(): boolean {

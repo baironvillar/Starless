@@ -76,7 +76,15 @@ export function SearchMenu({
   const allIndex = suggestions.length;
 
   return (
-    <div className="pointer-events-none absolute top-[92px] left-1/2 z-40 w-[clamp(180px,30vw,420px)] -translate-x-1/2">
+    // Centred with layout, not with a transform. `-translate-x-1/2` was the only
+    // live transform in the app sitting *above* a `backdrop-filter` element, and the
+    // two transient glass surfaces — this menu and the settings panel — were the two
+    // that stopped looking like glass in the packaged build while the three bars,
+    // which have no transform above them, kept looking right. Whether that is the
+    // whole cause is not proven; removing the transform is correct either way, and a
+    // flex row does the same job without putting a composited layer between the
+    // backdrop and the thing that samples it.
+    <div className="pointer-events-none absolute inset-x-0 top-[92px] z-40 flex justify-center">
       <motion.div
         initial={{ opacity: 0, y: -8, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -85,7 +93,7 @@ export function SearchMenu({
         role="listbox"
         id={SEARCH_MENU_ID}
         aria-label={t.searchResultsFor.replace("{query}", query)}
-        className="glass pointer-events-auto origin-top overflow-hidden rounded-card py-1.5"
+        className="glass pointer-events-auto w-[clamp(180px,30vw,420px)] origin-top overflow-hidden rounded-card py-1.5"
       >
         {/* The empty states live inside the panel rather than replacing it: the
             panel IS the answer, and a field that empties itself the moment it has

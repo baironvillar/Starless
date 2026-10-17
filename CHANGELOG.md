@@ -30,6 +30,26 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [0.3.1] — 2026-10-17
+
+Cerrar sesión, abrir, reportar. / Sign in, open, report.
+
+### Added / Añadido
+
+- El feedback se puede escribir también desde la pantalla de inicio de sesión. A quien la app no le funciona ya no tiene que iniciar sesión para contarlo: esa pantalla era, irónicamente, justo donde no había dónde escribir.
+
+### Fixed / Corregido
+
+- Cada arranque mostraba la pantalla de inicio de sesión un instante antes de la app, aunque la sesión estuviera guardada. Ahora se espera en silencio y solo pregunta cuando de verdad no hay sesión.
+- Enviar un reporte caía en una página de error de GitHub: la URL era demasiado larga. Ahora entra, y el recorte se lleva el final del log —que es donde está la falla— en vez de la cabecera.
+- El botón de enviar estaba apagado y sin decir por qué cuando el mensaje estaba vacío. Un clic que no hace nada es indistinguible de un clic roto.
+
+### Changed / Cambiado
+
+- El formulario de feedback y el aviso de caída ya no se apilan sobre otro panel de vidrio, que `DESIGN.md` prohíbe: ahora llevan un velo plano detrás.
+
+---
+
 ## [0.3.0] — 2026-10-17
 
 La primera versión pública. / The first public release.
@@ -117,4 +137,5 @@ Nunca se publicó. / Never published.
 
 ---
 
+[0.3.1]: https://github.com/baironvillar/Starless/releases/tag/v0.3.1
 [0.3.0]: https://github.com/baironvillar/Starless/releases/tag/v0.3.0

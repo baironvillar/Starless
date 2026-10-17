@@ -40,6 +40,57 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.3.1",
+    date: "2026-10-17",
+    released: true,
+    sections: {
+      es: [
+        {
+          title: "Añadido",
+          items: [
+            "El feedback se puede escribir también desde la pantalla de inicio de sesión. A quien la app no le funciona ya no tiene que Signed in para contarlo: esa pantalla era, irónicamente, justo donde no había dónde escribir.",
+          ],
+        },
+        {
+          title: "Corregido",
+          items: [
+            "Cada arranque mostraba la pantalla de inicio de sesión un instante antes de la app, aunque la sesión estuviera guardada. Ahora se espera en silencio y solo pregunta cuando de verdad no hay sesión.",
+            "Enviar un reporte caía en una página de error de GitHub: la URL era demasiado larga. Ahora entra, y el recorte se lleva el final del log —que es donde está la falla— en vez de la cabecera.",
+            "El botón de enviar estaba apagado y sin decir por qué cuando el mensaje estaba vacío. Un clic que no hace nada es indistinguible de un clic roto.",
+          ],
+        },
+        {
+          title: "Cambiado",
+          items: [
+            "El formulario de feedback y el aviso de caída ya no se apilan sobre otro panel de vidrio, que DESIGN.md prohíbe: ahora llevan un velo plano detrás.",
+          ],
+        },
+      ],
+      en: [
+        {
+          title: "Added",
+          items: [
+            "Feedback can be written from the sign-in screen too. Someone the app does not work for no longer has to sign in to say so — which was, unhelpfully, the one screen with nowhere to write it.",
+          ],
+        },
+        {
+          title: "Fixed",
+          items: [
+            "Every launch flashed the sign-in screen for a moment before the app, even with a session already saved. It now waits quietly and only asks when there genuinely is no session.",
+            "Sending a report landed on a GitHub error page: the URL was too long. It goes through now, and the excerpt keeps the end of the log — where the failure is — instead of the header.",
+            "The send button was disabled with no explanation when the message was empty. A click that does nothing is indistinguishable from a broken one.",
+          ],
+        },
+        {
+          title: "Changed",
+          items: [
+            "The feedback form and the crash prompt no longer stack on top of another glass panel, which DESIGN.md forbids: they sit on a flat veil instead.",
+          ],
+        },
+      ],
+    },
+  },
+  {
     version: "0.3.0",
     date: "2026-10-17",
     released: true,
