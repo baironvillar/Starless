@@ -49,7 +49,7 @@ export const CHANGELOG: ChangelogEntry[] = [
           title: "Añadido",
           items: [
             "El feedback se puede escribir también desde la pantalla de inicio de sesión. A quien la app no le funciona ya no tiene que Signed in para contarlo: esa pantalla era, irónicamente, justo donde no había dónde escribir.",
-            "Una pestaña de Personalización en Ajustes, con el primer ajuste propio: qué tan opacos son los menús. Se recuerda entre arranques.",
+            "Una pestaña de Personalización en Ajustes, con el primer ajuste propio: qué tan opacos son los menús. Se recuerda entre arranques, y una muestra al lado del deslizador deja ver el resultado mientras lo movés.",
           ],
         },
         {
@@ -58,6 +58,7 @@ export const CHANGELOG: ChangelogEntry[] = [
             "Cada arranque mostraba la pantalla de inicio de sesión un instante antes de la app, aunque la sesión estuviera guardada. Ahora se espera en silencio y solo pregunta cuando de verdad no hay sesión.",
             "Enviar un reporte caía en una página de error de GitHub: la URL era demasiado larga. Ahora entra, y el recorte se lleva el final del log —que es donde está la falla— en vez de la cabecera.",
             "El botón de enviar estaba apagado y sin decir por qué cuando el mensaje estaba vacío. Un clic que no hace nada es indistinguible de un clic roto.",
+            "La sesión se caía sola una hora después de entrar. Si Spotify respondía a una renovación con un solo token de acceso, Starless guardaba el token de refresco vacío encima del que sí servía; en el vencimiento siguiente ya no había con qué renovar y sólo quedaba volver a iniciar sesión.",
           ],
         },
         {
@@ -72,6 +73,7 @@ export const CHANGELOG: ChangelogEntry[] = [
           title: "Added",
           items: [
             "Feedback can be written from the sign-in screen too. Someone the app does not work for no longer has to sign in to say so — which was, unhelpfully, the one screen with nowhere to write it.",
+            "A Customisation tab in Settings, with the app's first setting of its own: how opaque the menus are. It is remembered across restarts, and a swatch beside the slider shows the result while you drag.",
           ],
         },
         {
@@ -80,6 +82,7 @@ export const CHANGELOG: ChangelogEntry[] = [
             "Every launch flashed the sign-in screen for a moment before the app, even with a session already saved. It now waits quietly and only asks when there genuinely is no session.",
             "Sending a report landed on a GitHub error page: the URL was too long. It goes through now, and the excerpt keeps the end of the log — where the failure is — instead of the header.",
             "The send button was disabled with no explanation when the message was empty. A click that does nothing is indistinguishable from a broken one.",
+            "The session used to die an hour after you signed in. When Spotify answered a refresh with a bare access token, Starless wrote an empty refresh token over the working one — so at the next expiry there was nothing left to renew with, and signing in again was the only way out.",
           ],
         },
         {
