@@ -8,6 +8,15 @@ type LibrarySidebarProps = {
   account: Account | null;
   playlists: Playlist[];
   likedCount: number | null;
+  /**
+   * Set when the library came back as nothing at all.
+   *
+   * A list that failed to load and a list that is genuinely empty look exactly
+   * the same on screen, and the second reading is the one nobody can act on: the
+   * app looks fine and the account looks empty. This is the prop that keeps the
+   * difference visible.
+   */
+  error?: boolean;
   activeId: string;
   onSelect: (id: string) => void;
   /** Called on approach, so the list is already loaded by the time it is opened. */
@@ -26,6 +35,7 @@ export function LibrarySidebar({
   account,
   playlists,
   likedCount,
+  error,
   activeId,
   onSelect,
   onPrefetch,
@@ -96,6 +106,22 @@ export function LibrarySidebar({
             </span>
           </span>
         </button>
+
+        {/*
+        Said once, in place of the list, and only when the list is missing
+        entirely. If some playlists arrived and one failed, the ones that arrived
+        are still worth showing and the count on the row above already moved —
+        this is for "nothing came back", which is the failure that used to look
+        like an account with no music.
+        */}
+        {error && playlists.length === 0 && (
+          <div className="mt-3 rounded-card border border-white/8 bg-white/4 px-3 py-3">
+            <p className="text-[12.5px] font-semibold">{t.libraryUnavailableTitle}</p>
+            <p className="mt-1 text-[12px] leading-relaxed text-ink-muted">
+              {t.libraryUnavailableBody}
+            </p>
+          </div>
+        )}
 
         {playlists.length > 0 && (
           <h3 className="px-2 pt-3 pb-1.5 text-[12px] font-semibold tracking-wide uppercase text-ink-faint">

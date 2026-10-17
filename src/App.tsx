@@ -755,6 +755,7 @@ export default function App() {
               account={account.data ?? null}
               playlists={playlists.data ?? []}
               likedCount={liked.data?.length ?? null}
+              error={Boolean(playlists.error ?? account.error) && !playlists.isLoading}
               activeId={activeItem}
               onPrefetch={onPrefetchPlaylist}
               onSelect={(id) => {

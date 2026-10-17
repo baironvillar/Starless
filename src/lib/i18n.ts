@@ -202,6 +202,20 @@ export const strings = {
 
     newPlaylist: "Nueva playlist",
     showLibrary: "Mostrar biblioteca",
+    /**
+     * The one message that says "the library did not load" instead of showing
+     * an empty one.
+     *
+     * It deliberately does not say whose fault it is. For months this app had a
+     * whole failure that produced a perfectly normal-looking empty library, and
+     * the honest cause — that the Web API would not serve this account — was
+     * invisible from the inside. "Spotify isn't handing us your library right
+     * now" says what happened without sending anybody to look for a problem in
+     * their own account, and without promising that retrying will help.
+     */
+    libraryUnavailableTitle: "No pudimos leer tu biblioteca",
+    libraryUnavailableBody:
+      "Starless está firmado, pero Spotify no le está entregando tu biblioteca en este momento. Si recién abriste la app, probá de nuevo en un rato.",
     hideLibrary: "Ocultar biblioteca",
 
     // A session that ended without being closed
@@ -424,6 +438,9 @@ export const strings = {
 
     newPlaylist: "New playlist",
     showLibrary: "Show library",
+    libraryUnavailableTitle: "We couldn't read your library",
+    libraryUnavailableBody:
+      "Starless is signed in, but Spotify isn't handing it your library right now. If you just opened the app, try again in a little while.",
     hideLibrary: "Hide library",
 
     // A session that ended without being closed

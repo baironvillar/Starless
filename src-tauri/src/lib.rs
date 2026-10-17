@@ -384,8 +384,6 @@ macro_rules! webapi_command {
     };
 }
 
-webapi_command!(liked_tracks, webapi::liked_tracks, Vec<Track>);
-webapi_command!(playlist_tracks, webapi::playlist_tracks, Vec<Track>, playlist_id: String);
 webapi_command!(
     add_to_playlist,
     webapi::add_to_playlist,
@@ -394,7 +392,6 @@ webapi_command!(
     track_ids: Vec<String>
 );
 webapi_command!(create_playlist, webapi::create_playlist, Playlist, name: String);
-webapi_command!(album_tracks, webapi::album_tracks, Vec<webapi::Track>, album_id: String);
 webapi_command!(artist_profile, webapi::artist_profile, webapi::ArtistProfile, artist_id: String);
 
 /// Comandos que leen por la sesión, no por un token.
@@ -429,30 +426,29 @@ macro_rules! spclient_command {
 
 spclient_command!(account, spclient::account, Account);
 spclient_command!(my_playlists, spclient::playlists, Vec<Playlist>);
+spclient_command!(liked_tracks, spclient::liked_tracks, Vec<Track>);
+spclient_command!(playlist_tracks, spclient::playlist_tracks, Vec<Track>, playlist_id: String);
+spclient_command!(album_tracks, spclient::album_tracks, Vec<Track>, album_id: String);
+spclient_command!(search_tracks, spclient::search_tracks, Vec<Track>, query: String);
 
 /// Everything one query turned up, across songs, albums, artists and playlists.
 ///
 /// Split from [`search_tracks`] rather than folded into it: the menu under the
 /// search field only ever shows songs, and asking Spotify for four types on every
 /// keystroke to use one of them is four times the payload for nothing.
+///
+/// **Still on the Web API, and that is a decision, not an oversight.** The
+/// context-based search answers songs; whether it answers the other three types
+/// is not written down anywhere, and guessing a URI to find out would put an
+/// undocumented call in front of somebody. So this is the last call that still
+/// needs a client id — and the one that a user outside the allowlist will not
+/// have. It goes, with the rest of `webapi`, as soon as somebody decides whether
+/// albums and artists come back.
 #[tauri::command]
 async fn search_all(app: AppHandle, query: String) -> Result<webapi::SearchResults, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let access = token::ensure_fresh(&app.state::<TokenState>())?.access_token;
         webapi::search_all(&access, &query)
-    })
-    .await
-    .map_err(|e| {
-        eprintln!("Starless [command_failed]: {e}");
-        "command_failed".to_string()
-    })?
-}
-
-#[tauri::command]
-async fn search_tracks(app: AppHandle, query: String) -> Result<Vec<Track>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let access = token::ensure_fresh(&app.state::<TokenState>())?.access_token;
-        webapi::search(&access, &query)
     })
     .await
     .map_err(|e| {

@@ -28,15 +28,21 @@
 //! responde en el log. Que responda es lo único que decide si el resto de este
 //! módulo existe.
 
+use std::collections::HashMap;
 use std::future::Future;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use librespot_core::{Session, SpotifyId};
+use librespot_core::{FileId, Session, SpotifyId, SpotifyUri};
+use librespot_metadata::{Metadata, Track as MetaTrack};
+use librespot_protocol::context::Context;
+use librespot_protocol::extended_metadata::{BatchedEntityRequest, EntityRequest, ExtensionQuery};
+use librespot_protocol::extension_kind::ExtensionKind;
+use librespot_protocol::metadata::Track as TrackMessage;
 use librespot_protocol::playlist4_external::SelectedListContent;
-use protobuf::Message;
+use protobuf::{EnumOrUnknown, Message};
 
-use crate::webapi::{Account, Image, Playlist, TrackTotal};
+use crate::webapi::{Account, Album, Artist, Image, Playlist, Track, TrackTotal};
 
 /// Cuánto espera una llamada antes de rendirse.
 ///
@@ -87,6 +93,186 @@ fn call<T: Send + 'static>(
 /// `SpotifyUri` para pedirle de vuelta el id.
 fn bare_id(uri: &str) -> String {
     uri.rsplit(':').next().unwrap_or(uri).to_string()
+}
+
+/// Cuántas pistas se piden por viaje de metadata.
+///
+/// El servicio acepta un lote entero; el número es una decisión propia y no un
+/// límite del otro lado. Se corta en cincuenta porque una playlist de doscientas
+/// pistas en un solo pedido es un pedido que se cae entero y tira doscientas
+/// filas, mientras que cinco pedidos de cuarenta muestran las primeras páginas
+/// y las siguientes llegan igual.
+const DETAILS_BATCH: usize = 50;
+
+/// La URL de una portada, sin pedirla.
+///
+/// `get_image` arma la URL, la descarga y devuelve los bytes de la imagen — y
+/// un `<img>` de la webview se baja lo mismo por su cuenta. La plantilla vive en
+/// los atributos de la sesión, así que la URL se arma acá y no viaja nadie.
+fn image_url(session: &Session, file_id: &FileId) -> Option<String> {
+    let template = session.get_user_attribute("image-url")?;
+    file_id
+        .to_base16()
+        .ok()
+        .map(|hex| template.replace("{file_id}", &hex))
+}
+
+/// El mismo tipo que devuelve la Web API, para que el frontend no cambie.
+///
+/// La popularity viene a cero desde febrero de 2026 en las apps nuevas; acá se
+/// informa lo que venga, que es lo que hay.
+fn convert(track: &MetaTrack, session: &Session) -> Track {
+    let album = &track.album;
+    let cover = album
+        .covers
+        .iter()
+        .find_map(|image| image_url(session, &image.id));
+
+    Track {
+        id: track.id.to_id().unwrap_or_default(),
+        name: track.name.clone(),
+        duration_ms: Some(track.duration.max(0) as u32),
+        artists: track
+            .artists
+            .iter()
+            .map(|artist| Artist {
+                id: artist.id.to_id().unwrap_or_default(),
+                name: artist.name.clone(),
+            })
+            .collect(),
+        album: Some(Album {
+            id: album.id.to_id().unwrap_or_default(),
+            name: album.name.clone(),
+            images: cover
+                .into_iter()
+                .map(|url| Image { url, width: None, height: None })
+                .collect(),
+        }),
+        popularity: Some(track.popularity.max(0) as u32),
+    }
+}
+
+/// Todas las pistas de un context, en el orden en que vinieron.
+///
+/// Un context trae una o más páginas y cada una trae pistas con su URI. No se
+/// sigue `next_page_url` todavía: si un context viene truncado, eso se ve en el
+/// log de la sonda y se mide antes de escribir el código que lo recorre.
+fn context_uris(context: &Context) -> Vec<String> {
+    for page in &context.pages {
+        if page.next_page_url.as_deref().is_some_and(|url| !url.is_empty()) {
+            log::warn!("spclient: el context trae página siguiente y no se está seguindo");
+        }
+    }
+    context
+        .pages
+        .iter()
+        .flat_map(|page| page.tracks.iter())
+        .filter_map(|track| track.uri.clone())
+        .map(|uri| bare_id(&uri))
+        .collect()
+}
+
+/// Nombre, artistas, duración y portada de varias pistas.
+///
+/// **El emparejamiento es por URI, no por orden.** El servicio puede responder en
+/// otro orden del que se pidió —o no responder con una pista que sí pidió— y
+/// emparejar por posición asigna la portada de una canción a otra sin que nada
+/// falle. Cada entrada trae su `entity_uri` justamente para eso.
+async fn details(owned: Session, uris: Vec<String>) -> Result<HashMap<String, Track>, String> {
+    let mut out = HashMap::new();
+
+    for chunk in uris.chunks(DETAILS_BATCH) {
+        let request = BatchedEntityRequest {
+            entity_request: chunk
+                .iter()
+                .map(|uri| EntityRequest {
+                    entity_uri: format!("spotify:track:{uri}"),
+                    query: vec![ExtensionQuery {
+                        extension_kind: EnumOrUnknown::new(ExtensionKind::TRACK_V4),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                })
+                .collect(),
+            ..Default::default()
+        };
+
+        let response = owned
+            .spclient()
+            .get_extended_metadata(request)
+            .await
+            .map_err(|e| {
+                log::error!("spclient: la metadata en lote falló: {e}");
+                "network_failed".to_string()
+            })?;
+
+        for array in response.extended_metadata {
+            for entry in array.extension_data {
+                let Some(payload) = entry.extension_data.as_ref() else {
+                    continue;
+                };
+                let Ok(message) = TrackMessage::parse_from_bytes(&payload.value) else {
+                    continue;
+                };
+                let Ok(uri) = SpotifyUri::from_uri(&entry.entity_uri) else {
+                    continue;
+                };
+                // One bad track must not cost the other forty-nine: a row without
+                // a title still plays, a missing row does not exist.
+                if let Ok(track) = MetaTrack::parse(&message, &uri) {
+                    out.insert(bare_id(&entry.entity_uri), convert(&track, &owned));
+                }
+            }
+        }
+    }
+
+    Ok(out)
+}
+
+/// Resuelve una lista de URIs a filas con todo lo que la lista muestra.
+fn hydrate(
+    session: &Session,
+    uris: Vec<String>,
+) -> Result<Vec<Track>, String> {
+    if uris.is_empty() {
+        return Ok(Vec::new());
+    }
+    let owned = session.clone();
+    // Copia aparte porque la promesa vive en otro hilo y después se usa la
+    // lista: sin esto, el `move` se la lleva.
+    let wanted = uris.clone();
+    let known = call(session, async move { details(owned, wanted).await })?;
+
+    // En el orden que vinieron las pistas, no en el orden en que llegaron los
+    // metadatos: una lista de reproducción tiene un orden y la pantalla lo
+    // muestra.
+    Ok(uris
+        .into_iter()
+        .filter_map(|uri| known.get(&uri).cloned())
+        .collect())
+}
+
+/// Las pistas de un context por su URI especial.
+///
+/// `spotify:user:<id>:collection` son las canciones guardadas y
+/// `spotify:search:<consulta>` la búsqueda. Los dos son URIs que el servicio
+/// entiende por su forma, así que no hacen falta client id ni scopes: son la
+/// misma llamada que pide una playlist, con otra URI.
+fn context_tracks(session: &Session, uri: String) -> Result<Vec<Track>, String> {
+    let owned = session.clone();
+    let uris = call(session, async move {
+        owned
+            .spclient()
+            .get_context(&uri)
+            .await
+            .map(|context| context_uris(&context))
+            .map_err(|e| {
+                log::error!("spclient: get_context falló: {e}");
+                "network_failed".to_string()
+            })
+    })?;
+
+    hydrate(session, uris)
 }
 
 // ---------------------------------------------------------------------------
@@ -232,18 +418,18 @@ pub fn playlists(session: &Session) -> Result<Vec<Playlist>, String> {
         .collect())
 }
 
-/// Una playlist por id, para leer su contenido.
+/// Una playlist por id, con lo que hay adentro.
 ///
 /// La misma llamada que arma [`playlists`] con una sola de las entradas: acá se
-/// pide por id y trae las pistas adentro.
-pub fn playlist_tracks(session: &Session, playlist_id: &str) -> Result<Vec<String>, String> {
+/// pide por id y trae las pistas.
+pub fn playlist_tracks(session: &Session, playlist_id: &str) -> Result<Vec<Track>, String> {
     let id = SpotifyId::from_base62(playlist_id).map_err(|e| {
         log::error!("spclient: id de playlist inválido ({playlist_id}): {e}");
         "bad_response".to_string()
     })?;
 
     let owned = session.clone();
-    let tracks = call(session, async move {
+    let uris = call(session, async move {
         owned
             .spclient()
             .get_playlist(&id)
@@ -254,17 +440,54 @@ pub fn playlist_tracks(session: &Session, playlist_id: &str) -> Result<Vec<Strin
             })
     })?;
 
-    let message = SelectedListContent::parse_from_bytes(&tracks).map_err(|e| {
+    let message = SelectedListContent::parse_from_bytes(&uris).map_err(|e| {
         log::error!("spclient: la playlist vino con otra forma: {e}");
         "bad_response".to_string()
     })?;
 
     let contents = message.contents.get_or_default();
-    Ok(contents
+    let ids: Vec<String> = contents
         .items
         .iter()
         .map(|item| bare_id(item.uri()))
-        .collect())
+        .collect();
+
+    hydrate(session, ids)
+}
+
+/// Las canciones guardadas.
+///
+/// Era la última lectura que quedaba atada a la Web API, y por eso una app
+///limita a cinco personas mostraba su biblioteca completa menos justamente lo
+/// que la persona fue a buscar. Sale del mismo context que una playlist.
+pub fn liked_tracks(session: &Session) -> Result<Vec<Track>, String> {
+    context_tracks(
+        session,
+        format!("spotify:user:{}:collection", session.username()),
+    )
+}
+
+/// La búsqueda, por ahora de canciones.
+///
+/// El cliente de Spotify abre la búsqueda por esta misma URI y devuelve un
+/// context. El menú bajo el campo ya sólo muestra canciones, así que una lista
+/// sola es lo que la pantalla pide hoy; álbumes, artistas y playlists quedan
+/// para cuando la app los necesite de verdad, porque tampoco está escrito qué
+/// context devuelve cada tipo.
+pub fn search_tracks(session: &Session, query: &str) -> Result<Vec<Track>, String> {
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // El servicio separa con `+`, no con `%20`, ni con espacios.
+    let encoded = trimmed.replace(' ', "+");
+    context_tracks(session, format!("spotify:search:{encoded}"))
+}
+
+/// Las pistas de un álbum.
+pub fn album_tracks(session: &Session, album_id: &str) -> Result<Vec<Track>, String> {
+    context_tracks(session, format!("spotify:album:{album_id}"))
 }
 
 // ---------------------------------------------------------------------------
@@ -276,6 +499,7 @@ pub fn playlist_tracks(session: &Session, playlist_id: &str) -> Result<Vec<Strin
 /// Separate from `STARLESS_DIAGNOSTIC` on purpose: that one plays a real track
 /// for twenty seconds, and a question about the library does not need a song
 /// playing on the developer's desk to be answered.
+#[cfg(debug_assertions)]
 pub fn requested() -> bool {
     std::env::var("STARLESS_SP_PROBE")
         .map(|value| value != "0" && !value.is_empty())
@@ -310,7 +534,7 @@ fn probe(session: &Session) {
         Err(e) => log::error!("SP_PROBE: la cuenta falló con {e}"),
     }
 
-    match playlists(session) {
+    let playlists = match playlists(session) {
         Ok(playlists) => {
             for playlist in &playlists {
                 log::info!(
@@ -322,8 +546,57 @@ fn probe(session: &Session) {
                     playlist.owner.as_ref().and_then(|o| o.display_name.as_deref())
                 );
             }
+            playlists
         }
-        Err(e) => log::error!("SP_PROBE: la biblioteca falló con {e}"),
+        Err(e) => {
+            log::error!("SP_PROBE: la biblioteca falló con {e}");
+            Vec::new()
+        }
+    };
+
+    // The smallest playlist **that has songs**: an editorial playlist comes back
+    // with a count of zero, and "it returned nothing" would look like a broken
+    // decoder when what it really means is that there was nothing to decode.
+    if let Some(smallest) = playlists
+        .iter()
+        .filter(|p| p.tracks.as_ref().is_some_and(|t| t.total > 0))
+        .min_by_key(|p| p.tracks.as_ref().map(|t| t.total).unwrap_or(u32::MAX))
+    {
+        match playlist_tracks(session, &smallest.id) {
+            Ok(tracks) => {
+                log::info!("SP_PROBE: {:?} devolvió {} pistas", smallest.name, tracks.len());
+                for track in tracks.iter().take(3) {
+                    log::info!(
+                        "SP_PROBE:   {:?} — {:?} {:?} — álbum {:?} — portada {:?}",
+                        track.name,
+                        track.duration_ms,
+                        track.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>(),
+                        track.album.as_ref().map(|a| a.name.as_str()),
+                        track
+                            .album
+                            .as_ref()
+                            .and_then(|a| a.images.first())
+                            .map(|i| &i.url)
+                    );
+                }
+            }
+            Err(e) => log::error!("SP_PROBE: el contenido de {:?} falló con {e}", smallest.name),
+        }
+    }
+
+    match liked_tracks(session) {
+        Ok(tracks) => log::info!("SP_PROBE: {} canciones guardadas", tracks.len()),
+        Err(e) => log::error!("SP_PROBE: las guardadas fallaron con {e}"),
+    }
+
+    match search_tracks(session, "dua lipa") {
+        Ok(tracks) => {
+            log::info!("SP_PROBE: la búsqueda devolvió {} pistas", tracks.len());
+            for track in tracks.iter().take(2) {
+                log::info!("SP_PROBE:   {:?} por {:?}", track.name, track.artists);
+            }
+        }
+        Err(e) => log::error!("SP_PROBE: la búsqueda falló con {e}"),
     }
 
     log::info!("=== DIAGNOSTIC: fin de la sonda de spclient ===");

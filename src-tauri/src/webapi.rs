@@ -263,36 +263,6 @@ struct ArtistItems {
     items: Vec<ArtistCard>,
 }
 
-/// Una página de `/albums/{id}/tracks`.
-///
-/// **La lista viene plana**, sin el envoltorio `{"track": …}` que usan las
-/// playlists. Se verificó: cada elemento de `items` es la pista, con sus
-/// propios `name` y `artists`, y `items[].track` viene `null`. Reutilizar aquí
-/// el tipo de las playlists daría 200 con una lista vacía y ningún error.
-#[derive(Deserialize, Default)]
-struct AlbumTracksPage {
-    #[serde(default)]
-    items: Vec<Track>,
-}
-
-/// A `/playlists/{id}/items` entry. The inner key is `item`, not `track` — part of
-/// the same February 2026 rename, and the reason a client that only updates the
-/// URL gets 200 with an empty list and no error.
-///
-/// `Option` because a withdrawn track arrives with nothing in that slot, and one
-/// unavailable song must not turn a whole playlist into a parse error.
-#[derive(Deserialize)]
-struct PlaylistItem {
-    #[serde(default)]
-    item: Option<Track>,
-}
-
-#[derive(Deserialize)]
-struct PlaylistItemsPage {
-    #[serde(default)]
-    items: Vec<PlaylistItem>,
-}
-
 /// One HTTP client, shared by every call, for the life of the process.
 ///
 /// Built once and reused, and the reuse is the whole point: a fresh
@@ -450,17 +420,6 @@ pub fn liked_tracks(access_token: &str) -> Result<Vec<Track>, String> {
         .collect())
 }
 
-pub fn search(access_token: &str, query: &str) -> Result<Vec<Track>, String> {
-    let trimmed = query.trim();
-    if trimmed.is_empty() {
-        return Ok(Vec::new());
-    }
-    let encoded: String = urlencoding::encode(trimmed).into_owned();
-    // Development-mode apps are capped at 10 results per search, down from 50.
-    let path = format!("/search?q={encoded}&type=track&limit={SEARCH_LIMIT}");
-    Ok(get::<SearchPage>(&path, access_token)?.tracks.items)
-}
-
 /// The per-type ceiling for `/search` in development mode.
 ///
 /// Measured, not assumed: `limit=10` answers 200 with ten items, `limit=11`
@@ -497,34 +456,6 @@ pub fn search_all(access_token: &str, query: &str) -> Result<SearchResults, Stri
         artists: first.artists.items,
         playlists: first.playlists.items,
     })
-}
-
-/// Everything on an album, in the order it plays.
-///
-/// This is what makes the play button on an album card real rather than
-/// decorative: the card hands the frontend an actual track list to queue, and the
-/// frontend plays the first one.
-///
-/// Note the payload is **flat** here — no `{"track": …}` wrapper, unlike playlist
-/// items. Verified against the live API; reusing the playlist page type would give
-/// a clean 200 with an empty list and no error to chase.
-pub fn album_tracks(access_token: &str, album_id: &str) -> Result<Vec<Track>, String> {
-    let id = urlencoding::encode(album_id);
-    let mut tracks: Vec<Track> = Vec::new();
-
-    for page in 0..MAX_PAGES {
-        let offset = page * PAGE_SIZE;
-        let path = format!("/albums/{id}/tracks?limit={PAGE_SIZE}&offset={offset}");
-        let batch = get::<AlbumTracksPage>(&path, access_token)?;
-
-        let received = batch.items.len();
-        tracks.extend(batch.items);
-        if received < PAGE_SIZE {
-            break;
-        }
-    }
-
-    Ok(tracks)
 }
 
 /// How many albums a profile shows. Spotify's own artist page shows a shelf of
@@ -574,59 +505,6 @@ pub fn artist_profile(access_token: &str, artist_id: &str) -> Result<ArtistProfi
         albums,
         tracks,
     })
-}
-
-/// How many items to ask for per page. Also this endpoint's ceiling.
-const PAGE_SIZE: usize = 50;
-
-/// How many pages to walk before giving up.
-///
-/// Not a limit on what a playlist may contain — a limit on how long "open a
-/// playlist" is allowed to take. Twenty pages is a thousand songs, which is past
-/// what anyone scrolls, and past that the answer is still exact for the part on
-/// screen because the count always describes what was actually loaded.
-const MAX_PAGES: usize = 20;
-
-/// A playlist, fully walked.
-///
-/// `/items`, not `/tracks`: Spotify's February 2026 migration renamed every
-/// playlist-content endpoint, and the old path is not merely deprecated for a
-/// development app — it answers 403 for every playlist, including ones the
-/// account owns, with an empty body that points nowhere.
-///
-/// The rename also moved the payload. What used to arrive as `tracks` is now
-/// `items`, and what used to be `items[].track` is now `items[].item` — so a
-/// client that only changes the URL gets 200 with an empty list and no error.
-///
-/// Paged all the way to the end because the count is the point. Spotify removed
-/// the total from `/me/playlists` and from `GET /playlists/{id}` in the same
-/// migration, so the only honest number left is the one you counted yourself.
-/// Each page after the first reuses a keep-alive connection, so this is a few
-/// hundred milliseconds rather than a handshake per page.
-pub fn playlist_tracks(access_token: &str, playlist_id: &str) -> Result<Vec<Track>, String> {
-    let id = urlencoding::encode(playlist_id);
-    let mut tracks: Vec<Track> = Vec::new();
-
-    for page in 0..MAX_PAGES {
-        let offset = page * PAGE_SIZE;
-        let path = format!("/playlists/{id}/items?limit={PAGE_SIZE}&offset={offset}");
-        let batch = get::<PlaylistItemsPage>(&path, access_token)?;
-
-        // A short page is the last page. Spotify returns `limit` items on every
-        // page but the last, so this is the only end-of-list signal there is.
-        let received = batch.items.len();
-        // Withdrawn tracks arrive with nothing in the inner slot and are dropped
-        // rather than rendered as empty rows: a song that cannot be played is
-        // worse absent than present, and placeholders would make every row after
-        // it a lie about what the list holds.
-        tracks.extend(batch.items.into_iter().filter_map(|entry| entry.item));
-
-        if received < PAGE_SIZE {
-            break;
-        }
-    }
-
-    Ok(tracks)
 }
 
 pub fn add_to_playlist(
