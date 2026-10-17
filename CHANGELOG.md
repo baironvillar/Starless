@@ -7,15 +7,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 > [!NOTE]
-> **0.1.0 y 0.2.0 se reconstruyeron a partir de las fechas de los archivos**, no
-> de un registro: Starless se construyó de una sola sentada y hasta ahora no
-> tenía control de versiones. Son exactos sobre *qué existía*; *qué versión lo
-> introdujo* es una inferencia. Desde este commit, `git log` reemplaza esa
-> inferencia por un dato.
+> **0.3.0 es el primer build que alguien pudo descargar.** 0.1.0 y 0.2.0 solo
+> existieron en la máquina donde se construyó.
 >
-> **0.1.0 and 0.2.0 were reconstructed from file timestamps**, not from a
-> record. They are exact about what existed; which version introduced it is an
-> inference. From this commit onward, `git log` replaces the inference with a fact.
+> **0.3.0 is the first build anyone could download.** 0.1.0 and 0.2.0 existed only
+> on the machine where Starless was built.
+>
+> **0.1.0 y 0.2.0 se reconstruyeron a partir de las fechas de los archivos**, no
+> de un registro: Starless se construyó de una sola sentada y hasta 0.3.0 no tenía
+> control de versiones. Son exactos sobre *qué existía*; *qué versión lo introdujo*
+> es una inferencia. Desde 0.3.0 hay repositorio y etiqueta, así que `git log`
+> reemplaza esa inferencia por un dato.
+>
+> **0.1.0 and 0.2.0 were reconstructed from file timestamps**, not from a record.
+> They are exact about what existed; which version introduced it is an inference.
+> From 0.3.0 there is a repository and a tag, so `git log` replaces the inference
+> with a fact.
 >
 > La app muestra estos mismos changelogs dentro de Ajustes → Diagnóstico, en el
 > idioma que el usuario eligió. The app shows these same notes inside
@@ -23,7 +30,9 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [No publicado] — 0.3.0
+## [0.3.0] — 2026-10-17
+
+La primera versión pública. / The first public release.
 
 ### Added / Añadido
 
@@ -35,6 +44,11 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Registro a archivo local, con rotación, y autodiagnóstico con `STARLESS_DIAGNOSTIC=1`.
 - Actualizaciones automáticas: Starless comprueba si hay una versión nueva al abrir y tú decides cuándo instalarla.
 - Estos changelogs, en Diagnóstico.
+- Detección de caídas: si la app no se cerró bien, Starless lo nota y te ofrece enviar el reporte, con el log ya recortado y sin datos personales. No sale un solo byte de tu máquina hasta que vos lo mandás.
+- Feedback dentro de la app, en Ajustes → Diagnóstico. El log va adjunto solo si lo pedís.
+- El volumen se recuerda entre arranques.
+- Un ícono nuevo: una estrella que se apaga.
+- La ventana ya no usa la barra de título del sistema. Minimizar, maximizar y cerrar viven a la derecha del buscador.
 
 ### Fixed / Corregido
 
@@ -45,16 +59,25 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - La app se caía al escribir en el buscador: la política de reintento recibía un error que no era el tipo que esperaba.
 - Cerrar sesión dejaba cacheado un «no has iniciado sesión» que sobrevivía al reinicio.
 - Abrir una playlist hacía un handshake TLS completo cada vez: ahora el cliente HTTP se comparte.
+- La biblioteca se vaciaba sola alrededor de una hora después de iniciar sesión: el refresco del token corría en el hilo asíncrono, entraba en panic y se llevaba por delante todas las llamadas a la Web API sin dejar una línea en el log.
+- Un cliente HTTP que fallaba al construirse quedaba cacheado como fallo, así que un mal arranque llenaba la biblioteca de vacío hasta reiniciar la app.
+- Enviar un reporte congelaba la ventana mientras hacía la petición.
 
 ### Changed / Cambiado
 
 - Escribir ya no borra la pantalla principal. Enter es lo que decide.
 - Una canción que no se puede reproducir se salta, hasta cinco seguidas antes de rendirse.
 - Las consultas que Spotify responde con 503 se reintentan una vez: es su borde, no la petición.
+- El botón de la cola vive solo en la barra de reproducción; también estaba arriba.
+- Cerrar sesión se mudó de Biblioteca a Ajustes → Cuenta, y ahora funciona: el botón que estaba ahí no hacía nada.
+- El selector de idioma salió de la barra superior y vive en Ajustes → General.
+- El botón de inicio muestra una casa en vez de un disco.
 
 ---
 
-## [0.2.0] — reconstruido / reconstructed
+## 0.2.0 — reconstruido / reconstructed
+
+Nunca se publicó. / Never published.
 
 ### Added / Añadido
 
@@ -81,7 +104,9 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [0.1.0] — reconstruido / reconstructed
+## 0.1.0 — reconstruido / reconstructed
+
+Nunca se publicó. / Never published.
 
 ### Added / Añadido
 
@@ -92,6 +117,4 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-[No publicado]: https://github.com/baironvillar/Starless/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/baironvillar/Starless/releases/tag/v0.2.0
-[0.1.0]: https://github.com/baironvillar/Starless/releases/tag/v0.1.0
+[0.3.0]: https://github.com/baironvillar/Starless/releases/tag/v0.3.0

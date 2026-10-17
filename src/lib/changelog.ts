@@ -3,18 +3,19 @@ import type { Lang } from "./i18n";
 /**
  * What changed, in the app, in the order it changed.
  *
- * **These entries are reconstructed, not recorded.** Starless was built in one
- * sitting and has no version control behind it: there is no `.git`, no commit
- * history, and no release notes — the README is still Tauri's template. The split
- * below comes from file modification times, which line up into three clean
- * clusters: the scaffold and the design system (05:46–07:21), the app that
- * actually played music (15:20–17:42), and the search work (17:58 onward). Files
- * never touched after their cluster are the strongest members of their version.
+ * **0.1.0 and 0.2.0 are reconstructed; 0.3.0 is recorded.** Starless was built in
+ * one sitting and the first two entries have no history behind them: there was no
+ * `.git`, no commit log, no release notes. The split below comes from file
+ * modification times, which line up into three clean clusters: the scaffold and
+ * the design system (05:46–07:21), the app that actually played music
+ * (15:20–17:42), and the search work (17:58 onward). Files never touched after
+ * their cluster are the strongest members of their version.
  *
  * That is evidence, not a record. It is accurate about *what existed* and
  * inferred about *which version introduced it*, and the inference is marked as
- * such rather than dressed up as history. Once the project is in a repository,
- * `git log` replaces this reasoning with something nobody has to guess about.
+ * such rather than dressed up as history. From 0.3.0 onward there is a repository
+ * and a tag, so `git log` replaces that reasoning with something nobody has to
+ * guess about.
  *
  * Both languages, because PRODUCT.md ships them together. A changelog is the one
  * screen a user reads when something is already wrong, and it is the worst
@@ -40,8 +41,8 @@ export type ChangelogEntry = {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     version: "0.3.0",
-    date: null,
-    released: false,
+    date: "2026-10-17",
+    released: true,
     sections: {
       es: [
         {
@@ -55,6 +56,11 @@ export const CHANGELOG: ChangelogEntry[] = [
             "Registro a archivo local, con rotación, y autodiagnóstico con STARLESS_DIAGNOSTIC=1.",
             "Actualizaciones automáticas: Starless comprueba si hay una versión nueva al abrir y tú decides cuándo instalarla.",
             "Estos changelogs, en Diagnóstico.",
+            "Detección de caídas: si la app no se cerró bien, Starless lo nota y te ofrece enviar el reporte, con el log ya recortado y sin datos personales. No sale un solo byte de tu máquina hasta que vos lo mandás.",
+            "Feedback dentro de la app, en Ajustes → Diagnóstico. El log va adjunto solo si lo pedís.",
+            "El volumen se recuerda entre arranques.",
+            "Un ícono nuevo: una estrella que se apaga.",
+            "La ventana ya no usa la barra de título del sistema. Minimizar, maximizar y cerrar viven a la derecha del buscador.",
           ],
         },
         {
@@ -67,6 +73,9 @@ export const CHANGELOG: ChangelogEntry[] = [
             "La app se caía al escribir en el buscador: la política de reintento recibía un error que no era el tipo que esperaba.",
             "Cerrar sesión dejaba cacheado un «no has iniciado sesión» que sobrevivía al reinicio.",
             "Abrir una playlist hacía un handshake TLS completo cada vez: ahora el cliente HTTP se comparte.",
+            "La biblioteca se vaciaba sola alrededor de una hora después de iniciar sesión: el refresco del token corría en el hilo asíncrono, entraba en panic y se llevaba por delante todas las llamadas a la Web API sin dejar una línea en el log.",
+            "Un cliente HTTP que fallaba al construirse quedaba cacheado como fallo, así que un mal arranque llenaba la biblioteca de vacío hasta reiniciar la app.",
+            "Enviar un reporte congelaba la ventana mientras hacía la petición.",
           ],
         },
         {
@@ -75,6 +84,10 @@ export const CHANGELOG: ChangelogEntry[] = [
             "Escribir ya no borra la pantalla principal. Enter es lo que decide.",
             "Una canción que no se puede reproducir se salta, hasta cinco seguidas antes de rendirse.",
             "Las consultas que Spotify responde con 503 se reintentan una vez: es su borde, no la petición.",
+            "El botón de la cola vive solo en la barra de reproducción; también estaba arriba.",
+            "Cerrar sesión se mudó de Biblioteca a Ajustes → Cuenta, y ahora funciona: el botón que estaba ahí no hacía nada.",
+            "El selector de idioma salió de la barra superior y vive en Ajustes → General.",
+            "El botón de inicio muestra una casa en vez de un disco.",
           ],
         },
       ],
@@ -90,6 +103,11 @@ export const CHANGELOG: ChangelogEntry[] = [
             "A local log file with rotation, plus a self-test behind STARLESS_DIAGNOSTIC=1.",
             "Automatic updates: Starless checks for a new version when it opens, and you decide when to install it.",
             "These changelogs, under Diagnostics.",
+            "Crash detection: if the app did not close cleanly, Starless notices and offers to send the report, with the log already scrubbed and carrying nothing personal. Not one byte leaves your machine until you send it.",
+            "Feedback inside the app, under Settings → Diagnostics. The log goes along only if you ask for it.",
+            "The volume is remembered between launches.",
+            "A new icon: a star going out.",
+            "The window no longer uses the system title bar. Minimize, maximize and close live at the right of the search field.",
           ],
         },
         {
@@ -102,6 +120,9 @@ export const CHANGELOG: ChangelogEntry[] = [
             "The app crashed while typing in the search box: the retry policy was handed an error that was not the type it expected.",
             "Signing out left a cached “not signed in” that survived a restart.",
             "Opening a playlist paid a full TLS handshake every time: the HTTP client is shared now.",
+            "The library emptied itself about an hour after signing in: the token refresh ran on the async thread, panicked, and took every Web API call down with it without leaving a line in the log.",
+            "An HTTP client that failed to build was cached as a failure, so one bad moment at launch left the library empty until the app was restarted.",
+            "Sending a report froze the window while it made the request.",
           ],
         },
         {
@@ -110,6 +131,10 @@ export const CHANGELOG: ChangelogEntry[] = [
             "Typing no longer wipes the main screen. Enter is what decides.",
             "A song that will not play is skipped, up to five in a row before giving up.",
             "Calls Spotify answers with 503 are retried once: that is their edge, not the request.",
+            "The queue button lives in the player bar only; it used to be at the top as well.",
+            "Sign out moved from Library to Settings → Account, and it works now: the button that was there did nothing.",
+            "The language switch left the top bar and lives in Settings → General.",
+            "The home button shows a house instead of a disc.",
           ],
         },
       ],
@@ -218,6 +243,6 @@ export const CHANGELOG: ChangelogEntry[] = [
 ];
 
 export const PREVIOUS_NOTE: Record<Lang, string> = {
-  es: "Estas entradas se reconstruyeron a partir de las fechas de los archivos, no de un registro: Starless se construyó de una sola sentada y nunca tuvo control de versiones. Dicen con exactitud qué existía; qué versión lo introdujo es una inferencia, y está marcada como tal.",
-  en: "These entries were reconstructed from file timestamps, not from a record: Starless was built in one sitting and never had version control. They are exact about what existed; which version introduced it is an inference, marked as one.",
+  es: "Estas entradas se reconstruyeron a partir de las fechas de los archivos, no de un registro: Starless se construyó de una sola sentada y nunca tuvo control de versiones. Dicen con exactitud qué existía; qué versión lo introdujo es una inferencia, y está marcada como tal. Y 0.3.0 es el primer build que alguien pudo descargar: 0.1.0 y 0.2.0 nunca salieron de esta máquina.",
+  en: "These entries were reconstructed from file timestamps, not from a record: Starless was built in one sitting and never had version control. They are exact about what existed; which version introduced it is an inference, marked as one. And 0.3.0 is the first build anyone could download: 0.1.0 and 0.2.0 never left this machine.",
 };
