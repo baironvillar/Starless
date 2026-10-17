@@ -41,6 +41,17 @@ pub fn version_line() -> String {
 // Crash reporting
 // ---------------------------------------------------------------------------
 
+/// The Spotify account name, if there is a session.
+///
+/// Handed to the scrubber so the account is removed by exact value rather than by
+/// pattern. Every shape-based rule here is a guess about what identifying text
+/// looks like; this is not a guess, it is the thing itself.
+fn account_name(state: &State<SessionState>) -> Option<String> {
+    let session = state.0.lock().ok()?;
+    let name = session.as_ref().map(|s| s.username().to_string())?;
+    (!name.is_empty()).then_some(name)
+}
+
 /// Did the run before this one end without being closed?
 ///
 /// Read on the first render, before `mark_session_start` has overwritten the
@@ -54,19 +65,50 @@ fn previous_session_crashed() -> bool {
 /// The report as it would be sent, already scrubbed, so the person deciding can
 /// read exactly what would leave the machine.
 #[tauri::command]
-fn crash_report_preview() -> String {
-    report::preview()
+fn crash_report_preview(state: State<SessionState>) -> String {
+    report::preview(report::Kind::Crash, "", true, account_name(&state).as_deref())
 }
 
 /// Send it. With a token compiled in this creates the issue outright; without one
 /// it hands back a pre-filled URL for the caller to open.
 #[tauri::command]
-fn submit_crash_report() -> Result<report::ReportOutcome, String> {
-    let outcome = report::submit()?;
+fn submit_crash_report(state: State<SessionState>) -> Result<report::ReportOutcome, String> {
+    let outcome = report::submit(report::Kind::Crash, "", true, account_name(&state).as_deref())?;
     // Reported or dismissed, this crash is dealt with. Leaving the marker would
     // make the same prompt reappear on every launch from here on.
     report::acknowledge();
     Ok(outcome)
+}
+
+/// The same preview, for something the user chose to write rather than a crash.
+#[tauri::command]
+fn feedback_report_preview(
+    message: String,
+    attach_log: bool,
+    state: State<SessionState>,
+) -> String {
+    report::preview(
+        report::Kind::Feedback,
+        &message,
+        attach_log,
+        account_name(&state).as_deref(),
+    )
+}
+
+/// Send feedback. Same path as a crash report, because "send me this and nothing
+/// else" should not be two different buttons with two different disclosure rules.
+#[tauri::command]
+fn submit_feedback(
+    message: String,
+    attach_log: bool,
+    state: State<SessionState>,
+) -> Result<report::ReportOutcome, String> {
+    report::submit(
+        report::Kind::Feedback,
+        &message,
+        attach_log,
+        account_name(&state).as_deref(),
+    )
 }
 
 /// The user said no, or dealt with it later. Either way: never again.
@@ -463,7 +505,9 @@ pub fn run() {
             previous_session_crashed,
             crash_report_preview,
             submit_crash_report,
-            dismiss_crash_report
+            dismiss_crash_report,
+            feedback_report_preview,
+            submit_feedback
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

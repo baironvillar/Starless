@@ -64,6 +64,10 @@ mantiene baja mientras suena.
   tu máquina hasta que aprietas el botón, y lo que se manda ya viene sin tu
   nombre de cuenta, sin tu usuario de Windows y sin identificadores de
   canción.
+- **Feedback desde adentro.** Ajustes → Diagnóstico tiene un botón para contar
+  qué anda lento, qué no encontrás o qué te molesta. El log va **apagado por
+  defecto** y se activa con un clic, porque "la búsqueda va lenta" y "mandame el
+  registro de tu máquina" no son el mismo pedido.
 
 Una canción que no se puede reproducir se salta, hasta cinco seguidas antes de
 renderse: una región bloqueada o un CDN muerto no deberían terminar la sesión.
@@ -251,6 +255,10 @@ music plays.
   you reopen it and offers to send the log. You decide: nothing leaves your
   machine until you press the button, and what does leave has already had your
   account name, your Windows user name and any track identifiers taken out.
+- **Feedback from inside the app.** Settings → Diagnostics has a button to say
+  what runs slow, what you could not find, or what keeps getting in the way. The
+  log is **off by default** and takes one click to attach, because "the search is
+  slow" and "send me a copy of your machine's log" are not the same request.
 
 A song that will not play is skipped, up to five in a row before giving up: one
 region-blocked track or dead CDN should not end the session.

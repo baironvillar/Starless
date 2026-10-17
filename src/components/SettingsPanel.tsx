@@ -1,10 +1,20 @@
-import { Check, ChevronDown, Download, Loader2, RefreshCw, User, X } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Download,
+  Loader2,
+  MessageSquarePlus,
+  RefreshCw,
+  User,
+  X,
+} from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { CHANGELOG, PREVIOUS_NOTE } from "../lib/changelog";
 import type { Lang, StringKey } from "../lib/i18n";
 import { checkForUpdate, installUpdate, subscribeUpdate, updateState } from "../lib/updater";
 import { appVersion } from "../lib/version";
+import { FeedbackPanel } from "./FeedbackPanel";
 
 type SettingsPanelProps = {
   lang: Lang;
@@ -263,6 +273,7 @@ function Diagnostics({
   lang: Lang;
 }) {
   const [changelogOpen, setChangelogOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const facts = [
     { label: t.version, value: `v${version}` },
     { label: t.protocol, value: "librespot 0.8 · rodio/cpal → WASAPI" },
@@ -270,6 +281,19 @@ function Diagnostics({
 
   return (
     <div className="max-w-[620px]">
+      {/* Above the group and above everything: feedback that needs scrolling to
+          find is feedback that does not get sent. */}
+      <button
+        type="button"
+        onClick={() => setFeedbackOpen(true)}
+        className="mb-3 flex w-full items-center justify-between gap-3 rounded-card border border-white/8 bg-white/4 px-5 py-3.5 text-left transition-colors duration-200 hover:bg-white/6"
+      >
+        <span className="text-[13.5px] font-semibold">{t.feedbackSend}</span>
+        <MessageSquarePlus className="size-4 shrink-0 text-ink-muted" strokeWidth={2} />
+      </button>
+
+      {feedbackOpen && <FeedbackPanel t={t} onClose={() => setFeedbackOpen(false)} />}
+
       <Group>
         {facts.map((f) => (
           <Row key={f.label} label={f.label}>

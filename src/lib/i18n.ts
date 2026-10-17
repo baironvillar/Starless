@@ -197,6 +197,18 @@ export const strings = {
     crashSent: "Reporte creado:",
     crashReportUnavailable: "No se pudo preparar el reporte.",
     crashReportFailed: "No se pudo enviar el reporte.",
+
+    // Saying something when nothing crashed
+    feedbackKicker: "Feedback",
+    feedbackTitle: "Contale a quien lo lee",
+    feedbackBody:
+      "Algo que anda lento, algo que no encontrás, algo que te está molestando. No hace falta que esté roto: lo que no se reporta no existe.",
+    feedbackPlaceholder: "¿Qué pasó, o qué te gustaría que pasara?",
+    feedbackAttachLog: "Adjuntar el registro",
+    feedbackAttachLogHint:
+      "Se envía la última parte de starless.log, ya sin tu nombre de cuenta ni identificadores. Apagado por defecto.",
+    feedbackShowDetail: "Ver qué se enviaría",
+    feedbackSend: "Enviar feedback",
   },
   en: {
     searchPlaceholder: "Songs, artists, albums",
@@ -380,6 +392,18 @@ export const strings = {
     crashSent: "Report created:",
     crashReportUnavailable: "The report could not be prepared.",
     crashReportFailed: "The report could not be sent.",
+
+    // Saying something when nothing crashed
+    feedbackKicker: "Feedback",
+    feedbackTitle: "Tell whoever reads this",
+    feedbackBody:
+      "Something that runs slow, something you cannot find, something that keeps getting in your way. It does not have to be broken: what nobody reports does not exist.",
+    feedbackPlaceholder: "What happened, or what you would like to happen?",
+    feedbackAttachLog: "Attach the log",
+    feedbackAttachLogHint:
+      "Sends the tail of starless.log, with your account name and any identifiers already removed. Off by default.",
+    feedbackShowDetail: "See what would be sent",
+    feedbackSend: "Send feedback",
   },
 } satisfies Record<Lang, Record<string, string>>;
 

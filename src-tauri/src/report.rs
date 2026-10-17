@@ -35,10 +35,11 @@ use std::path::PathBuf;
 use regex::Regex;
 use serde::Serialize;
 
-/// The repository issues are filed against, and the label that makes them findable.
+/// The repository issues are filed against, and the labels that make them findable.
 const REPO_OWNER: &str = "baironvillar";
 const REPO_NAME: &str = "Starless";
 const CRASH_LABEL: &str = "crash";
+const FEEDBACK_LABEL: &str = "feedback";
 
 /// GitHub's hard limit on an issue body. Anything longer is rejected outright, and
 /// a rejected report is the one kind of report that fails silently from here.
@@ -176,29 +177,9 @@ fn payload_text(payload: &(dyn std::any::Any + Send)) -> String {
 // The report
 // ---------------------------------------------------------------------------
 
-/// What a report needs to be acted on, assembled and scrubbed.
-fn build_report() -> String {
-    let mut out = String::new();
-
-    out.push_str("## Entorno / Environment\n\n");
-    out.push_str(&format!("- Version: `{}`\n", crate::version_line()));
-    out.push_str(&format!("- SO: `{}`\n", std::env::consts::OS));
-    out.push_str(&format!("- Arquitectura: `{}`\n", std::env::consts::ARCH));
-
-    if let Some(panic) = read_panic() {
-        out.push_str("\n## Panic\n\n```\n");
-        out.push_str(&panic);
-        out.push_str("\n```\n");
-    }
-
-    let log = log_tail().unwrap_or_else(|| "(sin log)".into());
-    out.push_str("## Log (final de la sesión que murió)\n\n```\n");
-    out.push_str(&log);
-    out.push_str("\n```\n\n");
-
-    out.push_str("<!-- Enviado desde Starless. El log va recortado y sin datos personales. -->\n");
-    scrub(&out)
-}
+// The body is assembled by `build` down in the sending section, next to the code
+// that actually sends it — a report and its transport belong together, and the two
+// halves had already drifted once.
 
 /// The tail of the current log, cut on a line boundary.
 ///
@@ -241,16 +222,32 @@ fn read_panic() -> Option<String> {
 ///
 /// Public because the person deciding has to read the real thing. A preview that
 /// is generated differently from what gets sent is worse than no preview.
-pub fn preview() -> String {
-    build_report()
+pub fn preview(
+    kind: Kind,
+    message: &str,
+    attach_log: bool,
+    account: Option<&str>,
+) -> String {
+    build(kind, message, attach_log, account)
 }
 
 /// Remove what the log has no business publishing.
 ///
 /// Applied to the body that is shown on screen *and* the body that is uploaded, so
-/// there is no version of this that ships a name.
-pub fn scrub(text: &str) -> String {
+/// there is no code path that can ship a name.
+///
+/// `account` is the one thing patterns cannot do. Everything below matches a shape
+/// — "Authenticated as 'x'", "C:\Users\x" — and a shape is only ever a guess about
+/// what identifying text looks like. Someone who pastes their own username into a
+/// feedback box defeats every pattern here while looking perfectly innocent to all
+/// of them. The account name is not a guess: the session hands it over. So it is
+/// removed by exact value, everywhere, before anything else looks at the text.
+pub fn scrub_with(text: &str, account: Option<&str>) -> String {
     let mut out = text.to_string();
+
+    if let Some(name) = account.map(str::trim).filter(|n| !n.is_empty()) {
+        out = out.replace(name, "[omitido]");
+    }
 
     let patterns: [(&str, &str); 7] = [
         // The Spotify account name, in librespot's own phrasing.
@@ -287,6 +284,13 @@ pub fn scrub(text: &str) -> String {
         }
     }
     truncate(&out)
+}
+
+/// Scrub with nothing known about the account — for tests, and for any call that
+/// genuinely has no session to read.
+#[cfg(test)]
+pub fn scrub(text: &str) -> String {
+    scrub_with(text, None)
 }
 
 fn truncate(text: &str) -> String {
@@ -330,16 +334,81 @@ pub struct ReportOutcome {
     pub url: String,
 }
 
-/// The title the report gets.
-fn title() -> String {
-    let version = crate::version_line();
-    match read_panic() {
-        Some(panic) => {
-            let first = panic.lines().next().unwrap_or("panic").trim();
-            format!("Crash en {version}: {}", first.chars().take(90).collect::<String>())
+/// What a report is about. The kind only ever changes the title and the label —
+/// the body is assembled by the same rules either way, so a feedback report and a
+/// crash report are the same object with a different first line.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Kind {
+    Crash,
+    Feedback,
+}
+
+impl Kind {
+    fn label(self) -> &'static str {
+        match self {
+            Kind::Crash => CRASH_LABEL,
+            Kind::Feedback => FEEDBACK_LABEL,
         }
-        None => format!("Crash en {version}: la sesión anterior terminó sin cerrarse"),
     }
+}
+
+/// The title the report gets.
+fn title(kind: Kind) -> String {
+    let version = crate::version_line();
+    match kind {
+        Kind::Feedback => format!("Feedback desde {version}"),
+        Kind::Crash => match read_panic() {
+            Some(panic) => {
+                let first = panic.lines().next().unwrap_or("panic").trim();
+                format!("Crash en {version}: {}", first.chars().take(90).collect::<String>())
+            }
+            None => format!("Crash en {version}: la sesión anterior terminó sin cerrarse"),
+        },
+    }
+}
+
+/// Assemble a report body.
+///
+/// `message` is what the person typed; `attach_log` is their decision, not ours.
+/// The log is the valuable half when something broke and an intrusion into their
+/// machine's state when they just wanted to say the search is slow — so it is a
+/// switch they hold, off by default, rather than something bundled in.
+pub fn build(
+    kind: Kind,
+    message: &str,
+    attach_log: bool,
+    account: Option<&str>,
+) -> String {
+    let mut out = String::new();
+
+    out.push_str("## Entorno / Environment\n\n");
+    out.push_str(&format!("- Version: `{}`\n", crate::version_line()));
+    out.push_str(&format!("- SO: `{}`\n", std::env::consts::OS));
+    out.push_str(&format!("- Arquitectura: `{}`\n", std::env::consts::ARCH));
+
+    if !message.trim().is_empty() {
+        out.push_str("\n## Lo que escribió / What they wrote\n\n");
+        out.push_str(message.trim());
+        out.push('\n');
+    }
+
+    if kind == Kind::Crash
+        && let Some(panic) = read_panic()
+    {
+        out.push_str("\n## Panic\n\n```\n");
+        out.push_str(&panic);
+        out.push_str("\n```\n");
+    }
+
+    if attach_log || kind == Kind::Crash {
+        let log = log_tail().unwrap_or_else(|| "(sin log)".into());
+        out.push_str("\n## Log\n\n```\n");
+        out.push_str(&log);
+        out.push_str("\n```\n");
+    }
+
+    out.push_str("\n<!-- Enviado desde Starless. El log va recortado y sin datos personales. -->\n");
+    scrub_with(&out, account)
 }
 
 /// Send the report.
@@ -349,14 +418,19 @@ fn title() -> String {
 /// The user still reads the body and still presses create — the only thing lost is
 /// the click, and what is not lost is that nobody had to embed a credential in a
 /// public binary to find out about it.
-pub fn submit() -> Result<ReportOutcome, String> {
-    let body = build_report();
-    let title = title();
+pub fn submit(
+    kind: Kind,
+    message: &str,
+    attach_log: bool,
+    account: Option<&str>,
+) -> Result<ReportOutcome, String> {
+    let body = build(kind, message, attach_log, account);
+    let title = title(kind);
 
     let Some(token) = TOKEN else {
         return Ok(ReportOutcome {
             created: false,
-            url: browser_url(&title, &body),
+            url: browser_url(kind, &title, &body),
         });
     };
 
@@ -365,19 +439,25 @@ pub fn submit() -> Result<ReportOutcome, String> {
         .build()
         .map_err(|e| format!("no se pudo crear el cliente HTTP: {e}"))?;
 
-    let response = client
-        .post(format!("https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/issues"))
-        .header("Authorization", format!("Bearer {token}"))
-        .header("Accept", "application/vnd.github+json")
-        .header("X-GitHub-Api-Version", "2022-11-28")
-        .header("User-Agent", "starless")
-        .json(&IssuePayload {
-            title: &title,
-            body: &body,
-            labels: vec![CRASH_LABEL],
-        })
-        .send()
-        .map_err(|e| format!("no se pudo contactar a GitHub: {e}"))?;
+    let endpoint = format!("https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/issues");
+
+    // A label the repository does not have is a `422`, and a `422` would lose the
+    // report entirely — the one failure mode worth spending an extra request on.
+    // `crash` and `feedback` have to exist on the repo for filtering to work, but
+    // losing somebody's report because nobody remembered to create a label is a
+    // worse outcome than a report without one.
+    let with_label = post(&client, &endpoint, token, &title, &body, Some(kind.label()));
+    let response = match with_label {
+        Ok(response) if response.status() == reqwest::StatusCode::UNPROCESSABLE_ENTITY => {
+            log::warn!(
+                "GitHub no tiene la etiqueta `{}`; se reintenta sin ella",
+                kind.label()
+            );
+            post(&client, &endpoint, token, &title, &body, None)?
+        }
+        Ok(response) => response,
+        Err(e) => return Err(e),
+    };
 
     if !response.status().is_success() {
         let code = response.status();
@@ -390,22 +470,46 @@ pub fn submit() -> Result<ReportOutcome, String> {
         .json()
         .map_err(|e| format!("respuesta de GitHub ilegible: {e}"))?;
 
-    log::info!("reporte creado: {}", issue.html_url);
+    log::info!("reporte creado ({kind:?}): {}", issue.html_url);
     Ok(ReportOutcome {
         created: true,
         url: issue.html_url,
     })
 }
 
+fn post(
+    client: &reqwest::blocking::Client,
+    endpoint: &str,
+    token: &str,
+    title: &str,
+    body: &str,
+    label: Option<&str>,
+) -> Result<reqwest::blocking::Response, String> {
+    let payload = IssuePayload {
+        title,
+        body,
+        labels: label.into_iter().collect(),
+    };
+    client
+        .post(endpoint)
+        .header("Authorization", format!("Bearer {token}"))
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("User-Agent", "starless")
+        .json(&payload)
+        .send()
+        .map_err(|e| format!("no se pudo contactar a GitHub: {e}"))
+}
+
 /// The same report, as a URL a browser can open.
 ///
 /// GitHub truncates very long query strings, so a log near the size limit is better
 /// on its own than crammed into a URL — this is the fallback, not the main path.
-fn browser_url(title: &str, body: &str) -> String {
+fn browser_url(kind: Kind, title: &str, body: &str) -> String {
     let body: String = body.chars().take(6_000).collect();
     format!(
         "https://github.com/{REPO_OWNER}/{REPO_NAME}/issues/new?labels={label}&title={title}&body={body}",
-        label = urlencoding::encode(CRASH_LABEL),
+        label = urlencoding::encode(kind.label()),
         title = urlencoding::encode(title),
         body = urlencoding::encode(&body),
     )
@@ -512,7 +616,77 @@ mod tests {
         );
     }
 
+    /// Feedback about something that did not crash must not quietly carry a copy of
+/// the log. The switch being in the UI is not the guarantee — this is.
+#[test]
+    fn feedback_leaves_the_log_out_unless_asked() {
+        let with = build(Kind::Feedback, "la búsqueda va lenta", true, None);
+        assert!(with.contains("la búsqueda va lenta"), "{with}");
+        assert!(
+            with.contains("## Log"),
+            "con el log activado debería estar presente:\n{with}"
+        );
+
+        let without = build(Kind::Feedback, "la búsqueda va lenta", false, None);
+        assert!(without.contains("la búsqueda va lenta"));
+        assert!(
+            !without.contains("## Log"),
+            "sin activarlo, el log no debe viajar:\n{without}"
+        );
+    }
+
+    /// The one that proves the patterns are not enough.
+    ///
+    /// A username written in free text has no shape to match: it is not prefixed
+    /// by `Authenticated as`, it is not inside a path, and every rule above would
+    /// sail straight past it. It gets removed because the session says what the
+    /// account is called — not because anything recognised it.
     #[test]
+    fn the_account_name_is_removed_even_in_free_text() {
+        let out = build(
+            Kind::Feedback,
+            "soy t_jitzol y la app crashea",
+            false,
+            Some("t_jitzol"),
+        );
+        assert!(
+            !out.contains("t_jitzol"),
+            "el nombre de cuenta quedó en texto libre:\n{out}"
+        );
+        assert!(out.contains("[omitido]"));
+    }
+
+    #[test]
+    fn feedback_is_scrubbed_too() {
+        let out = build(
+            Kind::Feedback,
+            "soy t_jitzol y la app crashea en C:\\Users\\bairo\\AppData",
+            false,
+            Some("t_jitzol"),
+        );
+        assert!(!out.contains("t_jitzol"), "{out}");
+        assert!(!out.contains("bairo"), "{out}");
+    }
+
+    /// An empty or missing account name must not blank out the whole report.
+    #[test]
+    fn an_unknown_account_does_not_wreck_the_scrub() {
+        for account in [None, Some(""), Some("   ")] {
+            let out = build(Kind::Feedback, "hola", false, account);
+            assert!(out.contains("hola"), "se perdió el mensaje: {out}");
+        }
+    }
+
+    #[test]
+    fn a_crash_always_carries_the_log() {
+        let out = build(Kind::Crash, "", false, None);
+        assert!(
+            out.contains("## Log"),
+            "un crash sin log no sirve para nada:\n{out}"
+        );
+    }
+
+#[test]
     fn settings_round_trip_through_the_file() {
         let dir = std::env::temp_dir().join("starless-settings-test");
         let _ = fs::remove_dir_all(&dir);
