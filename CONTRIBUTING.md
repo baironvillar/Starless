@@ -46,7 +46,37 @@ bun run app
 bun run lint          # Biome
 bun run typecheck     # tsc --noEmit
 bun run version       # los tres manifiestos tienen que coincidir
+
+cd src-tauri
+cargo check           # el backend
+cargo test --lib      # sobre todo el scrubber del reporte de crash
 ```
+
+`cargo test` no es opcional de vez en cuando: los tests de `report.rs` son lo
+único que separa "el log se limpia" de "el log publica el nombre de cuenta de
+alguien", y eso se rompe sin que se note.
+
+## El botón de reportar un crash
+
+Un build normal **no** lleva token: el botón arma el reporte y abre GitHub en el
+navegador con todo pre-cargado, y vos apretás "Create". Para que el botón cree el
+issue solo hay que hornear un token de GitHub con permiso `Issues: Write` sobre
+este repositorio y nada más:
+
+```bash
+# PowerShell, sólo para el build que se va a publicar
+$env:STARLESS_REPORT_TOKEN = "github_pat_..."
+bun run app:build
+```
+
+Nunca commitees ese token. No está en ningún archivo: se lee con `option_env!` en
+tiempo de compilación, así que si no lo pasás, simplemente no existe esa
+funcionalidad y el build funciona igual.
+
+Un token embebido en un binario público lo puede extraer cualquiera. Por eso el
+alcance tiene que ser el mínimo: **un repositorio, `Issues: Write`, nada más**.
+Con eso lo peor que puede pasar es que alguien abra issues de spam, que es
+justo lo que `SECURITY.md` dice al respecto.
 
 ## Reglas que no son negociables
 

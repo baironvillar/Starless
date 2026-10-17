@@ -24,8 +24,20 @@ la app nunca ve tu contraseña, pero sí maneja un token de sesión y lo cachea.
 Un token que se filtra por el log, por un archivo de sesión, o por un canal que
 no debería convertirlo en una sesión reproducible, es un problema.
 
-**Lo que se escribe en disco.** La cache de credenciales de librespot y el log
-local con rotación. Qué queda en ellos y con qué permisos.
+**Lo que se escribe en disco.** La cache de credenciales de librespot, el log
+local con rotación, y el `settings.json` que guarda el volumen.
+
+**El reporte automático de crashes.** Los builds oficiales llevan dentro un token
+de GitHub con permiso de `Issues: Write` sobre este repositorio y nada más, para
+que el botón del reporte pueda abrir el issue sin que vos hagas nada. Cualquiera
+que tenga Starless instalado puede extraer ese token del binario: **cualquiera
+puede abrir issues en este repositorio**. Eso es un vector de spam, no de
+lectura — el token no puede ver el código ni los issues privados. Si alguna vez
+se usa para abusar, se revoca desde los settings del repo y hay que recompilar
+con `STARLESS_REPORT_TOKEN` vacío para que el botón vuelva al modo navegador.
+
+Si encontrás una forma de mandar algo que no sea un reporte de crash, o de saltarse
+el botón, eso sí es un hallazgo y va por acá.
 
 ## Qué no es un problema de seguridad
 

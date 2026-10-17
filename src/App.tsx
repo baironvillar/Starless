@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AddToPlaylistMenu } from "./components/AddToPlaylistMenu";
 import { AuthGate } from "./components/AuthGate";
+import { CrashPrompt } from "./components/CrashPrompt";
 import { LibrarySidebar } from "./components/LibrarySidebar";
 import { PlayerBar, type RepeatMode } from "./components/PlayerBar";
 import { QueuePanel } from "./components/QueuePanel";
@@ -854,6 +855,12 @@ export default function App() {
           )}
         </AnimatePresence>
       </AuthGate>
+
+      {/* Outside the gate on purpose. A report about a crash is worth reading
+          before signing in again, and `AuthGate` returns early while it decides
+          whether to show a session — anything inside it would simply not be
+          mounted on exactly the launch where the crash prompt matters. */}
+      <CrashPrompt t={t} />
     </div>
   );
 }

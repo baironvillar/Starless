@@ -180,6 +180,23 @@ export const strings = {
     newPlaylist: "Nueva playlist",
     showLibrary: "Mostrar biblioteca",
     hideLibrary: "Ocultar biblioteca",
+
+    // A session that ended without being closed
+    crashKicker: "La sesión anterior falló",
+    crashTitle: "Starless no se cerró bien",
+    crashBody:
+      "La última vez que abriste Starless, la app terminó sin cerrarse. Puede ser un fallo puntual o algo de la máquina. Si querés, mandamos el registro para poder encontrarlo.",
+    crashShowDetail: "Ver qué se enviaría",
+    crashHideDetail: "Ocultar el detalle",
+    crashScrubbed: "Sin datos personales",
+    crashSend: "Enviar el registro",
+    crashSending: "Enviando…",
+    crashDismiss: "Ahora no",
+    crashPrivacy:
+      "No se envía nada hasta que aprietes el botón. Starless no reporta uso, ni aunque lo instales y lo abras mil veces.",
+    crashSent: "Reporte creado:",
+    crashReportUnavailable: "No se pudo preparar el reporte.",
+    crashReportFailed: "No se pudo enviar el reporte.",
   },
   en: {
     searchPlaceholder: "Songs, artists, albums",
@@ -346,6 +363,23 @@ export const strings = {
     newPlaylist: "New playlist",
     showLibrary: "Show library",
     hideLibrary: "Hide library",
+
+    // A session that ended without being closed
+    crashKicker: "The last session failed",
+    crashTitle: "Starless did not close cleanly",
+    crashBody:
+      "The last time you opened Starless, the app ended without shutting down. It could be a one-off bug or something about the machine. If you want, we can send the log so it can be found.",
+    crashShowDetail: "See what would be sent",
+    crashHideDetail: "Hide the detail",
+    crashScrubbed: "No personal data",
+    crashSend: "Send the log",
+    crashSending: "Sending…",
+    crashDismiss: "Not now",
+    crashPrivacy:
+      "Nothing is sent until you press the button. Starless reports no usage, not even if you install it and open it a thousand times.",
+    crashSent: "Report created:",
+    crashReportUnavailable: "The report could not be prepared.",
+    crashReportFailed: "The report could not be sent.",
   },
 } satisfies Record<Lang, Record<string, string>>;
 

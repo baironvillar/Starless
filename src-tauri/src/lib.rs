@@ -12,7 +12,9 @@ mod auth;
 // breaks every command in this file with an error that points nowhere useful.
 mod logging;
 mod playback;
+mod report;
 mod selftest;
+mod settings;
 mod token;
 mod webapi;
 
@@ -25,6 +27,53 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use playback::{PlaybackState, PlaybackStatus};
 use token::TokenState;
 use webapi::{Account, Playlist, Track};
+
+/// The version a report carries, read from the compiled-in crate metadata.
+///
+/// `Cargo.toml` is one of the three manifests `scripts/version.ts` keeps in step,
+/// and CI fails the build if they drift, so this is the version that actually
+/// shipped — the same number `tauri.conf.json` compiled into the binary.
+pub fn version_line() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
+// ---------------------------------------------------------------------------
+// Crash reporting
+// ---------------------------------------------------------------------------
+
+/// Did the run before this one end without being closed?
+///
+/// Read on the first render, before `mark_session_start` has overwritten the
+/// marker — that ordering is what makes the answer describe the previous session
+/// rather than this one.
+#[tauri::command]
+fn previous_session_crashed() -> bool {
+    report::previous_session_crashed()
+}
+
+/// The report as it would be sent, already scrubbed, so the person deciding can
+/// read exactly what would leave the machine.
+#[tauri::command]
+fn crash_report_preview() -> String {
+    report::preview()
+}
+
+/// Send it. With a token compiled in this creates the issue outright; without one
+/// it hands back a pre-filled URL for the caller to open.
+#[tauri::command]
+fn submit_crash_report() -> Result<report::ReportOutcome, String> {
+    let outcome = report::submit()?;
+    // Reported or dismissed, this crash is dealt with. Leaving the marker would
+    // make the same prompt reappear on every launch from here on.
+    report::acknowledge();
+    Ok(outcome)
+}
+
+/// The user said no, or dealt with it later. Either way: never again.
+#[tauri::command]
+fn dismiss_crash_report() {
+    report::acknowledge();
+}
 
 /// The live streaming session, if any. `Mutex` because `Session` is not `Sync`.
 #[derive(Default)]
@@ -322,7 +371,7 @@ fn set_volume(state: State<PlaybackState>, volume: u16) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         // The updater only downloads and verifies; *when* it runs is decided by the
         // UI. An app that plays music must not install over itself mid-track, so
@@ -339,6 +388,17 @@ pub fn run() {
             //
             // `RUST_LOG` still wins, e.g. `RUST_LOG=librespot=debug bun run app`.
             logging::init();
+
+            // Order matters here, and it is the whole design. The marker from the
+            // previous run is *moved aside* rather than overwritten, so the question
+            // "did it end cleanly?" stays answerable from the frontend long after
+            // setup has returned — and no race between setup and the first render can
+            // swallow a crash.
+            //
+            // The panic hook goes in before anything else can fail, because the run
+            // it is meant to catch is this one.
+            report::install_panic_hook();
+            report::mark_session_start();
 
             let handle = app.handle().clone();
             let restore = handle.clone();
@@ -399,8 +459,24 @@ pub fn run() {
             toggle_playback,
             seek_playback,
             stop_playback,
-            set_volume
+            set_volume,
+            previous_session_crashed,
+            crash_report_preview,
+            submit_crash_report,
+            dismiss_crash_report
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    // `build` + `run` instead of the shorthand `.run(context)`, because the
+    // shorthand gives no way to hear the app finish — and hearing it finish is the
+    // only signal that separates a quit from a crash.
+    //
+    // `Exit`, not `ExitRequested`: the latter fires on the way in and can still be
+    // prevented, so clearing the marker there would mark a crash as a clean exit.
+    app.run(|_handle, event| {
+        if matches!(event, tauri::RunEvent::Exit) {
+            report::mark_session_end();
+        }
+    });
 }

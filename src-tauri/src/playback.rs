@@ -212,9 +212,17 @@ fn build_player(app: &AppHandle, state: &PlaybackState, session: &Session) {
     if let Ok(mut guard) = state.player.lock() {
         *guard = Some(player.clone());
     }
+    // Open at the volume the user last chose, not at full scale.
+    //
+    // `Player::new` starts at maximum, and every launch used to be a fresh maximum:
+    // set the music to half at night, reopen the app in the morning, and it is
+    // suddenly loud. A setting that resets itself once per launch is a setting the
+    // user has to redo forever, so it gets remembered. `None` on a first run keeps
+    // the old behaviour rather than inventing a default the user did not ask for.
+    let opening_volume = crate::settings::saved_volume();
     state.mutate(|s| {
         s.available = true;
-        s.volume = state.apply_volume(MAX_VOLUME);
+        s.volume = state.apply_volume(opening_volume.unwrap_or(MAX_VOLUME));
     });
     log::info!("player creado (backend rodio)");
 
@@ -408,6 +416,9 @@ pub fn stop(state: &PlaybackState) -> Result<(), String> {
 }
 
 pub fn set_volume(state: &PlaybackState, volume: u16) {
+    // Remember the value the user asked for, before `apply_volume` runs the curve.
+    // Persisting the attenuated number would re-square it on the next launch.
+    crate::settings::save_volume(volume);
     let volume = state.apply_volume(volume);
     if let Some(player) = state.player() {
         player.emit_volume_changed_event(volume);

@@ -78,6 +78,16 @@ The performance claims above are design targets, not measurements. Do not presen
 4. **Surface the constraint, never hide it.** Premium-only and unsigned-installer are facts the user meets in the first minute. State them plainly instead of letting the user discover them.
 5. **Bilingual from the first commit.** Spanish and English ship together. Copy is written so both read naturally, rather than writing one and translating the other.
 
+### The one carve-out in the no-telemetry rule
+
+**A crash report, and only a crash report.** Three conditions hold it inside the promise, and all three are load-bearing:
+
+- **It needs a crash.** Starless notices by asking the inverse question — did the previous session end cleanly? — because the deaths nobody can instrument from the inside (a hard abort, a driver fault, a process closed from the Task Manager) are the ones worth reporting.
+- **It needs a click.** The app detects, builds the report, shows exactly what would leave the machine, and waits. There is no timer and no background upload. `PRODUCT.md` promise 3 survives because nothing moves without someone asking.
+- **It carries no personal data.** The log is scrubbed before it is shown on screen, not after, so there is no code path that can send the unscrubbed version: the Spotify account name, the Windows account name inside every path, anything shaped like a credential, and track identifiers all go.
+
+Withdrawing it needs withdrawing the promise. Analytics is still off the table; this is a file someone hands over on purpose after their app has already died.
+
 ## Accessibility & Inclusion
 
 Not established with the user. Open questions: contrast targets, full keyboard operability of navigation and transport controls, and screen-reader labelling for player controls, search and dialogs. Do not assume a conformance level has been agreed.

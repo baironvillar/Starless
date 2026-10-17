@@ -59,9 +59,14 @@ mantiene baja mientras suena.
   parche es una app que la gente apaga.
 - **Diagnóstico:** registro a archivo local con rotación y un autodiagnóstico
   con `STARLESS_DIAGNOSTIC=1`.
+- **Reportes de crash.** Si la app se muere sin cerrarse, al volver a abrirla
+  Starless lo detecta y te ofrece mandar el registro. Vos decidís: nada sale de
+  tu máquina hasta que aprietas el botón, y lo que se manda ya viene sin tu
+  nombre de cuenta, sin tu usuario de Windows y sin identificadores de
+  canción.
 
 Una canción que no se puede reproducir se salta, hasta cinco seguidas antes de
-rendirse: una región bloqueada o un CDN muerto no deberían terminar la sesión.
+renderse: una región bloqueada o un CDN muerto no deberían terminar la sesión.
 
 ### Instalar
 
@@ -242,6 +247,10 @@ music plays.
   an app people turn off.
 - **Diagnostics:** a local log file with rotation, plus a self-test behind
   `STARLESS_DIAGNOSTIC=1`.
+- **Crash reports.** If the app dies without shutting down, Starless notices when
+  you reopen it and offers to send the log. You decide: nothing leaves your
+  machine until you press the button, and what does leave has already had your
+  account name, your Windows user name and any track identifiers taken out.
 
 A song that will not play is skipped, up to five in a row before giving up: one
 region-blocked track or dead CDN should not end the session.
