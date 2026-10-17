@@ -123,20 +123,26 @@
 
 /*
  * A sheet: the settings panel and the queue. Both cover most of the window, and
- * these are **opaque**, not a denser glass.
+ * these are **opaque by default**, not a denser glass.
  *
- * Translucency here was only ever going to be read as depth because the blur
- * broke the content behind it into a smudge. Without the blur, 96% still lets a
- * song title through and the library's own text lands on top of the sheet's
- * navigation in the same pixels — that is not depth, it is a collision.
+ * The measurement that put them there is real: these sit over the library's own
+ * text, in the same pixels as their own navigation, and without the blur — which
+ * the packaged build does not draw — even 96% let a song title through. That is a
+ * collision, not depth. DESIGN.md asks for legibility when the two conflict, and a
+ * navigation you cannot read is worse than a solid one.
  *
- * Opaque is also what DESIGN.md asks for when the two conflict: a bar that
- * becomes unreadable over a bright cover is worse than a solid one. The three
- * bars keep the floating glass — that is the signature and they read as depth
- * because there is little behind them to collide with.
+ * But the floor belongs to whoever is looking at it, like every other glass here.
+ * `--menu-alpha` comes from Settings → Customisation, and anything below 100% takes
+ * the library through the settings panel. The measurement above is why the default
+ * is 1 and why the slider stops at 55% instead of 0 — not a reason to overrule the
+ * choice once it has been made.
+ *
+ * The three bars keep their own fixed 55%: they are the signature, they read as
+ * depth because there is little behind them to collide with, and nothing about
+ * them was ever adjustable.
  */
 @utility glass-sheet {
-  background-color: rgb(20 20 32);
+  background-color: rgb(20 20 32 / var(--menu-alpha, 1));
   backdrop-filter: blur(24px) saturate(180%);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
   border: 1px solid rgb(255 255 255 / 0.12);
