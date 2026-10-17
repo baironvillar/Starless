@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { AddToPlaylistMenu } from "./components/AddToPlaylistMenu";
 import { AuthGate } from "./components/AuthGate";
 import { CrashPrompt } from "./components/CrashPrompt";
@@ -13,6 +13,7 @@ import { SearchScreen } from "./components/SearchScreen";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { TopBar } from "./components/TopBar";
 import { TrackList } from "./components/TrackList";
+import { UpdateAlert } from "./components/UpdateAlert";
 import { type Lang, type StringKey, strings } from "./lib/i18n";
 import {
   type AlbumCard,
@@ -38,7 +39,7 @@ import {
   usePlaylists,
   usePlaylistTracks,
 } from "./lib/spotify";
-import { checkForUpdate } from "./lib/updater";
+import { checkForUpdate, pendingVersion, subscribeUpdate, updateState } from "./lib/updater";
 
 /**
  * A random track that is not the one already sounding.
@@ -131,6 +132,13 @@ export default function App() {
   const account = useAccount();
   const playlists = usePlaylists();
   const liked = useLikedTracks();
+
+  /**
+   * One reader for the updater, so the badge on the Settings button and the row
+   * inside Settings can never disagree about whether an update exists.
+   */
+  const updateStateSnapshot = useSyncExternalStore(subscribeUpdate, updateState, updateState);
+  const updateVersion = pendingVersion(updateStateSnapshot);
 
   const selected = playlists.data?.find((p) => p.id === activeItem);
   /**
@@ -737,6 +745,7 @@ export default function App() {
           searching={searching}
           searchError={searchError}
           onOpenSettings={() => setSettingsOpen(true)}
+          updateVersion={updateVersion}
         />
 
         <AnimatePresence>
@@ -926,6 +935,12 @@ export default function App() {
           on a launch where the app may never get past the door, so a report about
           the app not working has to be writable from a screen that is not behind it. */}
       {feedbackOpen && <FeedbackPanel t={t} onClose={() => setFeedbackOpen(false)} />}
+
+      {/* Also outside the gate. An update notice outlives the session it was
+          announced in — the whole point of the badge is that it is still there
+          once someone signs in — and a notice that is not mounted yet cannot mark
+          the Settings button the notice is pointing at. */}
+      <UpdateAlert t={t} />
     </div>
   );
 }

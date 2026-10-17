@@ -23,8 +23,16 @@ import {
   signOut,
   type Account as UserAccount,
 } from "../lib/spotify";
-import { checkForUpdate, installUpdate, subscribeUpdate, updateState } from "../lib/updater";
+import {
+  checkForUpdate,
+  installableUpdate,
+  installUpdate,
+  pendingVersion,
+  subscribeUpdate,
+  updateState,
+} from "../lib/updater";
 import { appVersion } from "../lib/version";
+import { DevPanel } from "./DevPanel";
 
 type SettingsPanelProps = {
   lang: Lang;
@@ -171,29 +179,43 @@ function General({
       </Group>
 
       <Updates t={t} />
+
+      <DevPanel t={t} />
     </div>
   );
 }
 
 /**
- * "There is a new version", and a button that does it.
+ * "There is a new version", and the button that does it.
  *
- * The whole updater lives here because this is the only place in the app where
- * replacing the app is a sensible thing to ask for. It appears on the settings
- * panel and nowhere else: no badge, no toast, nothing at launch. A music player
- * that interrupts itself to advertise its own maintenance is a music player
- * nobody keeps.
+ * **This used to be the only place the updater appeared.** The file said so out
+ * loud — *no badge, no toast, nothing at launch* — and the reason was good: a
+ * music player that advertises its own maintenance is a music player nobody
+ * keeps. What it had not accounted for is the person who never opens Settings.
+ * The badge and the alert answer that without giving up the reason: the update
+ * is announced once, quietly, and **nothing is installed by itself.** The click
+ * is still here, still in Settings, still the user's — because Starless is
+ * playing and an app that cuts your music to install a patch is an app you turn
+ * off.
  */
 function Updates({ t }: { t: Record<StringKey, string> }) {
   const state = useSyncExternalStore(subscribeUpdate, updateState, updateState);
-  const update = state.status === "available" || state.status === "ready" ? state.update : null;
+  const update = installableUpdate(state);
+  const version = pendingVersion(state);
+  const simulated = state.status === "simulated";
 
   return (
     <div className="mt-5">
       <Group>
         <Row
           label={t.updatesTitle}
-          hint={update ? t.updateAvailable.replace("{version}", update.version) : t.updatesHint}
+          hint={
+            version === null
+              ? t.updatesHint
+              : simulated
+                ? t.updateSimulated.replace("{version}", version)
+                : t.updateAvailable.replace("{version}", version)
+          }
         >
           <div className="flex items-center gap-2">
             {state.status === "downloading" && (
@@ -209,14 +231,23 @@ function Updates({ t }: { t: Record<StringKey, string> }) {
               <button
                 type="button"
                 onClick={() => void installUpdate(update)}
-                className="flex items-center gap-2 rounded-pill bg-accent px-4 py-2.5 text-[13px] font-semibold text-ground transition-[filter] duration-200 hover:brightness-110"
+                className="flex items-center gap-2 rounded-pill bg-live px-4 py-2.5 text-[13px] font-semibold text-ground transition-[filter] duration-200 hover:brightness-110"
               >
                 <Download className="size-4" strokeWidth={2} />
                 {t.updateInstall}
               </button>
             )}
 
-            {!update && (
+            {/* A version with nothing behind it. The button stays unlit and says
+                why, because a green "Update" that goes nowhere is the one thing
+                worse than no button at all. */}
+            {simulated && !update && (
+              <span className="flex items-center gap-2 rounded-pill border border-white/14 px-4 py-2.5 text-[13px] font-medium text-ink-faint">
+                {t.updateSimulatedShort}
+              </span>
+            )}
+
+            {!update && !simulated && (
               <button
                 type="button"
                 onClick={() => void checkForUpdate()}

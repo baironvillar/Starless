@@ -184,6 +184,21 @@ export const strings = {
     updateAvailable: "Hay una versión más nueva: {version}. Se instalará al cerrar Starless.",
     updateInstall: "Actualizar",
     updateDownloading: "Descargando…",
+    updateAlertTitle: "Hay una versión nueva",
+    updateAlertBody: "v{version} está lista. Se instala desde Ajustes, cuando tú lo decidas.",
+    updateSimulated: "v{version} (simulada). No hay nada que instalar: es un estado de prueba.",
+    updateSimulatedShort: "Simulada, no instalable",
+
+    // Development only. These exist so a state that is otherwise hard to reach —
+    // an update that does not exist — can be looked at without publishing
+    // anything. They are dropped from release builds by `import.meta.env.DEV`.
+    devOnly: "Sólo en desarrollo",
+    devOnlyHint: "Estos botones no existen en una versión publicada: Vite los elimina al compilar.",
+    devSimulateUpdate: "Simular una actualización",
+    devClearUpdate: "Quitar la simulación",
+    devSimulateCrash: "Simular un crash",
+    devCrashPlanted:
+      "Listo. Cerrá la app y volvé a abrirla: el aviso de crash aparece al arrancar.",
 
     newPlaylist: "Nueva playlist",
     showLibrary: "Mostrar biblioteca",
@@ -393,6 +408,19 @@ export const strings = {
     updateAvailable: "A newer version is out: {version}. It installs when Starless closes.",
     updateInstall: "Update",
     updateDownloading: "Downloading…",
+    updateAlertTitle: "There is a newer version",
+    updateAlertBody: "v{version} is ready. It installs from Settings, when you decide.",
+    updateSimulated: "v{version} (simulated). There is nothing to install: this is a test state.",
+    updateSimulatedShort: "Simulated, not installable",
+
+    // Development only. Same strings, same reason.
+    devOnly: "Development only",
+    devOnlyHint:
+      "These buttons do not exist in a published build: Vite removes them at compile time.",
+    devSimulateUpdate: "Simulate an update",
+    devClearUpdate: "Clear the simulation",
+    devSimulateCrash: "Simulate a crash",
+    devCrashPlanted: "Done. Quit the app and open it again: the crash prompt appears at launch.",
 
     newPlaylist: "New playlist",
     showLibrary: "Show library",

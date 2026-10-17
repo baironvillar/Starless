@@ -30,6 +30,15 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [0.4.0] — En desarrollo
+
+### New / Nuevo
+
+- Cuando hay una versión nueva, Starless lo dice: una alerta flotante que aparece una vez y se desvanece sola, el botón de Ajustes queda marcado en verde, y dentro de Ajustes el botón de actualizar se pone en verde con la versión disponible. Nada se descarga y nada se instala solo — instalar sigue siendo un clic tuyo, en Ajustes, porque Starless está sonando.
+- Un fallo al comprobar no marca nada. Si GitHub no se puede alcanzar, eso dice algo de la red y nada de tu instalación, así que el botón se queda como estaba.
+
+---
+
 ## [0.3.2] — 2026-10-17
 
 ### Fixed / Corregido

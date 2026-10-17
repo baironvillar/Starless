@@ -40,6 +40,31 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.4.0",
+    date: null,
+    released: false,
+    sections: {
+      es: [
+        {
+          title: "Nuevo",
+          items: [
+            "Cuando hay una versión nueva, Starless lo dice: una alerta flotante que aparece una vez y se desvanece sola, el botón de Ajustes queda marcado en verde, y dentro de Ajustes el botón de actualizar se pone en verde con la versión disponible. Nada se descarga y nada se instala solo — instalar sigue siendo un clic tuyo, en Ajustes, porque Starless está sonando.",
+            "Un fallo al comprobar no marca nada. Si GitHub no se puede alcanzar, eso dice algo de la red y nada de tu instalación, así que el botón se queda como estaba.",
+          ],
+        },
+      ],
+      en: [
+        {
+          title: "New",
+          items: [
+            "When there is a newer version, Starless says so: a floating alert that appears once and fades on its own, the Settings button is marked in green, and inside Settings the update button turns green with the version available. Nothing downloads and nothing installs by itself — installing is still your click, in Settings, because Starless is playing music.",
+            "A failed check marks nothing. If GitHub cannot be reached, that says something about the network and nothing about your installation, so the button stays as it was.",
+          ],
+        },
+      ],
+    },
+  },
+  {
     version: "0.3.2",
     date: "2026-10-17",
     released: true,

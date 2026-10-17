@@ -31,6 +31,14 @@ type TopBarProps = {
   onNavigate: (key: StringKey) => void;
   onToggleLibrary: () => void;
   onOpenSettings: () => void;
+  /**
+   * A newer version exists, or `null`.
+   *
+   * A version, not a boolean: the dot does not care, but the moment it is a
+   * boolean somebody will eventually ask "which one?" and the answer will
+   * require a second source of truth.
+   */
+  updateVersion?: string | null;
 };
 
 const SPRING = { type: "spring" as const, stiffness: 420, damping: 32 };
@@ -67,6 +75,7 @@ export function TopBar({
   onNavigate,
   onToggleLibrary,
   onOpenSettings,
+  updateVersion = null,
 }: TopBarProps) {
   /* Search ---------------------------------------------------------------- */
 
@@ -256,7 +265,7 @@ export function TopBar({
             <MonitorSmartphone className="size-[17px]" strokeWidth={2} />
           </IconButton>
 
-          <IconButton label={t.navSettings} onClick={onOpenSettings}>
+          <IconButton label={t.navSettings} onClick={onOpenSettings} badge={updateVersion !== null}>
             <SlidersHorizontal className="size-[17px]" strokeWidth={2} />
           </IconButton>
           <IconButton label={t.more} className="hidden xl:grid">
@@ -313,11 +322,21 @@ function IconButton({
   label,
   onClick,
   className = "",
+  badge = false,
   children,
 }: {
   label: string;
   onClick?: () => void;
   className?: string;
+  /**
+   * A mark that outlives the alert.
+   *
+   * The alert says a new version exists once and leaves; this is what stays,
+   * because the person may have been listening and not have looked up. It is a
+   * dot and not a count — there is never more than one update waiting, so a
+   * number would be a digit standing for nothing.
+   */
+  badge?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -329,9 +348,12 @@ function IconButton({
       transition={SPRING}
       aria-label={label}
       title={label}
-      className={`grid size-9 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink ${className}`}
+      className={`relative grid size-9 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink ${className}`}
     >
       {children}
+      {badge && (
+        <span className="absolute right-1.5 top-1.5 size-2 rounded-pill bg-live" aria-hidden />
+      )}
     </motion.button>
   );
 }

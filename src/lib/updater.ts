@@ -28,7 +28,17 @@ export type UpdateState =
   | { status: "available"; update: Update }
   | { status: "downloading"; received: number; total: number }
   | { status: "ready"; update: Update }
-  | { status: "error" };
+  | { status: "error" }
+  /**
+   * A version that does not exist, announced by the dev panel.
+   *
+   * **A status of its own rather than a fake `Update`.** An `Update` is the
+   * plugin's object with a real download URL behind it, and a fake one would put
+   * an install button on screen that downloads nothing and fails — which is the
+   * exact confusion this panel exists to prevent. Here there is nothing to
+   * install, and every screen that shows it says so instead of pretending.
+   */
+  | { status: "simulated"; version: string };
 
 let current: UpdateState = { status: "idle" };
 const listeners = new Set<(state: UpdateState) => void>();
@@ -46,6 +56,54 @@ export function subscribeUpdate(listener: (state: UpdateState) => void): () => v
 
 export function updateState(): UpdateState {
   return current;
+}
+
+/**
+ * The version a screen shows when an update exists, or `null` when it does not.
+ *
+ * One place, because three surfaces read this — the alert, the badge on the
+ * Settings button and the row inside Settings — and three places deciding
+ * "is there an update?" is three places that can disagree. Disagreement here
+ * would look like the app arguing with itself: a green button over a row that
+ * says you are up to date.
+ */
+export function pendingVersion(state: UpdateState): string | null {
+  switch (state.status) {
+    case "available":
+    case "ready":
+      return state.update.version;
+    case "simulated":
+      return state.version;
+    default:
+      return null;
+  }
+}
+
+/** True only for a real update, so nothing ever offers to download a fiction. */
+export function installableUpdate(state: UpdateState): Update | null {
+  return state.status === "available" || state.status === "ready" ? state.update : null;
+}
+
+/**
+ * Pretend a newer version exists, so the three surfaces can be looked at
+ * without publishing anything.
+ *
+ * **Dead in a release build, and that is the whole design.** `import.meta.env.DEV`
+ * is replaced by Vite at build time, so this reduces to an early return and the
+ * body is dropped from the bundle — which is the only gate that holds. Gating on
+ * the branch would not: `develop` merges into `main` and ships, so a
+ * branch-gated panel would be a panel in a release. Nobody has to remember not
+ * to remove a `if (dev)` — the compiler removes it.
+ */
+export function simulateUpdate(version: string): void {
+  if (!import.meta.env.DEV) return;
+  publish({ status: "simulated", version });
+}
+
+/** Back to "nothing to report", for looking at the unmarked state again. */
+export function clearSimulatedUpdate(): void {
+  if (!import.meta.env.DEV) return;
+  publish({ status: "idle" });
 }
 
 /**

@@ -76,6 +76,13 @@ docs/updates.md           cómo se publica una versión
 - **librespot está detrás de una capa fina.** Spotify no publica protocolo, así
   que se rompe; toda llamada pasa por un módulo y no se habla con librespot
   directo desde otro lado.
+- **La puerta de una herramienta de desarrollo es `import.meta.env.DEV`, no la
+  rama.** `develop` se mergea a `main` y se publica, así que "sólo en develop" es
+  "también en la próxima release". Del lado de Rust el comando se queda en la lista
+  de handlers —`generate_handler!` no admite entradas condicionales— pero su
+  cuerpo se compila entero adentro de `#[cfg(debug_assertions)]`; en release
+  contesta un error. Las dos puertas existen a propósito: la que importa es la que
+  compila.
 
 ## Trampas que ya pagaron una vez
 
@@ -84,11 +91,29 @@ docs/updates.md           cómo se publica una versión
   en cada cierre de sesión. Lo que debe sobrevivir un reinicio va a
   `%LOCALAPPDATA%\Starless` — que es también donde vive el log, por el mismo
   motivo.
-- **El endpoint del actualizador devuelve 404 hasta que haya una release.** El
-  comprobador siempre dice "estás al día". Un fallo silencioso es exactamente lo
-  que hace que un actualizador roto parezca uno que funciona.
+- **Un fallo al comprobar actualizaciones no se distingue de "no hay".** Cuando
+  `latest.json` no se puede bajar —404, red caída, firma inválida— el comprobador
+  dice "estás al día". Un fallo silencioso es exactamente lo que hace que un
+  actualizador roto parezca uno que funciona. El endpoint **ya no devuelve 404**:
+  `releases/latest/download/latest.json` responde 200 apenas hay una release
+  *publicada* —un borrador no se sirve—, y tanto el manifest como el `.msi` se
+  bajan sin autenticación. Antes de culpar a la cadena, comprobá esa URL.
 - **GitHub devuelve 422 si le pasás una etiqueta que el repositorio no tiene**, y
   eso perdería el reporte entero. `report.rs` reintenta sin etiqueta por eso.
+- **Dos copias abiertas a la vez se hacen ver como un crash.** El marcador es un
+  archivo, no un proceso: la instalada y la de `cargo run` comparten
+  `%LOCALAPPDATA%\Starless\session.marker`, así que la segunda que arranca mueve el
+  marcador vivo a `last-crash.marker` y declara que la primera murió. Al prólogo
+  aparecer, el aviso ofrece mandar el registro a un issue de GitHub — por un crash
+  que no existió. **Probá la app con la otra cerrada**, y si te aparece ese aviso sin
+  haber crasheado nada, es esto.
+- **El archivo del panic tenía dos nombres.** El panic se renombra a
+  `last-panic.crash.txt`, pero `read_panic` y `acknowledge` lo derivaban de
+  `crash_marker_path()`, que da `last-crash.crash.txt` — un archivo que **nada
+  escribe nunca**. Todos los reportes de crash salían sin el panic, que es
+  justamente la falla que el reporte existe para contar. Las dos puntas usan
+  `reported_panic_path()`; el test `the_panic_file_has_one_name` lo fija.
+  **Si tocás un nombre de archivo acá, tocá los tres lugares juntos.**
 - **Nada que use `reqwest::blocking` puede correr en un comando `async`.** Un
   cliente bloqueante levanta su propio runtime, y construirlo —o soltar el que se
   creó— dentro de un worker async hace panic. Todo lo que hable con Spotify o con
