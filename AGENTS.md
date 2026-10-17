@@ -89,15 +89,27 @@ docs/updates.md           cómo se publica una versión
   que hace que un actualizador roto parezca uno que funciona.
 - **GitHub devuelve 422 si le pasás una etiqueta que el repositorio no tiene**, y
   eso perdería el reporte entero. `report.rs` reintenta sin etiqueta por eso.
+- **Nada que use `reqwest::blocking` puede correr en un comando `async`.** Un
+  cliente bloqueante levanta su propio runtime, y construirlo —o soltar el que se
+  creó— dentro de un worker async hace panic. Todo lo que hable con Spotify o con
+  GitHub vive adentro de `spawn_blocking`, **incluido `token::ensure_fresh`**, que
+  refresca el token y por lo tanto es un viaje HTTP. Ese es el bug que vaciaba la
+  biblioteca: se llamaba antes del `spawn_blocking`, y solo fallaba cuando el
+  token ya estaba por expirar, o sea una vez por hora y sin explicación.
+- **Un comando sin `async` corre en el hilo principal.** Por eso `submit_*` son
+  `async`: treinta segundos de timeout con la ventana congelada.
+- **El cliente HTTP no se cachea si falla.** `OnceLock<Result<Client, _>>` suena
+  elegante y convierte un arranque lento en una sesión entera sin biblioteca,
+  porque un cliente que nunca se construyó tampoco deja línea en el log.
 - **El limpiado de logs reconoce formas, no personas.** Los patrones adivinan cómo
   se ve un nombre; el nombre de cuenta se quita por valor exacto, porque la
   sesión dice cuál es. Un test lo cubre (`the_account_name_is_removed_even_in_free_text`).
 - **La barra de arriba es zona de arrastre.** Con `decorations: false` no hay
   título del sistema, así que la ventana se mueve desde ahí y los controles
   llevan `data-tauri-drag-region="false"`.
-- **`.agent/` es la copia canónica** de la configuración de agentes; `.claude/` y
-  `.opencode/` tienen un shim de cinco líneas que apunta ahí. Editar el skill
-  significa editar `.agent/`.
+- **`.agent/` es la copia canónica** de la configuración de agentes. Los shims de
+  `.claude/` y `.opencode/` que apuntaban ahí se borraron; para recuperar el
+  skill en esas herramientas, `git revert 96cf93c`.
 
 ## Antes de abrir un PR
 

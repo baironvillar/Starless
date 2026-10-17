@@ -302,23 +302,43 @@ struct PlaylistItemsPage {
 /// so opening a playlist paid the handshake again even though the previous
 /// request had just done it.
 ///
-/// The `Result` is what gets stored, not the client, so the failure is built once
-/// too. `OnceLock::get_or_try_init` would say that more directly but is still
-/// unstable; `get_or_init` takes a closure that cannot fail, and a cached
-/// failure is exactly as correct as a cached success here.
-static CLIENT: OnceLock<Result<reqwest::blocking::Client, String>> = OnceLock::new();
+/// **A failed build is not remembered.** `OnceLock::get_or_init` takes a closure
+/// that cannot fail, and the obvious workaround — caching the `Result` — was
+/// here for a while and cost a whole session of an empty library. Building a
+/// blocking client spawns a thread and does a handshake with it, so it fails
+/// for reasons that are gone seconds later (a slow start, a saturated thread
+/// pool, a laptop coming off sleep). Caching that failure means every later call
+/// in the process returns it too: one unlucky second at launch, and the library
+/// stays empty until the app is restarted, with no `webapi:` line anywhere to
+/// say why — because a client that never built never reaches the line that logs
+/// every answer.
+///
+/// `OnceLock::get_or_try_init` would say this more directly but is still
+/// unstable. Two threads racing here both build and the first one into the cell
+/// is the one everyone uses; the loser's client is dropped on the blocking
+/// thread that built it, which is the only place a blocking client may be
+/// dropped at all.
+static CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
 
 fn client() -> Result<&'static reqwest::blocking::Client, String> {
-    let built = CLIENT.get_or_init(|| {
-        reqwest::blocking::Client::builder()
-            .timeout(NETWORK_TIMEOUT)
-            // Connection reuse is reqwest's default, but it is the behaviour this
-            // function exists to provide, so it is stated rather than assumed.
-            .pool_max_idle_per_host(4)
-            .build()
-            .map_err(|e| auth::fail("network_failed", e))
-    });
-    built.as_ref().map_err(|e| e.clone())
+    if let Some(existing) = CLIENT.get() {
+        return Ok(existing);
+    }
+
+    let built = reqwest::blocking::Client::builder()
+        .timeout(NETWORK_TIMEOUT)
+        // Connection reuse is reqwest's default, but it is the behaviour this
+        // function exists to provide, so it is stated rather than assumed.
+        .pool_max_idle_per_host(4)
+        .build()
+        .map_err(|e| {
+            // Logged here because this failure produces no request: `send` never
+            // gets far enough to log the answer it has to report.
+            log::error!("webapi: no se pudo abrir el cliente HTTP: {e}");
+            auth::fail("network_failed", e)
+        })?;
+
+    Ok(CLIENT.get_or_init(|| built))
 }
 
 /// One request. Blocking, because the caller has already refreshed the token on
@@ -359,7 +379,13 @@ fn send(
             request = request.json(body);
         }
 
-        let response = request.send().map_err(|e| auth::fail("network_failed", e))?;
+        let response = request.send().map_err(|e| {
+            // The other half of "one line per call". Without this, a request that
+            // never reached Spotify leaves no trace at all, and "the request
+            // failed" and "the request was never made" are the same empty log.
+            log::error!("webapi: {path} no llegó a Spotify: {e}");
+            auth::fail("network_failed", e)
+        })?;
         let status = response.status().as_u16();
 
         // Every answer, not only the refusals.

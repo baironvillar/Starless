@@ -9,13 +9,12 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useRef, useState } from "react";
-import type { Lang, StringKey } from "../lib/i18n";
+import type { StringKey } from "../lib/i18n";
 import type { Track } from "../lib/spotify";
 import { MIN_QUERY_LENGTH, SEARCH_MENU_ID, SearchMenu, searchOptionId } from "./SearchMenu";
 import { WindowControls } from "./WindowControls";
 
 type TopBarProps = {
-  lang: Lang;
   t: Record<StringKey, string>;
   active: StringKey;
   libraryOpen: boolean;
@@ -31,7 +30,6 @@ type TopBarProps = {
   searchError: string | null;
   onNavigate: (key: StringKey) => void;
   onToggleLibrary: () => void;
-  onLangChange: (lang: Lang) => void;
   onOpenSettings: () => void;
 };
 
@@ -55,7 +53,6 @@ const SPRING = { type: "spring" as const, stiffness: 420, damping: 32 };
  * children keep positioning themselves against the app root.
  */
 export function TopBar({
-  lang,
   t,
   active,
   libraryOpen,
@@ -69,7 +66,6 @@ export function TopBar({
   searchError,
   onNavigate,
   onToggleLibrary,
-  onLangChange,
   onOpenSettings,
 }: TopBarProps) {
   /* Search ---------------------------------------------------------------- */
@@ -268,27 +264,11 @@ export function TopBar({
 
           <span className="mx-1 hidden h-6 w-px shrink-0 bg-white/10 lg:block" />
 
-          <fieldset
-            aria-label={t.language}
-            className="glass-control m-0 hidden shrink-0 rounded-pill border-0 p-0.5 sm:flex"
-            data-tauri-drag-region={false}
-          >
-            {(["es", "en"] as const).map((code) => (
-              <button
-                key={code}
-                type="button"
-                onClick={() => onLangChange(code)}
-                aria-pressed={lang === code}
-                className={`rounded-pill px-2 py-1 text-[12px] font-semibold tracking-wide uppercase transition-colors duration-200 ${
-                  lang === code ? "bg-accent text-ground" : "text-ink-muted"
-                }`}
-              >
-                {code}
-              </button>
-            ))}
-          </fieldset>
-
           {/*
+            No language switch here. It was an ES/EN pill in the corner of every
+            screen, and a setting is not something you change ten times an hour —
+            it lives in Settings → General, which already has the real selector.
+
             Last in the row, against the edge.
 
             The window has `decorations: false`, so this *is* the title bar and

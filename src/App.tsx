@@ -659,7 +659,6 @@ export default function App() {
 
       <AuthGate t={t}>
         <TopBar
-          lang={lang}
           t={t}
           active={active}
           libraryOpen={libraryOpen}
@@ -676,7 +675,6 @@ export default function App() {
           suggestionCount={suggestionCount}
           searching={searching}
           searchError={searchError}
-          onLangChange={setLang}
           onOpenSettings={() => setSettingsOpen(true)}
         />
 

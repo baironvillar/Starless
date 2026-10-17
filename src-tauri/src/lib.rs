@@ -71,9 +71,23 @@ fn crash_report_preview(state: State<SessionState>) -> String {
 
 /// Send it. With a token compiled in this creates the issue outright; without one
 /// it hands back a pre-filled URL for the caller to open.
+///
+/// Async, and the send happens on a blocking thread. A Tauri command without
+/// `async` runs on the main thread, and this one makes an HTTP request with a
+/// twenty second timeout — a frozen window with no explanation is what that looks
+/// like, on the one screen where the user is already reporting something broken.
 #[tauri::command]
-fn submit_crash_report(state: State<SessionState>) -> Result<report::ReportOutcome, String> {
-    let outcome = report::submit(report::Kind::Crash, "", true, account_name(&state).as_deref())?;
+async fn submit_crash_report(app: AppHandle) -> Result<report::ReportOutcome, String> {
+    let outcome = tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<SessionState>();
+        report::submit(report::Kind::Crash, "", true, account_name(&state).as_deref())
+    })
+    .await
+    .map_err(|e| {
+        log::error!("[crash_report_failed]: {e}");
+        "crash_report_failed".to_string()
+    })??;
+
     // Reported or dismissed, this crash is dealt with. Leaving the marker would
     // make the same prompt reappear on every launch from here on.
     report::acknowledge();
@@ -97,18 +111,29 @@ fn feedback_report_preview(
 
 /// Send feedback. Same path as a crash report, because "send me this and nothing
 /// else" should not be two different buttons with two different disclosure rules.
+///
+/// Async for the same reason as [`submit_crash_report`]: it is the same HTTP
+/// round trip, and it must not run on the thread that draws the window.
 #[tauri::command]
-fn submit_feedback(
+async fn submit_feedback(
+    app: AppHandle,
     message: String,
     attach_log: bool,
-    state: State<SessionState>,
 ) -> Result<report::ReportOutcome, String> {
-    report::submit(
-        report::Kind::Feedback,
-        &message,
-        attach_log,
-        account_name(&state).as_deref(),
-    )
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<SessionState>();
+        report::submit(
+            report::Kind::Feedback,
+            &message,
+            attach_log,
+            account_name(&state).as_deref(),
+        )
+    })
+    .await
+    .map_err(|e| {
+        log::error!("[feedback_report_failed]: {e}");
+        "feedback_report_failed".to_string()
+    })?
 }
 
 /// The user said no, or dealt with it later. Either way: never again.
@@ -286,20 +311,37 @@ fn sign_out(
 
 /// Run a Web API call off the UI thread, refreshing the token first.
 ///
+/// **The refresh happens inside the blocking closure, not before it.** That is the
+/// whole difference between this working and this silently emptying the library:
+/// [`token::ensure_fresh`] says outright that it must be called from a blocking
+/// thread, because refreshing is an HTTP round trip through a blocking client —
+/// and a blocking client cannot be built inside an async runtime. Called from
+/// here it panicked the runtime with *"Cannot drop a runtime in a context where
+/// blocking is not allowed"*, every webapi command died with it, and the log
+/// showed a burst of panics with no `webapi:` line anywhere, because the request
+/// was never made. It only happened once the stored token was old enough to need
+/// renewing, which is why the app worked for an hour and then did not.
+///
+/// `AppHandle` instead of `State<TokenState>` because the state is read *inside*
+/// the closure: `State` borrows the app for the lifetime of the command, and
+/// `spawn_blocking` needs an owned, `'static` handle.
+///
 /// The trailing arguments are the call's own inputs; they are handed to the
 /// blocking closure by reference, which is what lets `$inner` take `&str` and
 /// `&[String]` instead of owning a copy of every string the webview sent.
 macro_rules! webapi_command {
     ($name:ident, $inner:path, $ty:ty $(, $arg:ident : $arg_ty:ty)*) => {
         #[tauri::command]
-        async fn $name(state: State<'_, TokenState> $(, $arg: $arg_ty)*) -> Result<$ty, String> {
-            let access = token::ensure_fresh(&state)?.access_token;
-            tauri::async_runtime::spawn_blocking(move || $inner(&access $(, &$arg)*))
-                .await
-                .map_err(|e| {
-                    eprintln!("Starless [command_failed]: {e}");
-                    "command_failed".to_string()
-                })?
+        async fn $name(app: AppHandle $(, $arg: $arg_ty)*) -> Result<$ty, String> {
+            tauri::async_runtime::spawn_blocking(move || {
+                let access = token::ensure_fresh(&app.state::<TokenState>())?.access_token;
+                $inner(&access $(, &$arg)*)
+            })
+            .await
+            .map_err(|e| {
+                eprintln!("Starless [command_failed]: {e}");
+                "command_failed".to_string()
+            })?
         }
     };
 }
@@ -325,28 +367,29 @@ webapi_command!(artist_profile, webapi::artist_profile, webapi::ArtistProfile, a
 /// search field only ever shows songs, and asking Spotify for four types on every
 /// keystroke to use one of them is four times the payload for nothing.
 #[tauri::command]
-async fn search_all(
-    state: State<'_, TokenState>,
-    query: String,
-) -> Result<webapi::SearchResults, String> {
-    let access = token::ensure_fresh(&state)?.access_token;
-    tauri::async_runtime::spawn_blocking(move || webapi::search_all(&access, &query))
-        .await
-        .map_err(|e| {
-            eprintln!("Starless [command_failed]: {e}");
-            "command_failed".to_string()
-        })?
+async fn search_all(app: AppHandle, query: String) -> Result<webapi::SearchResults, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let access = token::ensure_fresh(&app.state::<TokenState>())?.access_token;
+        webapi::search_all(&access, &query)
+    })
+    .await
+    .map_err(|e| {
+        eprintln!("Starless [command_failed]: {e}");
+        "command_failed".to_string()
+    })?
 }
 
 #[tauri::command]
-async fn search_tracks(state: State<'_, TokenState>, query: String) -> Result<Vec<Track>, String> {
-    let access = token::ensure_fresh(&state)?.access_token;
-    tauri::async_runtime::spawn_blocking(move || webapi::search(&access, &query))
-        .await
-        .map_err(|e| {
-            eprintln!("Starless [command_failed]: {e}");
-            "command_failed".to_string()
-        })?
+async fn search_tracks(app: AppHandle, query: String) -> Result<Vec<Track>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let access = token::ensure_fresh(&app.state::<TokenState>())?.access_token;
+        webapi::search(&access, &query)
+    })
+    .await
+    .map_err(|e| {
+        eprintln!("Starless [command_failed]: {e}");
+        "command_failed".to_string()
+    })?
 }
 
 // --- Playback --------------------------------------------------------------

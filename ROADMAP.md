@@ -20,11 +20,24 @@ Lo que ya está a medio hacer y hoy está roto o directamente incómodo.
 - **Detectar un crash y poder reportarlo con el log.** Marcador de sesión +
   hook de panic + log recortado y sin datos personales, con un botón que abre el
   issue. Hecho.
-- **El auth gate que se queda esperando.** El sintoma es conocido: la sesión
+- **El auth gate que se quedaba esperando.** El sintoma era conocido: la sesión
   entra, `login completo: session=true web_token=true`, y no llega ni una sola
-  llamada a la Web API. Sin causa raíz todavía.
+  llamada a la Web API. **Tenía causa raíz y era una línea de código.**
+  `token::ensure_fresh` — que refresca el token, o sea un viaje HTTP bloqueante —
+  se llamaba en el comando `async`, antes del `spawn_blocking`. Construir un
+  cliente bloqueante de reqwest dentro de un runtime async hace panic
+  (*"Cannot drop a runtime in a context where blocking is not allowed"*), el
+  comando moría antes de hacer la petición, y el log no mostraba ninguna línea
+  `webapi:`. Solo pasaba cuando el token guardado ya tenía que renovarse: por eso
+  la app cargaba perfecto durante una hora y después se vaciaba sin explicación.
+  Arreglado moviendo el refresco adentro del closure bloqueante.
 - **Los errores de `reqwest` sin explicar.** `Failed to communicate successful
-  startup: Ok(())` en ráfagas de tres, sin relación aparente con nada.
+  startup: Ok(())` en ráfagas de tres, sin relación aparente con nada. Son el
+  cliente bloqueante de reqwest levantando su runtime interno; el error era ruido
+  pero el cliente **quedaba cacheado como fallo**, así que un solo mal arranque
+  dejaba la biblioteca vacía hasta reiniciar la app. Ahora un fallo al construir
+  el cliente no se recuerda, y tanto esa falla como un request que no llegó a
+  Spotify quedan anotados en el log.
 
 ---
 
