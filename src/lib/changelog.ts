@@ -41,8 +41,8 @@ export type ChangelogEntry = {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     version: "0.3.2",
-    date: null,
-    released: false,
+    date: "2026-10-17",
+    released: true,
     sections: {
       es: [
         {

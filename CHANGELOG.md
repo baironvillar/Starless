@@ -30,7 +30,7 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [0.3.2] — En desarrollo
+## [0.3.2] — 2026-10-17
 
 ### Fixed / Corregido
 
