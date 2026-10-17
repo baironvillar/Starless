@@ -663,13 +663,11 @@ export default function App() {
           t={t}
           active={active}
           libraryOpen={libraryOpen}
-          queueOpen={queueOpen}
           onNavigate={(key) => {
             setActive(key);
             leaveResults();
           }}
           onToggleLibrary={() => setLibraryOpen((v) => !v)}
-          onToggleQueue={() => setQueueOpen((v) => !v)}
           query={draft}
           onQueryChange={onQueryChange}
           onSubmitSearch={onSubmitSearch}
@@ -849,6 +847,7 @@ export default function App() {
             <SettingsPanel
               lang={lang}
               t={t}
+              account={account.data ?? null}
               onClose={() => setSettingsOpen(false)}
               onLangChange={setLang}
             />

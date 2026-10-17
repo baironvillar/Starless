@@ -3,6 +3,7 @@ import {
   ChevronDown,
   Download,
   Loader2,
+  LogOut,
   MessageSquarePlus,
   RefreshCw,
   User,
@@ -12,6 +13,7 @@ import { motion } from "motion/react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { CHANGELOG, PREVIOUS_NOTE } from "../lib/changelog";
 import type { Lang, StringKey } from "../lib/i18n";
+import { signOut, type Account as UserAccount } from "../lib/spotify";
 import { checkForUpdate, installUpdate, subscribeUpdate, updateState } from "../lib/updater";
 import { appVersion } from "../lib/version";
 import { FeedbackPanel } from "./FeedbackPanel";
@@ -19,6 +21,8 @@ import { FeedbackPanel } from "./FeedbackPanel";
 type SettingsPanelProps = {
   lang: Lang;
   t: Record<StringKey, string>;
+  /** The signed-in account, so this panel says who is signed in instead of guessing. */
+  account: UserAccount | null;
   onClose: () => void;
   onLangChange: (lang: Lang) => void;
 };
@@ -35,7 +39,7 @@ type Section = (typeof SECTIONS)[number];
  * Settings, as a large floating panel: sections down the left, grouped rows on
  * the right, each row a labelled description with its control opposite.
  */
-export function SettingsPanel({ lang, t, onClose, onLangChange }: SettingsPanelProps) {
+export function SettingsPanel({ lang, t, account, onClose, onLangChange }: SettingsPanelProps) {
   const [section, setSection] = useState<Section>("sectionGeneral");
   const [version, setVersion] = useState<string>("");
 
@@ -93,7 +97,7 @@ export function SettingsPanel({ lang, t, onClose, onLangChange }: SettingsPanelP
 
         {section === "sectionGeneral" && <General t={t} lang={lang} onLangChange={onLangChange} />}
         {section === "sectionAudio" && <Audio t={t} />}
-        {section === "sectionAccount" && <Account t={t} />}
+        {section === "sectionAccount" && <Account t={t} account={account} />}
         {section === "sectionDiagnostics" && <Diagnostics t={t} version={version} lang={lang} />}
       </div>
     </motion.div>
@@ -235,7 +239,18 @@ function Audio({ t }: { t: Record<StringKey, string> }) {
   );
 }
 
-function Account({ t }: { t: Record<StringKey, string> }) {
+/**
+ * Who is signed in, and the one button that ends it.
+ *
+ * Sign-out was a stray icon in the library header for a while. It lives here
+ * because it is an account action, not a browsing one — and this section is the
+ * only place that can name the account it would end, so the button and its
+ * consequence are read together instead of one icon apart from the truth.
+ *
+ * Still a single click, as it was in the library: asking twice is friction for
+ * the common case, and the label says plainly what it does.
+ */
+function Account({ t, account }: { t: Record<StringKey, string>; account: UserAccount | null }) {
   return (
     <div className="max-w-[620px]">
       <Group>
@@ -244,7 +259,12 @@ function Account({ t }: { t: Record<StringKey, string> }) {
             <span className="grid size-8 place-items-center rounded-pill bg-white/10">
               <User className="size-4 text-ink-muted" strokeWidth={2} />
             </span>
-            <span className="font-medium">bairo</span>
+            <span className="font-medium">{account?.display_name || account?.id || t.loading}</span>
+            {account?.product && (
+              <span className="text-[12.5px] text-ink-muted">
+                {account.product === "premium" ? t.planPremium : t.planFree}
+              </span>
+            )}
           </span>
         </Row>
         <Row label={t.startWithWindows} hint={t.startWithWindowsHint}>
@@ -254,8 +274,10 @@ function Account({ t }: { t: Record<StringKey, string> }) {
       <div className="mt-5">
         <button
           type="button"
-          className="rounded-pill bg-white/8 px-5 py-2.5 text-[13.5px] font-medium text-ink transition-colors duration-200 hover:bg-white/14"
+          onClick={() => void signOut().catch(() => {})}
+          className="flex items-center gap-2 rounded-pill border border-white/14 bg-white/6 px-5 py-2.5 text-[13.5px] font-medium text-ink transition-colors duration-200 hover:bg-white/12"
         >
+          <LogOut className="size-4 text-ink-muted" strokeWidth={2} />
           {t.signOut}
         </button>
       </div>

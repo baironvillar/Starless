@@ -1,7 +1,7 @@
-import { Heart, LogOut, Plus } from "lucide-react";
+import { Heart, Plus } from "lucide-react";
 import { motion } from "motion/react";
 import type { StringKey } from "../lib/i18n";
-import { type Account, largestImage, type Playlist, signOut } from "../lib/spotify";
+import { type Account, largestImage, type Playlist } from "../lib/spotify";
 
 type LibrarySidebarProps = {
   t: Record<StringKey, string>;
@@ -41,32 +41,19 @@ export function LibrarySidebar({
     >
       <header className="flex shrink-0 items-center justify-between gap-2 px-4 pt-4 pb-3">
         <h2 className="truncate text-[15px] font-semibold tracking-tight">{t.navLibrary}</h2>
-        <div className="flex shrink-0 items-center gap-0.5">
-          {/* Sign-out lives here, not under the account block: the account block is
-              exactly what disappears when the API is unreachable, and a way out
-              that vanishes when you need it is not a way out. */}
-          <motion.button
-            type="button"
-            onClick={() => void signOut().catch(() => {})}
-            whileTap={{ scale: 0.9 }}
-            transition={{ type: "spring", stiffness: 420, damping: 32 }}
-            aria-label={t.signOut}
-            title={t.signOut}
-            className="grid size-8 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink"
-          >
-            <LogOut className="size-4" strokeWidth={2} />
-          </motion.button>
-          <motion.button
-            type="button"
-            whileTap={{ scale: 0.9 }}
-            transition={{ type: "spring", stiffness: 420, damping: 32 }}
-            aria-label={t.createPlaylist}
-            title={t.createPlaylist}
-            className="grid size-8 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink"
-          >
-            <Plus className="size-[17px]" strokeWidth={2} />
-          </motion.button>
-        </div>
+        {/* Sign-out used to sit next to the title. It is a settings action, not a
+            library one, and the queue of things a music player shows in its
+            library is long enough without the one button that ends the session. */}
+        <motion.button
+          type="button"
+          whileTap={{ scale: 0.9 }}
+          transition={{ type: "spring", stiffness: 420, damping: 32 }}
+          aria-label={t.createPlaylist}
+          title={t.createPlaylist}
+          className="grid size-8 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink"
+        >
+          <Plus className="size-[17px]" strokeWidth={2} />
+        </motion.button>
       </header>
 
       {account && (

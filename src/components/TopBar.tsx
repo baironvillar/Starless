@@ -2,7 +2,6 @@ import {
   Disc3,
   Ellipsis,
   Library,
-  ListOrdered,
   MonitorSmartphone,
   Search,
   SlidersHorizontal,
@@ -20,7 +19,6 @@ type TopBarProps = {
   t: Record<StringKey, string>;
   active: StringKey;
   libraryOpen: boolean;
-  queueOpen: boolean;
   query: string;
   onQueryChange: (value: string) => void;
   /** Enter with nothing highlighted: the typed text becomes a real screen. */
@@ -33,7 +31,6 @@ type TopBarProps = {
   searchError: string | null;
   onNavigate: (key: StringKey) => void;
   onToggleLibrary: () => void;
-  onToggleQueue: () => void;
   onLangChange: (lang: Lang) => void;
   onOpenSettings: () => void;
 };
@@ -62,7 +59,6 @@ export function TopBar({
   t,
   active,
   libraryOpen,
-  queueOpen,
   query,
   onQueryChange,
   onSubmitSearch,
@@ -73,7 +69,6 @@ export function TopBar({
   searchError,
   onNavigate,
   onToggleLibrary,
-  onToggleQueue,
   onLangChange,
   onOpenSettings,
 }: TopBarProps) {
@@ -255,9 +250,9 @@ export function TopBar({
 
         {/* Secondary actions */}
         <div className="flex min-w-0 items-center justify-end gap-1 overflow-hidden">
-          <IconButton label={t.queue} onClick={onToggleQueue} active={queueOpen}>
-            <ListOrdered className="size-[17px]" strokeWidth={2} />
-          </IconButton>
+          {/* No queue button here on purpose: the player bar carries one, and the
+              queue is about what is sounding, which is what the player bar is
+              about. Two buttons for the same panel in two bars is one too many. */}
           <IconButton label={t.device} className="hidden xl:grid">
             <MonitorSmartphone className="size-[17px]" strokeWidth={2} />
           </IconButton>
@@ -334,13 +329,11 @@ export function TopBar({
 function IconButton({
   label,
   onClick,
-  active = false,
   className = "",
   children,
 }: {
   label: string;
   onClick?: () => void;
-  active?: boolean;
   className?: string;
   children: React.ReactNode;
 }) {
@@ -353,10 +346,7 @@ function IconButton({
       transition={SPRING}
       aria-label={label}
       title={label}
-      aria-pressed={onClick ? active : undefined}
-      className={`grid size-9 shrink-0 place-items-center rounded-pill transition-colors duration-200 hover:bg-white/10 hover:text-ink ${
-        active ? "bg-white/12 text-ink" : "text-ink-muted"
-      } ${className}`}
+      className={`grid size-9 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink ${className}`}
     >
       {children}
     </motion.button>
