@@ -26,37 +26,67 @@ bun run updater:key        # genera el par de llaves; te pide una contraseña
 bun run updater:pubkey     # copia la pública a src-tauri/tauri.conf.json
 ```
 
-La privada queda en `.secrets/starless-updater.key`, que está en `.gitignore` y
-no debe salir de tu disco salvo dentro del secreto `TAURI_SIGNING_PRIVATE_KEY`
-de tu CI.
+La privada queda en `.secrets/starless-updater.key`, que está en `.gitignore`.
 
 **No la regeneres.** Una llave nueva invalida la confianza de todas las
 instalaciones que ya tienen la pública vieja, y esas copias dejan de poder
-actualizarse.
+actualizarse. La pública va embebida en cada instalador que sale, así que no es
+algo que se pueda cambiar después.
+
+## Una vez, en GitHub
+
+La firma la hace la CI, y para eso la clave tiene que estar en
+**Settings → Secrets and variables → Actions** como secreto del repositorio:
+
+| Secreto | Qué es |
+| --- | --- |
+| `TAURI_SIGNING_PRIVATE_KEY` | el contenido de `.secrets/starless-updater.key`, entero |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | la contraseña que elegiste al generarla |
+
+Que la clave viva en los servidores de GitHub es una decisión, y para un proyecto
+sin telemetría conviene tenerla presente: la clave puede firmar una release, no
+leer la biblioteca ni ver un log. Si algún día preferís que no salga de tu disco,
+la alternativa es un runner propio —la release se compila igual, sólo que en tu
+máquina en vez de en la de GitHub.
 
 ## En cada release
 
 ```bash
 bun run version:bump patch          # 0.3.0 -> 0.3.1 en los tres manifiestos
-$env:TAURI_SIGNING_PRIVATE_KEY = Get-Content .secrets/starless-updater.key -Raw
-$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "tu contraseña"
-bun run app:build
-$env:STARLESS_REPO = "baironvillar/Starless"
-bun run updater:manifest
+git commit -am "0.3.1: lo que cambió"
+git tag v0.3.1 && git push --follow-tags
 ```
 
-El último comando escribe `latest.json` y te dice exactamente qué archivos
-subir. Adjunta a la release, en este orden:
+Eso es todo. El workflow de `.github/workflows/release.yml` se dispara con el tag
+y hace el resto: corre `lint`, `typecheck`, `bun run version` y `cargo test
+--lib`; compila en un runner de Windows; firma los artefactos; genera
+`latest.json`; crea la release y adjunta los instaladores, los `.sig` y el
+manifest.
 
-1. `latest.json`
-2. Los `.zip` y los `.sig` de `src-tauri/target/release/bundle/nsis/`
-3. Los `.zip` y los `.sig` de `.../bundle/msi/`
-4. Los instaladores normales (`.exe` y `.msi`), para quien prefiera descargarlos
+Dos cosas las hace él y hay que saber que están:
 
-`latest.json` contiene las URLs exactas a esos mismos archivos, así que el orden
-de subida importa: sube los artefactos **antes** de publicar el manifest, o la
-release puede quedar unos segundos diciendo que hay una versión que
-todavía no se puede descargar.
+- **Verifica que el tag coincida con la versión** de `src-tauri/tauri.conf.json`.
+  Un tag que no coincide produce un `latest.json` que promete un archivo que la app
+  instalada nunca va a pedir, y el comprobador queda mudo para siempre.
+- **Deja la release en borrador.** Es a propósito: la dirección que consulta la app
+  instalada es `releases/latest/download/latest.json`, y GitHub no redirecciona a
+  los borradores. Publicarla a mano es el paso que hace pública la release recién
+  cuando los archivos ya están arriba, en vez de unos segundos antes.
+
+Cuando termine, la release aparece como borrador en la pestaña *Releases*. Revisala
+y le das a **Publish release**. Recién ahí la app instalada la ve.
+
+### Para probarlo antes de que exista una release
+
+El endpoint devuelve 404 hasta que haya una release, así que el comprobador
+siempre dice "estás al día" hasta la primera. Para una build de prueba sin firmar:
+
+```bash
+bun run tauri build --no-bundle
+```
+
+No genera `latest.json` ni toca nada de la release: sirve para ver la app
+funcionando antes de que exista la versión pública.
 
 ## Por qué la firma no es opcional
 
@@ -93,7 +123,7 @@ responde.
 **El endpoint ya apunta al repositorio real.** En `src-tauri/tauri.conf.json`:
 
 ```json
-"endpoints": ["https://github.com/bairovillar/Starless/releases/latest/download/latest.json"]
+"endpoints": ["https://github.com/baironvillar/Starless/releases/latest/download/latest.json"]
 ```
 
 Si bifurcaste el repo, cámbialo por el tuyo: mientras apunte a otro lado, el
@@ -103,7 +133,10 @@ actualizador roto parezca uno que funciona.
 
 Lo mismo con `STARLESS_REPO`: el manifest se construye con las URLs del repo que
 le pases, así que un fork que olvide cambiarlo publica un `latest.json` que
-apunta a releases ajenas.
+apunta a releases ajenas. **En la CI esto ya no se puede equivocar**: el action
+arma el `latest.json` con el repositorio desde el que corre, así que el
+`STARLESS_REPO` manual dejó de tener sentido y sólo queda como herramienta para
+generar el manifest localmente.
 
 **La `pubkey` es un marcador** hasta que corras `bun run updater:pubkey`. Con el
 marcador, `tauri build` falla — a propósito. Un actualizador sin llave pública es

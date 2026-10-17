@@ -186,6 +186,10 @@ reciente, así que no hay servidor propio que mantener.
 El detalle completo, incluida la firma y por qué no es opcional, está en
 [`docs/updates.md`](docs/updates.md).
 
+Publicar es `bun run version:bump patch`, un commit, y `git push --follow-tags`
+con el tag. La CI compila en Windows, firma, arma el `latest.json` y deja la
+release en borrador; sólo falta darle a *Publish release*.
+
 ### Advertencias honestas
 
 - **El backend es inverso.** Spotify no publica especificación de su protocolo.
@@ -361,6 +365,7 @@ src/                    React 19 + Vite + TypeScript frontend
 src-tauri/              Rust backend
   src/                  session, playback, auth, web API, logging
 .agent/                  Agent config shared by Claude Code and OpenCode
+.github/workflows/       A tag builds, signs and publishes the release
 docs/updates.md         How a release ships
 PRODUCT.md              What the product is and what constrains it
 DESIGN.md               The visual system: floating glass, palette, motion
@@ -379,6 +384,10 @@ so there is no server of our own to maintain.
 
 The full detail, including the signature and why it is not optional, is in
 [`docs/updates.md`](docs/updates.md).
+
+Publishing is `bun run version:bump patch`, a commit, and `git push
+--follow-tags` with the tag. CI builds on Windows, signs, writes `latest.json` and
+leaves the release as a draft; all that is left is clicking *Publish release*.
 
 ### Honest warnings
 

@@ -1,0 +1,102 @@
+name: release
+
+# Publicar es un tag, no una serie de pasos a mano. El pipeline entero —compilar,
+# firmar, generar `latest.json`, crear la release y adjuntar los artefactos— pasa
+# por acá. Ver `docs/updates.md` para el porqué de cada cosa.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  # Dos tags pushes juntos no compiten por los mismos artefactos. La segunda
+  # corrida espera; no se cancela a la primera a medio publicar.
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Compilar, firmar y publicar
+    # Windows y sólo Windows: los targets del bundle son `nsis` y `msi`, y ninguno
+    # de los dos se puede construir en otro runner.
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: 'src-tauri -> target'
+
+      - name: Dependencias del frontend
+        run: bun install --frozen-lockfile
+
+      # La release se publica desde un tag, así que el tag es la versión. Si no
+      # coinciden con el manifiesto, `latest.json` va a prometer un archivo que la
+      # app instalada nunca va a pedir, y el comprobador queda mudo para siempre.
+      - name: La etiqueta tiene que coincidir con la versión
+        shell: pwsh
+        run: |
+          $conf = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $tag = $env:GITHUB_REF_NAME
+          if ($tag -ne "v$($conf.version)") {
+            Write-Host "::error::El tag es '$tag' y src-tauri/tauri.conf.json dice '$($conf.version)'."
+            Write-Host "::error::Corré 'bun run version:set $($conf.version)' y armá el tag sobre ese commit."
+            exit 1
+          }
+          Write-Host "Publicando $tag"
+
+      # Un tag no tiene por qué ser un commit sano. Son los mismos chequeos que el
+      # repo pide antes de un PR, y cortan la publicación: una build que compila no
+      # es una build para entregar a alguien.
+      - name: Lint, tipos y tests
+        shell: pwsh
+        run: |
+          bun run lint
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          bun run typecheck
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          bun run version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Push-Location src-tauri
+          cargo test --lib
+          if ($LASTEXITCODE -ne 0) { Pop-Location; exit $LASTEXITCODE }
+          Pop-Location
+
+      # Hace las cuatro cosas juntas: compila, firma con la clave de los secretos,
+      # crea la release y sube los artefactos —los instaladores, los `.sig` y el
+      # `latest.json`— con las URLs ya apuntando a esta release.
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # La misma clave que está en tu `.secrets/starless-updater.key`. La
+          # pública va embebida en cada instalador que ya está dando vueltas, así
+          # que una clave nueva los dejaría sin poder actualizarse nunca más.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Starless ${{ github.ref_name }}'
+          # Borrador a propósito: `releases/latest/download/latest.json` es la
+          # dirección que consulta la app instalada, y GitHub no redirecciona a
+          # borradores. Publicar a mano es el paso que hace pública la release
+          # recién cuando los archivos ya están arriba, en vez de unos segundos
+          # antes.
+          releaseDraft: true
+          prerelease: false
+          generateReleaseNotes: true
+          # Se dice explícito para que el default del action no pueda cambiarnos
+          # la URL del actualizador sin que lo notemos.
+          uploadUpdaterJson: true
+          uploadUpdaterSignatures: true
+          tauriScript: bun tauri
