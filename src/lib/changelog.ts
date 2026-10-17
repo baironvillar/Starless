@@ -56,6 +56,8 @@ export const CHANGELOG: ChangelogEntry[] = [
           title: "Corregido",
           items: [
             "Para casi todo el mundo, la biblioteca salía vacía y no decía por qué. Spotify dejó de entregar datos a las apps nuevas salvo a cinco cuentas en una lista, así que las demás veían un cliente firmado con una biblioteca que no aparecía. Starless ahora lee tu biblioteca, tus playlists, tus canciones guardadas y la búsqueda por la misma sesión con la que reproduce: sin lista, sin revisión y sin una dependencia que se pueda caer sola. Y si algo falla al leerla, la app lo dice en vez de mostrar un vacío.",
+            "Dos Starless abiertas a la vez ya no pueden pasar. Antes competían por las claves de audio y la que perdía le pasaba sus bytes a la otra: seis canciones quemadas en catorce segundos, todas reportadas como canciones que Spotify no entregaba. Ahora la segunda copia sube la ventana de la que ya está y se cierra.",
+            "Se cayó la conexión con Spotify y Starless lo dice. Antes saltaba canción tras canción diciendo que esa no se pudo reproducir —la pista estaba bien, lo que faltaba era la conexión—, y como la sesión no vuelve sola terminabas viendo seis errores seguidos. Ahora dice qué pasó y para; hay que cerrar y abrir la app.",
           ],
         },
         {
@@ -84,6 +86,8 @@ export const CHANGELOG: ChangelogEntry[] = [
           title: "Fixed",
           items: [
             "For almost everyone, the library came up empty and said nothing about why. Spotify stopped handing data to new apps except for five accounts on an allowlist, so everyone else was looking at a signed-in client with no library in it. Starless now reads your library, your playlists, your saved songs and your search through the same session it plays music with: no allowlist, no review, and no dependency that can fall over on its own. And if reading it does fail, the app says so instead of showing an empty shelf.",
+            "Two copies of Starless can no longer run at once. They used to compete for the audio keys and the loser handed its bytes to the winner: six songs burned through in fourteen seconds, every one of them reported as a song Spotify would not deliver. The second copy now brings the running window forward and closes.",
+            "When the connection to Spotify drops, Starless says so. It used to skip from song to song saying that one could not be played — the song was fine, the connection was gone — and since the session never comes back on its own you ended up reading six errors in a row. Now it says what happened and stops; close and reopen the app.",
           ],
         },
         {

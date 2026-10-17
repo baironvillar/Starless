@@ -453,6 +453,28 @@ fn set_menu_opacity(opacity: u8) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
+        // **Registered first, on purpose.** The plugin works by holding a lock
+        // that the second process cannot take, so it has to exist before anything
+        // else in `setup` can fail — otherwise the copy that starts while a crash
+        // is being handled sails through to a second session.
+        //
+        // What the second copy does is exit. What it must not do is reach
+        // `setup`: one account, one session. Two of them authenticate with the
+        // same credentials, and the one that loses the audio-key race hands its
+        // own bytes to the other one's decoder — six tracks burned in fourteen
+        // seconds, every one of them reported as a song Spotify would not
+        // deliver. See `AGENTS.md`.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            log::info!("segunda instancia: le cedo el lugar a la que ya está");
+            if let Some(window) = app.get_webview_window("main") {
+                // Un-minimize first: raising a minimized window does nothing,
+                // and "the app is running but nothing happened" is the exact
+                // silence this is here to avoid.
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
         // The updater only downloads and verifies; *when* it runs is decided by the
         // UI. An app that plays music must not install over itself mid-track, so

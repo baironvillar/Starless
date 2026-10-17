@@ -245,12 +245,59 @@ fn forward_events(app: AppHandle, player: Arc<Player>) {
             // that never arrives — so the absence is itself the evidence.
             match &event {
                 PlayerEvent::Unavailable { track_id, .. } => {
-                    log::error!("[track_unavailable] {track_id}");
-                    state.mutate(|s| {
-                        s.playing = false;
-                        s.loading = false;
-                        s.error = Some("track_unavailable".into());
-                    });
+                    // Is this the track's fault, or is there nobody left to ask
+                    // it for the decryption key?
+                    //
+                    // librespot gives up on a dead connection and **never comes
+                    // back on its own** — its keep-alive marks the session invalid
+                    // and stops, with a `TODO: Optionally reconnect` where the
+                    // reconnect would go. After that every track fails, and it
+                    // fails the worst possible way: the key request times out and
+                    // instead of refusing, librespot plays the file *undecrypted*
+                    // on the assumption that "not all audio files are encrypted".
+                    // Symphonia is then handed ciphertext, calls it junk, and the
+                    // track comes back unavailable.
+                    //
+                    // So one dead connection was being reported six times in
+                    // fourteen seconds as six songs Spotify would not deliver —
+                    // a diagnosis that points at the one place the problem is
+                    // not. `is_invalid` is the public answer to "is the session
+                    // still there", and it is the only signal that tells those
+                    // two cases apart.
+                    // One closure, one `bool`: the `MutexGuard` cannot outlive the
+                    // borrow of the `State` that owns it, so the whole question is
+                    // asked and answered inside.
+                    let session_gone = app
+                        .try_state::<crate::SessionState>()
+                        .map(|state| {
+                            state
+                                .0
+                                .lock()
+                                .ok()
+                                .and_then(|guard| guard.as_ref().map(|s| s.is_invalid()))
+                                .unwrap_or(false)
+                        })
+                        .unwrap_or(false);
+
+                    if session_gone {
+                        log::error!("[connection_lost] {track_id}: la sesión de reproducción ya no está");
+                        // Stop instead of letting librespot walk the queue. Every
+                        // remaining track would fail identically and each one
+                        // would overwrite the message with a worse one.
+                        player.stop();
+                        state.mutate(|s| {
+                            s.playing = false;
+                            s.loading = false;
+                            s.error = Some("connection_lost".into());
+                        });
+                    } else {
+                        log::error!("[track_unavailable] {track_id}");
+                        state.mutate(|s| {
+                            s.playing = false;
+                            s.loading = false;
+                            s.error = Some("track_unavailable".into());
+                        });
+                    }
                 }
                 PlayerEvent::Loading { .. } => state.mutate(|s| {
                     s.loading = true;

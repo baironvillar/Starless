@@ -20,6 +20,10 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
+# One Starless at a time. Two copies means two streaming sessions on one account,
+# and that is not a cosmetic duplicate: they compete for the same audio keys and
+# the loser feeds the other one's ciphertext to the decoder.
+tauri-plugin-single-instance = "2"
 # Updates for people who already have Starless installed. See `docs/updates.md`
 # for the release flow and for why the updater signature is not optional.
 tauri-plugin-updater = "2"

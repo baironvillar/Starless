@@ -115,8 +115,25 @@ docs/updates.md           cómo se publica una versión
   `%LOCALAPPDATA%\Starless\session.marker`, así que la segunda que arranca mueve el
   marcador vivo a `last-crash.marker` y declara que la primera murió. Al prólogo
   aparecer, el aviso ofrece mandar el registro a un issue de GitHub — por un crash
-  que no existió. **Probá la app con la otra cerrada**, y si te aparece ese aviso sin
-  haber crasheado nada, es esto.
+  que no existió.
+  Y lo peor no es el aviso: dos sesiones de la misma cuenta se pelean las claves de
+  audio, y la que pierde le pasa sus bytes a la otra. En vivo, el 17 de octubre:
+  `An existing connection was forcibly closed by the remote host` y de ahí a seis
+  pistas quemadas en catorce segundos, todas reportadas como canciones que Spotify
+  no entregaba. `tauri-plugin-single-instance` lo cierra, y está registrado
+  **primero** en el builder, antes que todo lo que puede fallar en `setup`. Si lo
+  sacás alguna vez, vuelven juntos el aviso de crash falso y la corrupción de audio.
+- **Una pista que no suena no siempre es una pista que no existe.** librespot no
+  reconecta solo: su keep-alive marca la sesión inválida y para, con un
+  `TODO: Optionally reconnect` donde iría el reconectar. Después de eso toda pista
+  falla, y falla de la peor manera: se le pide la clave de descifrado, expira, y en
+  vez de negarse **reproduce el archivo sin descifrar** —porque "no todos los
+  archivos están cifrados" (`librespot-playback/src/player.rs`). Al decoder le llega
+  texto cifrado, lo llama basura, y la pista vuelve como no disponible. Por eso
+  `Unavailable` consulta `Session::is_invalid()` antes de declarar nada: sin conexión
+  el código es `connection_lost`, se corta la cola y se dice la verdad. **Un
+  `track_unavailable` con la sesión inválida es un bug de diagnóstico, no una
+  canción rota.**
 - **El archivo del panic tenía dos nombres.** El panic se renombra a
   `last-panic.crash.txt`, pero `read_panic` y `acknowledge` lo derivaban de
   `crash_marker_path()`, que da `last-crash.crash.txt` — un archivo que **nada

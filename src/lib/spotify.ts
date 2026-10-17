@@ -468,6 +468,13 @@ export const API_ERRORS: Record<string, string> = {
   // no way to tell them apart. Saying "Spotify did not deliver this song" picks
   // one of them and sends the user somewhere the problem is not.
   track_unavailable: "No se pudo reproducir esta canción.",
+  // Its own code, not `track_unavailable` wearing a hat. The song was fine: the
+  // connection to Spotify was gone, so there was nobody left to ask for the key
+  // that decrypts it — and librespot, which never reconnects on its own, answers
+  // a missing key by playing the file undecrypted. The decoder then reports
+  // ciphertext as an unplayable song. Same event, opposite truth.
+  connection_lost:
+    "Se perdió la conexión con Spotify y no vuelve sola. Cerrá y abrí Starless para seguir escuchando.",
   bad_track_id: "Esa canción no tiene un identificador válido.",
   session_dropped: "Se cayó la sesión de reproducción.",
 };

@@ -40,6 +40,8 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Fixed / Corregido
 
 - Para casi todo el mundo, la biblioteca salía vacía y no decía por qué. Spotify dejó de entregar datos a las apps nuevas salvo a cinco cuentas en una lista. Starless ahora lee la biblioteca, las playlists, las guardadas y la búsqueda por la misma sesión con la que reproduce, y si algo falla al leerla la app lo dice en vez de mostrar un vacío.
+- Dos Starless abiertas a la vez ya no pueden pasar. Antes competían por las claves de audio y la que perdía le pasaba sus bytes a la otra: seis canciones quemadas en catorce segundos, todas reportadas como canciones que Spotify no entregaba. Ahora la segunda copia sube la ventana de la que ya está y se cierra.
+- Se cayó la conexión con Spotify y Starless lo dice. Antes saltaba canción tras canción diciendo que esa canción no se pudo reproducir —la pista estaba bien, lo que faltaba era la conexión—, y como la sesión de reproducción no vuelve sola, terminabas viendo seis errores en catorce segundos. Ahora dice qué pasó y para. Hay que cerrar y abrir la app.
 
 ### Changed / Cambiado
 
