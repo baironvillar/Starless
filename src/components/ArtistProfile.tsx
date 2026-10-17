@@ -1,22 +1,16 @@
 import { ArrowLeft } from "lucide-react";
 import { motion } from "motion/react";
 import type { StringKey } from "../lib/i18n";
-import {
-  type AlbumCard,
-  type ArtistCard,
-  albumYear,
-  type Track,
-  useArtistProfile,
-} from "../lib/spotify";
-import { cardImage, MediaCard } from "./MediaCard";
+import { type ArtistCard, type Track, useArtistProfile } from "../lib/spotify";
+import { cardImage } from "./MediaCard";
 import { NumberedTrackList } from "./NumberedTrackList";
 
 const SPRING = { type: "spring" as const, stiffness: 420, damping: 32 };
 
 /**
- * Placeholders for the six cards the discography will hold.
+ * Placeholders for the page while the profile loads.
  *
- * Fixed keys on purpose: these are the same six skeletons every time, they never
+ * Fixed keys on purpose: these are the same skeletons every time, they never
  * reorder, and an index-derived key makes React treat a position as an identity.
  */
 const SKELETON_KEYS = ["uno", "dos", "tres", "cuatro", "cinco", "seis"] as const;
@@ -29,7 +23,6 @@ type ArtistProfileProps = {
   loadingId: string | null;
   failedId: string | null;
   onPlay: (tracks: Track[], track: Track) => void;
-  onPlayAlbum: (album: AlbumCard) => void;
   onBack: () => void;
 };
 
@@ -46,6 +39,12 @@ type ArtistProfileProps = {
  * shelf titled "Popular" would be a ranking nobody computed. What is here is what
  * a field-filtered search returns for this artist, in search order, under a heading
  * that says exactly that.
+ *
+ * **And there is no discography either, for a different reason.** `artist_profile`
+ * answers with an empty `albums` array: the channel the library is read through
+ * has no request that could fill it. So the album count left the header and the
+ * shelf below it went with it — a "0 albums" would be this client claiming to know
+ * an answer nobody asked it for.
  */
 export function ArtistProfile({
   t,
@@ -54,13 +53,11 @@ export function ArtistProfile({
   loadingId,
   failedId,
   onPlay,
-  onPlayAlbum,
   onBack,
 }: ArtistProfileProps) {
   const profile = useArtistProfile(artist.id);
   const image = cardImage(artist.images);
   const tracks = profile.data?.tracks ?? [];
-  const albums = profile.data?.albums ?? [];
 
   return (
     <div>
@@ -93,9 +90,7 @@ export function ArtistProfile({
             {artist.name}
           </h1>
           <p className="tabular mt-1 text-[13px] text-ink-muted">
-            {profile.isLoading
-              ? t.loading
-              : `${tracks.length} ${t.songs} · ${albums.length} ${t.albumsLower}`}
+            {profile.isLoading ? t.loading : `${tracks.length} ${t.songs}`}
           </p>
         </div>
       </header>
@@ -106,46 +101,21 @@ export function ArtistProfile({
         </p>
       )}
 
-      {profile.data && (
-        <div className="space-y-8">
-          {tracks.length > 0 && (
-            <section>
-              <h2 className="mb-3 text-[19px] font-semibold tracking-tight">{t.artistSongs}</h2>
-              <NumberedTrackList
-                tracks={tracks}
-                t={t}
-                nowPlayingId={nowPlayingId}
-                loadingId={loadingId}
-                failedId={failedId}
-                onPlay={(track) => onPlay(tracks, track)}
-                // Every track here belongs to this artist, and mostly to one record.
-                // A column repeating the same album name seventeen times is noise.
-                showAlbum={new Set(tracks.map((track) => track.album?.id ?? "?")).size > 1}
-              />
-            </section>
-          )}
-
-          {albums.length > 0 && (
-            <section>
-              <h2 className="mb-3 text-[19px] font-semibold tracking-tight">
-                {t.searchTab_albums}
-              </h2>
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(158px,1fr))] gap-5">
-                {albums.map((album) => (
-                  <MediaCard
-                    key={album.id}
-                    title={album.name}
-                    eyebrow={albumYear(album) ?? undefined}
-                    subtitle={album.artists.map((a) => a.name).join(", ")}
-                    imageUrl={cardImage(album.images)}
-                    onPlay={() => onPlayAlbum(album)}
-                    playLabel={t.play}
-                  />
-                ))}
-              </div>
-            </section>
-          )}
-        </div>
+      {profile.data && tracks.length > 0 && (
+        <section>
+          <h2 className="mb-3 text-[19px] font-semibold tracking-tight">{t.artistSongs}</h2>
+          <NumberedTrackList
+            tracks={tracks}
+            t={t}
+            nowPlayingId={nowPlayingId}
+            loadingId={loadingId}
+            failedId={failedId}
+            onPlay={(track) => onPlay(tracks, track)}
+            // Every track here belongs to this artist, and mostly to one record.
+            // A column repeating the same album name seventeen times is noise.
+            showAlbum={new Set(tracks.map((track) => track.album?.id ?? "?")).size > 1}
+          />
+        </section>
       )}
 
       {profile.isLoading &&

@@ -11,13 +11,12 @@ mod auth;
 // to, and a local module of the same name shadows it at the crate root — which
 // breaks every command in this file with an error that points nowhere useful.
 mod logging;
+mod models;
 mod playback;
 mod report;
 mod selftest;
 mod settings;
 mod spclient;
-mod token;
-mod webapi;
 
 use std::sync::Mutex;
 
@@ -26,8 +25,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use playback::{PlaybackState, PlaybackStatus};
-use token::TokenState;
-use webapi::{Account, Playlist, Track};
+use models::{Account, ArtistProfile, Playlist, Track};
 
 /// The version a report carries, read from the compiled-in crate metadata.
 ///
@@ -188,18 +186,23 @@ pub struct SessionState(Mutex<Option<Session>>);
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthStatus {
-    /// A client id was found. False means Starless cannot log in at all yet.
+    /// There are cached credentials, so a session can be restored without asking.
+    ///
+    /// This used to be hardcoded `true` — there was always a client id compiled
+    /// in — which meant the field carried one piece of information for two readers
+    /// and the second one read a lie. It now asks the question it names: a machine
+    /// with nothing saved is what somebody signed out looks like, and one with
+    /// something saved is what somebody who quit the app looks like. Telling those
+    /// two apart is the whole reason this field exists.
+    ///
+    /// **It says nothing about whether a login is possible.** The streaming client
+    /// id is always there, so a login is always possible; `false` is the ordinary
+    /// answer on a machine that has never signed in, and the UI must not read it as
+    /// "this build cannot log in" — that mistake greys out the only button on the
+    /// screen, on exactly the machine that needs it.
     pub configured: bool,
     /// The streaming session exists.
     pub signed_in: bool,
-    /// A Web API token is on disk.
-    ///
-    /// Separate from `signed_in` on purpose, because they can disagree: the
-    /// streaming session can be perfectly healthy while the Web API token is
-    /// missing, and only the second one can fetch a library. Collapsing them
-    /// into one boolean is what made an earlier build unrecoverable — the UI
-    /// said "sign in" while offering no way to sign in.
-    pub web_ready: bool,
     /// Display name only. Never the account's email, never a token.
     pub username: Option<String>,
     /// A kebab-case error code, never a sentence. See `AuthGate`'s `AUTH_ERRORS`.
@@ -207,14 +210,13 @@ pub struct AuthStatus {
 }
 
 #[tauri::command]
-fn auth_status(session_state: State<SessionState>, token_state: State<TokenState>) -> AuthStatus {
+fn auth_status(session_state: State<SessionState>) -> AuthStatus {
     let guard = match session_state.0.lock() {
         Ok(guard) => guard,
         Err(_) => {
             return AuthStatus {
                 configured: true,
                 signed_in: false,
-                web_ready: false,
                 username: None,
                 detail: Some("session_busy".into()),
             };
@@ -224,14 +226,13 @@ fn auth_status(session_state: State<SessionState>, token_state: State<TokenState
     let username = guard.as_ref().map(|s| s.username()).unwrap_or_default();
 
     AuthStatus {
-        configured: true,
+        // Asked of librespot, not assumed. See the field's doc: this answers
+        // "is there something to restore", and nothing about whether a login is
+        // possible — the streaming client id is always there.
+        configured: auth::has_cached_credentials(),
         // librespot fills the username in as the last step of the handshake, so an
         // empty one means "connected to nothing yet", not "no session".
         signed_in: !username.is_empty(),
-        // Read the in-memory copy, not the disk. `AuthGate` polls this while a
-        // login is in flight, and a file read per poll is both slower and a
-        // chance to observe a half-written token.
-        web_ready: token_state.get().is_some(),
         username: (!username.is_empty()).then_some(username),
         detail: None,
     }
@@ -245,9 +246,8 @@ fn auth_status(session_state: State<SessionState>, token_state: State<TokenState
 async fn begin_login(
     app: AppHandle,
     session_state: State<'_, SessionState>,
-    token_state: State<'_, TokenState>,
 ) -> Result<AuthStatus, String> {
-    let (session, web_token) = tauri::async_runtime::spawn_blocking(auth::login_interactively)
+    let session = tauri::async_runtime::spawn_blocking(auth::login_interactively)
         .await
         .map_err(|e| {
             log::error!("[login_task_failed]: {e}");
@@ -258,23 +258,16 @@ async fn begin_login(
     // completes, so the first song after signing in is not the thing that pays for it.
     playback::warm_audio_device(&app, session.clone());
 
-    // The one place a token enters the app: disk *and* the in-memory cache the
-    // Web API commands read, in one step. Skipping this left the file written and
-    // the cache empty, so `ensure_fresh` answered "not signed in" to a session
-    // that had authenticated seconds earlier.
-    token_state.set(web_token);
-
     let username = session.username();
 
     let status = AuthStatus {
-        configured: true,
+        // Read it rather than asserting it. The credentials librespot writes are
+        // what the next launch restores from, and the app used to report success
+        // without ever checking that the write had happened.
+        configured: auth::has_cached_credentials(),
         // The handshake has not finished yet; librespot fills the username in
         // when it does. Reporting success here would be a lie the UI would repeat.
         signed_in: !username.is_empty(),
-        // Read it back rather than asserting it. This command used to hardcode
-        // `true`, which is how a failed token write could present as a working
-        // app right up until the first library query came back signed out.
-        web_ready: token_state.get().is_some(),
         username: (!username.is_empty()).then_some(username),
         detail: None,
     };
@@ -297,11 +290,7 @@ async fn begin_login(
         return Err("session_busy".to_string());
     }
 
-    log::info!(
-        "login completo: session={} web_token={}",
-        status.signed_in,
-        status.web_ready
-    );
+    log::info!("login completo: session={}", status.signed_in);
     Ok(status)
 }
 
@@ -310,7 +299,6 @@ async fn begin_login(
 fn sign_out(
     app: AppHandle,
     session_state: State<SessionState>,
-    token_state: State<TokenState>,
     playback_state: State<PlaybackState>,
 ) -> Result<(), String> {
     // Hand the audio device back before dropping the session it was decoding for.
@@ -320,7 +308,6 @@ fn sign_out(
             session.shutdown();
         }
     }
-    token_state.clear();
     auth::forget_credentials()?;
 
     // Announce it. The webview used to find out by reloading the whole window, and
@@ -331,9 +318,11 @@ fn sign_out(
     let _ = app.emit(
         "auth://status",
         AuthStatus {
-            configured: true,
+            // The credentials are gone by the time this is emitted, so `false` is
+            // read back rather than assumed — `forget_credentials` is what deleted
+            // them and it can fail.
+            configured: auth::has_cached_credentials(),
             signed_in: false,
-            web_ready: false,
             username: None,
             detail: None,
         },
@@ -342,67 +331,22 @@ fn sign_out(
 }
 
 // --- The account's own data -------------------------------------------------
-//
-// Each of these is "refresh the token, then do one blocking HTTP call on a
-// blocking thread". Repeating that shape four times would be noise, so it lives
-// in a macro: one definition, one place to get it wrong.
 
-/// Run a Web API call off the UI thread, refreshing the token first.
+/// Run a library read off the UI thread, against the streaming session.
 ///
-/// **The refresh happens inside the blocking closure, not before it.** That is the
-/// whole difference between this working and this silently emptying the library:
-/// [`token::ensure_fresh`] says outright that it must be called from a blocking
-/// thread, because refreshing is an HTTP round trip through a blocking client —
-/// and a blocking client cannot be built inside an async runtime. Called from
-/// here it panicked the runtime with *"Cannot drop a runtime in a context where
-/// blocking is not allowed"*, every webapi command died with it, and the log
-/// showed a burst of panics with no `webapi:` line anywhere, because the request
-/// was never made. It only happened once the stored token was old enough to need
-/// renewing, which is why the app worked for an hour and then did not.
+/// **One macro for every command that reads the account's data, and the reason it
+/// is one is the shape they share, not that they are alike.** `spclient` makes
+/// network trips, and a Tauri command without `async` runs on the main thread — a
+/// blocking HTTP call there is thirty seconds of frozen window. So each one hops to
+/// `spawn_blocking` first.
 ///
-/// `AppHandle` instead of `State<TokenState>` because the state is read *inside*
-/// the closure: `State` borrows the app for the lifetime of the command, and
-/// `spawn_blocking` needs an owned, `'static` handle.
+/// The input is the thing that actually changed: these used to take a Web API
+/// access token, and now they take librespot's session. That is why the macro is
+/// not a leftover from `webapi_command` — that one is gone, along with the token it
+/// refreshed.
 ///
-/// The trailing arguments are the call's own inputs; they are handed to the
-/// blocking closure by reference, which is what lets `$inner` take `&str` and
-/// `&[String]` instead of owning a copy of every string the webview sent.
-macro_rules! webapi_command {
-    ($name:ident, $inner:path, $ty:ty $(, $arg:ident : $arg_ty:ty)*) => {
-        #[tauri::command]
-        async fn $name(app: AppHandle $(, $arg: $arg_ty)*) -> Result<$ty, String> {
-            tauri::async_runtime::spawn_blocking(move || {
-                let access = token::ensure_fresh(&app.state::<TokenState>())?.access_token;
-                $inner(&access $(, &$arg)*)
-            })
-            .await
-            .map_err(|e| {
-                eprintln!("Starless [command_failed]: {e}");
-                "command_failed".to_string()
-            })?
-        }
-    };
-}
-
-webapi_command!(
-    add_to_playlist,
-    webapi::add_to_playlist,
-    (),
-    playlist_id: String,
-    track_ids: Vec<String>
-);
-webapi_command!(create_playlist, webapi::create_playlist, Playlist, name: String);
-webapi_command!(artist_profile, webapi::artist_profile, webapi::ArtistProfile, artist_id: String);
-
-/// Comandos que leen por la sesión, no por un token.
-///
-/// La misma forma que [`webapi_command`] y por el mismo motivo: `spclient` hace
-/// viajes de red, así que el comando corre en `spawn_blocking` y no en el hilo
-/// que dibuja la ventana. Lo que cambia de verdad es la entrada — en vez del
-/// token de la Web API, la sesión de librespot — y por eso va aparte.
-///
-/// El lock se toma acá y no adentro del hilo: `State` no se puede mover a un
-/// hilo bloqueante, pero la sesión sí, y sólo hace falta una copia.
+/// The lock is taken here and not inside the blocking thread: `State` cannot move
+/// to a blocking thread, but the session can, and all that is needed is a copy.
 macro_rules! spclient_command {
     ($name:ident, $inner:path, $ty:ty $(, $arg:ident : $arg_ty:ty)*) => {
         #[tauri::command]
@@ -430,32 +374,7 @@ spclient_command!(liked_tracks, spclient::liked_tracks, Vec<Track>);
 spclient_command!(playlist_tracks, spclient::playlist_tracks, Vec<Track>, playlist_id: String);
 spclient_command!(album_tracks, spclient::album_tracks, Vec<Track>, album_id: String);
 spclient_command!(search_tracks, spclient::search_tracks, Vec<Track>, query: String);
-
-/// Everything one query turned up, across songs, albums, artists and playlists.
-///
-/// Split from [`search_tracks`] rather than folded into it: the menu under the
-/// search field only ever shows songs, and asking Spotify for four types on every
-/// keystroke to use one of them is four times the payload for nothing.
-///
-/// **Still on the Web API, and that is a decision, not an oversight.** The
-/// context-based search answers songs; whether it answers the other three types
-/// is not written down anywhere, and guessing a URI to find out would put an
-/// undocumented call in front of somebody. So this is the last call that still
-/// needs a client id — and the one that a user outside the allowlist will not
-/// have. It goes, with the rest of `webapi`, as soon as somebody decides whether
-/// albums and artists come back.
-#[tauri::command]
-async fn search_all(app: AppHandle, query: String) -> Result<webapi::SearchResults, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let access = token::ensure_fresh(&app.state::<TokenState>())?.access_token;
-        webapi::search_all(&access, &query)
-    })
-    .await
-    .map_err(|e| {
-        eprintln!("Starless [command_failed]: {e}");
-        "command_failed".to_string()
-    })?
-}
+spclient_command!(artist_profile, spclient::artist_profile, ArtistProfile, artist_id: String);
 
 // --- Playback --------------------------------------------------------------
 
@@ -540,7 +459,6 @@ pub fn run() {
         // Starless asks instead — see `update.rs`.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(SessionState::default())
-        .manage(TokenState::default())
         .manage(PlaybackState::default())
         .setup(|app| {
             // librespot narrates every refusal through `log`, and Starless is a
@@ -564,14 +482,6 @@ pub fn run() {
 
             let handle = app.handle().clone();
             let restore = handle.clone();
-
-            // A stored Web API token is a plain file read — do it inline, it is
-            // microseconds, and every screen needs it immediately.
-            if let Some(stored) = token::load() {
-                if let Some(state) = handle.try_state::<TokenState>() {
-                    state.set(stored);
-                }
-            }
 
             // Restoring the streaming session opens a connection to Spotify, so it
             // happens off the setup thread — the window must appear immediately.
@@ -605,6 +515,10 @@ pub fn run() {
             if spclient::requested() {
                 spclient::run_probe(handle.clone());
             }
+            #[cfg(debug_assertions)]
+            if spclient::shapes_requested() {
+                spclient::run_shape_probe(handle.clone());
+            }
             if selftest::requested() {
                 selftest::run(handle);
             }
@@ -618,10 +532,7 @@ pub fn run() {
             my_playlists,
             liked_tracks,
             playlist_tracks,
-            add_to_playlist,
-            create_playlist,
             search_tracks,
-            search_all,
             album_tracks,
             artist_profile,
             player_status,

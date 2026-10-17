@@ -37,6 +37,19 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Cuando hay una versión nueva, Starless lo dice: una alerta flotante que aparece una vez y se desvanece sola, el botón de Ajustes queda marcado en verde, y dentro de Ajustes el botón de actualizar se pone en verde con la versión disponible. Nada se descarga y nada se instala solo — instalar sigue siendo un clic tuyo, en Ajustes, porque Starless está sonando.
 - Un fallo al comprobar no marca nada. Si GitHub no se puede alcanzar, eso dice algo de la red y nada de tu instalación, así que el botón se queda como estaba.
 
+### Fixed / Corregido
+
+- Para casi todo el mundo, la biblioteca salía vacía y no decía por qué. Spotify dejó de entregar datos a las apps nuevas salvo a cinco cuentas en una lista. Starless ahora lee la biblioteca, las playlists, las guardadas y la búsqueda por la misma sesión con la que reproduce, y si algo falla al leerla la app lo dice en vez de mostrar un vacío.
+
+### Changed / Cambiado
+
+- Entrar es una sola aprobación. Antes se pedía permiso dos veces —una para reproducir y otra para leer la biblioteca— y la segunda era la que empezaba a devolver errores.
+- La pantalla de resultados es una lista de canciones en orden alfabético.
+
+### Removed / Eliminado
+
+- Las pestañas de álbumes, artistas y playlists en los resultados, la discografía del artista, y agregar a o crear playlists. La ruta que las alimentaba ya no existe y no hay otra que devuelva la verdad.
+
 ---
 
 ## [0.3.2] — 2026-10-17

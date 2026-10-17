@@ -52,6 +52,25 @@ export const CHANGELOG: ChangelogEntry[] = [
             "Un fallo al comprobar no marca nada. Si GitHub no se puede alcanzar, eso dice algo de la red y nada de tu instalación, así que el botón se queda como estaba.",
           ],
         },
+        {
+          title: "Corregido",
+          items: [
+            "Para casi todo el mundo, la biblioteca salía vacía y no decía por qué. Spotify dejó de entregar datos a las apps nuevas salvo a cinco cuentas en una lista, así que las demás veían un cliente firmado con una biblioteca que no aparecía. Starless ahora lee tu biblioteca, tus playlists, tus canciones guardadas y la búsqueda por la misma sesión con la que reproduce: sin lista, sin revisión y sin una dependencia que se pueda caer sola. Y si algo falla al leerla, la app lo dice en vez de mostrar un vacío.",
+          ],
+        },
+        {
+          title: "Cambiado",
+          items: [
+            "Entrar es una sola aprobación. Antes Starless pedía permiso dos veces —una para reproducir y otra para leer tu biblioteca— y la segunda era justamente la que empezaba a devolver errores. Ahora hay una sola pantalla porque sólo hay una identidad.",
+            "La pantalla de resultados es una lista de canciones en orden alfabético. El buscador siempre mostró canciones; lo que se fue son las pestañas de álbumes, artistas y playlists, que no tenían una ruta detrás.",
+          ],
+        },
+        {
+          title: "Se va",
+          items: [
+            "Las pestañas de álbumes, artistas y playlists en los resultados, la discografía del artista, y agregar canciones a una playlist o crear una. No hay una versión de esas que funcione a medias: la ruta que las alimentaba ya no existe y no hay otra que devuelva la verdad. Es preferible que el botón no esté a que esté y no haga nada.",
+          ],
+        },
       ],
       en: [
         {
@@ -59,6 +78,25 @@ export const CHANGELOG: ChangelogEntry[] = [
           items: [
             "When there is a newer version, Starless says so: a floating alert that appears once and fades on its own, the Settings button is marked in green, and inside Settings the update button turns green with the version available. Nothing downloads and nothing installs by itself — installing is still your click, in Settings, because Starless is playing music.",
             "A failed check marks nothing. If GitHub cannot be reached, that says something about the network and nothing about your installation, so the button stays as it was.",
+          ],
+        },
+        {
+          title: "Fixed",
+          items: [
+            "For almost everyone, the library came up empty and said nothing about why. Spotify stopped handing data to new apps except for five accounts on an allowlist, so everyone else was looking at a signed-in client with no library in it. Starless now reads your library, your playlists, your saved songs and your search through the same session it plays music with: no allowlist, no review, and no dependency that can fall over on its own. And if reading it does fail, the app says so instead of showing an empty shelf.",
+          ],
+        },
+        {
+          title: "Changed",
+          items: [
+            "Signing in is one approval. Starless used to ask twice —once to play, once to read your library— and the second one was the one that started failing. There is one screen now because there is only one identity.",
+            "The results screen is a list of songs in alphabetical order. The search box always showed songs; what went away are the album, artist and playlist tabs, which had nothing behind them.",
+          ],
+        },
+        {
+          title: "Removed",
+          items: [
+            "The album, artist and playlist tabs in search results, the artist discography, and adding songs to a playlist or creating one. There is no half-working version of those: the route that fed them no longer exists and nothing else returns the truth. A button that does nothing is worse than no button.",
           ],
         },
       ],

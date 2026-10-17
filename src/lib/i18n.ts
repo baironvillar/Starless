@@ -10,7 +10,7 @@ export type Lang = "es" | "en";
 
 export const strings = {
   es: {
-    searchPlaceholder: "Buscar canciones, artistas, albums",
+    searchPlaceholder: "Buscar canciones",
     clearSearch: "Limpiar búsqueda",
     searchResultsTitle: "Resultados",
     searchResultsFor: "Para «{query}»",
@@ -20,18 +20,11 @@ export const strings = {
     searchSeeAllResults: "Ver todos los resultados",
     searchNoMatches: "Ninguna canción coincide con esto.",
 
-    // Search result tabs
-    searchTab_all: "Todo",
-    searchTab_songs: "Canciones",
-    searchTab_albums: "Álbumes",
-    searchTab_playlists: "Playlists",
-    searchTab_artists: "Artistas",
     searchBack: "Volver a los resultados",
 
     // Artist profile
     artistKind: "Artista",
     artistSongs: "Canciones",
-    albumsLower: "álbumes",
     artistLoadFailed: "No se pudo cargar el perfil del artista.",
     columnAlbum: "Álbum",
     navHome: "Inicio",
@@ -43,7 +36,6 @@ export const strings = {
     libraryTitle: "Tu biblioteca",
     likedSongs: "Canciones que te gustan",
     yourPlaylists: "Tus playlists",
-    createPlaylist: "Crear playlist",
     planPremium: "Premium",
     planFree: "Sin Premium no hay audio",
     loading: "Cargando…",
@@ -51,11 +43,6 @@ export const strings = {
     playlistEmpty: "Esta playlist todavía no tiene canciones.",
     playlistNotReadable:
       "Esta playlist la creó otra persona. Spotify solo deja leer el contenido de las que te pertenecen o en las que colaboras.",
-    addToPlaylist: "Agregar a playlist",
-    playlistSearch: "Buscar o crear una playlist",
-    noPlaylistsMatch: "Ninguna playlist coincide.",
-    createPlaylistNamed: "Crear «{name}» y agregar",
-    saving: "Guardando…",
     librarySubtitle: "Tu música, tal cual la guardaste",
     songs: "canciones",
 
@@ -110,8 +97,6 @@ export const strings = {
     authMissingClient:
       "Falta el Client ID de Spotify. Registra una app en developer.spotify.com y define la variable STARLESS_SPOTIFY_CLIENT_ID antes de iniciar Starless.",
     authCancelled: "Cancelaste el inicio de sesión.",
-    authReauthorize:
-      "Tu sesión de reproducción sigue activa, pero falta el permiso para leer tu biblioteca. Autorízalo una vez más.",
     authOAuthFailed: "No se pudo completar el inicio de sesión con Spotify.",
     authBusy: "La sesión está ocupada. Inténtalo de nuevo.",
     authCacheFailed: "No se pudo leer la caché de credenciales.",
@@ -254,7 +239,7 @@ export const strings = {
     windowClose: "Cerrar",
   },
   en: {
-    searchPlaceholder: "Songs, artists, albums",
+    searchPlaceholder: "Songs",
     clearSearch: "Clear search",
     searchResultsTitle: "Results",
     searchResultsFor: "For “{query}”",
@@ -264,16 +249,10 @@ export const strings = {
     searchSeeAllResults: "See all results",
     searchNoMatches: "No song matches this.",
 
-    searchTab_all: "All",
-    searchTab_songs: "Songs",
-    searchTab_albums: "Albums",
-    searchTab_playlists: "Playlists",
-    searchTab_artists: "Artists",
     searchBack: "Back to results",
 
     artistKind: "Artist",
     artistSongs: "Songs",
-    albumsLower: "albums",
     artistLoadFailed: "Couldn't load this artist.",
     columnAlbum: "Album",
     navHome: "Home",
@@ -285,7 +264,6 @@ export const strings = {
     libraryTitle: "Your library",
     likedSongs: "Liked Songs",
     yourPlaylists: "Your playlists",
-    createPlaylist: "Create playlist",
     planPremium: "Premium",
     planFree: "No audio without Premium",
     loading: "Loading…",
@@ -293,11 +271,6 @@ export const strings = {
     playlistEmpty: "This playlist has no songs yet.",
     playlistNotReadable:
       "Someone else made this playlist. Spotify only lets an app read the contents of the ones you own or collaborate on.",
-    addToPlaylist: "Add to playlist",
-    playlistSearch: "Search or create a playlist",
-    noPlaylistsMatch: "No playlist matches.",
-    createPlaylistNamed: "Create “{name}” and add",
-    saving: "Saving…",
     librarySubtitle: "Your music, exactly as you saved it",
     songs: "songs",
 
@@ -352,8 +325,6 @@ export const strings = {
     authMissingClient:
       "Spotify Client ID missing. Register an app at developer.spotify.com and set the STARLESS_SPOTIFY_CLIENT_ID environment variable before starting Starless.",
     authCancelled: "You cancelled the sign-in.",
-    authReauthorize:
-      "Your playback session is still active, but Starless is not yet allowed to read your library. Authorise it once more.",
     authOAuthFailed: "Could not complete sign-in with Spotify.",
     authBusy: "The session is busy. Try again.",
     authCacheFailed: "Could not read the credential cache.",

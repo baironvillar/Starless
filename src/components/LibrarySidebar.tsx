@@ -1,4 +1,4 @@
-import { Heart, Plus } from "lucide-react";
+import { Heart } from "lucide-react";
 import { motion } from "motion/react";
 import type { StringKey } from "../lib/i18n";
 import { type Account, largestImage, type Playlist } from "../lib/spotify";
@@ -49,21 +49,12 @@ export function LibrarySidebar({
       aria-label={t.navLibrary}
       className="glass pointer-events-auto absolute top-[104px] bottom-[144px] left-5 z-20 hidden w-[288px] flex-col overflow-hidden rounded-card lg:flex"
     >
-      <header className="flex shrink-0 items-center justify-between gap-2 px-4 pt-4 pb-3">
+      {/* The title is alone in here on purpose. Sign-out used to sit next to it,
+          and creating a playlist used to sit next to that: the first is a settings
+          action rather than a library one, and the second is gone with the rest of
+          what this channel can no longer do. */}
+      <header className="shrink-0 px-4 pt-4 pb-3">
         <h2 className="truncate text-[15px] font-semibold tracking-tight">{t.navLibrary}</h2>
-        {/* Sign-out used to sit next to the title. It is a settings action, not a
-            library one, and the queue of things a music player shows in its
-            library is long enough without the one button that ends the session. */}
-        <motion.button
-          type="button"
-          whileTap={{ scale: 0.9 }}
-          transition={{ type: "spring", stiffness: 420, damping: 32 }}
-          aria-label={t.createPlaylist}
-          title={t.createPlaylist}
-          className="grid size-8 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink"
-        >
-          <Plus className="size-[17px]" strokeWidth={2} />
-        </motion.button>
       </header>
 
       {account && (

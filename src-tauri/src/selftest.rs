@@ -12,10 +12,11 @@
 
 use std::time::{Duration, Instant};
 
+use librespot_core::session::Session;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::playback::PlaybackState;
-use crate::{SessionState, TokenState};
+use crate::SessionState;
 
 /// How long to wait for librespot's handshake before giving up. It opens a
 /// connection to Spotify's access point, which is seconds on a good network and
@@ -47,7 +48,7 @@ pub fn run(app: AppHandle) {
 
         // The first liked track: something this account is definitely allowed to
         // play, so a refusal means a refusal and not a guess about permissions.
-        let Some((track_id, name)) = first_track(&app) else {
+        let Some((track_id, name)) = first_track(&session) else {
             log::error!("DIAGNOSTIC: no se pudo obtener una pista de prueba");
             emit(&app, "diagnostic_no_track");
             return;
@@ -116,14 +117,17 @@ pub fn wait_for_session(app: &AppHandle) -> Option<librespot_core::Session> {
     None
 }
 
-/// The first thing this account likes, through the same Web API path the
-/// library screen uses — so a failure here is a real signal rather than a test
-/// fixture that happens to work.
-fn first_track(app: &AppHandle) -> Option<(String, String)> {
-    let state = app.try_state::<TokenState>()?;
-    let access = crate::token::ensure_fresh(&state).ok()?.access_token;
-
-    let tracks = crate::webapi::liked_tracks(&access).ok()?;
+/// The first thing this account likes, through the same path the library screen
+/// uses — so a failure here is a real signal rather than a test fixture that
+/// happens to work.
+///
+/// It takes the session that [`run`] already waited for instead of looking one up:
+/// this used to mint a second identity through the Web API to ask the same
+/// question, and that identity is the thing that stopped working for everyone
+/// outside a five-person allowlist. One session answers both "does it connect" and
+/// "what does it know".
+fn first_track(session: &Session) -> Option<(String, String)> {
+    let tracks = crate::spclient::liked_tracks(session).ok()?;
     let track = tracks.into_iter().next()?;
     Some((track.id, track.name))
 }

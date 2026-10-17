@@ -2,7 +2,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { AddToPlaylistMenu } from "./components/AddToPlaylistMenu";
 import { AuthGate } from "./components/AuthGate";
 import { CrashPrompt } from "./components/CrashPrompt";
 import { FeedbackPanel } from "./components/FeedbackPanel";
@@ -16,10 +15,7 @@ import { TrackList } from "./components/TrackList";
 import { UpdateAlert } from "./components/UpdateAlert";
 import { type Lang, type StringKey, strings } from "./lib/i18n";
 import {
-  type AlbumCard,
-  addToPlaylist,
   applyMenuOpacity,
-  createPlaylist,
   explain,
   keys,
   listCount,
@@ -27,12 +23,8 @@ import {
   onPlaybackStatus,
   PLAYLIST_STALE_MS,
   type PlaybackStatus,
-  type Playlist,
   playTrack,
-  runAlbumTracks,
   runSearch,
-  runSearchAll,
-  type SearchResults,
   type Track,
   useAccount,
   useLikedTracks,
@@ -141,12 +133,6 @@ export default function App() {
   const updateVersion = pendingVersion(updateStateSnapshot);
 
   const selected = playlists.data?.find((p) => p.id === activeItem);
-  /**
-   * The name of a playlist that is not in the sidebar's list — one opened straight
-   * from a search. `selected` only knows about the account's own playlists, so
-   * without this the header would say "Tu biblioteca" over whatever was opened.
-   */
-  const [foreignTitle, setForeignTitle] = useState<string | null>(null);
   const isLiked = activeItem === "liked";
   /**
    * `null` means "Liked Songs", which is not a playlist id — passing the literal
@@ -164,10 +150,10 @@ export default function App() {
    * ends up playing something nobody chose.
    *
    * `queueOverride` is the one exception, and it is not an exception to the rule —
-   * it is the rule applied to a list that is not the library. Playing an album from
-   * a search result has to make *that album* the queue; otherwise "next" jumps
-   * back into a playlist the user left twenty screens ago, which is exactly the
-   * drift described above. It is cleared whenever the user navigates somewhere
+   * it is the rule applied to a list that is not the library. Playing something
+   * from a search result has to make *those songs* the queue; otherwise "next"
+   * jumps back into a playlist the user left twenty screens ago, which is exactly
+   * the drift described above. It is cleared whenever the user navigates somewhere
    * that defines its own list.
    */
   const [queueOverride, setQueueOverride] = useState<Track[] | null>(null);
@@ -412,11 +398,12 @@ export default function App() {
    * remember it to get back. Suggestions are cheap enough to show while typing;
    * replacing the screen is a decision, and Enter is how it gets made.
    *
-   * And the two ask Spotify for different things. The menu wants songs. The
-   * screen wants songs, albums, artists and playlists, because a search for
-   * "frank ocean" is four questions and the tabs exist to answer them. Asking for
-   * all four on every keystroke would be four times the payload to fill a list of
-   * five.
+   * And the two ask the same thing — songs — at two different times. They used to
+   * ask for different things: the screen wanted albums, artists and playlists as
+   * well, because a search for "frank ocean" was four questions and the tabs
+   * answered them. The parser on the other side drops the type of whatever it
+   * matched, so those extra answers were the same songs under other headings and
+   * only the request was bigger.
    *
    * Each answer is kept with the query that produced it. A screen showing results
    * for "chanel" while the field says "frank ocean" is a lie, and matching on the
@@ -431,7 +418,7 @@ export default function App() {
   const [suggested, setSuggested] = useState<{ query: string; tracks: Track[] } | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
-  const [screen, setScreen] = useState<{ query: string; results: SearchResults } | null>(null);
+  const [screen, setScreen] = useState<{ query: string; tracks: Track[] } | null>(null);
   const [screenError, setScreenError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -479,10 +466,10 @@ export default function App() {
     if (committed.length < MIN_QUERY_LENGTH) return;
 
     let alive = true;
-    runSearchAll(committed)
-      .then((results) => {
+    runSearch(committed)
+      .then((tracks) => {
         if (!alive) return;
-        setScreen({ query: committed, results });
+        setScreen({ query: committed, tracks });
         setScreenError(null);
       })
       .catch((e) => {
@@ -517,7 +504,7 @@ export default function App() {
    * rather than as someone else's results.
    */
   const showResults = committed.length >= MIN_QUERY_LENGTH;
-  const results = screen?.query === committed ? screen.results : null;
+  const results = screen?.query === committed ? screen.tracks : null;
   const resultsLoading = showResults && results === null && screenError === null;
 
   /**
@@ -579,52 +566,6 @@ export default function App() {
   );
 
   /**
-   * Play a whole album from its card.
-   *
-   * Two requests and then audio: the cover names the album, but only
-   * `/albums/{id}/tracks` knows what is on it, and a play button that started one
-   * arbitrary song would be a lie about what "play" means on a record.
-   */
-  const [albumBusy, setAlbumBusy] = useState<string | null>(null);
-  const onPlayAlbum = useCallback(
-    async (album: AlbumCard) => {
-      setAlbumBusy(album.id);
-      try {
-        const tracks = await runAlbumTracks(album.id);
-        const first = tracks[0];
-        if (!first) return;
-        playFrom(tracks, first);
-      } catch (e) {
-        // The bar shows whatever the player reports; this is the console copy.
-        console.error("Starless: no se pudo reproducir el álbum", explain(e));
-      } finally {
-        setAlbumBusy(null);
-      }
-    },
-    [playFrom],
-  );
-
-  /**
-   * Open a playlist found in a search.
-   *
-   * Most of these belong to somebody else, and Spotify refuses to say what is on
-   * them in development mode. That is not worked around here: the playlist screen
-   * already explains it in one sentence, which is a better answer than a search
-   * grid that quietly hides results the user could have found.
-   */
-  const onOpenPlaylist = useCallback((playlist: Playlist) => {
-    setQueueOverride(null);
-    setActiveItem(playlist.id);
-    // A playlist found in a search is usually not one of yours, so it will not be
-    // in the sidebar's list and `selected` cannot name it. Keeping the name here
-    // is what stops the header from reading "Tu biblioteca" over a playlist that
-    // plainly has another name.
-    setForeignTitle(playlist.name);
-    setActive("navLibrary");
-    setCommitted("");
-  }, []);
-
-  /**
    * Warm a playlist before it is opened.
    *
    * Opening a playlist costs a network round trip, and hovering the item is a
@@ -647,42 +588,6 @@ export default function App() {
       });
     },
     [queryClient],
-  );
-
-  /**
-   * "Add to playlist" opens a menu anchored to the row it was clicked from, so the
-   * track being added has to be remembered separately from whatever the list is
-   * showing. One menu at a time: two of them would be two answers to one question.
-   */
-  const [addTarget, setAddTarget] = useState<Track | null>(null);
-  const [addOpen, setAddOpen] = useState(false);
-
-  const onAddToPlaylist = useCallback((track: Track) => {
-    setAddTarget(track);
-    setAddOpen(true);
-  }, []);
-
-  const onAdd = useCallback(
-    async (playlistId: string) => {
-      if (!addTarget) return;
-      await addToPlaylist(playlistId, [addTarget.id]);
-      // The playlist's contents changed underneath a cached count, so the count on
-      // screen would be a number we know to be wrong.
-      queryClient.invalidateQueries({ queryKey: keys.playlists });
-      queryClient.invalidateQueries({ queryKey: keys.playlistTracks(playlistId) });
-    },
-    [addTarget, queryClient],
-  );
-
-  const onCreateAndAdd = useCallback(
-    async (name: string) => {
-      if (!addTarget) return;
-      const created = await createPlaylist(name);
-      await addToPlaylist(created.id, [addTarget.id]);
-      queryClient.invalidateQueries({ queryKey: keys.playlists });
-      queryClient.invalidateQueries({ queryKey: keys.playlistTracks(created.id) });
-    },
-    [addTarget, queryClient],
   );
 
   const onCycleRepeat = useCallback(() => {
@@ -761,11 +666,9 @@ export default function App() {
               onSelect={(id) => {
                 setActiveItem(id);
                 setActive("navLibrary");
-                // A library list is its own queue again: the album the user played
-                // from a search has nothing to do with the playlist they just opened.
+                // A library list is its own queue again: the songs played from a
+                // search have nothing to do with the playlist they just opened.
                 setQueueOverride(null);
-                // The sidebar already knows every name it can show.
-                setForeignTitle(null);
                 leaveResults();
               }}
             />
@@ -810,7 +713,7 @@ export default function App() {
                 ? t.searchResultsTitle
                 : isLiked
                   ? t.likedSongs
-                  : (selected?.name ?? foreignTitle ?? t.libraryTitle)}
+                  : (selected?.name ?? t.libraryTitle)}
             </h1>
             <p className="tabular mt-1 truncate text-[13px] text-ink-muted">
               {showResults
@@ -835,15 +738,11 @@ export default function App() {
             results ? (
               <SearchScreen
                 t={t}
-                query={committed}
-                results={results}
+                tracks={results}
                 nowPlayingId={nowPlayingId}
                 loadingId={loadingId}
                 failedId={failedId}
                 onPlay={playFrom}
-                onPlayAlbum={onPlayAlbum}
-                onOpenPlaylist={onOpenPlaylist}
-                albumBusy={albumBusy}
               />
             ) : (
               <p className="rounded-card border border-white/8 bg-white/4 px-5 py-6 text-center text-[13px] text-ink-faint">
@@ -858,7 +757,6 @@ export default function App() {
               loadingId={loadingId}
               failedId={failedId}
               onPlay={onPlay}
-              onAddToPlaylist={onAddToPlaylist}
               loading={liked.isLoading}
               error={liked.error ? explain(liked.error) : null}
             />
@@ -873,7 +771,6 @@ export default function App() {
               loadingId={loadingId}
               failedId={failedId}
               onPlay={onPlay}
-              onAddToPlaylist={onAddToPlaylist}
               loading={playlistTracks.isLoading}
               error={playlistError}
               empty={!playlistTracks.isLoading ? t.playlistEmpty : null}
@@ -884,19 +781,6 @@ export default function App() {
             <p className="mt-5 text-[12px] text-warn">{t.premiumRequired}</p>
           )}
         </main>
-
-        <AnimatePresence>
-          {addOpen && addTarget && (
-            <AddToPlaylistMenu
-              t={t}
-              playlists={playlists.data ?? []}
-              trackName={addTarget.name}
-              onAdd={onAdd}
-              onCreate={onCreateAndAdd}
-              onClose={() => setAddOpen(false)}
-            />
-          )}
-        </AnimatePresence>
 
         <PlayerBar
           track={loadedTrack}

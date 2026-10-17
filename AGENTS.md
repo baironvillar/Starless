@@ -33,13 +33,14 @@ src/                      React 19 + Vite + TypeScript
   App.tsx                 estado de reproducción, búsqueda y navegación
   components/             superficies de UI; SettingsPanel es la referencia visual
   lib/i18n.ts             todo el texto de usuario, ES y EN juntos
-  lib/spotify.ts          los hooks de React Query sobre la Web API
+  lib/spotify.ts          los hooks de React Query sobre los comandos de Rust
   lib/updater.ts          la comprobación de actualizaciones
   lib/changelog.ts        los changelogs que la app muestra en Diagnóstico
 src-tauri/src/
   lib.rs                  comandos Tauri, el registro, el ciclo de vida
   auth.rs                 OAuth y la sesión de librespot
-  webapi.rs               la Spotify Web API
+  spclient.rs             la biblioteca, leída por la sesión (ver Regla 7)
+  models.rs               las formas que el frontend ve
   playback.rs             el player de librespot y el volumen
   report.rs               detección de crash, limpiado y envío
   settings.rs             lo que sobrevive a un reinicio
@@ -62,6 +63,15 @@ docs/updates.md           cómo se publica una versión
    para que ambos lean natural y no como traducción.
 6. **La versión vive en `src-tauri/tauri.conf.json`.** `scripts/version.ts` la
    propaga a los otros dos manifiestos y falla si discrepan. No la edites a mano.
+7. **La biblioteca se lee por la sesión, no por la Web API.** Spotify no publica
+   protocolo para la Web API, y desde febrero de 2026 una app registrada que la
+   use queda limitada a **cinco personas en una lista**: las demás reciben `403`
+   en `/me` y ven una biblioteca vacía sin explicación. `spclient` lee todo por la
+   sesión de librespot, que ya está autenticada para reproducir. **No vuelvas a
+   agregar un client id propio, un refresh token ni una segunda pantalla de
+   permisos**: no hay una segunda identidad que pedir, y la única que hay no puede
+   leer la biblioteca. Lo que se quita de la app al migrar se quita de verdad —
+   `webapi.rs` y `token.rs` no existen, y no hay donde volver.
 
 ## Convenciones
 
@@ -116,11 +126,17 @@ docs/updates.md           cómo se publica una versión
   **Si tocás un nombre de archivo acá, tocá los tres lugares juntos.**
 - **Nada que use `reqwest::blocking` puede correr en un comando `async`.** Un
   cliente bloqueante levanta su propio runtime, y construirlo —o soltar el que se
-  creó— dentro de un worker async hace panic. Todo lo que hable con Spotify o con
-  GitHub vive adentro de `spawn_blocking`, **incluido `token::ensure_fresh`**, que
-  refresca el token y por lo tanto es un viaje HTTP. Ese es el bug que vaciaba la
-  biblioteca: se llamaba antes del `spawn_blocking`, y solo fallaba cuando el
-  token ya estaba por expirar, o sea una vez por hora y sin explicación.
+  creó— dentro de un worker async hace panic. Lo único que hoy habla HTTP con
+  `reqwest` es `report.rs`, y vive adentro de `spawn_blocking`. El mismo error pero
+  con `token::ensure_fresh` adelante vaciaba la biblioteca una vez por hora: el
+  refresh se llamaba **antes** del `spawn_blocking` y sólo fallaba cuando el token
+  ya estaba por expirar, o sea sin explicación y sólo de tarde en tarde.
+- **`configured` no dice si se puede entrar.** Ese campo pasó de "hay un client id
+  compilado" —siempre verdadero— a "hay credenciales guardadas en disco". En una
+  máquina que nunca se logueó es **falso**, que es su respuesta normal. El botón
+  de conectar llegó a quedar atado a él y quedó apagado para siempre en la única
+  pantalla que importa; si lo vuelves a atar, la app deja de poder loguearse en
+  cualquier parte donde falte registrarse.
 - **Un comando sin `async` corre en el hilo principal.** Por eso `submit_*` son
   `async`: treinta segundos de timeout con la ventana congelada.
 - **Nunca escribas `-webkit-backdrop-filter` al lado de `backdrop-filter`.** Es la
@@ -134,12 +150,6 @@ docs/updates.md           cómo se publica una versión
   La regla: escribí **sólo** la propiedad estándar y dejá que Lightning CSS agregue
   el prefijo él mismo. Si tocás `src/index.css`, comprobá el CSS emitido en
   `dist/assets/*.css`, no el fuente.
-- **Un refresh puede volver sin `refresh_token`.** Si Spotify responde a una
-  renovación con un solo token de acceso, y `StoredToken::from_oauth` lo copiaba
-  tal cual: el token de refresco largo quedaba vacío y se guardaba **encima del que
-  sí servía**. La app funcionaba una hora más y después `ensure_fresh` ya no
-  tenía con qué renovar — la única salida era volver a iniciar sesión.
-  `token::keep_refresh_token` lo arrastra; hay tests que lo fijan.
 - **`track.id` no es una key de React.** Una playlist puede tener la misma canción
   dos veces — en esta cuenta, `Mi playlist n.º 4` contesta 50 items con 46 ids
   distintos — y con dos filas compartiendo key React **no avisa y deja los fibers
@@ -150,9 +160,6 @@ docs/updates.md           cómo se publica una versión
   Por eso `trackRowKeys` cuenta ocurrencias: toda key es única y queda estable
   mientras el orden no cambie. **Si tocás una lista de canciones, usá
   `trackRowKeys`, nunca `track.id` pelado.**
-- **El cliente HTTP no se cachea si falla.** `OnceLock<Result<Client, _>>` suena
-  elegante y convierte un arranque lento en una sesión entera sin biblioteca,
-  porque un cliente que nunca se construyó tampoco deja línea en el log.
 - **El limpiado de logs reconoce formas, no personas.** Los patrones adivinan cómo
   se ve un nombre; el nombre de cuenta se quita por valor exacto, porque la
   sesión dice cuál es. Un test lo cubre (`the_account_name_is_removed_even_in_free_text`).

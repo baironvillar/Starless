@@ -50,8 +50,11 @@ protobuf = "3"
 # Where the librespot credential cache lives. Resolved once, at startup.
 dirs = "6"
 
-# The Spotify Web API. Blocking client, because the token refresh it depends on
-# is blocking too, and one async story per request is simpler than two.
+# The one place Starless talks to an HTTP API: opening a GitHub issue, and only
+# when the person holding the app pressed the button. Blocking client, because
+# every caller is already inside `spawn_blocking` — a blocking client cannot be
+# built inside an async runtime. `urlencoding` builds the report URL handed back
+# when no signing token is compiled in.
 reqwest = { version = "0.12", features = ["blocking", "json"] }
 urlencoding = "2"
 # Scrubbing a log before it leaves the machine. Already in the tree through Tauri,

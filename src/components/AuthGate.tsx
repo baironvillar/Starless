@@ -8,10 +8,18 @@ import type { StringKey } from "../lib/i18n";
 import { AUTH_KEYS } from "../lib/spotify";
 
 type AuthStatus = {
+  /**
+   * There is a saved session on disk to restore.
+   *
+   * True from the first read of a launch, long before librespot has finished
+   * connecting, and false again the moment somebody signs out. It is the flag the
+   * gate below asks to tell "restoring" apart from "needs the login screen".
+   *
+   * False is the *normal* answer on a machine that has never signed in, so it is
+   * never a reason to disable the connect button. See the note there.
+   */
   configured: boolean;
   signedIn: boolean;
-  /** A Web API token exists. Independent of `signedIn` — see the Rust side. */
-  webReady: boolean;
   username: string | null;
   /** A kebab-case code from Rust, never prose. See [`AUTH_ERRORS`]. */
   detail: string | null;
@@ -92,7 +100,7 @@ export function AuthGate({
    */
   const wasOpen = useRef(false);
   useEffect(() => {
-    const open = Boolean(status?.signedIn && status.webReady);
+    const open = Boolean(status?.signedIn);
     // Both directions. Closing the door drops what it authorised, so signing out
     // cannot leave a previous account's library sitting in memory either.
     if (open === wasOpen.current) return;
@@ -102,7 +110,7 @@ export function AuthGate({
     for (const key of AUTH_KEYS) {
       void queryClient.invalidateQueries({ queryKey: key });
     }
-  }, [status?.signedIn, status?.webReady, queryClient]);
+  }, [status?.signedIn, queryClient]);
 
   /**
    * Signing out is announced rather than inferred.
@@ -222,30 +230,23 @@ export function AuthGate({
    * already waiting for the session to arrive; what was missing is the gate
    * admitting it did not know yet.
    *
-   * A stored Web API token is what separates the two, and it is the honest signal:
-   * only an account that completed a sign-in has one, and signing out deletes it.
-   * `webReady` is therefore true from the very first read — long before librespot
-   * finishes connecting — and the login screen is still the right answer to a
-   * machine with no token at all, which is what someone signed out looks like.
+   * Credentials on disk are what separates the two, and they are the honest signal:
+   * only an account that completed a sign-in has any, and signing out deletes
+   * them. `configured` is therefore true from the very first read — long before
+   * librespot finishes connecting — and the login screen is still the right answer
+   * to a machine with nothing saved, which is what someone signed out looks like.
    *
    * The ceiling bounds the wait: a session that never arrives stops being a
    * restore and becomes a login.
    */
   const restoring =
-    !error && (status === null || (status.webReady && restoreTried < RESTORE_LIMIT));
+    !error && (status === null || (status.configured && restoreTried < RESTORE_LIMIT));
 
-  // Both, not either. A healthy streaming session with a missing Web API token
-  // can fetch no library at all, and treating that as "signed in" is what left an
-  // earlier build showing an app full of failed requests with no way to fix them.
-  if (status?.signedIn && status.webReady) return <>{children}</>;
+  if (status?.signedIn) return <>{children}</>;
 
   if (restoring) return <Restoring t={t} />;
 
-  const message = error
-    ? t[AUTH_ERRORS[error] ?? "authUnknown"]
-    : status?.signedIn
-      ? t.authReauthorize
-      : null;
+  const message = error ? t[AUTH_ERRORS[error] ?? "authUnknown"] : null;
 
   return (
     <div className="absolute inset-0 z-30 grid place-items-center px-6">
@@ -280,10 +281,19 @@ export function AuthGate({
           </p>
         )}
 
+        {/* No `configured` guard on the button, and that is deliberate. This used
+            to read `disabled={busy || !status?.configured}` because the field meant
+            "is there a client id compiled in", and no id meant no possible login.
+            The Web API took the only second identity away, so there is now always an
+            id and nothing left to refuse over. But `configured` still exists, and
+            it now means the opposite thing — "is there a session saved on disk" —
+            which on a machine that never signed in is *false*. Keeping the guard
+            would have greyed out the only button on the screen, on exactly the
+            machine that needs it most: one that has never logged in. */}
         <motion.button
           type="button"
           onClick={connect}
-          disabled={busy || !status?.configured}
+          disabled={busy}
           whileTap={{ scale: 0.98 }}
           transition={SPRING}
           className="flex w-full items-center justify-center gap-2 rounded-pill bg-accent px-6 py-3.5 text-[14px] font-semibold text-ground transition-opacity duration-200 disabled:opacity-45"

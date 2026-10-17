@@ -14,10 +14,6 @@ use librespot_core::{
     session::Session,
 };
 
-/// Optional override for the **Web API** client id. Set it in the environment
-/// before launching to get your own API quota instead of the shared one.
-pub const CLIENT_ID_ENV: &str = "STARLESS_SPOTIFY_CLIENT_ID";
-
 /// The client id Starless presents as a *streaming* client.
 ///
 /// This is deliberately **not** the app you registered in the Spotify developer
@@ -49,40 +45,20 @@ pub const STREAMING_CLIENT_ID_ENV: &str = "STARLESS_STREAMING_CLIENT_ID";
 ///
 /// Spotify compares redirect URIs character for character, and we cannot add one
 /// to somebody else's dashboard — so borrowing the client id means borrowing its
-/// redirect URI too. This is why the two flows below do not share a port.
-pub const STREAMING_REDIRECT_URI: &str = "http://127.0.0.1:8989/login";
-
-/// The redirect URI for a client id you registered yourself. Must appear,
-/// character for character, in your app's dashboard allowlist; a trailing slash
-/// is a different URI and the exchange fails with an opaque error.
+/// redirect URI too.
 ///
 /// `librespot-oauth` takes the port out of this and binds its callback server to
 /// it, so this is a port Starless opens locally, and only during login.
-pub const REDIRECT_URI: &str = "http://127.0.0.1:8898/login";
+pub const STREAMING_REDIRECT_URI: &str = "http://127.0.0.1:8989/login";
 
 /// `streaming` is the scope that actually unlocks audio. Without it login
 /// succeeds and then every track fails to load, which is a far more confusing
 /// failure than refusing to log in at all.
 ///
-/// The `playlist-modify-*` pair is what lets Starless add a song to a playlist.
-/// Read scopes and write scopes are separate grants on Spotify's side: an app
-/// approved for `playlist-read-private` can look at a playlist all day and still
-/// get a bare `403` the first time the user asks to change one. The 403 arrives at
-/// the moment of the click, with no hint that the problem is the login that
-/// happened yesterday.
-///
-/// Adding a scope invalidates the stored grant, so the next launch asks again.
-/// That is the honest cost of a permission the user actually granted.
-pub const SCOPES: &[&str] = &[
-    "streaming",
-    "user-read-email",
-    "user-read-private",
-    "user-library-read",
-    "playlist-read-private",
-    "playlist-read-collaborative",
-    "playlist-modify-public",
-    "playlist-modify-private",
-];
+/// The read scopes came with the Web API and went with it: the library is read
+/// through the session, not through a developer app, so nothing asks Spotify for
+/// permission to look at playlists anymore.
+pub const SCOPES: &[&str] = &["streaming"];
 
 /// Every error leaving this module is a stable kebab-case code, never prose.
 ///
@@ -103,27 +79,6 @@ pub(crate) fn fail(code: &str, detail: impl std::fmt::Display) -> String {
 /// in as somebody else's client.
 pub fn streaming_client_id() -> String {
     env_or(STREAMING_CLIENT_ID_ENV).unwrap_or_else(|| SHARED_CLIENT_ID.to_string())
-}
-
-/// Starless's own client id, for `api.spotify.com`.
-///
-/// **This one really is ours**, and it is what the Web API runs on. The reason it
-/// is pinned in the binary rather than left to an environment variable is that the
-/// shared identity is not a viable default: its quota belongs to every other project
-/// that borrowed it, and a saturated quota answers `429` to a perfectly valid
-/// token. An app that silently depends on someone else's rate limit is an app that
-/// breaks on a schedule it does not control.
-///
-/// Not a secret — PKCE needs no client secret — and overridable with
-/// [`CLIENT_ID_ENV`] if you register your own.
-pub const OWN_CLIENT_ID: &str = "1eb651591f7f47138047f88a846547b1";
-
-/// The client id for `api.spotify.com`.
-///
-/// Always present. It is not the streaming identity, and the two are never
-/// interchangeable — see [`SHARED_CLIENT_ID`] and [`session_config`].
-pub fn api_client_id() -> String {
-    env_or(CLIENT_ID_ENV).unwrap_or_else(|| OWN_CLIENT_ID.to_string())
 }
 
 fn env_or(name: &str) -> Option<String> {
@@ -150,6 +105,29 @@ pub fn open_cache() -> Result<Cache, String> {
     let path = dir.to_string_lossy().to_string();
     Cache::new(Some(path.as_str()), Some(path.as_str()), Some(path.as_str()), None)
         .map_err(|e| fail("cache_unavailable", e))
+}
+
+/// Is there anything on disk that a session could be restored from?
+///
+/// **The question the login screen actually needs answered.** It used to be
+/// answered by "is there a Web API token on disk", which was a proxy for the same
+/// question: a machine with nothing saved is what somebody signed out looks like,
+/// and one with something saved is what somebody who quit the app looks like.
+/// Telling those two apart is the whole reason the field exists — and with the Web
+/// API gone there is no token left to be the stand-in, so it asks librespot.
+///
+/// The `is_dir` guard is not an optimisation. `Cache::new` calls `create_dir_all`,
+/// so going through [`open_cache`] on a machine that never logged in would *make*
+/// the directory that answering the question is supposed to be checking — and the
+/// first check would be measuring the side effect of the check.
+pub fn has_cached_credentials() -> bool {
+    let Ok(dir) = cache_dir() else {
+        return false;
+    };
+    if !dir.is_dir() {
+        return false;
+    }
+    open_cache().is_ok_and(|cache| cache.credentials().is_some())
 }
 
 /// Build a `SessionConfig` for the streaming session.
@@ -234,53 +212,26 @@ fn pkce(client_id: &str, redirect_uri: &str) -> Result<librespot_oauth::OAuthTok
         .map_err(|e| fail("login_cancelled", e))
 }
 
-/// Run the browser exchanges and hand back a connecting session plus the Web API
-/// token that goes with it.
+/// Run the browser exchange and hand back a connecting session.
 ///
-/// **The token is returned, not saved.** `TokenState::set` is the one and only
-/// place a token enters the app, because it writes the file *and* the in-memory
-/// copy in the same step. Saving the file from here instead would leave the cache
-/// the API commands actually read empty until the next launch — and the symptom is
-/// an app that just logged in successfully and then reports "sign in first" on
-/// every request.
-///
-/// **Two identities, and two browser approvals.** The streaming session has to
-/// present a client id that `clienttoken.spotify.com` accepts, and that is not one
-/// you can register yourself — see [`SHARED_CLIENT_ID`]. The Web API token is
-/// separate and belongs to Starless's own app, so that library calls run on a quota
-/// nobody else is spending.
-///
-/// If the two client ids are made to match — [`STARLESS_STREAMING_CLIENT_ID`]
-/// pointed at [`OWN_CLIENT_ID`] — the user is asked exactly once. That is the only
-/// case where they are safe to collapse, and it is a debugging affordance, not a
-/// supported configuration.
+/// **One approval, because there is one identity.** This used to ask twice: one
+/// token to play audio and another for the Web API, under a client id of our own.
+/// The second one is gone — the library comes from the same session that plays
+/// the music, so there is nothing left that needs a second question.
 ///
 /// Blocking. Call it from a blocking thread.
-pub fn login_interactively() -> Result<(Session, crate::token::StoredToken), String> {
-    let streaming_client_id = streaming_client_id();
-    let api_client_id = api_client_id();
-
-    let streaming_token = pkce(&streaming_client_id, STREAMING_REDIRECT_URI)?;
+pub fn login_interactively() -> Result<Session, String> {
+    let client_id = streaming_client_id();
+    let token = pkce(&client_id, STREAMING_REDIRECT_URI)?;
 
     let cache = open_cache()?;
-    let session = Session::new(session_config(&streaming_client_id), Some(cache));
+    let session = Session::new(session_config(&client_id), Some(cache));
     start_connect(
         &session,
-        Credentials::with_access_token(streaming_token.access_token.clone()),
+        Credentials::with_access_token(token.access_token.clone()),
     );
 
-    // Two tokens, two jobs, and they are never interchangeable: the streaming one
-    // is the only one that plays audio, the Web API one is the only one on our own
-    // quota. Two approvals is the honest cost of that — asking once would mean
-    // borrowing the shared quota, and that quota is routinely saturated.
-    let web_token = if api_client_id == streaming_client_id {
-        crate::token::StoredToken::from_oauth(&streaming_token, &streaming_client_id)
-    } else {
-        let api_token = pkce(&api_client_id, REDIRECT_URI)?;
-        crate::token::StoredToken::from_oauth(&api_token, &api_client_id)
-    };
-
-    Ok((session, web_token))
+    Ok(session)
 }
 
 /// Drop the cached credentials and invalidate the session.

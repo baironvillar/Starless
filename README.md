@@ -163,9 +163,9 @@ cambie la versión en un solo archivo se ve en el CI.
 ```
 src/                    Frontend React 19 + Vite + TypeScript
   components/           Superficies de UI
-  lib/                  Spotify API, i18n, actualizador, changelog
+  lib/                  Biblioteca, i18n, actualizador, changelog
 src-tauri/              Backend Rust
-  src/                  sesión, reproducción, auth, web API, registro
+  src/                  sesión, reproducción, auth, biblioteca, registro
 .agent/                  Configuración de agentes (Claude Code y OpenCode)
 docs/updates.md         Cómo se publica una actualización
 PRODUCT.md              Qué es el producto y sus restricciones
@@ -361,9 +361,9 @@ so a PR that bumps one file and forgets the others shows up in CI.
 ```
 src/                    React 19 + Vite + TypeScript frontend
   components/           UI surfaces
-  lib/                  Spotify API, i18n, updater, changelog
+  lib/                  Library, i18n, updater, changelog
 src-tauri/              Rust backend
-  src/                  session, playback, auth, web API, logging
+  src/                  session, playback, auth, library, logging
 .agent/                  Agent config shared by Claude Code and OpenCode
 .github/workflows/       A tag builds, signs and publishes the release
 docs/updates.md         How a release ships

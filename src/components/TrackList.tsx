@@ -1,4 +1,3 @@
-import { ListPlus } from "lucide-react";
 import { motion } from "motion/react";
 import type { StringKey } from "../lib/i18n";
 import {
@@ -19,7 +18,6 @@ type TrackListProps = {
   /** Refused. The row says so, in the colour reserved for it. */
   failedId?: string | null;
   onPlay?: (track: SpotifyTrack) => void;
-  onAddToPlaylist?: (track: SpotifyTrack) => void;
   loading?: boolean;
   error?: string | null;
   /**
@@ -71,27 +69,21 @@ export function TrackList({
   loadingId,
   failedId,
   onPlay,
-  onAddToPlaylist,
   loading,
   error,
   empty,
 }: TrackListProps) {
   const showStatus = Boolean(nowPlayingId) || Boolean(loadingId) || Boolean(onPlay);
   const rowKeys = trackRowKeys(tracks);
+  // Header and rows have to agree on the columns or the header drifts one slot to
+  // the left of the thing it labels.
+  const columns = showStatus
+    ? "grid-cols-[minmax(0,1fr)_auto_64px]"
+    : "grid-cols-[minmax(0,1fr)_64px]";
 
   return (
     <div className="overflow-hidden rounded-card border border-white/8 bg-white/4">
-      <div
-        className={`grid items-center gap-4 border-b border-white/8 px-5 py-2.5 ${
-          onAddToPlaylist
-            ? showStatus
-              ? "grid-cols-[minmax(0,1fr)_auto_auto_64px]"
-              : "grid-cols-[minmax(0,1fr)_auto_64px]"
-            : showStatus
-              ? "grid-cols-[minmax(0,1fr)_auto_64px]"
-              : "grid-cols-[minmax(0,1fr)_64px]"
-        }`}
-      >
+      <div className={`grid items-center gap-4 border-b border-white/8 px-5 py-2.5 ${columns}`}>
         <span className="text-[12px] font-semibold tracking-wide uppercase text-ink-faint">
           {t.columnTitle}
         </span>
@@ -141,15 +133,7 @@ export function TrackList({
                 damping: 32,
                 delay: Math.min(index, STAGGER_CAP) * STAGGER_STEP,
               }}
-              className={`group grid w-full cursor-pointer items-center gap-4 border-b border-white/8 px-5 py-2.5 text-left transition-colors duration-200 last:border-b-0 hover:bg-white/6 ${
-                onAddToPlaylist
-                  ? showStatus
-                    ? "grid-cols-[minmax(0,1fr)_auto_auto_64px]"
-                    : "grid-cols-[minmax(0,1fr)_auto_64px]"
-                  : showStatus
-                    ? "grid-cols-[minmax(0,1fr)_auto_64px]"
-                    : "grid-cols-[minmax(0,1fr)_64px]"
-              }`}
+              className={`group grid w-full cursor-pointer items-center gap-4 border-b border-white/8 px-5 py-2.5 text-left transition-colors duration-200 last:border-b-0 hover:bg-white/6 ${columns}`}
             >
               <div className="flex min-w-0 items-center gap-3.5">
                 {showStatus && (
@@ -188,22 +172,6 @@ export function TrackList({
                   )}
                   {isFailed && !isPlaying && <span className="text-warn">{t.failed}</span>}
                 </span>
-              )}
-
-              {onAddToPlaylist && (
-                <button
-                  type="button"
-                  // The row is the play target, so this must not also fire it.
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onAddToPlaylist(track);
-                  }}
-                  aria-label={t.addToPlaylist}
-                  title={t.addToPlaylist}
-                  className="grid size-8 shrink-0 place-items-center rounded-pill text-ink-faint opacity-0 transition-opacity duration-200 group-hover:opacity-100 hover:bg-white/10 hover:text-ink focus-visible:opacity-100"
-                >
-                  <ListPlus className="size-[16px]" strokeWidth={2} />
-                </button>
               )}
 
               <span className="tabular text-right text-[12.5px] text-ink-muted">

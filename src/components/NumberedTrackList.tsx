@@ -84,7 +84,6 @@ export function NumberedTrackList({
 
       {loading && <Note>{t.loading}</Note>}
       {error && !loading && <Note tone="warn">{error}</Note>}
-      {!loading && !error && empty && tracks.length === 0 && <Note>{empty}</Note>}
 
       {!loading &&
         !error &&
@@ -184,7 +183,11 @@ export function NumberedTrackList({
           );
         })}
 
-      {!loading && !error && tracks.length === 0 && <Note>{t.emptyList}</Note>}
+      {/* One note, not two. The caller's `empty` replaces the generic line when it
+          has something more specific to say — "this playlist has no songs yet" and
+          "no results for this search" are both true and both worth saying, and
+          rendering them stacked read as two different opinions. */}
+      {!loading && !error && tracks.length === 0 && <Note>{empty ?? t.emptyList}</Note>}
     </div>
   );
 }

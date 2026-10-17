@@ -42,7 +42,7 @@ use librespot_protocol::metadata::Track as TrackMessage;
 use librespot_protocol::playlist4_external::SelectedListContent;
 use protobuf::{EnumOrUnknown, Message};
 
-use crate::webapi::{Account, Album, Artist, Image, Playlist, Track, TrackTotal};
+use crate::models::{Account, Album, Artist, ArtistCard, ArtistProfile, Image, Playlist, Track, TrackTotal};
 
 /// Cuánto espera una llamada antes de rendirse.
 ///
@@ -402,7 +402,7 @@ pub fn playlists(session: &Session) -> Result<Vec<Playlist>, String> {
                     })
                     .unwrap_or_default(),
                 owner: (!meta.owner_username().is_empty()).then(|| {
-                    crate::webapi::Owner {
+                    crate::models::Owner {
                         display_name: Some(meta.owner_username().to_owned()),
                     }
                 }),
@@ -490,6 +490,61 @@ pub fn album_tracks(session: &Session, album_id: &str) -> Result<Vec<Track>, Str
     context_tracks(session, format!("spotify:album:{album_id}"))
 }
 
+/// La ficha de un artista: quién es y qué canciones tiene.
+///
+/// **Sin la discografía, y no por falta de ganas.** El context de un artista
+/// contesta con sus canciones —diecisiete páginas para uno chico— y con el
+/// nombre en los metadatos, pero no hay ningún URI que devuelva sus álbumes:
+/// `spotify:artist:{id}:albums` responde 404 y el buscador descarta el tipo. La
+/// sección de álbumes queda vacía y la pantalla la esconde.
+pub fn artist_profile(session: &Session, artist_id: &str) -> Result<ArtistProfile, String> {
+    let owned = session.clone();
+    let uri = format!("spotify:artist:{artist_id}");
+
+    // One trip, not two. The context carries the name and the songs together, and
+    // asking twice for the same answer is asking a question the app already has
+    // the answer to.
+    let (name, uris) = call(session, async move {
+        owned
+            .spclient()
+            .get_context(&uri)
+            .await
+            .map(|context| {
+                let name = context
+                    .metadata
+                    .get("context_description")
+                    .cloned()
+                    .unwrap_or_default();
+                (name, context_uris(&context))
+            })
+            .map_err(|e| {
+                log::error!("spclient: el context del artista falló: {e}");
+                "network_failed".to_string()
+            })
+    })?;
+
+    let tracks = hydrate(session, uris)?;
+
+    // Un nombre inventado sería peor que un id: el id se puede copiar y buscar,
+    // un nombre falso no.
+    let name = if name.is_empty() {
+        log::warn!("spclient: el context del artista vino sin nombre");
+        artist_id.to_string()
+    } else {
+        name
+    };
+
+    Ok(ArtistProfile {
+        artist: ArtistCard {
+            id: artist_id.to_string(),
+            name,
+            images: Vec::new(),
+        },
+        albums: Vec::new(),
+        tracks,
+    })
+}
+
 // ---------------------------------------------------------------------------
 // La sonda
 // ---------------------------------------------------------------------------
@@ -504,6 +559,60 @@ pub fn requested() -> bool {
     std::env::var("STARLESS_SP_PROBE")
         .map(|value| value != "0" && !value.is_empty())
         .unwrap_or(false)
+}
+
+/// A second, narrower question: which context URIs exist at all.
+#[cfg(debug_assertions)]
+pub fn shapes_requested() -> bool {
+    std::env::var("STARLESS_SP_SHAPES")
+        .map(|value| value != "0" && !value.is_empty())
+        .unwrap_or(false)
+}
+
+/// Resumen de un context, para comparar candidatos sin volcar el contenido.
+#[cfg(debug_assertions)]
+fn describe(context: &Context) -> String {
+    let tracks: usize = context.pages.iter().map(|page| page.tracks.len()).sum();
+    let meta: Vec<String> = context
+        .metadata
+        .iter()
+        .take(6)
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect();
+    format!(
+        "{} páginas, {} pistas, uri={:?}, metadata=[{}]",
+        context.pages.len(),
+        tracks,
+        context.uri,
+        meta.join(", ")
+    )
+}
+
+/// Prueba una lista de URIs de context y dice qué devolvió cada una.
+///
+/// Lo que se busca acá no es una respuesta: es no dejar un uri sin probar escrito
+/// en un comentario como si fuera una suposición. Cada candidato que vuelve con
+/// páginas es un tipo que el servicio reconoce; cada uno que vuelve vacío es un
+/// tipo que no existe, y también es un dato.
+#[cfg(debug_assertions)]
+fn probe_contexts(session: &Session, candidates: &[String]) {
+    for candidate in candidates {
+        let owned = session.clone();
+        let uri = candidate.clone();
+        let outcome = call(session, async move {
+            owned
+                .spclient()
+                .get_context(&uri)
+                .await
+                .map(|context| describe(&context))
+                .map_err(|e| format!("ERROR: {e}"))
+        });
+
+        match outcome {
+            Ok(summary) => log::info!("SP_PROBE: context {candidate} → {summary}"),
+            Err(e) => log::error!("SP_PROBE: context {candidate} → {e}"),
+        }
+    }
 }
 
 /// What this session can answer without a client id of Starless's own.
@@ -600,4 +709,61 @@ fn probe(session: &Session) {
     }
 
     log::info!("=== DIAGNOSTIC: fin de la sonda de spclient ===");
+}
+
+/// Los otros tres tipos de la pantalla de resultados, y la ficha de un artista.
+///
+/// La pantalla de resultados quiere canciones, álbumes, artistas y playlists.
+/// Las canciones salen de `spotify:search:`; qué URI contesta por cada uno de los
+/// otros tres no está escrito en ninguna parte, y aqui se mide en vez de
+/// suponerse. Los que vuelven con páginas son los que existen.
+#[cfg(debug_assertions)]
+pub fn run_shape_probe(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(session) = crate::selftest::wait_for_session(&app) else {
+            log::error!("SP_PROBE: la sesión no llegó a conectar");
+            return;
+        };
+
+        // Un artista y un álbum que existen, tomados de lo que la biblioteca ya
+        // trajo: un id inventado se vería igual que uno real hasta que no.
+        let mut artist_id = "4Fl8dEtJlmvFkYb4HZr8Fi".to_string();
+        let mut album_id = "0VjIjW4GlUZAMYd2vXMi3b".to_string();
+        if let Ok(playlists) = playlists(&session)
+            && let Some(track) = playlists
+                .iter()
+                .flat_map(|playlist| playlist_tracks(&session, &playlist.id).unwrap_or_default())
+                .next()
+        {
+            if let Some(first_artist) = track.artists.first() {
+                artist_id = first_artist.id.clone();
+            }
+            if let Some(album) = track.album.as_ref() {
+                album_id = album.id.clone();
+            }
+        }
+        log::info!("SP_PROBE: probando con artista {artist_id} y álbum {album_id}");
+
+        // Con `+` y no con espacios: el parser de URIs rechaza el espacio antes
+        // de llegar a mirar qué tipo se pidió, así que un candidato con espacios
+        // no dice si el tipo existe — dice que la frase está mal escrita.
+        probe_contexts(
+            &session,
+            &[
+                format!("spotify:artist:{artist_id}"),
+                format!("spotify:artist:{artist_id}:albums"),
+                format!("spotify:search:dua+lipa:albums"),
+                format!("spotify:search:albums:dua+lipa"),
+                format!("spotify:search:dua+lipa:artists"),
+                format!("spotify:search:artists:dua+lipa"),
+                format!("spotify:search:dua+lipa:playlists"),
+                format!("spotify:search:playlists:dua+lipa"),
+                format!("spotify:search:album:dua+lipa"),
+                format!("spotify:search:artist:dua+lipa"),
+                format!("spotify:search:playlist:dua+lipa"),
+            ],
+        );
+
+        log::info!("=== DIAGNOSTIC: fin de la sonda de formas ===");
+    });
 }

@@ -75,21 +75,18 @@ export function albumYear(album: AlbumCard): string | null {
 
 export type ArtistCard = { id: string; name: string; images: Image[] };
 
-/** One query's answer, in the four things it can have been an answer about. */
-export type SearchResults = {
-  tracks: Track[];
-  albums: AlbumCard[];
-  artists: ArtistCard[];
-  playlists: Playlist[];
-};
-
 /**
- * An artist, their albums, and their songs.
+ * An artist, their songs, and a discography that never arrives.
  *
  * There is no `topTracks` here on purpose: Spotify answers 403 to
  * `/artists/{id}/top-tracks` for apps created after February 2026, and removed
  * `popularity` along with it. These songs are real and they are in search order,
  * which is not the same as ranked by popularity, so nothing calls them that.
+ *
+ * `albums` is part of the answer and is always empty: the channel the library is
+ * read through has no way to ask for an artist's albums, so there is no request
+ * that could fill it. It is declared because the payload carries it, and nothing
+ * renders it — a "0 albums" on screen would be a claim this client cannot make.
  */
 export type ArtistProfile = {
   artist: ArtistCard;
@@ -308,18 +305,9 @@ export const keys = {
   playlists: ["playlists"] as const,
   liked: ["liked-tracks"] as const,
   search: (query: string) => ["search", query] as const,
-  searchAll: (query: string) => ["search-all", query] as const,
   playlistTracks: (playlistId: string) => ["playlist-tracks", playlistId] as const,
   artistProfile: (artistId: string) => ["artist-profile", artistId] as const,
 };
-
-export async function addToPlaylist(playlistId: string, trackIds: string[]): Promise<void> {
-  return invoke<void>("add_to_playlist", { playlistId, trackIds });
-}
-
-export async function createPlaylist(name: string): Promise<Playlist> {
-  return invoke<Playlist>("create_playlist", { name });
-}
 
 export function useAccount() {
   return useQuery({
@@ -381,23 +369,15 @@ export function usePlaylistTracks(playlistId: string | null) {
  * Search is deliberately not a query hook.
  *
  * The keyboard fires a request per keystroke, and a cache keyed by every
- * intermediate string is a cache nobody benefits from. The screen calls
- * `runSearch` behind a debounce instead.
+ * intermediate string is a cache nobody benefits from. So the menu calls this
+ * behind a debounce and the results screen calls it from Enter.
+ *
+ * It answers with songs and only songs: the search parser on the other side drops
+ * the type of whatever it matched, so asking again for albums, artists or
+ * playlists would return the same songs under a different heading.
  */
 export async function runSearch(query: string): Promise<Track[]> {
   return invoke<Track[]>("search_tracks", { query });
-}
-
-/**
- * Everything a query turned up, for the results screen.
- *
- * Separate from [`runSearch`] because the two answer different questions. The
- * menu under the search field shows songs, and asking Spotify for albums, artists
- * and playlists on every keystroke to use one of them is four times the payload
- * for nothing. The results screen does want all four, so it asks once.
- */
-export async function runSearchAll(query: string): Promise<SearchResults> {
-  return invoke<SearchResults>("search_all", { query });
 }
 
 /**
