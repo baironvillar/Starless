@@ -516,15 +516,37 @@ fn post(
 
 /// The same report, as a URL a browser can open.
 ///
-/// GitHub truncates very long query strings, so a log near the size limit is better
-/// on its own than crammed into a URL — this is the fallback, not the main path.
+/// **Budgeted, and the budget buys the end of the body.** GitHub's "new issue"
+/// page refuses a URL much past 8 KB and answers with "Your request URL is too
+/// long" — which it did, at 8,398 characters, so "send" delivered an error page
+/// instead of a form. The budget is therefore counted in *encoded* characters,
+/// because that is what GitHub measures and not what the text looks like, and it
+/// leaves room to survive a body that encodes badly.
+///
+/// And the budget is spent on the **end** rather than the start. `log_tail` is
+/// already a tail: the failure somebody is reporting is in its last lines. An
+/// excerpt that keeps the environment header and the first few thousand
+/// characters of the tail is a log that says nothing about what broke — and it
+/// is what shipped, because taking `take(n)` on a body reads naturally and is
+/// exactly backwards here.
+///
+/// The version is not lost with the header: it is in the title.
 fn browser_url(kind: Kind, title: &str, body: &str) -> String {
-    let body: String = body.chars().take(6_000).collect();
+    const RAW_BUDGET: usize = 2_800;
+
+    let total = body.chars().count();
+    let trimmed: String = if total <= RAW_BUDGET {
+        body.to_string()
+    } else {
+        let kept: String = body.chars().skip(total - RAW_BUDGET).collect();
+        format!("*(log recortado: últimas {RAW_BUDGET} líneas)*\n\n{kept}")
+    };
+
     format!(
         "https://github.com/{REPO_OWNER}/{REPO_NAME}/issues/new?labels={label}&title={title}&body={body}",
         label = urlencoding::encode(kind.label()),
         title = urlencoding::encode(title),
-        body = urlencoding::encode(&body),
+        body = urlencoding::encode(&trimmed),
     )
 }
 
@@ -629,8 +651,54 @@ mod tests {
         );
     }
 
+    /// The fallback URL has to be one GitHub will actually open.
+    ///
+    /// It was measured at 8,398 characters and the page answered "Your request URL
+    /// is too long", which made "send" deliver an error instead of a form. The
+    /// body here encodes worse than a real one — accented characters expand three
+    /// bytes each — so a budget that holds for this one holds for the log.
+#[test]
+    fn the_browser_url_fits_where_github_accepts_it() {
+        let body: String = (0..3_000)
+            .map(|i| format!("[{i}] línea del log con acentos: contraseña\n"))
+            .collect();
+        let url = browser_url(Kind::Feedback, "Feedback desde Starless 0.3.0", &body);
+
+        assert!(
+            url.len() < 6_000,
+            "la URL quedó en {} caracteres y GitHub la rechaza cerca de 8.000",
+            url.len()
+        );
+    }
+
+    /// The log is a tail, so the excerpt has to keep the end of it. Taking
+    /// `take(n)` on the body reads naturally and ships a log that says nothing
+    /// about the failure it was cut from.
+#[test]
+    fn the_browser_url_keeps_the_end_of_the_log() {
+        let mut body = String::from("cabecera que describe el entorno\n");
+        body.push_str(&"ruido que no dice nada\n".repeat(400));
+        body.push_str("2026-10-17 ERROR esto es lo que se rompió");
+
+        let url = browser_url(Kind::Feedback, "titulo", &body);
+        let encoded = url
+            .split_once("&body=")
+            .expect("la URL debe llevar el cuerpo")
+            .1;
+        let decoded = urlencoding::decode(encoded).expect("el cuerpo debe estar codificado");
+
+        assert!(
+            decoded.contains("esto es lo que se rompió"),
+            "el final del log se perdió:\n{decoded}"
+        );
+        assert!(
+            !decoded.contains("cabecera que describe el entorno"),
+            "la cabecera no debería sobrevivir un recorte, la versión está en el título"
+        );
+    }
+
     /// Feedback about something that did not crash must not quietly carry a copy of
-/// the log. The switch being in the UI is not the guarantee — this is.
+    /// the log. The switch being in the UI is not the guarantee — this is.
 #[test]
     fn feedback_leaves_the_log_out_unless_asked() {
         let with = build(Kind::Feedback, "la búsqueda va lenta", true, None);
