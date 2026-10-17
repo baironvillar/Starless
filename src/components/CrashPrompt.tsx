@@ -85,8 +85,11 @@ export function CrashPrompt({ t }: CrashPromptProps) {
     return done ? <Sent url={done} t={t} /> : null;
   }
 
+  // Same reason as the feedback form: this one shows up over the sign-in screen as
+  // often as over the app, so it needs a flat veil rather than another blurred
+  // surface behind its glass.
   return (
-    <div className="absolute inset-0 z-40 grid place-items-center px-6">
+    <div className="absolute inset-0 z-40 grid place-items-center bg-ground/72 px-6">
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}

@@ -67,8 +67,15 @@ export function FeedbackPanel({ t, onClose }: FeedbackPanelProps) {
     }
   }, [message, attachLog, t]);
 
+  // The tint is the point, not the decoration. This form opens over whatever is
+  // on screen — the library, a settings panel, the sign-in screen — and DESIGN.md
+  // forbids glass inside glass: the card's own blur would be sampling another
+  // blurred surface, which costs twice and reads worse than either. A flat veil
+  // puts plain colour behind the glass, which is what the recipe is built for.
+  // It also swallows the clicks underneath, which an invisible overlay should
+  // never leave ambiguous.
   return (
-    <div className="absolute inset-0 z-40 grid place-items-center px-6">
+    <div className="absolute inset-0 z-40 grid place-items-center bg-ground/72 px-6">
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}

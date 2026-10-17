@@ -54,12 +54,20 @@ const AUTH_ERRORS: Record<string, StringKey> = {
  * It also carries a claim the rest of the app depends on — that nothing leaves
  * the machine — so that claim is on the screen, not buried in a privacy page
  * nobody opens.
+ *
+ * And it carries the way out, because this is the screen a person sees when the
+ * app is not working: the sign-in never completes, the library never loads, the
+ * button does nothing. Reporting that used to mean Settings → Diagnostics, which
+ * lives *behind* this gate — so the one launch where a report mattered was the
+ * one launch with nowhere to write it. `onReport` is this screen's own exit.
  */
 export function AuthGate({
   t,
+  onReport,
   children,
 }: {
   t: Record<StringKey, string>;
+  onReport?: () => void;
   children: React.ReactNode;
 }) {
   const [status, setStatus] = useState<AuthStatus | null>(null);
@@ -282,6 +290,19 @@ export function AuthGate({
         >
           {busy ? t.authWaiting : t.authConnect}
         </motion.button>
+
+        {/* The way out of a screen you cannot get past. Quiet on purpose: it is
+            not competing with the one button this screen exists to offer. */}
+        {onReport && (
+          <button
+            type="button"
+            onClick={onReport}
+            disabled={busy}
+            className="text-[12.5px] text-ink-muted underline decoration-dotted underline-offset-4 transition-colors duration-200 hover:text-ink disabled:opacity-45"
+          >
+            {t.authReport}
+          </button>
+        )}
 
         <ul className="flex w-full flex-col gap-2.5 border-t border-white/8 pt-6 text-left">
           <Note icon={Crown} tone="text-accent">

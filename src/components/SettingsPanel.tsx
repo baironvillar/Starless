@@ -16,13 +16,17 @@ import type { Lang, StringKey } from "../lib/i18n";
 import { signOut, type Account as UserAccount } from "../lib/spotify";
 import { checkForUpdate, installUpdate, subscribeUpdate, updateState } from "../lib/updater";
 import { appVersion } from "../lib/version";
-import { FeedbackPanel } from "./FeedbackPanel";
 
 type SettingsPanelProps = {
   lang: Lang;
   t: Record<StringKey, string>;
   /** The signed-in account, so this panel says who is signed in instead of guessing. */
   account: UserAccount | null;
+  /**
+   * Opens the feedback form, which lives outside the auth gate so it can also be
+   * reached by someone the app never let in. This panel is only one of its doors.
+   */
+  onOpenFeedback: () => void;
   onClose: () => void;
   onLangChange: (lang: Lang) => void;
 };
@@ -39,7 +43,14 @@ type Section = (typeof SECTIONS)[number];
  * Settings, as a large floating panel: sections down the left, grouped rows on
  * the right, each row a labelled description with its control opposite.
  */
-export function SettingsPanel({ lang, t, account, onClose, onLangChange }: SettingsPanelProps) {
+export function SettingsPanel({
+  lang,
+  t,
+  account,
+  onOpenFeedback,
+  onClose,
+  onLangChange,
+}: SettingsPanelProps) {
   const [section, setSection] = useState<Section>("sectionGeneral");
   const [version, setVersion] = useState<string>("");
 
@@ -98,7 +109,9 @@ export function SettingsPanel({ lang, t, account, onClose, onLangChange }: Setti
         {section === "sectionGeneral" && <General t={t} lang={lang} onLangChange={onLangChange} />}
         {section === "sectionAudio" && <Audio t={t} />}
         {section === "sectionAccount" && <Account t={t} account={account} />}
-        {section === "sectionDiagnostics" && <Diagnostics t={t} version={version} lang={lang} />}
+        {section === "sectionDiagnostics" && (
+          <Diagnostics t={t} version={version} lang={lang} onOpenFeedback={onOpenFeedback} />
+        )}
       </div>
     </motion.div>
   );
@@ -289,13 +302,14 @@ function Diagnostics({
   t,
   version,
   lang,
+  onOpenFeedback,
 }: {
   t: Record<StringKey, string>;
   version: string;
   lang: Lang;
+  onOpenFeedback: () => void;
 }) {
   const [changelogOpen, setChangelogOpen] = useState(false);
-  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const facts = [
     { label: t.version, value: `v${version}` },
     { label: t.protocol, value: "librespot 0.8 · rodio/cpal → WASAPI" },
@@ -307,14 +321,12 @@ function Diagnostics({
           find is feedback that does not get sent. */}
       <button
         type="button"
-        onClick={() => setFeedbackOpen(true)}
+        onClick={onOpenFeedback}
         className="mb-3 flex w-full items-center justify-between gap-3 rounded-card border border-white/8 bg-white/4 px-5 py-3.5 text-left transition-colors duration-200 hover:bg-white/6"
       >
         <span className="text-[13.5px] font-semibold">{t.feedbackSend}</span>
         <MessageSquarePlus className="size-4 shrink-0 text-ink-muted" strokeWidth={2} />
       </button>
-
-      {feedbackOpen && <FeedbackPanel t={t} onClose={() => setFeedbackOpen(false)} />}
 
       <Group>
         {facts.map((f) => (

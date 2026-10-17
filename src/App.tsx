@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AddToPlaylistMenu } from "./components/AddToPlaylistMenu";
 import { AuthGate } from "./components/AuthGate";
 import { CrashPrompt } from "./components/CrashPrompt";
+import { FeedbackPanel } from "./components/FeedbackPanel";
 import { LibrarySidebar } from "./components/LibrarySidebar";
 import { PlayerBar, type RepeatMode } from "./components/PlayerBar";
 import { QueuePanel } from "./components/QueuePanel";
@@ -86,6 +87,12 @@ export default function App() {
   const [queueOpen, setQueueOpen] = useState(false);
   const [activeItem, setActiveItem] = useState("liked");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /**
+   * The feedback form lives up here, outside `AuthGate`, because the people who
+   * most need to write it are exactly the ones the gate never opens for. Settings
+   * → Diagnostics is one door to it; the sign-in screen is the other.
+   */
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   /**
    * Order modifiers live here, beside the queue they modify. The backend has no
    * opinion about order — it decodes one track at a time and reports when it is
@@ -657,7 +664,7 @@ export default function App() {
         }}
       />
 
-      <AuthGate t={t}>
+      <AuthGate t={t} onReport={() => setFeedbackOpen(true)}>
         <TopBar
           t={t}
           active={active}
@@ -846,6 +853,7 @@ export default function App() {
               lang={lang}
               t={t}
               account={account.data ?? null}
+              onOpenFeedback={() => setFeedbackOpen(true)}
               onClose={() => setSettingsOpen(false)}
               onLangChange={setLang}
             />
@@ -858,6 +866,11 @@ export default function App() {
           whether to show a session — anything inside it would simply not be
           mounted on exactly the launch where the crash prompt matters. */}
       <CrashPrompt t={t} />
+
+      {/* Also outside the gate, and for a sharper reason: the crash prompt appears
+          on a launch where the app may never get past the door, so a report about
+          the app not working has to be writable from a screen that is not behind it. */}
+      {feedbackOpen && <FeedbackPanel t={t} onClose={() => setFeedbackOpen(false)} />}
     </div>
   );
 }
