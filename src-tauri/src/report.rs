@@ -418,6 +418,12 @@ pub fn build(
 /// The user still reads the body and still presses create — the only thing lost is
 /// the click, and what is not lost is that nobody had to embed a credential in a
 /// public binary to find out about it.
+///
+/// **The fallback is logged, loudly, because it is the path that ships today.** A
+/// silent one is worse than useless here: without a line saying "no hay token, se
+/// abrió el navegador", a send that did nothing and a send that worked leave
+/// exactly the same log, and that is the whole reason nobody could tell which one
+/// had happened.
 pub fn submit(
     kind: Kind,
     message: &str,
@@ -428,9 +434,16 @@ pub fn submit(
     let title = title(kind);
 
     let Some(token) = TOKEN else {
+        let url = browser_url(kind, &title, &body);
+        log::info!(
+            "reporte ({kind:?}) sin token: se abre el navegador. Cuerpo de {body_len} caracteres, \
+             URL de {url_len}. Si el cuerpo se pasa del tope, lo que se pierde es el final del log.",
+            body_len = body.len(),
+            url_len = url.len()
+        );
         return Ok(ReportOutcome {
             created: false,
-            url: browser_url(kind, &title, &body),
+            url,
         });
     };
 
