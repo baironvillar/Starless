@@ -157,6 +157,28 @@ fn announce_clean_exit() {
     report::mark_session_end();
 }
 
+/// Development only: plant a crashed session on disk so the crash flow can be
+/// walked without crashing.
+///
+/// The command stays in the handler list in every build, because `generate_handler!`
+/// has no way to drop one entry without building two different closures and
+/// boxing the result — a small piece of ceremony that would put a dev tool one
+/// careless edit away from a release build. So the guard lives in the body: a
+/// release build compiles the planting away entirely and answers with an error, and
+/// the button that calls this does not exist in a release frontend either. Two
+/// independent gates, because the one that matters is the one that is checked.
+#[tauri::command]
+fn simulate_crash() -> Result<(), String> {
+    #[cfg(debug_assertions)]
+    {
+        report::simulate_crash()
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        Err("esto sólo existe en una build de desarrollo".into())
+    }
+}
+
 /// The live streaming session, if any. `Mutex` because `Session` is not `Sync`.
 #[derive(Default)]
 pub struct SessionState(Mutex<Option<Session>>);
@@ -576,6 +598,7 @@ pub fn run() {
             set_menu_opacity,
             previous_session_crashed,
             announce_clean_exit,
+            simulate_crash,
             crash_report_preview,
             submit_crash_report,
             dismiss_crash_report,

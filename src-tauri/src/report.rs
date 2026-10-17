@@ -260,10 +260,16 @@ fn read_panic() -> Option<String> {
     // The moved-aside copy first: while a crash is pending, that is the one that
     // belongs to the session being reported. Only once there is none does a live
     // file (this run's own panic) become interesting.
-    let moved = crash_marker_path()
-        .map(|p| p.with_extension("crash.txt"))
-        .and_then(|p| fs::read_to_string(p).ok());
-    let text = moved.or_else(|| Some(fs::read_to_string(panic_path()?).ok()?))?;
+    //
+    // Both names come from the same helper on purpose. This used to re-derive the
+    // moved-aside name from `crash_marker_path`, which produced
+    // `last-crash.crash.txt` — a file nothing has ever written. The panic is
+    // renamed to `last-panic.crash.txt`, so every crash report went out without
+    // the panic that caused it: the one piece of the report the person reading it
+    // most needed, missing exactly when it was needed.
+    let moved = reported_panic_path().and_then(|p| fs::read_to_string(p).ok());
+    let live = panic_path().and_then(|p| fs::read_to_string(p).ok());
+    let text = moved.or(live)?;
     (!text.trim().is_empty()).then_some(text)
 }
 
@@ -605,9 +611,53 @@ fn browser_url(kind: Kind, title: &str, body: &str) -> String {
 pub fn acknowledge() {
     if let Some(path) = crash_marker_path() {
         let _ = fs::remove_file(&path);
-        let _ = fs::remove_file(path.with_extension("crash.txt"));
     }
+    // The moved-aside panic copy and then the live one: both belong to a session
+    // that is now dealt with. The second one used to be derived from the marker,
+    // which is the same off-by-a-name mistake `read_panic` made — so the file a
+    // real panic leaves behind outlived the prompt that offered to report it.
+    let _ = fs::remove_file(reported_panic_path().unwrap_or_default());
     let _ = fs::remove_file(panic_path().unwrap_or_default());
+}
+
+// ---------------------------------------------------------------------------
+// Development only
+// ---------------------------------------------------------------------------
+
+/// Plant what a panicked run leaves behind, so the crash flow can be walked
+/// without crashing.
+///
+/// Development builds only — the command in `lib.rs` refuses in a release. Two
+/// details make this work the way the real thing does:
+///
+/// * The marker needs no doctored timestamp. `counts_as_crash` counts a panic
+///   however briefly the session lasted, so writing the panic is enough.
+/// * The text is written to the *live* name and then renamed, exactly like
+///   `mark_session_start` does. Writing the moved-aside name directly would
+///   leave the live file behind, and a later launch would promote it to a crash
+///   nobody had.
+///
+/// The dialog only appears on the next launch. That is the design, not a
+/// limitation of the simulation: the prompt is asked at startup because that is
+/// the first moment there is a session to interrupt.
+#[cfg(debug_assertions)]
+pub fn simulate_crash() -> Result<(), String> {
+    let crash = crash_marker_path().ok_or("no se encontró la carpeta local")?;
+    let live = panic_path().ok_or("no se encontró la carpeta local")?;
+    let moved = reported_panic_path().ok_or("no se encontró la carpeta local")?;
+    if let Some(parent) = crash.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+
+    // The shape the hook writes, so the report reads like one it did not stage.
+    let text = "panic en src-tauri/src/report.rs:1:1\ncrash simulado desde Ajustes\n";
+    fs::write(&live, text).map_err(|e| format!("no se pudo escribir el panic: {e}"))?;
+    fs::rename(&live, &moved).map_err(|e| format!("no se pudo apartar el panic: {e}"))?;
+    fs::write(&crash, crate::version_line())
+        .map_err(|e| format!("no se pudo escribir el marcador: {e}"))?;
+
+    log::warn!("crash simulado desde el panel de desarrollo");
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -644,6 +694,22 @@ mod tests {
     #[test]
     fn a_panic_counts_however_fast_it_happened() {
         assert!(counts_as_crash(Some(Duration::from_millis(10)), true));
+    }
+
+    /// The panic file has exactly one name, and every side agrees on it.
+    ///
+    /// It used to have two. The report read and the report cleaned up
+    /// `last-crash.crash.txt`, which nothing has ever written, while the panic
+    /// itself was renamed to `last-panic.crash.txt`. Every crash report therefore
+    /// went out without the panic — the failure itself, which is the reason the
+    /// report exists. The test pins the name both sides now derive it from, so the
+    /// two cannot drift apart again without turning this red.
+    #[test]
+    fn the_panic_file_has_one_name() {
+        let name = reported_panic_path()
+            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .expect("debe haber una carpeta local");
+        assert_eq!(name, "last-panic.crash.txt");
     }
 
     /// An unreadable timestamp is not evidence either way. Reporting costs one
