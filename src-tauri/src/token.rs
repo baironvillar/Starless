@@ -147,7 +147,7 @@ pub fn ensure_fresh(state: &TokenState) -> Result<StoredToken, String> {
         let refreshed = client
             .refresh_token(&token.refresh_token)
             .map_err(|e| auth::fail("token_refresh_failed", e))?;
-        let stored = StoredToken::from_oauth(&refreshed, &token.client_id);
+        let stored = keep_refresh_token(StoredToken::from_oauth(&refreshed, &token.client_id), &token);
         state.set(stored.clone());
         return Ok(stored);
     }
@@ -165,3 +165,59 @@ pub fn ensure_fresh(state: &TokenState) -> Result<StoredToken, String> {
 /// network is not there. Long enough for a slow AP, short enough that a dead
 /// connection does not leave a spinner up forever.
 pub const NETWORK_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// Carry the refresh token forward when a refresh response does not include one.
+///
+/// A refresh exchange is allowed to answer with a bare access token. When it does,
+/// the token already on disk is still the live one — Spotify invalidates the old
+/// refresh token only when it issues a replacement. Writing the empty answer over
+/// it is how this session died once: the refresh succeeded, the app played for an
+/// hour, and at the next expiry there was nothing left to renew with. `ensure_fresh`
+/// then answered `login_expired` and the only way out was signing in again, which is
+/// the one thing nobody should have to do because a clock ran down.
+///
+/// Split out from [`ensure_fresh`] so it can be tested without a network round trip.
+fn keep_refresh_token(fresh: StoredToken, previous: &StoredToken) -> StoredToken {
+    if fresh.refresh_token.is_empty() {
+        return StoredToken {
+            refresh_token: previous.refresh_token.clone(),
+            ..fresh
+        };
+    }
+    fresh
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stored(access: &str, refresh: &str) -> StoredToken {
+        StoredToken {
+            access_token: access.to_string(),
+            refresh_token: refresh.to_string(),
+            expires_at: 0,
+            client_id: "cliente".to_string(),
+        }
+    }
+
+    #[test]
+    fn a_refresh_without_a_refresh_token_keeps_the_one_on_disk() {
+        let out = keep_refresh_token(stored("nuevo", ""), &stored("viejo", "el-bueno"));
+        assert_eq!(out.access_token, "nuevo");
+        assert_eq!(out.refresh_token, "el-bueno");
+    }
+
+    #[test]
+    fn a_rotated_refresh_token_replaces_the_old_one() {
+        let out = keep_refresh_token(stored("nuevo", "otro"), &stored("viejo", "el-bueno"));
+        assert_eq!(out.refresh_token, "otro");
+    }
+
+    /// An empty string carried forward is still empty: this only ever preserves,
+    /// it never invents a way back into a session that never had one.
+    #[test]
+    fn nothing_is_invented_when_there_was_nothing_before() {
+        let out = keep_refresh_token(stored("nuevo", ""), &stored("viejo", ""));
+        assert!(out.refresh_token.is_empty());
+    }
+}
