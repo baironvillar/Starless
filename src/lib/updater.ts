@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 
 /**
@@ -81,6 +82,13 @@ export async function checkForUpdate(): Promise<void> {
 export async function installUpdate(update: Update): Promise<void> {
   let received = 0;
   let total = 0;
+
+  // Said before the download, not after, because after is too late: the process
+  // is gone by then. Without this the session's marker survives the update and
+  // the next launch opens with a crash report about an update that worked
+  // perfectly. Best effort on purpose — if the backend cannot answer, the update
+  // matters more than the report.
+  await invoke("announce_clean_exit").catch(() => {});
 
   await update.downloadAndInstall((event) => {
     switch (event.event) {

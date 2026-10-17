@@ -100,8 +100,8 @@ export const strings = {
     authBody:
       "Conéctate con tu cuenta de Spotify. Starless no ve tu contraseña y no envía telemetría.",
     authConnect: "Conectar con Spotify",
-    authReport: "¿Algo no anda? Contanos qué pasó.",
-    feedbackEmpty: "Contanos qué pasó, o adjuntá el log para que el reporte sirva de algo.",
+    authReport: "¿Algo no anda? Cuéntanos qué pasó.",
+    feedbackEmpty: "Cuéntanos qué pasó, o adjunta el log para que el reporte sirva de algo.",
     authWaiting: "Termina la autorización en el navegador…",
     authConnected: "Conectado como",
     authPremium:
@@ -159,7 +159,7 @@ export const strings = {
     qualityHigh: "Alta",
 
     normalisation: "Normalizar volumen",
-    normalisationHint: " Iguala el volumen entre canciones para que no te sorprendan los picos.",
+    normalisationHint: "Iguala el volumen entre canciones para que no te sorprendan los picos.",
     crossfade: "Transición suave",
     crossfadeHint: "Encadena las canciones con un fundido corto en lugar de cortarse.",
 
@@ -193,7 +193,7 @@ export const strings = {
     crashKicker: "La sesión anterior falló",
     crashTitle: "Starless no se cerró bien",
     crashBody:
-      "La última vez que abriste Starless, la app terminó sin cerrarse. Puede ser un fallo puntual o algo de la máquina. Si querés, mandamos el registro para poder encontrarlo.",
+      "La última vez que abriste Starless, la app terminó sin cerrarse. Puede ser un fallo puntual o algo de la máquina. Si quieres, mandamos el registro para poder encontrarlo.",
     crashShowDetail: "Ver qué se enviaría",
     crashHideDetail: "Ocultar el detalle",
     crashScrubbed: "Sin datos personales",
@@ -208,9 +208,9 @@ export const strings = {
 
     // Saying something when nothing crashed
     feedbackKicker: "Feedback",
-    feedbackTitle: "Contale a quien lo lee",
+    feedbackTitle: "Cuéntale a quien lo lee",
     feedbackBody:
-      "Algo que anda lento, algo que no encontrás, algo que te está molestando. No hace falta que esté roto: lo que no se reporta no existe.",
+      "Algo que anda lento, algo que no encuentras, algo que te está molestando. No hace falta que esté roto: lo que no se reporta no existe.",
     feedbackPlaceholder: "¿Qué pasó, o qué te gustaría que pasara?",
     feedbackAttachLog: "Adjuntar el registro",
     feedbackAttachLogHint:

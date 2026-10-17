@@ -68,7 +68,7 @@ mantiene baja mientras suena.
   — minimizar, maximizar, cerrar — viven al final de la barra de arriba, y esa
   barra es lo que mueve la ventana.
 - **Feedback desde adentro.** Ajustes → Diagnóstico tiene un botón para contar
-  qué anda lento, qué no encontrás o qué te molesta. El log va **apagado por
+  qué anda lento, qué no encuentras o qué te molesta. El log va **apagado por
   defecto** y se activa con un clic, porque "la búsqueda va lenta" y "mandame el
   registro de tu máquina" no son el mismo pedido.
 
@@ -85,14 +85,14 @@ Windows primero. Los instaladores van adjuntos a las
 
 > [!WARNING]
 > **Los instaladores no están firmados.** Windows SmartScreen y el Gatekeeper de
-> macOS van a avisar. SmartScreen dice quién construyó el archivo y podés
+> macOS van a avisar. SmartScreen dice quién construyó el archivo y puedes
 > seguir; el Gatekeeper de macOS requiere un clic extra en *Abrir*. La firma
 > criptográfica sí está, pero protege **la URL de actualización**, no al
 > instalador — es otro riesgo, y ese está cerrado.
 
 ### Compilar desde el código
 
-Necesitás:
+Necesitas:
 
 - **[Bun](https://bun.sh)** 1.x — el package manager y el runner de scripts.
 - **[Rust](https://rustup.rs)**, edición 2024 (1.85 o superior).
@@ -179,7 +179,7 @@ audio no puede pasar por la webview o por qué el blur tiene tope de 24px.
 ### Actualizaciones
 
 Una copia instalada de Starless comprueba GitHub Releases por una versión
-nueva, 2,5 segundos después de abrir, y **no descarga nada** hasta que lo pedís
+nueva, 2,5 segundos después de abrir, y **no descarga nada** hasta que lo pides
 en Ajustes. El manifest vive en la release y GitHub redirige la URL a la más
 reciente, así que no hay servidor propio que mantener.
 

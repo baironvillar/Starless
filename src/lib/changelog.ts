@@ -40,6 +40,35 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.3.2",
+    date: null,
+    released: false,
+    sections: {
+      es: [
+        {
+          title: "Corregido",
+          items: [
+            "Pasar el cursor por las playlists volvía a descargar todas sus páginas, una y otra vez: el precargado se guardaba ya vencido, así que el `staleTime` de cinco minutos del hook no llegaba nunca a aplicarse. Una playlist larga se descargó seis veces completas en diez segundos.",
+            "Después de una actualización, la app siguiente abría pidiendo el reporte de un crash que nunca hubo. El actualizador entrega el instalador a Windows y el proceso se va antes de que se pueda cerrar la sesión a tiempo, así que el marcador de sesión sobrevive.",
+            "Una sesión que moría a los pocos segundos ya no cuenta como caída. Un cierre abrupto se distingue de un crash por lo único que los separa: cuánto vivió.",
+            "El español estaba escrito en voseo rioplatense. Ahora es neutro.",
+          ],
+        },
+      ],
+      en: [
+        {
+          title: "Fixed",
+          items: [
+            "Hovering a playlist in the sidebar re-downloaded every page of it, over and over: the prefetch was written already stale, so the hook's five-minute freshness never applied. One long playlist downloaded six times in ten seconds.",
+            "After an update, the next launch opened asking for a crash report that never happened. The updater hands the installer to Windows and the process is gone before the session can be closed properly, so the marker survives.",
+            "A session that died within seconds no longer counts as a crash. What separates an abrupt kill from a crash is the only thing that does: how long it lived.",
+            "The Spanish was written in Rioplatense voseo. It is neutral now.",
+          ],
+        },
+      ],
+    },
+  },
+  {
     version: "0.3.1",
     date: "2026-10-17",
     released: true,
@@ -49,7 +78,7 @@ export const CHANGELOG: ChangelogEntry[] = [
           title: "Añadido",
           items: [
             "El feedback se puede escribir también desde la pantalla de inicio de sesión. A quien la app no le funciona ya no tiene que Signed in para contarlo: esa pantalla era, irónicamente, justo donde no había dónde escribir.",
-            "Una pestaña de Personalización en Ajustes, con el primer ajuste propio: qué tan opacos son los menús. Se recuerda entre arranques, y una muestra al lado del deslizador deja ver el resultado mientras lo movés.",
+            "Una pestaña de Personalización en Ajustes, con el primer ajuste propio: qué tan opacos son los menús. Se recuerda entre arranques, y una muestra al lado del deslizador deja ver el resultado mientras lo mueves.",
           ],
         },
         {
@@ -65,7 +94,7 @@ export const CHANGELOG: ChangelogEntry[] = [
           title: "Cambiado",
           items: [
             "El formulario de feedback y el aviso de caída ya no se apilan sobre otro panel de vidrio, que DESIGN.md prohíbe: ahora llevan un velo plano detrás.",
-            "La build compilada salía con el vidrio sin difuminado. El minificador de Tailwind se comía el `backdrop-filter` estándar y dejaba sólo el prefijo `-webkit-`, que WebView2 ignora: al 55% se leían las canciones de atrás a través del panel, mientras `bun run dev` se veía perfecto porque ahí el CSS no pasa por el minificador. Ahora el vidrio sale difuminado como corresponde, y qué tan opaco es lo elegís vos en Ajustes → Personalización.",
+            "La build compilada salía con el vidrio sin difuminado. El minificador de Tailwind se comía el `backdrop-filter` estándar y dejaba sólo el prefijo `-webkit-`, que WebView2 ignora: al 55% se leían las canciones de atrás a través del panel, mientras `bun run dev` se veía perfecto porque ahí el CSS no pasa por el minificador. Ahora el vidrio sale difuminado como corresponde, y qué tan opaco es lo eliges en Ajustes → Personalización.",
             "El ajuste de opacidad también alcanza a la cola y a los ajustes, no sólo a los menús flotantes.",
           ],
         },
@@ -115,8 +144,8 @@ export const CHANGELOG: ChangelogEntry[] = [
             "Registro a archivo local, con rotación, y autodiagnóstico con STARLESS_DIAGNOSTIC=1.",
             "Actualizaciones automáticas: Starless comprueba si hay una versión nueva al abrir y tú decides cuándo instalarla.",
             "Estos changelogs, en Diagnóstico.",
-            "Detección de caídas: si la app no se cerró bien, Starless lo nota y te ofrece enviar el reporte, con el log ya recortado y sin datos personales. No sale un solo byte de tu máquina hasta que vos lo mandás.",
-            "Feedback dentro de la app, en Ajustes → Diagnóstico. El log va adjunto solo si lo pedís.",
+            "Detección de caídas: si la app no se cerró bien, Starless lo nota y te ofrece enviar el reporte, con el log ya recortado y sin datos personales. No sale un solo byte de tu máquina hasta que lo mandas.",
+            "Feedback dentro de la app, en Ajustes → Diagnóstico. El log va adjunto solo si lo pides.",
             "El volumen se recuerda entre arranques.",
             "Un ícono nuevo: una estrella que se apaga.",
             "La ventana ya no usa la barra de título del sistema. Minimizar, maximizar y cerrar viven a la derecha del buscador.",

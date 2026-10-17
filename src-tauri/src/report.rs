@@ -31,6 +31,7 @@
 
 use std::fs;
 use std::path::PathBuf;
+use std::time::{Duration, SystemTime};
 
 use regex::Regex;
 use serde::Serialize;
@@ -78,6 +79,11 @@ fn panic_path() -> Option<PathBuf> {
     local_dir().map(|d| d.join("last-panic.txt"))
 }
 
+/// The panic file as it looks once it belongs to a session being reported on.
+fn reported_panic_path() -> Option<PathBuf> {
+    panic_path().map(|p| p.with_extension("crash.txt"))
+}
+
 /// Record that a session is running.
 ///
 /// If the previous run's marker is still lying around it was moved to
@@ -98,10 +104,10 @@ pub fn mark_session_start() {
             // Already reported on and never acknowledged. Don't resurrect it.
             let _ = fs::remove_file(&live);
         } else {
-            if let Some(panic) = panic_path()
-                && let Some(target) = crash_marker_path().map(|_| panic.with_extension("crash.txt"))
+            if let Some(panic) = reported_panic_path()
+                && let Some(source) = panic_path()
             {
-                let _ = fs::rename(&panic, &target);
+                let _ = fs::rename(&source, &panic);
             }
             let _ = fs::rename(&live, &crash);
         }
@@ -119,14 +125,57 @@ pub fn mark_session_end() {
     }
 }
 
-/// `true` when the previous run left its marker behind, which means it did not end
-/// on purpose.
+/// How long the previous session has to have lived before its death is worth
+/// interrupting somebody about.
+///
+/// A marker on its own cannot tell a crash from a kill, and most kills are not
+/// crashes: the updater handing the process to the installer, Windows going
+/// down, a task manager, a second copy of the app being closed by hand. All of
+/// them leave the marker behind, and all of them used to open with a dialog
+/// about a crash that never happened.
+///
+/// What separates them from a real one is time. A crash is something the app did
+/// while someone was using it. A session that was over in seconds is a session
+/// that never started — and if it really was a panic, the panic wrote its own
+/// file and `counts_as_crash` says so regardless of the clock.
+const MIN_SESSION_BEFORE_CRASH: Duration = Duration::from_secs(60);
+
+/// The decision behind [`previous_session_crashed`], kept apart from the disk so
+/// it can be tested without a session, a panic or a machine.
+fn counts_as_crash(ran_for: Option<Duration>, panicked: bool) -> bool {
+    if panicked {
+        return true;
+    }
+    match ran_for {
+        // An unreadable mtime is not evidence either way. Report it: the cost of a
+        // false alarm is one dismissed dialog, the cost of a silence is a bug nobody
+        // ever hears about.
+        None => true,
+        Some(ran_for) => ran_for >= MIN_SESSION_BEFORE_CRASH,
+    }
+}
+
+/// `true` when the previous run left its marker behind and lived long enough for
+/// its death to be a crash rather than a kill.
 ///
 /// Readable at any point in this run's life, including from the frontend, because
 /// `mark_session_start` moved the evidence out of the way rather than overwriting
 /// it.
 pub fn previous_session_crashed() -> bool {
-    crash_marker_path().is_some_and(|p| p.exists())
+    let Some(crash) = crash_marker_path() else {
+        return false;
+    };
+    if !crash.exists() {
+        return false;
+    }
+    // A rename keeps the original mtime, which is when the session started — so
+    // the age of this file is how long the previous session lasted.
+    let ran_for = fs::metadata(&crash)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|started| SystemTime::now().duration_since(started).ok());
+    let panicked = reported_panic_path().is_some_and(|p| p.exists());
+    counts_as_crash(ran_for, panicked)
 }
 
 // ---------------------------------------------------------------------------
@@ -577,6 +626,32 @@ pub fn acknowledge() {
 mod tests {
     use super::*;
     use crate::settings::Settings;
+
+    #[test]
+    fn a_session_that_died_at_once_is_not_a_crash() {
+        assert!(!counts_as_crash(Some(Duration::from_secs(2)), false));
+        assert!(!counts_as_crash(Some(Duration::from_millis(200)), false));
+    }
+
+    #[test]
+    fn a_session_that_lived_is_a_crash() {
+        assert!(counts_as_crash(Some(Duration::from_secs(60)), false));
+        assert!(counts_as_crash(Some(Duration::from_secs(3 * 3600)), false));
+    }
+
+    /// A panic says so in its own file, and that outranks the clock: a real panic
+    /// during startup is exactly the bug this prompt exists for.
+    #[test]
+    fn a_panic_counts_however_fast_it_happened() {
+        assert!(counts_as_crash(Some(Duration::from_millis(10)), true));
+    }
+
+    /// An unreadable timestamp is not evidence either way. Reporting costs one
+    /// dismissed dialog; staying quiet costs a bug nobody ever hears about.
+    #[test]
+    fn an_unreadable_timestamp_is_treated_as_a_crash() {
+        assert!(counts_as_crash(None, false));
+    }
 
     const REAL_LINES: &str = "\
 [2026-10-17T00:23:58.326Z INFO  librespot_core::session] Authenticated as 't_jitzol' !

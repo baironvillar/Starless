@@ -142,6 +142,21 @@ fn dismiss_crash_report() {
     report::acknowledge();
 }
 
+/// A session that is about to end on purpose, announced in advance.
+///
+/// The updater hands the installer to Windows from inside `downloadAndInstall`
+/// and the process is gone before the runner's `Exit` event can be heard, so the
+/// marker survives and the next launch greets someone with a crash report about
+/// an update that did exactly what it was asked. This is the one clean exit the
+/// app can announce before it happens, so it is the one it announces.
+///
+/// Cheap enough to be a plain command: one file, removed, on the main thread.
+#[tauri::command]
+fn announce_clean_exit() {
+    log::info!("salida anunciada: la actualización se lleva la sesión");
+    report::mark_session_end();
+}
+
 /// The live streaming session, if any. `Mutex` because `Session` is not `Sync`.
 #[derive(Default)]
 pub struct SessionState(Mutex<Option<Session>>);
@@ -560,6 +575,7 @@ pub fn run() {
             menu_opacity,
             set_menu_opacity,
             previous_session_crashed,
+            announce_clean_exit,
             crash_report_preview,
             submit_crash_report,
             dismiss_crash_report,
