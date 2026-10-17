@@ -1,0 +1,89 @@
+name: Reportar un bug / Bug report
+description: Algo no funciona como debería. / Something does not work the way it should.
+title: "[bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Gracias por el reporte. Dos cosas que nos ahorran mucho tiempo:
+
+        - **La versión**: Ajustes → General, o el número que aparece abajo a la izquierda.
+        - **El log**: si la app se cae o una canción no suena, el registro local ya
+          tiene el motivo. Poné `STARLESS_DIAGNOSTIC=1` antes de abrirla y pegá el
+          resultado del autodiagnóstico, no una captura del error en pantalla.
+
+        Ojo con la versión **0.3.0**: las instalaciones de 0.3.0 no se actualizan
+        solas todavía. Si tu reporte es contra 0.3.0 y venís de una anterior, la
+        primera actualización hay que bajarla a mano.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: Qué pasó / What happened
+      description: Qué viste, no qué esperabas. Qué se rompió y cuándo.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Qué esperabas / What you expected
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Pasos para reproducir / Steps to reproduce
+      description: Desde abrir la app. Si depende de una canción o playlist concreta, decilo.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Versión de Starless / Starless version
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Sistema operativo / Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS
+        - Linux
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Autodiagnóstico / Self-test output
+      description: La salida de `STARLESS_DIAGNOSTIC=1`, si la pudiste correr.
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log relevante / Relevant log
+      description: >-
+        El tramo del log alrededor de lo que falló. Quitá tokens o cookies si
+        aparecieran: nunca deberían estar, pero si los ves, es un reporte de
+        seguridad y va al canal privado, no a acá.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Confirmá / Please confirm
+      options:
+        - label: Usé una cuenta Spotify Premium. / I am on a Spotify Premium account.
+          required: true
+        - label: Busqué en los issues abiertos y no está reportado. / I checked the open issues and this is not already reported.
+          required: true

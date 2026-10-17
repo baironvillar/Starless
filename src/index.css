@@ -1,0 +1,190 @@
+@import "tailwindcss";
+
+/*
+ * Starless — design tokens.
+ * Values come from DESIGN.md. Change them there first, then here.
+ */
+
+@theme {
+  /* Colour. Saturation lives in the bloom and in state marks, never in flat panel fills. */
+  --color-ground: #0a0a12;
+  --color-ground-lift: #10101c;
+  --color-ink: #f4f4fa;
+  --color-ink-muted: #9a9ab0;
+  --color-ink-faint: #9090a8;
+
+  --color-accent: #c9f73c;
+  --color-accent-soft: #d9ff6b;
+  --color-live: #ff5a36;
+  --color-ok: #3ddc97;
+  --color-warn: #ffb020;
+
+  /* Radius. Corner radius on a floating surface is what tells the eye it is detached. */
+  --radius-rail: 24px;
+  --radius-bar: 28px;
+  --radius-card: 20px;
+  --radius-pill: 999px;
+
+  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* A single spacing rhythm. Everything snaps to 4px. */
+  --spacing: 0.25rem;
+
+  --ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/*
+ * Floating glass.
+ *
+ * Three stacked layers, never one. The base layer is what guarantees the contrast
+ * floor over a bright album cover — omitting it is what makes translucency unreadable.
+ *
+ * Performance rules that keep this cheap enough for the sub-second-start promise:
+ *   - blur radius is capped at 24px
+ *   - this utility is never nested inside another one
+ *   - only `transform` and `opacity` are ever animated on a glass surface
+ *     (animating `backdrop-filter` forces a full re-sample every frame)
+ */
+@utility glass {
+  background-color: rgb(20 20 32 / 0.55);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgb(255 255 255 / 0.12);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.1),
+    0 24px 48px -12px rgb(0 0 0 / 0.6);
+  contain: paint;
+}
+
+/* A control that sits ON a glass surface. Tinted, never a second glass layer. */
+@utility glass-control {
+  background-color: rgb(255 255 255 / 0.08);
+  border: 1px solid rgb(255 255 255 / 0.1);
+  transition:
+    background-color 160ms var(--ease-glass),
+    transform 160ms var(--ease-glass);
+}
+
+@utility glass-control-hover {
+  background-color: rgb(255 255 255 / 0.14);
+}
+
+/*
+ * Range inputs.
+ *
+ * The browser's default range looks like a different app wearing our clothes, so
+ * it is redrawn rather than accepted. Starless has exactly two of these — the seek
+ * bar and the volume — so they share one recipe: a 4px track, a white thumb, and a
+ * fill driven by the `--fill` custom property that each control sets from its own
+ * value. Unlayered on purpose: it must outrank utilities, because appearance reset
+ * is the entire point of the class.
+ */
+.slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 16px;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background-image: linear-gradient(
+    to right,
+    var(--color-ink) 0 var(--fill, 0%),
+    rgb(255 255 255 / 0.16) var(--fill, 0%) 100%
+  );
+}
+
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border-radius: 999px;
+  background-color: var(--color-ink);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.55);
+  transition: transform 160ms var(--ease-glass);
+}
+
+.slider:hover::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
+
+.slider:active::-webkit-slider-thumb {
+  transform: scale(0.95);
+}
+
+.slider::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background-color: rgb(255 255 255 / 0.16);
+}
+
+.slider::-moz-range-progress {
+  height: 4px;
+  border-radius: 999px;
+  background-color: var(--color-ink);
+}
+
+.slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: none;
+  border-radius: 999px;
+  background-color: var(--color-ink);
+}
+
+@layer base {
+  * {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--color-ground);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    overflow: hidden;
+    /* A desktop app is not a document. Text selection on chrome feels broken. */
+    user-select: none;
+  }
+
+  /* Timecodes are data, not prose — they stay selectable and use tabular figures
+     so a countdown never shifts the layout as digits change. */
+  .tabular {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  ::selection {
+    background-color: rgb(110 86 255 / 0.4);
+  }
+
+  /* Visible focus is required: a glass UI hides default outlines against the blur. */
+  :focus-visible {
+    outline: 2px solid var(--color-accent-soft);
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

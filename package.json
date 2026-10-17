@@ -1,0 +1,49 @@
+{
+  "name": "starless",
+  "private": true,
+  "version": "0.3.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "app": "tauri dev",
+    "app:build": "tauri build",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "design:detect": "impeccable detect src/",
+    "typecheck": "tsc --noEmit",
+    "version": "bun run scripts/version.ts get",
+    "version:bump": "bun run scripts/version.ts bump",
+    "version:set": "bun run scripts/version.ts set",
+    "updater:key": "bun run scripts/updater.ts key",
+    "updater:pubkey": "bun run scripts/updater.ts pubkey",
+    "updater:manifest": "bun run scripts/updater.ts manifest"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@tanstack/react-query": "^5.104.3",
+    "@tanstack/react-router": "^1.170.44",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-updater": "^2.14.0",
+    "lucide-react": "^1.58.0",
+    "motion": "^14.3.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tailwindcss": "^4.3.3",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
+    "@tanstack/router-plugin": "^1.168.46",
+    "@tauri-apps/cli": "^2",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^6.0.2",
+    "typescript": "~6.0.3",
+    "vite": "^8.0.16"
+  }
+}

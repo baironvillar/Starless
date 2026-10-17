@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint, typecheck, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Lint and format
+        run: bun run lint
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Build
+        run: bun run build
+
+  version:
+    name: Version consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # The version lives in tauri.conf.json and is propagated to Cargo.toml
+      # and package.json by scripts/version.ts, which exits non-zero when the
+      # three disagree. This job exists so that a PR touching one manifest and
+      # not the others fails here instead of shipping a build that lies about
+      # its own version.
+      - name: Check all three manifests agree
+        run: bun run version
+
+  secrets:
+    name: No private keys committed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The updater signing key can sign an update for every installed copy of
+      # Starless. It belongs in a CI secret, never in a repository, and
+      # regenerating it would strand every install that already trusts the old
+      # public half. Cheap to check, expensive to discover late.
+      - name: Guard
+        run: |
+          if git ls-files --error-unmatch .secrets >/dev/null 2>&1; then
+            echo "::error::.secrets is tracked in this repository"
+            exit 1
+          fi
+          if git ls-files | grep -qE 'starless-updater\.key'; then
+            echo "::error::an updater private key is tracked in this repository"
+            exit 1
+          fi
+          echo "No private keys tracked."

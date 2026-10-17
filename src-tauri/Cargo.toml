@@ -1,0 +1,64 @@
+[package]
+name = "starless"
+version = "0.3.0"
+description = "A native desktop client for Spotify"
+authors = ["bairo"]
+edition = "2024"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "starless_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+# Updates for people who already have Starless installed. See `docs/updates.md`
+# for the release flow and for why the updater signature is not optional.
+tauri-plugin-updater = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# librespot, split per concern rather than the single umbrella crate, so a
+# breakage in one area is patched in one file.
+#
+# The audio backend is pinned explicitly: `rodio-backend` routes through cpal to
+# WASAPI on Windows, which is the only reason we are here. The default feature
+# set also drags in the ALSA backend, which is dead weight on this platform.
+librespot-core = "0.8"
+librespot-metadata = "0.8"
+librespot-playback = { version = "0.8", default-features = false, features = [
+    "rodio-backend",
+] }
+librespot-connect = "0.8"
+librespot-oauth = "0.8"
+
+# Where the librespot credential cache lives. Resolved once, at startup.
+dirs = "6"
+
+# The Spotify Web API. Blocking client, because the token refresh it depends on
+# is blocking too, and one async story per request is simpler than two.
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+urlencoding = "2"
+
+# librespot logs through the `log` crate. Without a logger installed, every
+# reason it has for refusing a track is silently discarded — which is exactly
+# what happened the first time a track came back `unavailable`.
+env_logger = "0.11"
+log = "0.4"
+
+
+# Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

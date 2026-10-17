@@ -1,0 +1,37 @@
+name: Pedir una funcionalidad / Feature request
+description: Describe el problema, no la solución. / Describe the problem, not the solution.
+title: "[feat]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Starless tiene pocas restricciones duras, y conviene conocerlas antes de
+        proponer algo: es un cliente **no oficial** (sin marca de Spotify en
+        ninguna parte), **sólo Premium**, **cero telemetría**, y el **audio no pasa
+        por la ventana**. Una funcionalidad que rompa alguna de estas no entra,
+        y saberlo ahora evita discutirlo después.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: El problema / The problem
+      description: Qué intentabas hacer y qué te frenó. La situación concreta, no la solución que se te ocurrió.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Qué probaste / What you tried
+      description: Y con qué herramientas o clientes te las arreglaste hoy, si conseguiste.
+    validations:
+      required: false
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Algo más / Anything else
+      description: Capturas, links, contexto del uso real.
+    validations:
+      required: false
