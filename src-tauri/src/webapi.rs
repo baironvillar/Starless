@@ -442,14 +442,6 @@ fn get<T: serde::de::DeserializeOwned>(path: &str, access_token: &str) -> Result
     decode(send(path, Method::GET, None, access_token)?)
 }
 
-pub fn account(access_token: &str) -> Result<Account, String> {
-    get("/me", access_token)
-}
-
-pub fn playlists(access_token: &str) -> Result<Vec<Playlist>, String> {
-    Ok(get::<PlaylistPage>("/me/playlists?limit=50", access_token)?.items)
-}
-
 pub fn liked_tracks(access_token: &str) -> Result<Vec<Track>, String> {
     Ok(get::<SavedPage>("/me/tracks?limit=50", access_token)?
         .items

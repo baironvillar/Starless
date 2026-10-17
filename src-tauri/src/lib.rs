@@ -15,6 +15,7 @@ mod playback;
 mod report;
 mod selftest;
 mod settings;
+mod spclient;
 mod token;
 mod webapi;
 
@@ -383,8 +384,6 @@ macro_rules! webapi_command {
     };
 }
 
-webapi_command!(account, webapi::account, Account);
-webapi_command!(my_playlists, webapi::playlists, Vec<Playlist>);
 webapi_command!(liked_tracks, webapi::liked_tracks, Vec<Track>);
 webapi_command!(playlist_tracks, webapi::playlist_tracks, Vec<Track>, playlist_id: String);
 webapi_command!(
@@ -397,6 +396,39 @@ webapi_command!(
 webapi_command!(create_playlist, webapi::create_playlist, Playlist, name: String);
 webapi_command!(album_tracks, webapi::album_tracks, Vec<webapi::Track>, album_id: String);
 webapi_command!(artist_profile, webapi::artist_profile, webapi::ArtistProfile, artist_id: String);
+
+/// Comandos que leen por la sesión, no por un token.
+///
+/// La misma forma que [`webapi_command`] y por el mismo motivo: `spclient` hace
+/// viajes de red, así que el comando corre en `spawn_blocking` y no en el hilo
+/// que dibuja la ventana. Lo que cambia de verdad es la entrada — en vez del
+/// token de la Web API, la sesión de librespot — y por eso va aparte.
+///
+/// El lock se toma acá y no adentro del hilo: `State` no se puede mover a un
+/// hilo bloqueante, pero la sesión sí, y sólo hace falta una copia.
+macro_rules! spclient_command {
+    ($name:ident, $inner:path, $ty:ty $(, $arg:ident : $arg_ty:ty)*) => {
+        #[tauri::command]
+        async fn $name(session_state: State<'_, SessionState> $(, $arg: $arg_ty)*) -> Result<$ty, String> {
+            let session = session_state
+                .0
+                .lock()
+                .ok()
+                .and_then(|guard| guard.clone())
+                .ok_or_else(|| "no_session".to_string())?;
+
+            tauri::async_runtime::spawn_blocking(move || $inner(&session $(, &$arg)*))
+                .await
+                .map_err(|e| {
+                    eprintln!("Starless [command_failed]: {e}");
+                    "command_failed".to_string()
+                })?
+        }
+    };
+}
+
+spclient_command!(account, spclient::account, Account);
+spclient_command!(my_playlists, spclient::playlists, Vec<Playlist>);
 
 /// Everything one query turned up, across songs, albums, artists and playlists.
 ///
@@ -569,6 +601,14 @@ pub fn run() {
 
             // Off the setup thread, and started independently of the restore
             // above: the self-test waits for the session itself.
+            // Same shape, different question: what this session can answer on
+            // its own. Kept out of the self-test because that one plays music.
+            // Before it because both wait for the same session and the self-test
+            // takes the handle by value.
+            #[cfg(debug_assertions)]
+            if spclient::requested() {
+                spclient::run_probe(handle.clone());
+            }
             if selftest::requested() {
                 selftest::run(handle);
             }

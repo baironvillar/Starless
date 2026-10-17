@@ -95,7 +95,11 @@ pub fn run(app: AppHandle) {
 
 /// Block until librespot reports a username, which it fills in as the last step
 /// of the handshake.
-fn wait_for_session(app: &AppHandle) -> Option<librespot_core::Session> {
+///
+/// Shared with the library probe, which needs the same session and the same
+/// patience. Two copies of this would be two answers to "is the session up yet",
+/// and the one that waits longer is the one that hides the timeout.
+pub fn wait_for_session(app: &AppHandle) -> Option<librespot_core::Session> {
     let deadline = Instant::now() + HANDSHAKE_TIMEOUT;
     while Instant::now() < deadline {
         if let Some(session) = app.try_state::<SessionState>() {

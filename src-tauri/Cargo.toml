@@ -39,6 +39,13 @@ librespot-playback = { version = "0.8", default-features = false, features = [
 ] }
 librespot-connect = "0.8"
 librespot-oauth = "0.8"
+# For the `playlist4_external` messages themselves. Named directly because
+# `spclient` decodes them by hand: the library response is a protobuf, not the
+# JSON the Web API speaks, and reading one means holding its type.
+librespot-protocol = "0.8"
+# `parse_from_bytes` lives on this trait, not on the generated type. Without it in
+# scope the decoder exists and the compiler says it does not.
+protobuf = "3"
 
 # Where the librespot credential cache lives. Resolved once, at startup.
 dirs = "6"
