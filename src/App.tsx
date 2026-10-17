@@ -101,9 +101,14 @@ export default function App() {
   // can appear before any of this screen's own buttons are reachable.
   useEffect(() => {
     let alive = true;
-    void menuOpacity().then((value) => {
-      if (alive) applyMenuOpacity(value);
-    });
+    void menuOpacity()
+      .then((value) => {
+        if (alive) applyMenuOpacity(value);
+      })
+      // Swallowed on purpose: a read that fails leaves the CSS default standing,
+      // which is the opaque menu. Nothing here is worth an unhandled rejection in
+      // the console of the one build that has no backend to ask.
+      .catch(() => {});
     return () => {
       alive = false;
     };

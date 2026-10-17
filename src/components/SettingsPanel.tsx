@@ -15,6 +15,9 @@ import { CHANGELOG, PREVIOUS_NOTE } from "../lib/changelog";
 import type { Lang, StringKey } from "../lib/i18n";
 import {
   applyMenuOpacity,
+  MENU_OPACITY_DEFAULT,
+  MENU_OPACITY_MAX,
+  MENU_OPACITY_MIN,
   menuOpacity,
   setMenuOpacity,
   signOut,
@@ -36,10 +39,6 @@ type SettingsPanelProps = {
   onClose: () => void;
   onLangChange: (lang: Lang) => void;
 };
-
-/** The ends of the opacity slider. The same numbers the backend clamps to. */
-const MENU_OPACITY_MIN = 55;
-const MENU_OPACITY_MAX = 100;
 
 const SECTIONS = [
   "sectionGeneral",
@@ -286,9 +285,20 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
 
   useEffect(() => {
     let alive = true;
-    void menuOpacity().then((value) => {
-      if (alive) setOpacity(value);
-    });
+    void menuOpacity()
+      .then((value) => {
+        if (alive) {
+          setOpacity(value);
+          applyMenuOpacity(value);
+        }
+      })
+      .catch(() => {
+        // A failed read must not strand the control in its loading state. The
+        // slider *is* this section, and a slider that never leaves `…` reads as
+        // "this does nothing" rather than "the read failed" — which is exactly
+        // what happened under plain `vite`, where nothing answers `invoke`.
+        if (alive) setOpacity(MENU_OPACITY_DEFAULT);
+      });
     return () => {
       alive = false;
     };
@@ -299,7 +309,7 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
     // The colour changes with the thumb, not after it is let go: this is a preview
     // of what a choice looks like, so it has to answer while it is being made.
     applyMenuOpacity(value);
-    void setMenuOpacity(value);
+    void setMenuOpacity(value).catch(() => {});
   };
 
   return (
@@ -321,6 +331,13 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
               aria-label={t.menuOpacity}
               className="w-[180px] accent-[var(--accent)] disabled:opacity-45"
             />
+            {/*
+              The swatch is what makes this control legible while it is being
+              dragged. Every surface that actually reads the value is a popover
+              sitting outside the panel, and this one is an opaque sheet — so
+              without a legend right here the thumb moves and nothing answers.
+            */}
+            <span aria-hidden="true" className="menu-legend" />
           </span>
         </Row>
       </Group>

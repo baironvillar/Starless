@@ -221,23 +221,63 @@ export async function setVolume(volume: number): Promise<void> {
   return invoke<void>("set_volume", { volume });
 }
 
-/**
+/*
  * How opaque the menus are, as a percentage. A setting rather than a constant
  * because `glass-overlay` cannot promise to stay readable on its own: the
  * `backdrop-filter` it leans on is not rendered in the packaged build, so how much
  * translucency someone trades for depth is theirs to choose.
+ *
+ * These three mirror `settings::MENU_OPACITY_*` on purpose. The Rust side clamps
+ * whatever arrives, and a slider that could reach a value the backend silently
+ * rewrites is a slider that lies about where it is.
  */
+export const MENU_OPACITY_MIN = 55;
+export const MENU_OPACITY_MAX = 100;
+export const MENU_OPACITY_DEFAULT = 100;
+
+/**
+ * `bun run dev` is Vite alone: there is no backend, so `invoke` has nothing to
+ * call and rejects. That is fine for everything else on the screen — the whole
+ * app needs Rust to be useful — but this setting is pure CSS, so it falls back to
+ * `localStorage` when there is no bridge.
+ *
+ * Without this the customiser was dead in exactly the place it is easiest to
+ * iterate on: the slider never left its loading state, because the read that
+ * enables it never resolved.
+ */
+const MENU_OPACITY_KEY = "starless:menu-opacity";
+
+function hasBackend(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+function clampOpacity(value: number): number {
+  return Math.min(MENU_OPACITY_MAX, Math.max(MENU_OPACITY_MIN, Math.round(value)));
+}
+
 export async function menuOpacity(): Promise<number> {
+  if (!hasBackend()) {
+    // `Number(null)` is 0 and not NaN, so an absent key has to be checked before
+    // the number is: otherwise "never chosen" would come back as the floor.
+    const raw = window.localStorage.getItem(MENU_OPACITY_KEY);
+    const stored = Number(raw);
+    return raw !== null && Number.isFinite(stored) ? clampOpacity(stored) : MENU_OPACITY_DEFAULT;
+  }
   return invoke<number>("menu_opacity");
 }
 
 export async function setMenuOpacity(opacity: number): Promise<void> {
-  return invoke<void>("set_menu_opacity", { opacity });
+  const value = clampOpacity(opacity);
+  if (!hasBackend()) {
+    window.localStorage.setItem(MENU_OPACITY_KEY, String(value));
+    return;
+  }
+  return invoke<void>("set_menu_opacity", { opacity: value });
 }
 
 /** Drive the CSS variable every overlay reads. No-op before the first paint matters. */
 export function applyMenuOpacity(opacity: number): void {
-  document.documentElement.style.setProperty("--menu-alpha", String(opacity / 100));
+  document.documentElement.style.setProperty("--menu-alpha", String(clampOpacity(opacity) / 100));
 }
 
 export const keys = {

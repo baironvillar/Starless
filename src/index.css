@@ -98,6 +98,30 @@
 }
 
 /*
+ * The legend for the opacity slider: what a menu looks like at the current
+ * value, drawn inside the settings sheet.
+ *
+ * It is a legend, not a surface, and it stays out of the glass recipe on purpose
+ * — no blur, no stacking, nothing to nest inside a sheet that is already opaque.
+ * The stripes are the thing the alpha is measured against; without something
+ * behind them, 100% and 55% are the same grey and the control answers nothing
+ * while it is being dragged.
+ */
+@utility menu-legend {
+  width: 46px;
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid rgb(255 255 255 / 0.14);
+  background-image:
+    linear-gradient(rgb(20 20 32 / var(--menu-alpha, 1)), rgb(20 20 32 / var(--menu-alpha, 1))),
+    repeating-linear-gradient(
+      115deg,
+      rgb(255 255 255 / 0.26) 0 2px,
+      rgb(255 255 255 / 0.05) 2px 7px
+    );
+}
+
+/*
  * A sheet: the settings panel and the queue. Both cover most of the window, and
  * these are **opaque**, not a denser glass.
  *
