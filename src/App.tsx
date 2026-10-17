@@ -513,6 +513,32 @@ export default function App() {
   const resultsLoading = showResults && results === null && screenError === null;
 
   /**
+   * The area starts at the top of whatever it is now showing.
+   *
+   * `<main>` is the scroll container and nothing else was moving it, so
+   * opening a shorter list while scrolled deep into a longer one landed you
+   * partway down the new one: the browser keeps the old offset and clamps it to
+   * whatever fits. Leaving row 150 of a 198-song playlist means arriving at row
+   * 150 of a 30-song one, with no scrollbar visible to explain why the list
+   * starts in the middle.
+   *
+   * Keyed on *what is being shown* and not on the scroll, so a refetch of the
+   * playlist you are reading does not throw away your place — only a genuine
+   * change of list does. `showResults` is in here because the results screen
+   * replaces the library in the same box, and going back to a playlist is a
+   * different list than the one you were reading.
+   */
+  const mainRef = useRef<HTMLElement>(null);
+  // The dependencies are the trigger, not an input: nothing in the body reads
+  // them, on purpose. Putting the reset in each navigation handler instead would
+  // scatter one decision across four call sites, and the first one missed brings
+  // the bug straight back.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: trigger, not input
+  useEffect(() => {
+    mainRef.current?.scrollTo({ top: 0 });
+  }, [activeItem, showResults]);
+
+  /**
    * Leaving the results screen, whichever way it is done.
    *
    * The text stays in the field when the user just navigates somewhere else —
@@ -758,6 +784,7 @@ export default function App() {
         below that it is a sheet over the content instead of a column beside it.
       */}
         <main
+          ref={mainRef}
           className={`absolute top-[104px] right-9 bottom-[144px] overflow-y-auto transition-[left,right] duration-300 ease-[var(--ease-glass)] ${
             libraryOpen ? "left-9 lg:left-[328px]" : "left-9"
           } ${queueOpen ? "lg:right-[360px]" : ""}`}
