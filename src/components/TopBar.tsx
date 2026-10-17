@@ -1,6 +1,6 @@
 import {
-  Disc3,
   Ellipsis,
+  House,
   Library,
   MonitorSmartphone,
   Search,
@@ -167,6 +167,9 @@ export function TopBar({
       >
         {/* Home, then the library toggle that controls the sidebar below */}
         <div className="flex min-w-0 items-center gap-2 overflow-hidden">
+          {/* A house, not a record. This button goes to the first screen, and a
+              disc only says "music" — which is what every other button on this
+              row already says. */}
           <motion.button
             type="button"
             onClick={() => onNavigate("navHome")}
@@ -177,7 +180,7 @@ export function TopBar({
             data-tauri-drag-region={false}
             className="grid size-10 shrink-0 place-items-center rounded-pill bg-accent text-ground transition-[filter] duration-200 hover:brightness-110"
           >
-            <Disc3 className="size-[18px] text-ground" strokeWidth={2.5} />
+            <House className="size-[18px] text-ground" strokeWidth={2.5} />
           </motion.button>
 
           <span className="h-6 w-px shrink-0 bg-white/10" />
@@ -253,8 +256,6 @@ export function TopBar({
             <MonitorSmartphone className="size-[17px]" strokeWidth={2} />
           </IconButton>
 
-          <span className="mx-1 hidden h-6 w-px shrink-0 bg-white/10 lg:block" />
-
           <IconButton label={t.navSettings} onClick={onOpenSettings}>
             <SlidersHorizontal className="size-[17px]" strokeWidth={2} />
           </IconButton>
@@ -262,12 +263,14 @@ export function TopBar({
             <Ellipsis className="size-[17px]" strokeWidth={2} />
           </IconButton>
 
-          <span className="mx-1 hidden h-6 w-px shrink-0 bg-white/10 lg:block" />
-
           {/*
-            No language switch here. It was an ES/EN pill in the corner of every
-            screen, and a setting is not something you change ten times an hour —
-            it lives in Settings → General, which already has the real selector.
+            One divider for the whole row, and it separates two different things:
+            the app's own actions on the left, the window's on the right.
+
+            It was two, then three — each control that left the bar took its
+            divider with it and left the rule behind. Two rules with nothing
+            between them, or a rule dividing two buttons that do the same job,
+            read as a mistake in a bar that is supposed to look deliberate.
 
             Last in the row, against the edge.
 
