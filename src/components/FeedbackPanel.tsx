@@ -51,6 +51,16 @@ export function FeedbackPanel({ t, onClose }: FeedbackPanelProps) {
   const send = useCallback(async () => {
     setBusy(true);
     setError(null);
+    // An empty report with no log says nothing, so it is not sent. What it used
+    // to do was worse: the button was simply disabled, with nothing on screen
+    // saying why, and a button that does nothing is indistinguishable from a
+    // button that is broken. Saying it is also the only way to tell the two apart
+    // from the log later.
+    if (empty && !attachLog) {
+      setError(t.feedbackEmpty);
+      setBusy(false);
+      return;
+    }
     try {
       const outcome = await invoke<{ created: boolean; url: string }>("submit_feedback", {
         message,
@@ -65,7 +75,7 @@ export function FeedbackPanel({ t, onClose }: FeedbackPanelProps) {
     } finally {
       setBusy(false);
     }
-  }, [message, attachLog, t]);
+  }, [message, attachLog, empty, t]);
 
   // The tint is the point, not the decoration. This form opens over whatever is
   // on screen — the library, a settings panel, the sign-in screen — and DESIGN.md
@@ -160,7 +170,7 @@ export function FeedbackPanel({ t, onClose }: FeedbackPanelProps) {
           <button
             type="button"
             onClick={() => void send()}
-            disabled={empty || busy || sent !== null}
+            disabled={busy || sent !== null}
             className="flex-1 rounded-pill bg-accent px-5 py-3 text-[13.5px] font-semibold text-ground transition-opacity duration-200 hover:opacity-90 disabled:opacity-45"
           >
             {busy ? t.crashSending : t.feedbackSend}

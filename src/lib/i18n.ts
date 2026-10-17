@@ -101,6 +101,7 @@ export const strings = {
       "Conéctate con tu cuenta de Spotify. Starless no ve tu contraseña y no envía telemetría.",
     authConnect: "Conectar con Spotify",
     authReport: "¿Algo no anda? Contanos qué pasó.",
+    feedbackEmpty: "Contanos qué pasó, o adjuntá el log para que el reporte sirva de algo.",
     authWaiting: "Termina la autorización en el navegador…",
     authConnected: "Conectado como",
     authPremium:
@@ -307,6 +308,7 @@ export const strings = {
       "Connect your Spotify account. Starless never sees your password and sends no telemetry.",
     authConnect: "Connect with Spotify",
     authReport: "Something not working? Tell us what happened.",
+    feedbackEmpty: "Tell us what happened, or attach the log so the report is worth reading.",
     authWaiting: "Finish the approval in your browser…",
     authConnected: "Connected as",
     authPremium:
