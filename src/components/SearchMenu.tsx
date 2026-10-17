@@ -93,7 +93,7 @@ export function SearchMenu({
         role="listbox"
         id={SEARCH_MENU_ID}
         aria-label={t.searchResultsFor.replace("{query}", query)}
-        className="glass pointer-events-auto w-[clamp(180px,30vw,420px)] origin-top overflow-hidden rounded-card py-1.5"
+        className="glass-overlay pointer-events-auto w-[clamp(180px,30vw,420px)] origin-top overflow-hidden rounded-card py-1.5"
       >
         {/* The empty states live inside the panel rather than replacing it: the
             panel IS the answer, and a field that empties itself the moment it has

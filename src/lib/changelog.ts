@@ -49,6 +49,7 @@ export const CHANGELOG: ChangelogEntry[] = [
           title: "Añadido",
           items: [
             "El feedback se puede escribir también desde la pantalla de inicio de sesión. A quien la app no le funciona ya no tiene que Signed in para contarlo: esa pantalla era, irónicamente, justo donde no había dónde escribir.",
+            "Una pestaña de Personalización en Ajustes, con el primer ajuste propio: qué tan opacos son los menús. Se recuerda entre arranques.",
           ],
         },
         {
@@ -85,6 +86,7 @@ export const CHANGELOG: ChangelogEntry[] = [
           title: "Changed",
           items: [
             "The feedback form and the crash prompt no longer stack on top of another glass panel, which DESIGN.md forbids: they sit on a flat veil instead.",
+            "The menus ship opaque. In the packaged build WebView2 does not draw the backdrop blur, so at 55% you could read the song titles behind the crash prompt straight through the card. The glass is now the user's to set in Settings → Customisation.",
           ],
         },
       ],

@@ -454,6 +454,18 @@ fn set_volume(state: State<PlaybackState>, volume: u16) {
     playback::set_volume(&state, volume);
 }
 
+/// How opaque the menus are, as a percentage. The default is opaque, not 55%.
+#[tauri::command]
+fn menu_opacity() -> u8 {
+    settings::saved_menu_opacity()
+}
+
+/// Remember it. Clamped in `settings`, because the value lands in a CSS colour.
+#[tauri::command]
+fn set_menu_opacity(opacity: u8) {
+    settings::save_menu_opacity(opacity);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -545,6 +557,8 @@ pub fn run() {
             seek_playback,
             stop_playback,
             set_volume,
+            menu_opacity,
+            set_menu_opacity,
             previous_session_crashed,
             crash_report_preview,
             submit_crash_report,

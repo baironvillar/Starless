@@ -42,7 +42,56 @@ pub struct Settings {
     /// volume a little further each time.
     #[serde(default)]
     pub volume: Option<u16>,
+
+    /// How opaque the menus are, as a percentage.
+    ///
+    /// The user's own glass. It exists because `glass-overlay` cannot promise to
+    /// stay readable on its own: the blur it leans on is not rendered in the
+    /// packaged build, and how much translucency someone is willing to trade for
+    /// depth is their call, not the design system's.
+    #[serde(default)]
+    pub menu_opacity: Option<u8>,
 }
+
+/// Read-modify-write, so the day a third field appears this keeps working
+/// without anyone having to remember to touch it.
+fn update(change: impl FnOnce(&mut Settings)) {
+    let Some(path) = settings_path() else {
+        return;
+    };
+    if let Some(parent) = path.parent()
+        && let Err(e) = fs::create_dir_all(parent)
+    {
+        log::warn!("no se pudo crear el directorio de ajustes: {e}");
+        return;
+    }
+
+    let mut settings = load();
+    change(&mut settings);
+
+    match serde_json::to_string_pretty(&settings) {
+        Ok(json) => {
+            if let Err(e) = fs::write(&path, json) {
+                log::warn!("no se pudieron guardar los ajustes: {e}");
+            }
+        }
+        Err(e) => log::warn!("no se pudo serializar los ajustes: {e}"),
+    }
+}
+
+/// How opaque the menus are when nobody has said otherwise.
+///
+/// Opaque on purpose. In the packaged build WebView2 does not render
+/// `backdrop-filter`, so the translucency has nothing blurring what is behind it:
+/// at the original 55% the song titles behind the crash prompt stayed readable
+/// straight through the card. This is the value that reads as a surface on its
+/// own, whether or not the blur arrives.
+pub const DEFAULT_MENU_OPACITY: u8 = 100;
+
+/// The ends of the slider. Below the floor the text stops being readable over a
+/// bright cover; above the ceiling there is nothing left to adjust.
+pub const MENU_OPACITY_MIN: u8 = 55;
+pub const MENU_OPACITY_MAX: u8 = 100;
 
 /// Read the settings, or the defaults.
 ///
@@ -72,35 +121,36 @@ pub fn load() -> Settings {
 /// and no "the last volume before the app closed is the one you didn't save" edge
 /// case.
 pub fn save_volume(volume: u16) {
-    let Some(path) = settings_path() else {
-        return;
-    };
-    if let Some(parent) = path.parent()
-        && let Err(e) = fs::create_dir_all(parent)
-    {
-        log::warn!("no se pudo crear el directorio de ajustes: {e}");
+    // Called on every step of the volume slider, so this runs a handful of times
+    // per drag. That is fine at this size — a ~30 byte file, written a few dozen
+    // times while a thumb moves — and it buys a synchronous save with no thread,
+    // no timer and no "the last volume before the app closed is the one you
+    // didn't save" edge case.
+    if load().volume == Some(volume) {
         return;
     }
+    update(|settings| settings.volume = Some(volume));
+}
 
-    // Read-modify-write rather than a fresh `Settings { volume: Some(..) }`: the day
-    // a second field appears, this keeps working without remembering to touch it.
-    let mut settings = load();
-    if settings.volume == Some(volume) {
+/// Remember how opaque the menus should be. Clamped on the way in, because this
+/// value ends up in a CSS colour and a slider is only a suggestion.
+pub fn save_menu_opacity(opacity: u8) {
+    let opacity = opacity.clamp(MENU_OPACITY_MIN, MENU_OPACITY_MAX);
+    if load().menu_opacity == Some(opacity) {
         return;
     }
-    settings.volume = Some(volume);
-
-    match serde_json::to_string_pretty(&settings) {
-        Ok(json) => {
-            if let Err(e) = fs::write(&path, json) {
-                log::warn!("no se pudo guardar el volumen: {e}");
-            }
-        }
-        Err(e) => log::warn!("no se pudo serializar los ajustes: {e}"),
-    }
+    update(|settings| settings.menu_opacity = Some(opacity));
 }
 
 /// The volume to open at, or `None` when the user has never chosen one.
 pub fn saved_volume() -> Option<u16> {
     load().volume
+}
+
+/// The chosen menu opacity, already clamped, or the default.
+pub fn saved_menu_opacity() -> u8 {
+    load()
+        .menu_opacity
+        .unwrap_or(DEFAULT_MENU_OPACITY)
+        .clamp(MENU_OPACITY_MIN, MENU_OPACITY_MAX)
 }

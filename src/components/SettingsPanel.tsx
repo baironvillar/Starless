@@ -13,7 +13,13 @@ import { motion } from "motion/react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { CHANGELOG, PREVIOUS_NOTE } from "../lib/changelog";
 import type { Lang, StringKey } from "../lib/i18n";
-import { signOut, type Account as UserAccount } from "../lib/spotify";
+import {
+  applyMenuOpacity,
+  menuOpacity,
+  setMenuOpacity,
+  signOut,
+  type Account as UserAccount,
+} from "../lib/spotify";
 import { checkForUpdate, installUpdate, subscribeUpdate, updateState } from "../lib/updater";
 import { appVersion } from "../lib/version";
 
@@ -31,10 +37,15 @@ type SettingsPanelProps = {
   onLangChange: (lang: Lang) => void;
 };
 
+/** The ends of the opacity slider. The same numbers the backend clamps to. */
+const MENU_OPACITY_MIN = 55;
+const MENU_OPACITY_MAX = 100;
+
 const SECTIONS = [
   "sectionGeneral",
   "sectionAudio",
   "sectionAccount",
+  "sectionCustom",
   "sectionDiagnostics",
 ] as const;
 type Section = (typeof SECTIONS)[number];
@@ -63,7 +74,7 @@ export function SettingsPanel({
       initial={{ opacity: 0, scale: 0.97, y: 12 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
       transition={{ type: "spring", stiffness: 380, damping: 34 }}
-      className="glass absolute inset-4 z-40 flex overflow-hidden rounded-card"
+      className="glass-sheet absolute inset-4 z-40 flex overflow-hidden rounded-card"
       role="dialog"
       aria-modal="true"
       aria-label={t.settingsTitle}
@@ -109,6 +120,7 @@ export function SettingsPanel({
         {section === "sectionGeneral" && <General t={t} lang={lang} onLangChange={onLangChange} />}
         {section === "sectionAudio" && <Audio t={t} />}
         {section === "sectionAccount" && <Account t={t} account={account} />}
+        {section === "sectionCustom" && <Custom t={t} />}
         {section === "sectionDiagnostics" && (
           <Diagnostics t={t} version={version} lang={lang} onOpenFeedback={onOpenFeedback} />
         )}
@@ -263,6 +275,63 @@ function Audio({ t }: { t: Record<StringKey, string> }) {
  * Still a single click, as it was in the library: asking twice is friction for
  * the common case, and the label says plainly what it does.
  */
+/**
+ * Where the app stops deciding for the user.
+ *
+ * One control on purpose: this section earns its place by existing, and the second
+ * option is the one that decides what belongs in it.
+ */
+function Custom({ t }: { t: Record<StringKey, string> }) {
+  const [opacity, setOpacity] = useState<number | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void menuOpacity().then((value) => {
+      if (alive) setOpacity(value);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const change = (value: number) => {
+    setOpacity(value);
+    // The colour changes with the thumb, not after it is let go: this is a preview
+    // of what a choice looks like, so it has to answer while it is being made.
+    applyMenuOpacity(value);
+    void setMenuOpacity(value);
+  };
+
+  return (
+    <div className="max-w-[620px]">
+      <Group>
+        <Row label={t.menuOpacity} hint={t.menuOpacityHint}>
+          <span className="flex items-center gap-3">
+            <span className="min-w-[74px] text-right text-[12px] text-ink-faint tabular">
+              {opacity === null ? "…" : `${opacity}%`}
+            </span>
+            <input
+              type="range"
+              min={MENU_OPACITY_MIN}
+              max={MENU_OPACITY_MAX}
+              step={5}
+              value={opacity ?? MENU_OPACITY_MAX}
+              disabled={opacity === null}
+              onChange={(e) => change(Number(e.target.value))}
+              aria-label={t.menuOpacity}
+              className="w-[180px] accent-[var(--accent)] disabled:opacity-45"
+            />
+          </span>
+        </Row>
+      </Group>
+      <p className="mt-4 flex max-w-[520px] justify-between text-[11.5px] text-ink-faint">
+        <span>{t.menuOpacitySolid}</span>
+        <span>{t.menuOpacityGlass}</span>
+      </p>
+    </div>
+  );
+}
+
 function Account({ t, account }: { t: Record<StringKey, string>; account: UserAccount | null }) {
   return (
     <div className="max-w-[620px]">

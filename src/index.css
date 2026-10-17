@@ -32,6 +32,18 @@
   --spacing: 0.25rem;
 
   --ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /*
+   * How opaque the menus are, as the user's own glass.
+   *
+   * Default 1: opaque. In the packaged build WebView2 does not render
+   * `backdrop-filter`, so translucency has nothing blurring what sits behind it —
+   * at 0.55 the song titles behind the crash prompt stayed readable straight
+   * through the card. The fallback in `var()` matters: the customizer sets this
+   * from a saved setting once the app is up, and the very first frame has to look
+   * like the choice already rather than like the default nobody picked.
+   */
+  --menu-alpha: 1;
 }
 
 /*
@@ -48,6 +60,59 @@
  */
 @utility glass {
   background-color: rgb(20 20 32 / 0.55);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgb(255 255 255 / 0.12);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.1),
+    0 24px 48px -12px rgb(0 0 0 / 0.6);
+  contain: paint;
+}
+
+/*
+ * Glass for a surface that sits *over* content, in two strengths.
+ *
+ * Same recipe, denser base, and the reason is measured rather than preferred.
+ * The bars work at 55% because what sits behind them is mostly the bloom, so the
+ * blur has little to do. These sit over album art and song titles — and in the
+ * packaged build the blur does not render at all: the songs behind the crash
+ * prompt stay readable straight through the card. A surface cannot count on a
+ * blur that may not arrive for its contrast floor, so these carry their own.
+ *
+ * Two levels because the surfaces are not the same size. A popover is a small
+ * card over a list: some translucency still reads as depth. A sheet covers the
+ * whole window, and at anything less than opaque the library's own text shows
+ * through it *in the same place* as the sheet's own navigation — not depth, a
+ * collision. Measured on the packaged build: 82% was still legible enough to
+ * read a song title through it.
+ */
+@utility glass-overlay {
+  background-color: rgb(20 20 32 / var(--menu-alpha, 1));
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgb(255 255 255 / 0.12);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.1),
+    0 24px 48px -12px rgb(0 0 0 / 0.6);
+  contain: paint;
+}
+
+/*
+ * A sheet: the settings panel and the queue. Both cover most of the window, and
+ * these are **opaque**, not a denser glass.
+ *
+ * Translucency here was only ever going to be read as depth because the blur
+ * broke the content behind it into a smudge. Without the blur, 96% still lets a
+ * song title through and the library's own text lands on top of the sheet's
+ * navigation in the same pixels — that is not depth, it is a collision.
+ *
+ * Opaque is also what DESIGN.md asks for when the two conflict: a bar that
+ * becomes unreadable over a bright cover is worse than a solid one. The three
+ * bars keep the floating glass — that is the signature and they read as depth
+ * because there is little behind them to collide with.
+ */
+@utility glass-sheet {
+  background-color: rgb(20 20 32);
   backdrop-filter: blur(24px) saturate(180%);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
   border: 1px solid rgb(255 255 255 / 0.12);

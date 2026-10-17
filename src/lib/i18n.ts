@@ -133,6 +133,12 @@ export const strings = {
     sectionGeneral: "General",
     sectionAudio: "Audio",
     sectionAccount: "Cuenta",
+    sectionCustom: "Personalización",
+    menuOpacity: "Opacidad de los menús",
+    menuOpacityHint:
+      "Qué tan sólido se ve el menú de búsqueda, el aviso de caída y el formulario de feedback. La build compilada no dibuja el desenfoque de fondo, así que bajarlo también baja la legibilidad.",
+    menuOpacitySolid: "Sólido",
+    menuOpacityGlass: "Translúcido",
     sectionDiagnostics: "Diagnóstico",
     close: "Cerrar",
 
@@ -338,6 +344,12 @@ export const strings = {
     sectionGeneral: "General",
     sectionAudio: "Audio",
     sectionAccount: "Account",
+    sectionCustom: "Customisation",
+    menuOpacity: "Menu opacity",
+    menuOpacityHint:
+      "How solid the search menu, the crash prompt and the feedback form look. The packaged build does not draw the backdrop blur, so turning this down turns legibility down with it.",
+    menuOpacitySolid: "Solid",
+    menuOpacityGlass: "Translucent",
     sectionDiagnostics: "Diagnostics",
     close: "Close",
 

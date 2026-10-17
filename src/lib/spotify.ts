@@ -221,6 +221,25 @@ export async function setVolume(volume: number): Promise<void> {
   return invoke<void>("set_volume", { volume });
 }
 
+/**
+ * How opaque the menus are, as a percentage. A setting rather than a constant
+ * because `glass-overlay` cannot promise to stay readable on its own: the
+ * `backdrop-filter` it leans on is not rendered in the packaged build, so how much
+ * translucency someone trades for depth is theirs to choose.
+ */
+export async function menuOpacity(): Promise<number> {
+  return invoke<number>("menu_opacity");
+}
+
+export async function setMenuOpacity(opacity: number): Promise<void> {
+  return invoke<void>("set_menu_opacity", { opacity });
+}
+
+/** Drive the CSS variable every overlay reads. No-op before the first paint matters. */
+export function applyMenuOpacity(opacity: number): void {
+  document.documentElement.style.setProperty("--menu-alpha", String(opacity / 100));
+}
+
 export const keys = {
   account: ["account"] as const,
   playlists: ["playlists"] as const,

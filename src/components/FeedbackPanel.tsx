@@ -90,7 +90,7 @@ export function FeedbackPanel({ t, onClose }: FeedbackPanelProps) {
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ type: "spring", stiffness: 420, damping: 32 }}
-        className="glass flex max-h-full w-full max-w-[560px] flex-col gap-5 overflow-auto rounded-card px-8 py-8"
+        className="glass-overlay flex max-h-full w-full max-w-[560px] flex-col gap-5 overflow-auto rounded-card px-8 py-8"
       >
         <div>
           <p className="text-[12px] font-semibold uppercase tracking-wide text-accent">

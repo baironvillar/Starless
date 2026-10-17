@@ -57,7 +57,7 @@ export function QueuePanel({ t, playing, upNext, onPlay, onClose }: QueuePanelPr
       transition={SPRING}
       role="dialog"
       aria-label={t.queue}
-      className="glass pointer-events-auto absolute inset-4 z-40 flex flex-col overflow-hidden rounded-card lg:inset-y-[104px] lg:right-5 lg:bottom-[144px] lg:left-auto lg:z-30 lg:w-[320px]"
+      className="glass-sheet pointer-events-auto absolute inset-4 z-40 flex flex-col overflow-hidden rounded-card lg:inset-y-[104px] lg:right-5 lg:bottom-[144px] lg:left-auto lg:z-30 lg:w-[320px]"
     >
       <header className="flex shrink-0 items-center justify-between gap-2 px-4 pt-4 pb-3">
         <h2 className="truncate text-[15px] font-semibold tracking-tight">{t.queue}</h2>

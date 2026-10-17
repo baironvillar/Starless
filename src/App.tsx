@@ -17,10 +17,12 @@ import { type Lang, type StringKey, strings } from "./lib/i18n";
 import {
   type AlbumCard,
   addToPlaylist,
+  applyMenuOpacity,
   createPlaylist,
   explain,
   keys,
   listCount,
+  menuOpacity,
   onPlaybackStatus,
   type PlaybackStatus,
   type Playlist,
@@ -93,6 +95,19 @@ export default function App() {
    * → Diagnostics is one door to it; the sign-in screen is the other.
    */
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+
+  // The chosen glass, applied once at startup rather than when the settings panel
+  // happens to be opened: the first menu somebody sees is the crash prompt, and it
+  // can appear before any of this screen's own buttons are reachable.
+  useEffect(() => {
+    let alive = true;
+    void menuOpacity().then((value) => {
+      if (alive) applyMenuOpacity(value);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
   /**
    * Order modifiers live here, beside the queue they modify. The backend has no
    * opinion about order — it decodes one track at a time and reports when it is

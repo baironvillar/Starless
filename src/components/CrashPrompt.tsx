@@ -94,7 +94,7 @@ export function CrashPrompt({ t }: CrashPromptProps) {
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ type: "spring", stiffness: 420, damping: 32 }}
-        className="glass flex w-full max-w-[520px] flex-col gap-5 rounded-card px-8 py-8"
+        className="glass-overlay flex w-full max-w-[520px] flex-col gap-5 rounded-card px-8 py-8"
       >
         <div>
           <p className="text-[12px] font-semibold uppercase tracking-wide text-warn">

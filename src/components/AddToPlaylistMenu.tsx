@@ -101,7 +101,7 @@ export function AddToPlaylistMenu({
       aria-label={t.addToPlaylist}
       // Anchored under the row that opened it. `bottom-full` keeps it on screen at
       // the end of a long list instead of dropping off the bottom of the window.
-      className="glass pointer-events-auto absolute bottom-full left-5 z-50 mb-2 w-[280px] overflow-hidden rounded-card"
+      className="glass-overlay pointer-events-auto absolute bottom-full left-5 z-50 mb-2 w-[280px] overflow-hidden rounded-card"
       onClick={(e) => e.stopPropagation()}
     >
       <header className="flex items-center justify-between gap-2 border-b border-white/8 px-4 py-3">

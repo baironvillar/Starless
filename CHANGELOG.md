@@ -37,6 +37,7 @@ Cerrar sesión, abrir, reportar. / Sign in, open, report.
 ### Added / Añadido
 
 - El feedback se puede escribir también desde la pantalla de inicio de sesión. A quien la app no le funciona ya no tiene que iniciar sesión para contarlo: esa pantalla era, irónicamente, justo donde no había dónde escribir.
+- Una pestaña de Personalización en Ajustes, con el primer ajuste propio: qué tan opacos son los menús. Se recuerda entre arranques.
 
 ### Fixed / Corregido
 
@@ -47,6 +48,7 @@ Cerrar sesión, abrir, reportar. / Sign in, open, report.
 ### Changed / Cambiado
 
 - El formulario de feedback y el aviso de caída ya no se apilan sobre otro panel de vidrio, que `DESIGN.md` prohíbe: ahora llevan un velo plano detrás.
+- Los menús salen opacos. En la build compilada WebView2 no dibuja el desenfoque de fondo, así que al 55% se leían las canciones de atrás a través del panel. El vidrio ahora lo elegís vos en Ajustes → Personalización.
 
 ---
 
