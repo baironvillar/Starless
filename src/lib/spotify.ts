@@ -307,7 +307,50 @@ export const keys = {
   search: (query: string) => ["search", query] as const,
   playlistTracks: (playlistId: string) => ["playlist-tracks", playlistId] as const,
   artistProfile: (artistId: string) => ["artist-profile", artistId] as const,
+  lyrics: (trackId: string) => ["lyrics", trackId] as const,
 };
+
+/**
+ * One line of a song's words.
+ *
+ * `start_ms` is `null` when the provider sent no clock, which is a different
+ * answer from `0`. A lyrics page with no timings sends `"0"` on every line, and
+ * reading that as a moment would sit on the first line for the whole song.
+ */
+export type LyricLine = {
+  text: string;
+  start_ms: number | null;
+};
+
+export type Lyrics = {
+  lines: LyricLine[];
+  language: string | null;
+  /** True when the lines carry timings and can be followed along. */
+  synced: boolean;
+};
+
+/**
+ * The words to the track that is playing.
+ *
+ * Disabled with no track for the same reason the playlist hook is: there is no id
+ * to ask about, and a request with `null` on the wire is a request about nothing.
+ *
+ * The cache is generous because lyrics for a given song never change, and the
+ * panel is opened and closed constantly — refetching it every time would put one
+ * round trip between the user and the words.
+ */
+export const LYRICS_STALE_MS = 24 * 60 * 60_000;
+
+export function useLyrics(trackId: string | null) {
+  return useQuery({
+    queryKey: keys.lyrics(trackId ?? ""),
+    queryFn: () => invoke<Lyrics>("lyrics", { trackId }),
+    enabled: Boolean(trackId),
+    staleTime: LYRICS_STALE_MS,
+    // "This song has no lyrics" is an answer worth not asking twice.
+    retry: false,
+  });
+}
 
 export function useAccount() {
   return useQuery({
@@ -476,6 +519,10 @@ export const API_ERRORS: Record<string, string> = {
   connection_lost:
     "Se perdió la conexión con Spotify y no vuelve sola. Cerrá y abrí Starless para seguir escuchando.",
   bad_track_id: "Esa canción no tiene un identificador válido.",
+  // Not a failure. Spotify answers 404 when nobody wrote the words down, and that
+  // is a fact about the song; saying "could not read" instead would point the user
+  // at their own machine when the answer was about the track.
+  no_lyrics: "Esta canción no tiene letra.",
   session_dropped: "Se cayó la sesión de reproducción.",
 };
 

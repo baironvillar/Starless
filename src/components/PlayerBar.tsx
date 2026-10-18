@@ -1,6 +1,7 @@
 import {
   ListOrdered,
   Loader2,
+  Mic2,
   Pause,
   Play,
   Repeat,
@@ -42,6 +43,8 @@ type PlayerBarProps = {
   t: Record<StringKey, string>;
   queueOpen: boolean;
   onToggleQueue: () => void;
+  lyricsOpen: boolean;
+  onToggleLyrics: () => void;
   onPrevious: () => void;
   onNext: () => void;
   shuffle: boolean;
@@ -83,6 +86,8 @@ export function PlayerBar({
   t,
   queueOpen,
   onToggleQueue,
+  lyricsOpen,
+  onToggleLyrics,
   onPrevious,
   onNext,
   shuffle,
@@ -134,6 +139,30 @@ export function PlayerBar({
             </>
           )}
         </div>
+
+        {/*
+            The lyrics button sits on the thing it describes, not in the column of
+            transport controls: it is about *this* song, so it belongs where the
+            song's name is. Disabled when nothing is playing, because then there is
+            no song to ask about — the same rule as the transport.
+        */}
+        <motion.button
+          type="button"
+          onClick={onToggleLyrics}
+          disabled={idle}
+          whileTap={{ scale: 0.9 }}
+          transition={SPRING}
+          aria-label={lyricsOpen ? t.closeLyrics : t.showLyrics}
+          title={lyricsOpen ? t.closeLyrics : t.showLyrics}
+          aria-pressed={lyricsOpen}
+          className={`ml-1 grid size-9 shrink-0 place-items-center rounded-pill transition-colors duration-200 disabled:pointer-events-none disabled:opacity-35 ${
+            lyricsOpen
+              ? "bg-accent/15 text-accent"
+              : "text-ink-faint hover:bg-white/8 hover:text-ink"
+          }`}
+        >
+          <Mic2 className="size-[16px]" strokeWidth={2} />
+        </motion.button>
       </div>
 
       {/* Transport, with the seek bar beneath it on the same centre axis */}

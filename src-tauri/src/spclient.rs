@@ -33,8 +33,9 @@ use std::future::Future;
 use std::sync::mpsc;
 use std::time::Duration;
 
+use librespot_core::error::ErrorKind;
 use librespot_core::{FileId, Session, SpotifyId, SpotifyUri};
-use librespot_metadata::{Metadata, Track as MetaTrack};
+use librespot_metadata::{Lyrics as MetaLyrics, Metadata, Track as MetaTrack};
 use librespot_protocol::context::Context;
 use librespot_protocol::extended_metadata::{BatchedEntityRequest, EntityRequest, ExtensionQuery};
 use librespot_protocol::extension_kind::ExtensionKind;
@@ -42,7 +43,10 @@ use librespot_protocol::metadata::Track as TrackMessage;
 use librespot_protocol::playlist4_external::SelectedListContent;
 use protobuf::{EnumOrUnknown, Message};
 
-use crate::models::{Account, Album, Artist, ArtistCard, ArtistProfile, Image, Playlist, Track, TrackTotal};
+use crate::models::{
+    Account, Album, Artist, ArtistCard, ArtistProfile, Image, LyricLine, Lyrics, Playlist, Track,
+    TrackTotal,
+};
 
 /// Cuánto espera una llamada antes de rendirse.
 ///
@@ -651,6 +655,70 @@ pub fn liked_tracks(session: &Session) -> Result<Vec<Track>, String> {
         session,
         format!("spotify:user:{}:collection", session.username()),
     )
+}
+
+/// Las palabras de una canción.
+///
+/// Una llamada a `/color-lyrics/v2/track/{id}` por la misma sesión que ya
+/// reproduce: ni client id propio, ni scope nuevo, ni una segunda identidad. El
+/// proveedor es quien los escribió y `syncType` dice si las líneas traen reloj.
+///
+/// **Una canción sin letra no es un fallo.** Spotify contesta 404 y eso es una
+/// respuesta con significado, no una red rota: distinguir las dos es lo que le
+/// permite a la pantalla decir "esta canción no tiene letra" en vez de "no se pudo
+/// leer" —y una de esas dos cosas es un dato sobre la canción y la otra es un
+/// problema con esta máquina.
+///
+/// **Un cero no es un tiempo.** Una letra sin sincronizar llega con
+/// `startTimeMs: "0"` en todas sus líneas. Leer eso como un momento dejaría la
+/// primera línea encendida durante toda la canción, así que esas líneas vuelven con
+/// `start_ms: None` y la pantalla las muestra sin seguirlas.
+pub fn lyrics(session: &Session, track_id: &str) -> Result<Lyrics, String> {
+    let id = SpotifyId::from_base62(track_id).map_err(|_| "bad_track_id".to_string())?;
+    // The future has to be `'static`, so the id for the log line travels as its
+    // own copy rather than as the borrow the caller handed in.
+    let label = track_id.to_owned();
+
+    let owned = session.clone();
+    let body = call(session, async move {
+        owned.spclient().get_lyrics(&id).await.map_err(|e| {
+            if e.kind == ErrorKind::NotFound {
+                return "no_lyrics".to_string();
+            }
+            log::error!("spclient: las letras de {label} no llegaron: {e}");
+            "network_failed".to_string()
+        })
+    })?;
+
+    let parsed = MetaLyrics::try_from(&body).map_err(|e| {
+        log::error!("spclient: las letras de {track_id} vinieron con otra forma: {e}");
+        "bad_response".to_string()
+    })?;
+
+    let synced = parsed.lyrics.sync_type == librespot_metadata::lyrics::SyncType::LineSynced;
+
+    let lines: Vec<LyricLine> = parsed
+        .lyrics
+        .lines
+        .into_iter()
+        .map(|line| LyricLine {
+            text: line.words,
+            // Unsynced lyrics send "0" for every line. `None` is what says
+            // "this page has no clock", and it is the difference between a
+            // follow-along view and one that sits on line one all song.
+            start_ms: if synced {
+                line.start_time_ms.parse().ok()
+            } else {
+                None
+            },
+        })
+        .collect();
+
+    Ok(Lyrics {
+        synced,
+        language: Some(parsed.lyrics.language).filter(|l| !l.is_empty()),
+        lines,
+    })
 }
 
 /// La búsqueda, por ahora de canciones.

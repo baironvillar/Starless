@@ -25,7 +25,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use playback::{PlaybackState, PlaybackStatus};
-use models::{Account, ArtistProfile, Playlist, Track};
+use models::{Account, ArtistProfile, Lyrics, Playlist, Track};
 
 /// The version a report carries, read from the compiled-in crate metadata.
 ///
@@ -375,6 +375,7 @@ spclient_command!(playlist_tracks, spclient::playlist_tracks, Vec<Track>, playli
 spclient_command!(album_tracks, spclient::album_tracks, Vec<Track>, album_id: String);
 spclient_command!(search_tracks, spclient::search_tracks, Vec<Track>, query: String);
 spclient_command!(artist_profile, spclient::artist_profile, ArtistProfile, artist_id: String);
+spclient_command!(lyrics, spclient::lyrics, Lyrics, track_id: String);
 
 // --- Playback --------------------------------------------------------------
 
@@ -565,6 +566,7 @@ pub fn run() {
             search_tracks,
             album_tracks,
             artist_profile,
+            lyrics,
             player_status,
             play_track,
             toggle_playback,

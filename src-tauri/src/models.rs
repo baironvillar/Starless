@@ -62,6 +62,37 @@ pub struct TrackTotal {
     pub total: u32,
 }
 
+/// One line of a song's words, with the moment it is sung.
+///
+/// `start_ms` is `None` when the provider sent no timings, which is a real answer
+/// and not a zero: a lyrics service that has the words but no clock produces
+/// `"startTimeMs": "0"` for every line, and reading that as "sung at the start of
+/// the song" would light up line one for the whole track.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LyricLine {
+    pub text: String,
+    #[serde(default)]
+    pub start_ms: Option<u64>,
+}
+
+/// The words to a song, if the provider has them.
+///
+/// Not every song does. That is a normal answer, not a failure, and the frontend
+/// has something true to say when it happens.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Lyrics {
+    #[serde(default)]
+    pub lines: Vec<LyricLine>,
+    /// Spanish, Portuguese, "en", whatever the provider said. Used to decide
+    /// nothing yet, kept because it is the only thing that tells a translated
+    /// lyrics page from an original one.
+    #[serde(default)]
+    pub language: Option<String>,
+    /// True when the lines carry timings and can be followed along.
+    #[serde(default)]
+    pub synced: bool,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Playlist {
     pub id: String,

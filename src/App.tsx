@@ -7,6 +7,7 @@ import { CrashPrompt } from "./components/CrashPrompt";
 import { FeedbackPanel } from "./components/FeedbackPanel";
 import { HomeScreen } from "./components/HomeScreen";
 import { LibrarySidebar } from "./components/LibrarySidebar";
+import { LyricsPanel } from "./components/LyricsPanel";
 import { PlayerBar, type RepeatMode } from "./components/PlayerBar";
 import { QueuePanel } from "./components/QueuePanel";
 import { SearchScreen } from "./components/SearchScreen";
@@ -29,22 +30,12 @@ import {
   type Track,
   useAccount,
   useLikedTracks,
+  useLyrics,
   usePlaylists,
   usePlaylistTracks,
 } from "./lib/spotify";
 import { checkForUpdate, pendingVersion, subscribeUpdate, updateState } from "./lib/updater";
 
-/**
- * A random track that is not the one already sounding.
- *
- * Excluding the current track is the whole point: picking uniformly from the
- * list would, once every N tracks, hand back the track that just ended — which
- * looks exactly like shuffle not working.
- *
- * Module scope on purpose. It is pure, and inside the component it would be a
- * new function identity on every render, which drags it into every dependency
- * array it appears in and quietly undoes the `useCallback` around it.
- */
 /**
  * How many tracks in a row may fail before Starless stops skipping.
  *
@@ -96,6 +87,7 @@ export default function App() {
   const [active, setActive] = useState<StringKey>("navHome");
   const [libraryOpen, setLibraryOpen] = useState(true);
   const [queueOpen, setQueueOpen] = useState(false);
+  const [lyricsOpen, setLyricsOpen] = useState(false);
   const [activeItem, setActiveItem] = useState("liked");
   const [settingsOpen, setSettingsOpen] = useState(false);
   /**
@@ -220,6 +212,26 @@ export default function App() {
       unlisten.then((off) => off());
     };
   }, []);
+
+  /**
+   * The words for whatever is sounding.
+   *
+   * Keyed on what the backend reports playing, with `loadedTrack` as the fallback:
+   * between pressing play and the first status event there is no id from the
+   * player yet, and an empty panel for half a second reads as "this song has no
+   * lyrics" when it has not even been asked.
+   */
+  const lyricsTrackId = status?.trackId ?? loadedTrack?.id ?? null;
+  const lyrics = useLyrics(lyricsTrackId);
+
+  /**
+   * Closing the lyrics returns to whatever was on screen.
+   *
+   * Opening them swaps the main surface; going back to a hardcoded home would be
+   * a worse version of the bug the home button used to have, where a tab moved and
+   * the screen underneath did not.
+   */
+  const closeLyrics = useCallback(() => setLyricsOpen(false), []);
 
   const onPlay = useCallback((track: Track) => {
     // A deliberate choice clears the advance guard. Without this, replaying the
@@ -710,11 +722,13 @@ export default function App() {
    */
   const headerTitle = showResults
     ? t.searchResultsTitle
-    : isHome
-      ? t.homeTitle
-      : isLiked
-        ? t.likedSongs
-        : (selected?.name ?? t.libraryTitle);
+    : lyricsOpen
+      ? (loadedTrack?.name ?? t.lyricsTitle)
+      : isHome
+        ? t.homeTitle
+        : isLiked
+          ? t.likedSongs
+          : (selected?.name ?? t.libraryTitle);
 
   const headerSubtitle = showResults
     ? results
@@ -777,6 +791,7 @@ export default function App() {
             // pantalla para mirar, no una lista que define qué sigue. Cambiar la
             // playlist desde acá tiraría la cola de lo que se estaba escuchando
             // sin que nadie lo pidiera.
+            setLyricsOpen(false);
             leaveResults();
           }}
           onToggleLibrary={() => setLibraryOpen((v) => !v)}
@@ -808,6 +823,7 @@ export default function App() {
                 // A library list is its own queue again: the songs played from a
                 // search have nothing to do with the playlist they just opened.
                 setQueueOverride(null);
+                setLyricsOpen(false);
                 leaveResults();
               }}
             />
@@ -853,7 +869,24 @@ export default function App() {
             <p className="tabular mt-1 truncate text-[13px] text-ink-muted">{headerSubtitle}</p>
           </motion.header>
 
-          {showResults ? (
+          {lyricsOpen ? (
+            /*
+              The words replace the list rather than opening over it. DESIGN.md
+              allows four floating layers and the queue already has one, and the
+              lyrics are only worth reading with the transport right there — which
+              it always is, on the player bar.
+            */
+            <LyricsPanel
+              t={t}
+              lyrics={lyrics.data}
+              loading={lyrics.isLoading}
+              error={lyrics.error ? explain(lyrics.error) : null}
+              positionMs={status?.positionMs ?? 0}
+              playing={status?.playing ?? false}
+              title={loadedTrack?.name ?? t.lyricsTitle}
+              onClose={closeLyrics}
+            />
+          ) : showResults ? (
             results ? (
               <SearchScreen
                 t={t}
@@ -879,6 +912,7 @@ export default function App() {
                 setActiveItem(playlist.id);
                 setActive("navLibrary");
                 setQueueOverride(null);
+                setLyricsOpen(false);
               }}
               onPrefetch={(playlist) => onPrefetchPlaylist(playlist.id)}
             />
@@ -930,6 +964,8 @@ export default function App() {
           t={t}
           queueOpen={queueOpen}
           onToggleQueue={() => setQueueOpen((v) => !v)}
+          lyricsOpen={lyricsOpen}
+          onToggleLyrics={() => setLyricsOpen((v) => !v)}
           onPrevious={onPrevious}
           onNext={onNext}
           shuffle={shuffle}
