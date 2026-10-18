@@ -45,6 +45,8 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Las portadas de tus playlists vuelven. Spotify no las manda al leer la biblioteca, pero sí las tiene en otro lado, y ahora Starless las busca ahí: son las imágenes de Spotify, no un mosaico dibujado por la app.
 - El botón de Inicio vuelve al inicio de verdad. Antes sólo cambiaba una pestaña y dejaba la playlist abierta en pantalla.
 - Hay una pantalla principal. Antes "Inicio" era la lista de canciones que te gustan con otro nombre: una lista de cosas que ya elegiste, que es mala forma de decidir qué escuchar después. Ahora es una repisa con tus playlists y, aparte, lo que Spotify te fabricó —hoy, DJ—. **No hay fila de filtros ni recomendaciones**: esas salen del motor de recomendaciones de Spotify, que estaba detrás de la Web API que ya no funciona, y se probaron catorce URIs contra la sesión disponible sin que ninguna respondiera.
+- Arreglada la cola después de buscar. Elegir una canción del desplegable, o hacer clic dentro de la playlist que ya estaba abierta, dejaban la cola de la lista anterior —buscabas una canción y después seguían las que te gustan—. Ahora cada lista define la cola que la sigue.
+- El botón de aleatorio ahora se ve. Antes sorteaba una canción distinta en cada salto pero el panel de cola seguía mostrando el mismo orden de siempre: lo que estaba al lado contradecía lo que sonaba. Ahora al prenderlo se decide un orden nuevo, se ve en el panel y se mantiene; apagarlo no lo deshace.
 
 ### Changed / Cambiado
 

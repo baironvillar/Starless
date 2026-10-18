@@ -68,13 +68,27 @@ const MIN_QUERY_LENGTH = 2;
 /** Songs offered in the menu. More than this and the menu stops being a menu. */
 const MAX_SUGGESTIONS = 5;
 
-function randomExcept<T extends { id: string }>(
-  items: T[],
-  exclude?: string | null,
-): T | undefined {
-  const pool = exclude ? items.filter((item) => item.id !== exclude) : items;
-  if (pool.length === 0) return undefined;
-  return pool[Math.floor(Math.random() * pool.length)];
+/**
+ * A new order for the queue, with the song that is playing left where it is.
+ *
+ * Two properties make this usable rather than merely random. The current song
+ * does not move, so turning shuffle on is not audible *right now* — it changes
+ * what comes after. And the order is decided once and kept, because the queue
+ * panel shows the list: an order that was re-drawn on every jump left the panel
+ * showing a sequence of songs that were never going to play in that order, and a
+ * panel that does not describe the queue is worse than no panel.
+ */
+function shuffleFrom<T extends { id: string }>(items: T[], currentId?: string | null): T[] {
+  const order = [...items];
+  // `splice`, not `filter`: a list can hold the same song twice, and filtering by
+  // id would take both copies and quietly drop one from the queue.
+  const at = currentId ? order.findIndex((item) => item.id === currentId) : -1;
+  const current = at >= 0 ? order.splice(at, 1)[0] : undefined;
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  return current ? [current, ...order] : order;
 }
 
 export default function App() {
@@ -239,23 +253,9 @@ export default function App() {
    * ask for a different queue.
    */
   const playShuffled = useCallback((tracks: Track[], track: Track) => {
-    const order = [...tracks];
-    for (let at = order.length - 1; at > 0; at--) {
-      const swap = Math.floor(Math.random() * (at + 1));
-      [order[at], order[swap]] = [order[swap], order[at]];
-    }
-
-    // Take out **one** occurrence of the pressed track, not every copy of its id.
-    // A list can hold the same song twice — this account has one — and filtering
-    // by id would drop both and quietly lose a song from the queue.
-    const at =
-      order.indexOf(track) >= 0 ? order.indexOf(track) : order.findIndex((t) => t.id === track.id);
-    if (at >= 0) order.splice(at, 1);
-    order.unshift(track);
-
     advancedRef.current = null;
     setLoadedTrack(track);
-    setQueueOverride(order);
+    setQueueOverride(shuffleFrom(tracks, track.id));
     playTrack(track).catch((e) => {
       console.error("Starless: no se pudo reproducir", explain(e));
     });
@@ -316,9 +316,12 @@ export default function App() {
    * Order of decisions when a track ends, and each one is a *different question*:
    *
    * 1. Repeat one — the user asked for this track specifically. Nothing else.
-   * 2. Is there anything after it? If not, repeat all wraps and shuffle does not.
-   * 3. Shuffle picks from the whole queue, so a shuffled run is not biased toward
-   *    whatever happens to follow in the list.
+   * 2. Is there anything after it? If not, repeat all wraps.
+   *
+   * The queue's order is not decided here. Shuffle decides it once, when it is
+   * turned on, and the result is what the panel shows — so the next track is
+   * `upNext[0]` whether shuffle is on or off, and the two differ only in how the
+   * order was arrived at.
    *
    * Wrapping only happens under repeat-all, deliberately: a queue that restarts by
    * itself looks like a bug, and the list the user was scrolling by hand genuinely
@@ -335,9 +338,7 @@ export default function App() {
       }
     }
 
-    const pickFrom = shuffle ? visibleTracks : upNext;
-    const next = shuffle ? randomExcept(pickFrom, status?.trackId) : pickFrom[0];
-
+    const next = upNext[0];
     if (next) {
       playDirect(next);
       return true;
@@ -348,7 +349,7 @@ export default function App() {
       return true;
     }
     return false;
-  }, [repeat, shuffle, upNext, visibleTracks, loadedTrack, status?.trackId, playDirect]);
+  }, [repeat, upNext, visibleTracks, loadedTrack, status?.trackId, playDirect]);
 
   useEffect(() => {
     if (!status?.finished) return;
@@ -424,7 +425,26 @@ export default function App() {
     }
   }, [status?.positionMs, loadedTrack, previous, repeat, visibleTracks, playDirect]);
 
-  const onToggleShuffle = useCallback(() => setShuffle((value) => !value), []);
+  /**
+   * Shuffle decides the order once, here, instead of at every jump.
+   *
+   * It used to re-pick at random each time a track ended while leaving the queue
+   * untouched, so the button lit up, the music did change, and the panel beside it
+   * listed the same order as always. From the user's side that is a button that
+   * does nothing: the thing on screen contradicts the thing in their ear. Now
+   * turning it on produces an order that stays, which is what the panel can show
+   * and what "shuffle" means in every client that has a queue panel.
+   *
+   * Turning it *off* deliberately leaves the order alone. Restoring the original
+   * order would jump the song that is playing to wherever it sits in the list,
+   * which is an audible change nobody asked for.
+   */
+  const onToggleShuffle = useCallback(() => {
+    const turningOn = !shuffle;
+    setShuffle(turningOn);
+    if (!turningOn || visibleTracks.length < 2) return;
+    setQueueOverride(shuffleFrom(visibleTracks, status?.trackId ?? loadedTrack?.id ?? null));
+  }, [shuffle, visibleTracks, status?.trackId, loadedTrack]);
 
   /**
    * Ask once at startup whether there is a newer Starless.
@@ -618,6 +638,29 @@ export default function App() {
   );
 
   /**
+   * A song chosen from the dropdown owes the user a queue too.
+   *
+   * This called `onPlay` on its own, which starts the track and leaves the queue
+   * on whatever was open before. So searching for a song, clicking it in the menu
+   * and waiting put the *liked songs* on afterwards — the click said "this song"
+   * and the queue said "a different list you are no longer looking at".
+   *
+   * It also commits the query, so the results screen is what is on screen while
+   * that list plays. That is the rule the rest of the app follows — what plays
+   * next is something the user can see — and keeping the user on the shelf while a
+   * search queue runs would break it.
+   */
+  const onPickSuggestion = useCallback(
+    (track: Track) => {
+      const query = freshDraft?.query ?? draft.trim();
+      playFrom(freshDraft?.tracks ?? [track], track);
+      if (query.length >= MIN_QUERY_LENGTH) setCommitted(query);
+      setDraft(query);
+    },
+    [freshDraft, draft, playFrom],
+  );
+
+  /**
    * Warm a playlist before it is opened.
    *
    * Opening a playlist costs a network round trip, and hovering the item is a
@@ -740,7 +783,7 @@ export default function App() {
           query={draft}
           onQueryChange={onQueryChange}
           onSubmitSearch={onSubmitSearch}
-          onPickSuggestion={onPlay}
+          onPickSuggestion={onPickSuggestion}
           suggestions={suggestions}
           suggestionCount={suggestionCount}
           searching={searching}
@@ -863,7 +906,13 @@ export default function App() {
               nowPlayingId={nowPlayingId}
               loadingId={loadingId}
               failedId={failedId}
-              onPlay={onPlay}
+              // This list defines the queue, and it has to say so *here* as well
+              // as when the playlist was opened. `queueOverride` is only cleared
+              // on navigation, so playing a song inside the playlist already on
+              // screen used to leave the previous queue standing — open a shuffled
+              // run from Home, click a song in "LoL", and the songs after it came
+              // from the old list. The drift the queue design exists to prevent.
+              onPlay={(track) => playFrom(libraryTracks, track)}
               loading={playlistTracks.isLoading}
               error={playlistError}
               empty={!playlistTracks.isLoading ? t.playlistEmpty : null}

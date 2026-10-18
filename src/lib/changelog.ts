@@ -93,6 +93,8 @@ export const CHANGELOG: ChangelogEntry[] = [
             "Your playlist covers are back. Spotify does not send them when you read the library, but it does keep them somewhere else, and Starless now goes and gets them: these are Spotify's own images, not a mosaic the app draws itself.",
             "The Home button actually goes home. It used to move the highlight and leave the playlist open on screen.",
             "There is a home screen now. 'Home' used to be your saved songs wearing a different name: a list of things you had already chosen, which is a poor place to decide what to listen to next. It is a shelf now — your playlists, and separately what Spotify made for you, which today means DJ. There is no filter row and no recommendations: those come out of Spotify's recommendation engine, which sat behind the Web API that no longer works, and fourteen URIs were tried against the session that does work without a single answer.",
+            "The queue after a search is fixed. Picking a song from the dropdown, or clicking inside the playlist already open, left the queue on the previous list — you searched for a song and your liked songs came next. Each list now defines what follows it.",
+            "The shuffle button now shows. It used to draw a different song at every jump while the queue panel kept listing the same order, so what was on screen contradicted what you were hearing. Turning it on now decides a new order, the panel shows it, and it stays. Turning it off does not undo it.",
           ],
         },
         {
