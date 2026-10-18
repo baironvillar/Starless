@@ -20,6 +20,14 @@ type MediaCardProps = {
   /** Present only where playing is real. Absent means "this card opens something". */
   onPlay?: () => void;
   onOpen?: () => void;
+  /**
+   * Called when the card is approached, to fetch what opening it would need.
+   *
+   * On the card itself rather than on a wrapper: a `<div>` carrying a mouse
+   * handler is a static element pretending to be interactive, and the one thing it
+   * could offer a keyboard is prefetch it does not need.
+   */
+  onPrefetch?: () => void;
   /** A play is on its way: the button becomes a spinner and stops taking clicks. */
   busy?: boolean;
   /**
@@ -58,6 +66,7 @@ export function MediaCard({
   round = false,
   onPlay,
   onOpen,
+  onPrefetch,
   busy = false,
   eyebrow,
   playLabel,
@@ -72,6 +81,8 @@ export function MediaCard({
       animate={{ opacity: 1, y: 0 }}
       transition={{ ...SPRING, delay: 0.02 }}
       whileHover={interactive ? { y: -4 } : undefined}
+      onPointerEnter={onPrefetch}
+      onFocusCapture={onPrefetch}
       className={`group/card relative ${className}`}
     >
       {/*

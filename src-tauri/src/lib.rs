@@ -545,6 +545,10 @@ pub fn run() {
             if spclient::pictures_requested() {
                 spclient::run_picture_probe(handle.clone());
             }
+            #[cfg(debug_assertions)]
+            if spclient::home_requested() {
+                spclient::run_home_probe(handle.clone());
+            }
             if selftest::requested() {
                 selftest::run(handle);
             }

@@ -1229,3 +1229,78 @@ pub fn run_shape_probe(app: tauri::AppHandle) {
         log::info!("=== DIAGNOSTIC: fin de la sonda de formas ===");
     });
 }
+
+/// ¿Qué contenido personalized alcanza la sesión?
+///
+/// La biblioteca ya trae una playlist que Spotify fabricó para la cuenta —DJ—,
+/// así que el servicio *sí* personalize por este canal. Lo que no se sabe es
+/// cuánto. "Daily Mix", "Discover Weekly", "Release Radar" y las estaciones
+/// distintas son del motor de recomendaciones, que vivía en la Web API; pero
+/// antes de aceptar que no existe hay que haberlo probado, que es la diferencia
+/// entre "no lo encontramos" y "no está".
+///
+/// Las candidatas usan las formas que Spotify usa para las suyas. Con `+` y sin
+/// espacios, por la razón que ya está escrita más arriba: un uri mal escrito
+/// contesta que la frase está mal, no que la cosa no exista.
+#[cfg(debug_assertions)]
+pub fn home_requested() -> bool {
+    std::env::var("STARLESS_SP_HOME")
+        .map(|value| value != "0" && !value.is_empty())
+        .unwrap_or(false)
+}
+
+#[cfg(debug_assertions)]
+pub fn run_home_probe(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(session) = crate::selftest::wait_for_session(&app) else {
+            log::error!("SP_HOME: la sesión no llegó a conectar");
+            return;
+        };
+
+        log::info!("=== DIAGNOSTIC: sonda de contenido personalized ===");
+
+        let Ok(account) = account(&session) else {
+            log::error!("SP_HOME: sin cuenta, no hay nada personalized que probar");
+            return;
+        };
+        let user = account.id.clone();
+
+        let mut artist_id = "4Fl8dEtJlmvFkYb4HZr8Fi".to_string();
+        if let Ok(playlists) = playlists(&session)
+            && let Some(track) = playlists
+                .iter()
+                .flat_map(|playlist| playlist_tracks(&session, &playlist.id).unwrap_or_default())
+                .next()
+            && let Some(first_artist) = track.artists.first()
+        {
+            artist_id = first_artist.id.clone();
+        }
+
+        probe_contexts(
+            &session,
+            &[
+                // La línea de control: se sabe que responde. Si esta falla, el
+                // problema es la sonda y no la pregunta.
+                format!("spotify:user:{user}:collection"),
+                format!("spotify:user:{user}"),
+                format!("spotify:user:{user}:daylims"),
+                format!("spotify:user:{user}:daily"),
+                format!("spotify:user:{user}:discover-weekly"),
+                format!("spotify:user:{user}:discover"),
+                format!("spotify:user:{user}:release-radar"),
+                format!("spotify:user:{user}:stations"),
+                format!("spotify:user:{user}:made-for-{user}"),
+                format!("spotify:daily"),
+                format!("spotify:discover:weekly"),
+                format!("spotify:release-radar"),
+                // Una estación por artista es lo más parecido a "Recommended
+                // Stations" que se podría construir con lo propio.
+                format!("spotify:artist:{artist_id}:radio"),
+                format!("spotify:artist:{artist_id}:related"),
+                format!("spotify:artist:{artist_id}:station"),
+            ],
+        );
+
+        log::info!("=== DIAGNOSTIC: fin de la sonda de inicio ===");
+    });
+}

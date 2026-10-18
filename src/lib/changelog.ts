@@ -58,6 +58,7 @@ export const CHANGELOG: ChangelogEntry[] = [
             "Para casi todo el mundo, la biblioteca salía vacía y no decía por qué. Spotify dejó de entregar datos a las apps nuevas salvo a cinco cuentas en una lista, así que las demás veían un cliente firmado con una biblioteca que no aparecía. Starless ahora lee tu biblioteca, tus playlists, tus canciones guardadas y la búsqueda por la misma sesión con la que reproduce: sin lista, sin revisión y sin una dependencia que se pueda caer sola. Y si algo falla al leerla, la app lo dice en vez de mostrar un vacío.",
             "Dos Starless abiertas a la vez ya no pueden pasar. Antes competían por las claves de audio y la que perdía le pasaba sus bytes a la otra: seis canciones quemadas en catorce segundos, todas reportadas como canciones que Spotify no entregaba. Ahora la segunda copia sube la ventana de la que ya está y se cierra.",
             "Se cayó la conexión con Spotify y Starless lo dice. Antes saltaba canción tras canción diciendo que esa no se pudo reproducir —la pista estaba bien, lo que faltaba era la conexión—, y como la sesión no vuelve sola terminabas viendo seis errores seguidos. Ahora dice qué pasó y para; hay que cerrar y abrir la app.",
+            "Hay una pantalla principal. Antes «Inicio» era tu lista de canciones que te gustan con otro nombre: una lista de cosas que ya elegiste, que es mala forma de decidir qué escuchar después. Ahora es una repisa con tus playlists y, aparte, lo que Spotify te fabricó —hoy, DJ—. No hay fila de filtros ni recomendaciones: esas salen del motor de recomendaciones de Spotify, que estaba detrás de la Web API que ya no funciona. Se probaron catorce URIs contra la sesión que sí funciona y ninguna respondió.",
           ],
         },
         {
@@ -91,6 +92,7 @@ export const CHANGELOG: ChangelogEntry[] = [
             "When the connection to Spotify drops, Starless says so. It used to skip from song to song saying that one could not be played — the song was fine, the connection was gone — and since the session never comes back on its own you ended up reading six errors in a row. Now it says what happened and stops; close and reopen the app.",
             "Your playlist covers are back. Spotify does not send them when you read the library, but it does keep them somewhere else, and Starless now goes and gets them: these are Spotify's own images, not a mosaic the app draws itself.",
             "The Home button actually goes home. It used to move the highlight and leave the playlist open on screen.",
+            "There is a home screen now. 'Home' used to be your saved songs wearing a different name: a list of things you had already chosen, which is a poor place to decide what to listen to next. It is a shelf now — your playlists, and separately what Spotify made for you, which today means DJ. There is no filter row and no recommendations: those come out of Spotify's recommendation engine, which sat behind the Web API that no longer works, and fourteen URIs were tried against the session that does work without a single answer.",
           ],
         },
         {

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { AuthGate } from "./components/AuthGate";
 import { CrashPrompt } from "./components/CrashPrompt";
 import { FeedbackPanel } from "./components/FeedbackPanel";
+import { HomeScreen } from "./components/HomeScreen";
 import { LibrarySidebar } from "./components/LibrarySidebar";
 import { PlayerBar, type RepeatMode } from "./components/PlayerBar";
 import { QueuePanel } from "./components/QueuePanel";
@@ -134,6 +135,16 @@ export default function App() {
 
   const selected = playlists.data?.find((p) => p.id === activeItem);
   const isLiked = activeItem === "liked";
+  /**
+   * The shelf you land on, which is not the saved songs.
+   *
+   * `active` was already the state the top bar moved; nothing read it. The main
+   * surface is decided by `activeItem`, so "Inicio" was a highlight on a tab that
+   * left the list underneath untouched — which is exactly why the button looked
+   * broken. Now it is read here, and the home screen is a screen of its own.
+   */
+  const isHome = active === "navHome";
+
   /**
    * `null` means "Liked Songs", which is not a playlist id — passing the literal
    * would put an empty id on the wire and ask Spotify about a playlist that does
@@ -646,6 +657,42 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [settingsOpen, queueOpen]);
 
+  /**
+   * The heading, and the line under it.
+   *
+   * Pulled out of the markup because four nested ternaries in JSX is a wall, and
+   * adding the home screen made it a fifth. It is also a claim about the screen:
+   * each branch says what is actually on it, including "nothing yet", which is the
+   * one that keeps a stalled screen from claiming to hold a library.
+   */
+  const headerTitle = showResults
+    ? t.searchResultsTitle
+    : isHome
+      ? t.homeTitle
+      : isLiked
+        ? t.likedSongs
+        : (selected?.name ?? t.libraryTitle);
+
+  const headerSubtitle = showResults
+    ? results
+      ? t.searchResultsFor.replace("{query}", committed)
+      : resultsLoading
+        ? t.searching
+        : (screenError ?? t.searchNoResults)
+    : isHome
+      ? playlists.data
+        ? `${listCount(playlists.data)} ${t.playlists}`
+        : t.loading
+      : isLiked
+        ? liked.data
+          ? `${listCount(liked.data)} ${t.songs}`
+          : t.loading
+        : playlistTracks.data
+          ? `${listCount(playlistTracks.data)} ${t.songs}`
+          : playlistTracks.isLoading
+            ? t.loading
+            : t.librarySubtitle;
+
   return (
     <div className="relative h-full overflow-hidden bg-ground">
       {/*
@@ -679,20 +726,14 @@ export default function App() {
           libraryOpen={libraryOpen}
           onNavigate={(key) => {
             setActive(key);
-            // "Inicio" es un destino, no un resaltado.
+            // "Inicio" es un destino, no un resaltado. Antes esto sólo cambiaba
+            // `active` y el contenido principal decide mirando `activeItem`, así
+            // que marcaba la pestaña y dejaba la playlist abierta en pantalla.
             //
-            // El contenido principal decide qué pantalla mostrar mirando
-            // `activeItem` —"liked" por defecto— y no `active`: la barra lateral,
-            // la lista y el panel de cola leen `activeItem`. Mover sólo `active`
-            // dejaba la playlist abierta en pantalla con la pestaña "Inicio"
-            // marcada como elegida, que es la forma exacta de un botón que no hace
-            // nada. Volver también tiene que soltar la cola: la lista de la
-            // pantalla de inicio es la suya, no la de la playlist de la que se
-            // viene.
-            if (key === "navHome") {
-              setActiveItem("liked");
-              setQueueOverride(null);
-            }
+            // No toca `activeItem` ni la cola a propósito: el inicio es una
+            // pantalla para mirar, no una lista que define qué sigue. Cambiar la
+            // playlist desde acá tiraría la cola de lo que se estaba escuchando
+            // sin que nadie lo pidiera.
             leaveResults();
           }}
           onToggleLibrary={() => setLibraryOpen((v) => !v)}
@@ -764,29 +805,9 @@ export default function App() {
             className="mb-5"
           >
             <h1 className="truncate text-[30px] leading-tight font-semibold tracking-tight">
-              {showResults
-                ? t.searchResultsTitle
-                : isLiked
-                  ? t.likedSongs
-                  : (selected?.name ?? t.libraryTitle)}
+              {headerTitle}
             </h1>
-            <p className="tabular mt-1 truncate text-[13px] text-ink-muted">
-              {showResults
-                ? results
-                  ? t.searchResultsFor.replace("{query}", committed)
-                  : resultsLoading
-                    ? t.searching
-                    : (screenError ?? t.searchNoResults)
-                : isLiked
-                  ? liked.data
-                    ? `${listCount(liked.data)} ${t.songs}`
-                    : t.loading
-                  : playlistTracks.data
-                    ? `${listCount(playlistTracks.data)} ${t.songs}`
-                    : playlistTracks.isLoading
-                      ? t.loading
-                      : t.librarySubtitle}
-            </p>
+            <p className="tabular mt-1 truncate text-[13px] text-ink-muted">{headerSubtitle}</p>
           </motion.header>
 
           {showResults ? (
@@ -804,6 +825,20 @@ export default function App() {
                 {resultsLoading ? t.searching : (screenError ?? t.searchNoResults)}
               </p>
             )
+          ) : isHome ? (
+            <HomeScreen
+              t={t}
+              playlists={playlists.data ?? []}
+              loading={playlists.isLoading}
+              error={playlists.error ? explain(playlists.error) : null}
+              playlistCount={(playlist) => `${playlist.tracks?.total ?? 0} ${t.songs}`}
+              onOpenPlaylist={(playlist) => {
+                setActiveItem(playlist.id);
+                setActive("navLibrary");
+                setQueueOverride(null);
+              }}
+              onPrefetch={(playlist) => onPrefetchPlaylist(playlist.id)}
+            />
           ) : isLiked ? (
             <TrackList
               tracks={libraryTracks}
