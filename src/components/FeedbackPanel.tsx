@@ -1,8 +1,19 @@
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { motion } from "motion/react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { StringKey } from "../lib/i18n";
+
+/**
+ * How long the confirmation is on screen before the panel gets out of the way.
+ *
+ * Long enough to read "Enviado" and register that something happened; short enough
+ * that the panel is not still there when the attention has already moved on. It
+ * used to wait for a click on "Cerrar", which made a finished form look like a
+ * form that had failed: the user had sent it, and the only thing left on screen
+ * was the button they had just used.
+ */
+const CLOSE_AFTER_MS = 1600;
 
 type FeedbackPanelProps = {
   t: Record<StringKey, string>;
@@ -35,6 +46,18 @@ export function FeedbackPanel({ t, onClose }: FeedbackPanelProps) {
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * The pending close, so closing the panel by hand does not leave a timer behind
+   * that fires into an app that is no longer showing this form.
+   */
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (closeTimer.current) clearTimeout(closeTimer.current);
+    },
+    [],
+  );
 
   const empty = message.trim().length === 0;
 
@@ -70,12 +93,15 @@ export function FeedbackPanel({ t, onClose }: FeedbackPanelProps) {
       // is the honest fallback: the report is the user's to press create on.
       if (!outcome.created) await openUrl(outcome.url);
       setSent(outcome.url);
+      // Only after the browser is handed the pre-filled page: closing first would
+      // unmount the panel this promise is still standing on.
+      closeTimer.current = setTimeout(onClose, CLOSE_AFTER_MS);
     } catch (e) {
       setError(typeof e === "string" ? e : t.crashReportFailed);
     } finally {
       setBusy(false);
     }
-  }, [message, attachLog, empty, t]);
+  }, [message, attachLog, empty, onClose, t]);
 
   // The tint is the point, not the decoration. This form opens over whatever is
   // on screen — the library, a settings panel, the sign-in screen — and DESIGN.md

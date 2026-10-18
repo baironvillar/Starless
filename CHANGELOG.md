@@ -36,6 +36,7 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - Cuando hay una versión nueva, Starless lo dice: una alerta flotante que aparece una vez y se desvanece sola, el botón de Ajustes queda marcado en verde, y dentro de Ajustes el botón de actualizar se pone en verde con la versión disponible. Nada se descarga y nada se instala solo — instalar sigue siendo un clic tuyo, en Ajustes, porque Starless está sonando.
 - Un fallo al comprobar no marca nada. Si GitHub no se puede alcanzar, eso dice algo de la red y nada de tu instalación, así que el botón se queda como estaba.
+- **Letra de las canciones.** Botón en la barra de abajo, al lado del botón de cola. Sigue la posición del audio línea por línea cuando el proveedor manda los tiempos, y avisa que no puede seguirlas cuando no los manda —en vez de quedarse clavada en la primera toda la canción—. Cada línea con tiempo es un botón: hacé clic y la canción salta a ese minuto. Viene por la misma sesión que ya reproducía: ni un permiso nuevo, ni un client id propio. Este apartado es para el gordito `kaliuchisfangirl`.
 
 ### Fixed / Corregido
 
@@ -46,7 +47,6 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - El botón de Inicio vuelve al inicio de verdad. Antes sólo cambiaba una pestaña y dejaba la playlist abierta en pantalla.
 - Hay una pantalla principal. Antes "Inicio" era la lista de canciones que te gustan con otro nombre: una lista de cosas que ya elegiste, que es mala forma de decidir qué escuchar después. Ahora es una repisa con tus playlists y, aparte, lo que Spotify te fabricó —hoy, DJ—. **No hay fila de filtros ni recomendaciones**: esas salen del motor de recomendaciones de Spotify, que estaba detrás de la Web API que ya no funciona, y se probaron catorce URIs contra la sesión disponible sin que ninguna respondiera.
 - Arreglada la cola después de buscar. Elegir una canción del desplegable, o hacer clic dentro de la playlist que ya estaba abierta, dejaban la cola de la lista anterior —buscabas una canción y después seguían las que te gustan—. Ahora cada lista define la cola que la sigue.
-- **Letra de las canciones.** Botón en la barra de abajo, al lado de lo que está sonando. Sigue la posición del audio línea por línea cuando el proveedor manda los tiempos, y avisa que no puede seguirlas cuando no los manda —en vez de quedarse clavada en la primera toda la canción—. Viene por la misma sesión que ya reproducía: ni un permiso nuevo, ni un client id propio. Este apartado es un pedido de un `kaliuchisfangirl` que lo quería ya, y con razón: no había forma de ver la letra sin salir de la app.
 - El botón de aleatorio ahora se ve. Antes sorteaba una canción distinta en cada salto pero el panel de cola seguía mostrando el mismo orden de siempre: lo que estaba al lado contradecía lo que sonaba. Ahora al prenderlo se decide un orden nuevo, se ve en el panel y se mantiene; apagarlo no lo deshace.
 
 ### Changed / Cambiado

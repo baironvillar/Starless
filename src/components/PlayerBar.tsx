@@ -14,6 +14,7 @@ import {
   VolumeX,
 } from "lucide-react";
 import { motion } from "motion/react";
+import { useCallback, useEffect, useRef } from "react";
 import type { StringKey } from "../lib/i18n";
 import {
   explain,
@@ -54,6 +55,29 @@ type PlayerBarProps = {
 };
 
 const SPRING = { type: "spring" as const, stiffness: 420, damping: 32 };
+
+/** librespot's own scale, not ours. The conversion happens once, here. */
+const MAX_VOLUME = 65535;
+
+/**
+ * The level to come back to when the sound comes back.
+ *
+ * This button used to send `muted ? MAX_VOLUME : 0`, which is wrong in exactly one
+ * direction: muting remembered nothing, so unmuting was a decision the app made —
+ * every single time, at full scale, whatever the person had been listening at. Set
+ * it to half, mute, unmute, and the music jumps to a level nobody chose.
+ *
+ * So the last non-zero level the backend reports is what comes back. The value it
+ * reports *is* the value that was asked for: `apply_volume` stores the attenuation
+ * curve separately and returns the number untouched, so handing it back is exact
+ * and not a value that drifts a little on every unmute.
+ *
+ * Half scale as the opening guess, for a session that has never been audible — the
+ * app came up muted, or it was muted before the first status event arrived.
+ * Unmuting into full scale is the loudest thing this app can do, and doing it to
+ * someone who never asked for volume is not a decision it should be making.
+ */
+const DEFAULT_UNMUTE = MAX_VOLUME / 2;
 
 /** Feeds the `--fill` custom property the slider recipe paints its track with. */
 function fillStyle(percent: number): React.CSSProperties {
@@ -105,8 +129,25 @@ export function PlayerBar({
 
   // librespot's own scale, not ours. The conversion happens once, here, so nothing
   // downstream has to know that 65535 is a thing.
-  const volume = (status?.volume ?? 0) / 65535;
+  const volume = (status?.volume ?? 0) / MAX_VOLUME;
   const muted = volume <= 0.001;
+
+  /**
+   * The last level that was actually audible, in this session.
+   *
+   * Recorded on the way *in* rather than on the way out: whatever the backend
+   * reports as non-zero is the level to come back to, and muting writes a zero
+   * that must not overwrite it. `status.volume` of 0 is the one value that is
+   * skipped, which is exactly the value that means "muted".
+   */
+  const lastAudible = useRef<number>(DEFAULT_UNMUTE);
+  useEffect(() => {
+    if (status?.volume) lastAudible.current = status.volume;
+  }, [status?.volume]);
+
+  const toggleMute = useCallback(() => {
+    void setVolume(muted ? lastAudible.current : 0).catch(() => {});
+  }, [muted]);
 
   const busy = loading;
   const idle = !track;
@@ -139,30 +180,6 @@ export function PlayerBar({
             </>
           )}
         </div>
-
-        {/*
-            The lyrics button sits on the thing it describes, not in the column of
-            transport controls: it is about *this* song, so it belongs where the
-            song's name is. Disabled when nothing is playing, because then there is
-            no song to ask about — the same rule as the transport.
-        */}
-        <motion.button
-          type="button"
-          onClick={onToggleLyrics}
-          disabled={idle}
-          whileTap={{ scale: 0.9 }}
-          transition={SPRING}
-          aria-label={lyricsOpen ? t.closeLyrics : t.showLyrics}
-          title={lyricsOpen ? t.closeLyrics : t.showLyrics}
-          aria-pressed={lyricsOpen}
-          className={`ml-1 grid size-9 shrink-0 place-items-center rounded-pill transition-colors duration-200 disabled:pointer-events-none disabled:opacity-35 ${
-            lyricsOpen
-              ? "bg-accent/15 text-accent"
-              : "text-ink-faint hover:bg-white/8 hover:text-ink"
-          }`}
-        >
-          <Mic2 className="size-[16px]" strokeWidth={2} />
-        </motion.button>
       </div>
 
       {/* Transport, with the seek bar beneath it on the same centre axis */}
@@ -270,25 +287,69 @@ export function PlayerBar({
 
       {/* Secondary controls, mirroring the left column's width */}
       <div className="flex min-w-0 items-center justify-end gap-2">
+        {/*
+            The queue button is on at every width, and the volume slider is the
+            one that sheds. A control that appears at some sizes is a control that
+            is missing from others: below `lg` the queue is a sheet over the
+            content instead of a column, but it is still the queue, and it now
+            opens closed — there would be no way to reach it at all.
+        */}
         <button
           type="button"
           onClick={onToggleQueue}
           aria-label={t.queue}
           title={t.queue}
           aria-pressed={queueOpen}
-          className={`hidden size-8 shrink-0 place-items-center rounded-pill transition-colors duration-200 hover:bg-white/10 lg:grid ${
+          className={`grid size-8 shrink-0 place-items-center rounded-pill transition-colors duration-200 hover:bg-white/10 ${
             queueOpen ? "bg-white/12 text-ink" : "text-ink-muted hover:text-ink"
           }`}
         >
           <ListOrdered className="size-[17px]" strokeWidth={2} />
         </button>
 
-        <div className="flex items-center gap-2">
+        {/*
+            The lyrics button sits next to the queue, not next to the song's name
+            where it started. Both open a panel that takes the main surface — the
+            list and the lyrics land in the same place — so they belong in the same
+            column, side by side: one button to bring a panel in, another to swap
+            it. Split across the bar they read as two unrelated features. Disabled
+            when nothing is playing, because then there is no song to ask about —
+            the same rule as the transport.
+        */}
+        <motion.button
+          type="button"
+          onClick={onToggleLyrics}
+          disabled={idle}
+          whileTap={{ scale: 0.9 }}
+          transition={SPRING}
+          aria-label={lyricsOpen ? t.closeLyrics : t.showLyrics}
+          title={lyricsOpen ? t.closeLyrics : t.showLyrics}
+          aria-pressed={lyricsOpen}
+          className={`grid size-8 shrink-0 place-items-center rounded-pill transition-colors duration-200 disabled:pointer-events-none disabled:opacity-35 ${
+            lyricsOpen ? "bg-white/12 text-ink" : "text-ink-muted hover:bg-white/10 hover:text-ink"
+          }`}
+        >
+          <Mic2 className="size-[17px]" strokeWidth={2} />
+        </motion.button>
+
+        {/*
+            The volume control, and what it decided not to be.
+
+            The slider is on the bar at every width, and the icon next to it mutes —
+            which is what it always did, and what an icon shaped like a speaker is
+            for. A popover that opened above the bar was tried for narrow windows and
+            taken back out: it needed a portal to escape the bar's `contain: paint`,
+            and it put the volume two clicks away on the widths where it already fits.
+            The measurement that settles it is the 768px minimum — the right column
+            needs 185px and has 202px there, so the slider stays and nothing has to be
+            invented for a case that does not exist.
+        */}
+        <div className="flex shrink-0 items-center gap-2">
           <button
             type="button"
-            onClick={() => void setVolume(muted ? 65535 : 0).catch(() => {})}
-            aria-label={muted ? t.mute : t.volume}
-            title={muted ? t.mute : t.volume}
+            onClick={toggleMute}
+            aria-label={muted ? t.unmute : t.mute}
+            title={muted ? t.unmute : t.mute}
             className={`shrink-0 transition-colors duration-200 ${
               muted ? "text-live" : "text-ink-muted hover:text-ink"
             }`}
@@ -301,9 +362,9 @@ export function PlayerBar({
           </button>
           <input
             type="range"
-            className="slider hidden w-20 lg:block"
+            className="slider w-20"
             min={0}
-            max={65535}
+            max={MAX_VOLUME}
             step={128}
             value={status?.volume ?? 0}
             disabled={idle}

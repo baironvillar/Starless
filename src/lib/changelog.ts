@@ -50,6 +50,7 @@ export const CHANGELOG: ChangelogEntry[] = [
           items: [
             "Cuando hay una versión nueva, Starless lo dice: una alerta flotante que aparece una vez y se desvanece sola, el botón de Ajustes queda marcado en verde, y dentro de Ajustes el botón de actualizar se pone en verde con la versión disponible. Nada se descarga y nada se instala solo — instalar sigue siendo un clic tuyo, en Ajustes, porque Starless está sonando.",
             "Un fallo al comprobar no marca nada. Si GitHub no se puede alcanzar, eso dice algo de la red y nada de tu instalación, así que el botón se queda como estaba.",
+            "Las letras. Un botón en la barra de abajo, al lado de la cola. Siguen la posición del audio línea por línea cuando el proveedor manda los tiempos, y avisan que no pueden seguirlas cuando no los manda, en vez de quedarse clavadas en la primera línea toda la canción. Cada línea con tiempo es un botón: hacé clic y la canción salta a ese minuto. Vienen por la sesión que ya reproducía: ningún permiso nuevo, ningún client id propio. Este apartado es para el gordito `kaliuchisfangirl`.",
           ],
         },
         {
@@ -58,7 +59,11 @@ export const CHANGELOG: ChangelogEntry[] = [
             "Para casi todo el mundo, la biblioteca salía vacía y no decía por qué. Spotify dejó de entregar datos a las apps nuevas salvo a cinco cuentas en una lista, así que las demás veían un cliente firmado con una biblioteca que no aparecía. Starless ahora lee tu biblioteca, tus playlists, tus canciones guardadas y la búsqueda por la misma sesión con la que reproduce: sin lista, sin revisión y sin una dependencia que se pueda caer sola. Y si algo falla al leerla, la app lo dice en vez de mostrar un vacío.",
             "Dos Starless abiertas a la vez ya no pueden pasar. Antes competían por las claves de audio y la que perdía le pasaba sus bytes a la otra: seis canciones quemadas en catorce segundos, todas reportadas como canciones que Spotify no entregaba. Ahora la segunda copia sube la ventana de la que ya está y se cierra.",
             "Se cayó la conexión con Spotify y Starless lo dice. Antes saltaba canción tras canción diciendo que esa no se pudo reproducir —la pista estaba bien, lo que faltaba era la conexión—, y como la sesión no vuelve sola terminabas viendo seis errores seguidos. Ahora dice qué pasó y para; hay que cerrar y abrir la app.",
+            "Volvieron las portadas originales de tus playlists. Spotify no las manda cuando lees la biblioteca, pero las guarda en otro lado, y Starless ahora va a buscarlas: son las imágenes de Spotify, no un mosaico que dibuja la app.",
+            "El botón de Inicio va al inicio de verdad. Antes sólo movía el resaltado y dejaba la playlist abierta en pantalla.",
             "Hay una pantalla principal. Antes «Inicio» era tu lista de canciones que te gustan con otro nombre: una lista de cosas que ya elegiste, que es mala forma de decidir qué escuchar después. Ahora es una repisa con tus playlists y, aparte, lo que Spotify te fabricó —hoy, DJ—. No hay fila de filtros ni recomendaciones: esas salen del motor de recomendaciones de Spotify, que estaba detrás de la Web API que ya no funciona. Se probaron catorce URIs contra la sesión que sí funciona y ninguna respondió.",
+            "Arreglada la cola después de buscar. Elegir una canción del desplegable, o hacer clic dentro de la playlist que ya estaba abierta, dejaban la cola de la lista anterior —buscabas una canción y después seguían las que te gustan—. Ahora cada lista define lo que viene después.",
+            "El botón de aleatorio ahora se ve. Antes sorteaba una canción distinta en cada salto pero el panel de cola seguía mostrando el mismo orden de siempre: lo que estaba al lado contradecía lo que sonaba. Ahora al prenderlo se decide un orden nuevo, se ve en el panel y se mantiene; apagarlo no lo deshace.",
           ],
         },
         {
@@ -82,6 +87,7 @@ export const CHANGELOG: ChangelogEntry[] = [
           items: [
             "When there is a newer version, Starless says so: a floating alert that appears once and fades on its own, the Settings button is marked in green, and inside Settings the update button turns green with the version available. Nothing downloads and nothing installs by itself — installing is still your click, in Settings, because Starless is playing music.",
             "A failed check marks nothing. If GitHub cannot be reached, that says something about the network and nothing about your installation, so the button stays as it was.",
+            "Lyrics. A button in the player bar, next to the queue. They follow the audio line by line when the provider sends the timings, and say so when it does not, instead of sitting on the first line all song. Every line with a time is a button: click it and the song jumps to that minute. It comes through the session that was already playing: no new permission, no client id of our own. This section is for the chubby one, `kaliuchisfangirl`.",
           ],
         },
         {
@@ -94,7 +100,6 @@ export const CHANGELOG: ChangelogEntry[] = [
             "The Home button actually goes home. It used to move the highlight and leave the playlist open on screen.",
             "There is a home screen now. 'Home' used to be your saved songs wearing a different name: a list of things you had already chosen, which is a poor place to decide what to listen to next. It is a shelf now — your playlists, and separately what Spotify made for you, which today means DJ. There is no filter row and no recommendations: those come out of Spotify's recommendation engine, which sat behind the Web API that no longer works, and fourteen URIs were tried against the session that does work without a single answer.",
             "The queue after a search is fixed. Picking a song from the dropdown, or clicking inside the playlist already open, left the queue on the previous list — you searched for a song and your liked songs came next. Each list now defines what follows it.",
-            "Lyrics. A button in the player bar, beside whatever is playing. They follow the audio line by line when the provider sends the timings, and say so when it does not, instead of sitting on the first line all song. It comes through the session that was already playing: no new permission, no client id of our own. This section is a request from a `kaliuchisfangirl` who wanted it now, and rightly so — there was no way to read the words without leaving the app.",
             "The shuffle button now shows. It used to draw a different song at every jump while the queue panel kept listing the same order, so what was on screen contradicted what you were hearing. Turning it on now decides a new order, the panel shows it, and it stays. Turning it off does not undo it.",
           ],
         },

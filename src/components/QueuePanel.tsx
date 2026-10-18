@@ -41,11 +41,12 @@ function Cover({ track, className }: { track: Track; className: string }) {
 /**
  * The play queue.
  *
- * Docks to the right edge from `lg` up, mirroring the library sidebar — same inset,
- * same radius, same glass — because a queue that arrives as a different kind of
- * surface would break the illusion that the chrome is one sheet. Below `lg` there is
- * no room to dock anything beside the content, so it takes the settings panel's
- * full-bleed treatment instead of squeezing the main area to a column.
+ * Docks to the right edge, mirroring the library rail — same inset, same radius,
+ * same glass. It used to become a full-bleed sheet below `lg`, on the reasoning
+ * that there was no room for a column beside the content: at that width there was
+ * room for *this* column, and none of it, because a sheet that covers the window is
+ * not a queue you read while the music plays. 240px at the app's own 768px minimum
+ * leaves the content 340px, which is narrow, and the close button is right there.
  *
  * Three sections, because the queue is a history as much as a plan: what is sounding,
  * what follows, and what already played. Their order is the only reason to read it
@@ -65,7 +66,7 @@ export function QueuePanel({ t, playing, upNext, onPlay, onClose }: QueuePanelPr
       transition={SPRING}
       role="dialog"
       aria-label={t.queue}
-      className="glass-sheet pointer-events-auto absolute inset-4 z-40 flex flex-col overflow-hidden rounded-card lg:inset-y-[104px] lg:right-5 lg:bottom-[144px] lg:left-auto lg:z-30 lg:w-[320px]"
+      className="glass-sheet pointer-events-auto absolute top-[104px] right-5 bottom-[144px] z-30 flex w-[240px] flex-col overflow-hidden rounded-card"
     >
       <header className="flex shrink-0 items-center justify-between gap-2 px-4 pt-4 pb-3">
         <h2 className="truncate text-[15px] font-semibold tracking-tight">{t.queue}</h2>

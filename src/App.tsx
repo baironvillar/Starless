@@ -28,6 +28,7 @@ import {
   playTrack,
   runSearch,
   type Track,
+  trackArtists,
   useAccount,
   useLikedTracks,
   useLyrics,
@@ -86,7 +87,21 @@ export default function App() {
   const [lang, setLang] = useState<Lang>("es");
   const [active, setActive] = useState<StringKey>("navHome");
   const [libraryOpen, setLibraryOpen] = useState(true);
-  const [queueOpen, setQueueOpen] = useState(false);
+  /**
+   * The library is a strip of covers by default, and this is the whole reason the
+   * content has room. 72px of riel versus 240px of names: the playlist's artwork
+   * already carries it, and the name is in the header over the list it opens.
+   */
+  const [libraryCollapsed, setLibraryCollapsed] = useState(true);
+  /**
+   * The queue is there from the start, the way the library is.
+   *
+   * A queue you have to go looking for is a queue nobody reads, and the button that
+   * opens it sits next to the volume looking like one more control. Nothing else
+   * had to change: it already survives navigation, and Escape, the X and the button
+   * are the only ways out.
+   */
+  const [queueOpen, setQueueOpen] = useState(true);
   const [lyricsOpen, setLyricsOpen] = useState(false);
   const [activeItem, setActiveItem] = useState("liked");
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -605,7 +620,9 @@ export default function App() {
    * playlist you are reading does not throw away your place — only a genuine
    * change of list does. `showResults` is in here because the results screen
    * replaces the library in the same box, and going back to a playlist is a
-   * different list than the one you were reading.
+   * different list than the one you were reading. `lyricsOpen` is here for the
+   * same reason: the words are a different list in the same box, and arriving in
+   * the middle of them meant arriving with the song's name already scrolled off.
    */
   const mainRef = useRef<HTMLElement>(null);
   // The dependencies are the trigger, not an input: nothing in the body reads
@@ -615,7 +632,7 @@ export default function App() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: trigger, not input
   useEffect(() => {
     mainRef.current?.scrollTo({ top: 0 });
-  }, [activeItem, showResults]);
+  }, [activeItem, showResults, lyricsOpen]);
 
   /**
    * Leaving the results screen, whichever way it is done.
@@ -701,16 +718,24 @@ export default function App() {
     setRepeat((mode) => (mode === "off" ? "all" : mode === "all" ? "one" : "off"));
   }, []);
 
+  /**
+   * Escape backs out of whatever is open.
+   *
+   * The library is in here for the same reason the other two are, and it was the
+   * only way out of a state that had none: below `lg` the sidebar is a sheet, and
+   * on a window narrower than the search field there is nothing else to click.
+   */
   useEffect(() => {
-    if (!settingsOpen && !queueOpen) return;
+    if (!settingsOpen && !queueOpen && !libraryOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       setSettingsOpen(false);
       setQueueOpen(false);
+      setLibraryOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [settingsOpen, queueOpen]);
+  }, [settingsOpen, queueOpen, libraryOpen]);
 
   /**
    * The heading, and the line under it.
@@ -722,13 +747,11 @@ export default function App() {
    */
   const headerTitle = showResults
     ? t.searchResultsTitle
-    : lyricsOpen
-      ? (loadedTrack?.name ?? t.lyricsTitle)
-      : isHome
-        ? t.homeTitle
-        : isLiked
-          ? t.likedSongs
-          : (selected?.name ?? t.libraryTitle);
+    : isHome
+      ? t.homeTitle
+      : isLiked
+        ? t.likedSongs
+        : (selected?.name ?? t.libraryTitle);
 
   const headerSubtitle = showResults
     ? results
@@ -816,6 +839,8 @@ export default function App() {
               likedCount={liked.data?.length ?? null}
               error={Boolean(playlists.error ?? account.error) && !playlists.isLoading}
               activeId={activeItem}
+              collapsed={libraryCollapsed}
+              onToggleCollapsed={() => setLibraryCollapsed((v) => !v)}
               onPrefetch={onPrefetchPlaylist}
               onSelect={(id) => {
                 setActiveItem(id);
@@ -848,26 +873,45 @@ export default function App() {
         The insets are not arbitrary: the top bar is 64px tall sitting 20px from
         the ceiling, and the player bar is 104px sitting 20px off the floor, so
         104px / 144px leaves exactly one 20px gap between every glass surface and
-        the content it floats over. The queue only claims its 360px from `lg` up;
-        below that it is a sheet over the content instead of a column beside it.
+        the content it floats over. The library takes 112px as a riel of covers or
+        280px with the names, and the queue 280px — 20px of inset, its own width,
+        20px of gap — and both of them dock at every width, because the layout that
+        fits is the one where nothing is a sheet over the content.
+
+        `overflow-x-hidden` is spelled out because it is not the default and the
+        default is a trap: writing only `overflow-y: auto` leaves the horizontal
+        axis `visible` in the source, and CSS then *computes* it to `auto`. The box
+        could scroll sideways and a single over-wide child put a scrollbar across
+        the bottom of the content area, which is not a thing anybody can explain.
       */}
         <main
           ref={mainRef}
-          className={`absolute top-[104px] right-9 bottom-[144px] overflow-y-auto transition-[left,right] duration-300 ease-[var(--ease-glass)] ${
-            libraryOpen ? "left-9 lg:left-[328px]" : "left-9"
-          } ${queueOpen ? "lg:right-[360px]" : ""}`}
+          className={`absolute top-[104px] bottom-[144px] overflow-x-hidden overflow-y-auto transition-[left,right] duration-300 ease-[var(--ease-glass)] ${
+            libraryOpen ? (libraryCollapsed ? "left-[112px]" : "left-[280px]") : "left-9"
+          } ${queueOpen ? "right-[280px]" : "right-9"}`}
         >
-          <motion.header
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ type: "spring", stiffness: 420, damping: 32 }}
-            className="mb-5"
-          >
-            <h1 className="truncate text-[30px] leading-tight font-semibold tracking-tight">
-              {headerTitle}
-            </h1>
-            <p className="tabular mt-1 truncate text-[13px] text-ink-muted">{headerSubtitle}</p>
-          </motion.header>
+          {/*
+            The heading belongs to the list, and with the lyrics open there is no
+            list. It used to stay anyway: the playlist's name up here, the song's
+            name underneath in the panel, and between them a subtitle counting the
+            songs of a playlist nobody could see — the same fact twice, in two
+            sizes, one of them about something that was not on screen. `LyricsPanel`
+            brings its own heading now, cut to the same recipe, so the page changes
+            subject instead of repeating itself.
+          */}
+          {!lyricsOpen && (
+            <motion.header
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ type: "spring", stiffness: 420, damping: 32 }}
+              className="mb-5"
+            >
+              <h1 className="truncate text-[30px] leading-tight font-semibold tracking-tight">
+                {headerTitle}
+              </h1>
+              <p className="tabular mt-1 truncate text-[13px] text-ink-muted">{headerSubtitle}</p>
+            </motion.header>
+          )}
 
           {lyricsOpen ? (
             /*
@@ -883,7 +927,9 @@ export default function App() {
               error={lyrics.error ? explain(lyrics.error) : null}
               positionMs={status?.positionMs ?? 0}
               playing={status?.playing ?? false}
-              title={loadedTrack?.name ?? t.lyricsTitle}
+              title={loadedTrack?.name ?? ""}
+              artists={loadedTrack ? trackArtists(loadedTrack) : ""}
+              trackId={lyricsTrackId}
               onClose={closeLyrics}
             />
           ) : showResults ? (

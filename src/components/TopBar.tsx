@@ -194,6 +194,18 @@ export function TopBar({
 
           <span className="h-6 w-px shrink-0 bg-white/10" />
 
+          {/*
+              This one never leaves the bar.
+
+              The rest of the row sheds by breakpoint, which is right for things
+              that repeat what is already on screen. This is the only door to the
+              sidebar — and below `lg` the sidebar itself is not rendered at all,
+              so a toggle that also shed at `lg` left a narrow window with no way
+              to reach the playlists. That is not responsive; that is gone.
+
+              Narrow: the icon in a round pill, like the actions on the right.
+              Wide: the pill with its name.
+          */}
           <motion.button
             type="button"
             onClick={onToggleLibrary}
@@ -203,14 +215,14 @@ export function TopBar({
             aria-pressed={libraryOpen}
             title={libraryOpen ? t.hideLibrary : t.showLibrary}
             data-tauri-drag-region={false}
-            className={`hidden min-w-0 items-center gap-2.5 rounded-pill py-2 pr-3.5 pl-2.5 text-[13.5px] font-medium transition-colors duration-200 lg:flex ${
+            className={`flex size-9 shrink-0 items-center justify-center gap-2.5 rounded-pill text-[13.5px] font-medium transition-colors duration-200 lg:h-auto lg:w-auto lg:py-2 lg:pr-3.5 lg:pl-2.5 ${
               libraryOpen
                 ? "bg-white/12 text-ink"
                 : "text-ink-muted hover:bg-white/6 hover:text-ink"
             }`}
           >
             <Library className="size-4 shrink-0" strokeWidth={2} />
-            <span className="truncate">{t.navLibrary}</span>
+            <span className="hidden truncate lg:inline">{t.navLibrary}</span>
           </motion.button>
         </div>
 

@@ -15,7 +15,7 @@
         "title": "Starless",
         "width": 1180,
         "height": 760,
-        "minWidth": 900,
+        "minWidth": 768,
         "minHeight": 600,
         "center": true,
         "decorations": false,

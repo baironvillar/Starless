@@ -26,6 +26,8 @@ Four floating layers, and no more. Each sits above the one beneath.
 
 The three panels are the same width inset, cut from the same glass recipe. **They read as one sheet of glass floating over the content**, not as three components that happen to match. Anything that breaks that symmetry — a different radius on one of them, a different inset — makes the app look assembled instead of designed.
 
+The library rail and the play queue are the two docked side panels, and they are **not the same width on purpose**: the library has two of its own, because a 240px column of playlist *names* spends a quarter of a laptop screen saying what the artwork next to it already says. Collapsed, it is a 72px riel of covers — 20px of inset, 72px of rail, 20px of gap — and the name is in the header over the list it opens. Expanded it claims 280px. The queue is 240px and always is: its rows carry a title, an artist and a duration, and there is no second line to fall back on. **Both dock at every width.** A side panel that turns into a full-bleed sheet on a narrow window stops being a panel you read while the music plays — it becomes a modal, and the content it was supposed to sit beside is the thing it covers. The content needs every pixel it can get, because the lyrics are a reading column and a wide panel on each side is a narrow one in the middle.
+
 Floating means inset from the window edges: 20px on every side. The corner radius of a floating surface is what tells the eye it is detached — square corners on a floating surface read as a bug.
 
 The top bar is a three-column grid, `1fr auto 1fr`, so the search stays optically centred however wide navigation grows. Both side columns are `min-w-0 overflow-hidden`: without that they push their contents *through* the centre column instead of yielding to it. The row sheds items by breakpoint — library pills at `lg`, device and overflow at `xl`, the language toggle at `sm` — rather than ever overlapping.
@@ -137,7 +139,7 @@ progress bar that runs off to one side reads as a separate widget; the pairing o
 
 The centre column is `clamp(190px, 34vw, 560px)` rather than a fixed width, so the two
 flanking columns keep enough room for artwork and title all the way down to the app's
-own 900px minimum. The bar is 104px tall, which puts the content boundary at
+own 768px minimum. The bar is 104px tall, which puts the content boundary at
 `bottom-[144px]` — one 20px gap beneath it, the same gap the top bar leaves at
 `top-[104px]`.
 

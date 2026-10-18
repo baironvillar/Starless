@@ -164,6 +164,33 @@
 }
 
 /*
+ * The lyrics arriving.
+ *
+ * `transform` only, never opacity: the opacity of a lyric line belongs to the
+ * highlight that follows the song, and an animation that also owns that property
+ * fights it on every frame. A rise of nine pixels over the app's own easing is
+ * enough to read as "these just showed up" without anything moving that the user
+ * did not ask to move.
+ *
+ * The stagger is an inline `animation-delay` on each line, capped by the caller.
+ * `both` matters: it holds the line nine pixels low until its turn comes, so a
+ * staggered block reads as arriving rather than as all of it appearing at once
+ * and then starting.
+ */
+@keyframes lyric-in {
+  from {
+    transform: translateY(9px);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@utility lyric-in {
+  animation: lyric-in 340ms var(--ease-glass) both;
+}
+
+/*
  * Range inputs.
  *
  * The browser's default range looks like a different app wearing our clothes, so
@@ -269,6 +296,51 @@
   :focus-visible {
     outline: 2px solid var(--color-accent-soft);
     outline-offset: 2px;
+  }
+
+  /*
+   * Scrollbars, drawn here.
+   *
+   * The ones Windows sends arrive with an arrow button at each end and a square
+   * grey thumb, and this is the last surface in the app that would be left to the
+   * operating system. The user's complaint about them is fair: they are the one
+   * thing on screen that does not match anything else.
+   *
+   * **Only the `-webkit-` pseudo-elements, deliberately.** The standard
+   * `scrollbar-width` and `scrollbar-color` win over every rule below in a browser
+   * that supports them — Chromium does — and all they can draw is a rectangle: no
+   * rounded thumb, and no way to take the arrows away. The pseudo-elements are the
+   * only way to get the shape, so the standard pair is left out rather than
+   * silently winning and undoing all of this.
+   *
+   * The thumb fills its track and the radius does the rest. It started at 6px with
+   * a transparent border around it to look thin, and that was the mistake: a 3px
+   * corner on a 6px bar is not a pill, it is a rectangle with rounded corners, and
+   * at that size the eye reads "square" — which is what it was asked about. A thumb
+   * has to be wide enough for its semicircular ends to be *visible* to look round.
+   */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background-color: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: rgb(255 255 255 / 0.24);
+    border-radius: 999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(255 255 255 / 0.4);
+  }
+
+  /* The arrows are most of the reason this block exists. */
+  ::-webkit-scrollbar-button {
+    display: none;
   }
 }
 
