@@ -117,13 +117,25 @@ jobs:
         shell: pwsh
         run: |
           git merge-base --is-ancestor $env:GITHUB_SHA origin/main
-          if ($LASTEXITCODE -eq 0) {
+          $enMain = ($LASTEXITCODE -eq 0)
+          if ($enMain) {
             Write-Host "El tag llegó a main: release normal."
             "prerelease=false" >> $env:GITHUB_OUTPUT
           } else {
             Write-Host "El tag no llegó a main: release como prerelease, invisible para la app instalada."
             "prerelease=true" >> $env:GITHUB_OUTPUT
           }
+          # Este `exit 0` no es una formalidad. El shell `pwsh` de los runners
+          # cierra cada paso con `exit $LASTEXITCODE`, y después del `merge-base`
+          # ese valor sigue siendo el de git: el paso se colgaba con el código de
+          # la respuesta que él mismo acababa de interpretar. Como la rama de
+          # prerelease es justamente la que devuelve 1, este paso nunca pasó por
+          # ese lado — la 0.4.0 murió acá, después de pasar lint, tipos y tests.
+          #
+          # Un `origin/main` que no exista devuelve 128 y cae en la misma rama de
+          # prerelease, que es el lado que falla sin hacer daño: una release de
+          # prueba en vez de una pública.
+          exit 0
 
       # Hace las cuatro cosas juntas: compila, firma con la clave de los secretos,
       # crea la release y sube los artefactos —los instaladores, los `.sig` y el
