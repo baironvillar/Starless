@@ -53,9 +53,16 @@ máquina en vez de en la de GitHub.
 
 ```bash
 bun run version:bump patch          # 0.3.0 -> 0.3.1 en los tres manifiestos
-git commit -am "0.3.1: lo que cambió"
+git commit -am "0.3.1"              # el asunto es la versión y nada más
 git tag v0.3.1 && git push --follow-tags
 ```
+
+El asunto del commit que lleva el tag es **la versión y nada más**. No es
+estética: GitHub titula la corrida de un tag con el asunto del commit etiquetado
+y no con el nombre del workflow, así que ese texto es el nombre que queda
+escrito al lado de la release. Si el merge a `main` no es fast-forward, el mismo
+asunto: `git merge --no-ff develop -m "0.3.1"`. El hook de `.githooks/` y el
+workflow lo cobran; ver [`CONTRIBUTING.md`](../CONTRIBUTING.md#los-mensajes-de-commit--commit-messages).
 
 Eso es todo. El workflow de `.github/workflows/release.yml` se dispara con el tag
 y hace el resto: corre `lint`, `typecheck`, `bun run version` y `cargo test
@@ -72,6 +79,9 @@ Dos cosas las hace él y hay que saber que están:
   instalada es `releases/latest/download/latest.json`, y GitHub no redirecciona a
   los borradores. Publicarla a mano es el paso que hace pública la release recién
   cuando los archivos ya están arriba, en vez de unos segundos antes.
+- **Cobra que el commit etiquetado siga la convención de mensajes**, antes de
+  instalar nada. Es el paso más barato de todos y el que decide si el nombre de la
+  corrida queda legible o si es una frase entera.
 
 Cuando termine, la release aparece como borrador en la pestaña *Releases*. Revisala
 y le das a **Publish release**. Recién ahí la app instalada la ve.

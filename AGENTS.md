@@ -18,6 +18,7 @@ bun run typecheck    # tsc --noEmit
 bun run version      # los tres manifiestos tienen que coincidir
 bun run logo         # regenera el ícono y public/starless.svg
 bun run logo:invert  # el mismo ícono con los colores invertidos, a icons-dev/
+bun run hooks:install  # una vez por clon: git config core.hooksPath .githooks
 
 cd src-tauri
 cargo check
@@ -82,6 +83,18 @@ docs/updates.md           cómo se publica una versión
    permisos**: no hay una segunda identidad que pedir, y la única que hay no puede
    leer la biblioteca. Lo que se quita de la app al migrar se quita de verdad —
    `webapi.rs` y `token.rs` no existen, y no hay donde volver.
+
+8. **El asunto de un commit es `tipo(scope):` en inglés; el de una versión es la
+   versión sola.** `fix(player): keep stale rows from painting the previous
+   playlist`, y `0.4.0` a secas para el commit que sube la versión y para el
+   merge a `main`. Los tipos y el alcance están en
+   [`CONTRIBUTING.md`](CONTRIBUTING.md#los-mensajes-de-commit--commit-messages); el
+   cuerpo es libre y es donde va el porqué, como en el resto del repo.
+   La regla vive en `.githooks/commit-msg`, la instala `bun run hooks:install` y
+   el CI la cobra igual: `--no-verify` la esquiva en esta máquina y no después.
+   **El motivo no es la estética:** GitHub titula la corrida de un tag con el
+   asunto del commit etiquetado y no con el nombre del workflow, así que un
+   asunto de tres líneas es el nombre que queda al lado de cada release.
 
 ## Convenciones
 

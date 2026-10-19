@@ -10,6 +10,11 @@
 # mystery, not as a line-ending complaint.
 .agent/skills/impeccable/scripts/impeccable text eol=lf
 
+# The commit hook is a POSIX sh script too, and git runs it through the shebang.
+# A CRLF in the first line means the interpreter itself does not start, and the
+# error that surfaces blames the hook rather than the line ending.
+.githooks/** text eol=lf
+
 # Windows shims are run by cmd.exe, which needs CRLF.
 *.cmd text eol=crlf
 

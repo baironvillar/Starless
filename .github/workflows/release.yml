@@ -46,6 +46,30 @@ jobs:
       - name: Dependencias del frontend
         run: bun install --frozen-lockfile
 
+      # GitHub no le pone a la corrida el nombre del workflow: en un push de
+      # tag le pone **el asunto del commit etiquetado**. Por eso el commit que
+      # sube la versión tiene que llamarse como la versión, y este paso es el que
+      # lo cobra antes de gastar el runner entero en una build que después nadie
+      # descarga. Es el mismo archivo que usa el hook local y el job de CI: la
+      # regla está escrita una sola vez.
+      - name: El commit etiquetado sigue la convención de mensajes
+        shell: pwsh
+        run: |
+          # El runner es Windows y `sh` no siempre está en el PATH, así que se
+          # busca primero y se cae a la ruta que instala Git for Windows.
+          $bash = (Get-Command bash -ErrorAction SilentlyContinue).Source
+          if (-not $bash) { $bash = Join-Path $env:ProgramFiles 'Git\bin\bash.exe' }
+          if (-not (Test-Path $bash)) {
+            Write-Host "::error::No encontré bash para correr .githooks/commit-msg."
+            exit 1
+          }
+          # `rev-list` pela el tag anotado hasta su commit: `GITHUB_SHA` puede
+          # ser el objeto del tag y no el commit que etiqueta.
+          $sha = (git rev-list -n 1 $env:GITHUB_SHA).Trim()
+          Write-Host "Commit etiquetado: $sha — $(git log -1 --format=%s $sha)"
+          & $bash '.githooks/commit-msg' '--commit' $sha
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       # La release se publica desde un tag, así que el tag es la versión. Si no
       # coinciden con el manifiesto, `latest.json` va a prometer un archivo que la
       # app instalada nunca va a pedir, y el comprobador queda mudo para siempre.

@@ -1,0 +1,123 @@
+#!/usr/bin/env sh
+#
+# La regla de los mensajes de commit de Starless, en un solo lugar.
+#
+#     tipo(scope): asunto en inglés, en minúscula, sin punto final
+#     0.4.0        la versión sola: el commit que la sube y el merge a main
+#
+# Se usa de dos formas, y es el mismo archivo a propósito:
+#
+#     sh .githooks/commit-msg <archivo>      # lo que git pasa en $1
+#     sh .githooks/commit-msg --commit HEAD  # lo que corre el CI
+#
+# El motivo de que sea `sh` y no un script de Bun es que git corre los hooks con
+# el intérprete del shebang en cualquier plataforma, y `.gitattributes` obliga a
+# que este archivo llegue con LF: un CRLF en un shell script falla de una forma
+# que se lee como un error de git y no como un final de línea.
+#
+# Nunca reescribe el mensaje. Un hook que edita lo que escribiste es un hook del
+# que no te fiás después, y de todos modos no podría decidir si lo que está en
+# pantalla es la línea que vos pusiste o la que puso la máquina.
+
+set -u
+
+max=72
+tipos='feat|fix|refactor|perf|docs|test|build|ci|chore|style|revert'
+alcance='[a-z0-9._/-]+'
+
+# Los mensajes que escribe el propio git no se corrigen a mano: `git revert` y
+# el auto-squash ponen su texto antes de que exista un hook que pueda mirar, y
+# para frenarlos habría que usar `--no-verify`, que es exactamente el hábito que
+# después desactiva todo lo demás. Se dejan pasar y ya está.
+permitidos='Revert "|fixup! |squash! |amend! '
+
+fallar() {
+	cat >&2 <<FINAL
+
+El mensaje de commit no cumple la convención de este repo.
+
+  subject: "$asunto"
+
+Sólo se aceptan dos formas:
+
+  tipo(scope): asunto en inglés, minúscula, sin punto al final, hasta $max caracteres
+  0.4.0        la versión sola, en el commit que la sube y en el merge a main
+
+Tipos: feat fix refactor perf docs test build ci chore style revert
+
+Ejemplos:
+  feat(lyrics): show the lyric panel with a travelling highlight
+  fix(player): keep stale rows from painting the previous playlist
+  chore(deps): bump tauri to 2.9
+  docs: explain why a develop tag is a prerelease
+
+El cuerpo es libre y es donde va el porqué. Sólo el asunto tiene forma.
+
+Si el mensaje está bien y el hook se equivoca, pasalo con --no-verify
+y avisá: un hook que hay que violencear es un hook que hay que arreglar.
+
+FINAL
+	exit 1
+}
+
+case "${1-}" in
+--commit)
+	rev="${2-HEAD}"
+	# El mensaje lo saca git y no el shell: en un runner de Windows el pipe de
+	# PowerShell entre guiones y procesos recodifica el texto, y una regla que
+	# depende de la codificación del shell que la corre no es una regla.
+	mensaje=$(git log -1 --pretty=format:%B "$rev")
+	;;
+'')
+	echo "uso: sh .githooks/commit-msg <archivo-de-mensaje> | --commit <rev>" >&2
+	exit 2
+	;;
+*)
+	mensaje=$(cat "$1")
+	;;
+esac
+
+# El `tr` saca el CR de un archivo que llegó de Windows y el BOM de uno que
+# escribió PowerShell: los dos se cuelan por la puerta de atrás y los dos
+# romperían el asunto sin que se vea dónde está el error.
+asunto=$(printf '%s' "$mensaje" | head -n 1 | tr -d '\r\357\273\277')
+
+[ -z "$asunto" ] && fallar
+
+largo=$(printf '%s' "$asunto" | wc -c | tr -d ' ')
+
+# `case` hace patrones de glob, no expresiones regulares: los corchetes de
+# permitidos se comparan literales. Por eso lo único que se decide con `case`
+# son los mensajes de git, y las dos formas reales van con grep.
+printf '%s' "$asunto" | grep -Eq "^($permitidos)" && exit 0
+
+# La versión acepta la forma completa de semver, con sufijo y metadatos. Hoy el
+# repo sólo publica x.y.z, pero el hook no puede ser la razón por la que un
+# `version:set 0.4.0-rc.1` quede imposible el día que haga falta.
+if printf '%s' "$asunto" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'; then
+	[ "$largo" -le "$max" ] || fallar
+	exit 0
+fi
+
+if [ "$largo" -gt "$max" ]; then
+	asunto="$asunto… [$largo caracteres de $max]"
+	fallar
+fi
+
+case "$asunto" in
+*.)
+	fallar
+	;;
+esac
+
+printf '%s' "$asunto" | grep -Eq "^($tipos)(\($alcance\))?: [^ ]" || fallar
+
+# El asunto arranca en minúscula. Va con grep y no con un patrón de `case` por
+# dos motivos: bash no admite un espacio sin citar dentro de un patrón de `case`,
+# y el rango se escribe como lista y no como `[A-Z]` porque en una collation con
+# acentos un rango puede traer `Á` adentro, y `docs: caché del manifest` es un
+# asunto perfectamente válido.
+printf '%s' "$asunto" |
+	grep -Eq "^($tipos)(\($alcance\))?: [ABCDEFGHIJKLMNOPQRSTUVWXYZ]" && fallar
+
+exit 0

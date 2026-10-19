@@ -56,6 +56,71 @@ cargo test --lib      # sobre todo el scrubber del reporte de crash
 único que separa "el log se limpia" de "el log publica el nombre de cuenta de
 alguien", y eso se rompe sin que se note.
 
+## Los mensajes de commit / Commit messages
+
+**ES** — El asunto de un commit tiene una de dos formas:
+
+```
+tipo(scope): el asunto, en inglés, en minúscula, sin punto final
+0.4.0        la versión sola
+```
+
+Es [Conventional Commits](https://www.conventionalcommits.org/) con la segunda
+forma agregada. El alcance es opcional y es la superficie que toca: `player`,
+`library`, `queue`, `lyrics`, `search`, `updater`, `report`, `auth`, `settings`,
+`design`, `i18n`, `release`.
+
+| tipo | para qué |
+| --- | --- |
+| `feat` | algo que antes no existía |
+| `fix` | un comportamiento roto que ahora funciona |
+| `refactor` | cambia la forma, no lo que hace |
+| `perf` | más rápido, o con menos memoria |
+| `docs` | documentación |
+| `test` | tests |
+| `build` | dependencias, empaquetado |
+| `ci` | los workflows de `.github/` |
+| `chore` | mantenimiento que no es ninguno de los anteriores |
+| `style` | formato, sin cambio de comportamiento |
+| `revert` | deshacer algo |
+
+El **cuerpo** es libre y es donde va el porqué, con la prosa que este repo ya
+usa. Sólo el asunto tiene forma.
+
+La segunda forma es la que se usa en el commit que sube la versión y en el merge
+a `main`, y no es capricho: **GitHub titula la corrida de un tag con el asunto
+del commit etiquetado**, no con el nombre del workflow. Un tag sobre un commit
+cuyo asunto es `Las letras, y que nada se ponga encima de la música` deja ese
+texto al lado de la release para siempre, en la pestaña de Actions y en el
+historial. Con el asunto `0.4.0` al lado de la 0.4.0 se lee como se espera.
+
+```bash
+bun run version:set 0.4.0
+git commit -am "0.4.0"
+git tag v0.4.0 && git push origin develop v0.4.0
+```
+
+Si el merge a `main` no es fast-forward, el mensaje es la versión también:
+
+```bash
+git merge --no-ff develop -m "0.4.0"
+```
+
+La regla está escrita una sola vez, en `.githooks/commit-msg`, y corre en los tres
+sitios donde puede correr: el hook local, un job de CI y un paso del workflow de
+release. Se instala una vez por clon:
+
+```bash
+bun run hooks:install
+```
+
+**EN** — The subject of a commit is either `tipo(scope):` in English, lowercase
+and with no trailing period, or a bare version number, which is the form the
+version bump and the merge into `main` use. The body is free-form and it is
+where the *why* goes. The same rule runs in three places — the local hook, a CI
+job and a step in the release workflow — and `bun run hooks:install` turns the
+hook on for a clone.
+
 ## El botón de reportar un crash
 
 Un build normal **no** lleva token: el botón arma el reporte y abre GitHub en el
