@@ -17,6 +17,8 @@ import { TrackList } from "./components/TrackList";
 import { UpdateAlert } from "./components/UpdateAlert";
 import { type Lang, type StringKey, strings } from "./lib/i18n";
 import {
+  accentColor,
+  applyAccentColor,
   applyMenuOpacity,
   explain,
   keys,
@@ -124,6 +126,27 @@ export default function App() {
       // Swallowed on purpose: a read that fails leaves the CSS default standing,
       // which is the opaque menu. Nothing here is worth an unhandled rejection in
       // the console of the one build that has no backend to ask.
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  /**
+   * The chosen accent, same reason and same place as the glass: the Home button
+   * and the selection mark in the library are on screen before anybody has opened
+   * the settings panel, so applying it on open would flash the shipped colour at
+   * whoever chose a different one.
+   *
+   * Applied to three custom properties and not to the stylesheet, so a colour
+   * survives a reload without ever being written into the repo.
+   */
+  useEffect(() => {
+    let alive = true;
+    void accentColor()
+      .then((value) => {
+        if (alive) applyAccentColor(value);
+      })
       .catch(() => {});
     return () => {
       alive = false;

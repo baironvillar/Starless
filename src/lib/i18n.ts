@@ -138,6 +138,10 @@ export const strings = {
       "Qué tan sólidos se ven los menús: el de búsqueda, el aviso de caída, el formulario de feedback, la cola y hasta los ajustes. Más sólido es más fácil de leer; más translúcido se ve más profundo.",
     menuOpacitySolid: "Sólido",
     menuOpacityGlass: "Translúcido",
+    accentColor: "Color de acento",
+    accentColorHint:
+      "El color que marca las acciones: el botón de Inicio, la barrita a la izquierda de la playlist o la canción que tenés seleccionada, las canciones que te gustan y los botones principales.",
+    accentColorCustom: "Otro color",
     sectionDiagnostics: "Diagnóstico",
     close: "Cerrar",
 
@@ -378,6 +382,10 @@ export const strings = {
       "How solid the menus look: the search menu, the crash prompt, the feedback form, the queue, and the settings panel itself. More solid is easier to read; more translucent looks deeper.",
     menuOpacitySolid: "Solid",
     menuOpacityGlass: "Translucent",
+    accentColor: "Accent colour",
+    accentColorHint:
+      "The colour that marks actions: the Home button, the bar beside the playlist or song you have selected, Liked Songs, and the primary buttons.",
+    accentColorCustom: "Custom colour",
     sectionDiagnostics: "Diagnostics",
     close: "Close",
 

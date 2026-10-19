@@ -51,6 +51,15 @@ pub struct Settings {
     /// depth is their call, not the design system's.
     #[serde(default)]
     pub menu_opacity: Option<u8>,
+
+    /// The accent colour the user picked, as `#rrggbb`, or `None` for the one
+    /// DESIGN.md ships.
+    ///
+    /// A string rather than three bytes because this one is never read back in
+    /// Rust: the frontend applies it to a CSS variable, and the only thing Rust
+    /// does with it is refuse a value that is not a colour. See `save_accent`.
+    #[serde(default)]
+    pub accent: Option<String>,
 }
 
 /// Read-modify-write, so the day a third field appears this keeps working
@@ -142,6 +151,41 @@ pub fn save_menu_opacity(opacity: u8) {
     update(|settings| settings.menu_opacity = Some(opacity));
 }
 
+/// Remember the accent colour. Refuses anything that is not `#rrggbb`.
+///
+/// This is the one setting in the file whose value becomes a CSS custom
+/// property on `:root`, so it is the one that can put a string written por
+/// alguien en la página entera. The check lives here and not in the frontend
+/// because the frontend is the part that can be talked into skipping it.
+pub fn save_accent(color: &str) {
+    if !is_hex_color(color) {
+        log::warn!("color de acento ignorado, no es #rrggbb: {color}");
+        return;
+    }
+    let color = color.to_ascii_lowercase();
+    if load().accent.as_deref() == Some(color.as_str()) {
+        return;
+    }
+    update(|settings| settings.accent = Some(color));
+}
+
+/// The chosen accent, or `None` to leave the one from DESIGN.md in place.
+///
+/// Checked on the way out too, not only on the way in: a `settings.json` is a
+/// file on disk and a hand edit is as likely as a bad write. A colour that is
+/// not a colour falls back to the default instead of reaching the page.
+pub fn saved_accent() -> Option<String> {
+    let accent = load().accent?;
+    is_hex_color(&accent).then(|| accent.to_ascii_lowercase())
+}
+
+fn is_hex_color(value: &str) -> bool {
+    let Some(hex) = value.strip_prefix('#') else {
+        return false;
+    };
+    hex.len() == 6 && hex.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
 /// The volume to open at, or `None` when the user has never chosen one.
 pub fn saved_volume() -> Option<u16> {
     load().volume
@@ -153,4 +197,35 @@ pub fn saved_menu_opacity() -> u8 {
         .menu_opacity
         .unwrap_or(DEFAULT_MENU_OPACITY)
         .clamp(MENU_OPACITY_MIN, MENU_OPACITY_MAX)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_hex_color;
+
+    /// The accent is the one setting whose value is written onto `:root`, so the
+    /// gate that keeps it a colour is the test that matters. A `settings.json` is
+    /// a file on disk: a hand edit is as likely as a bad write, and whatever is in
+    /// it ends up in the page.
+    #[test]
+    fn only_six_hex_digits_count_as_a_colour() {
+        assert!(is_hex_color("#c9f73c"));
+        assert!(is_hex_color("#C9F73C"), "mayúsculas, se normalizan después");
+
+        assert!(!is_hex_color("c9f73c"), "sin el # no es un color CSS");
+        assert!(!is_hex_color("#c9f73"), "cinco dígitos");
+        assert!(!is_hex_color("#c9f73cff"), "ocho dígitos");
+        assert!(!is_hex_color("#c9f73g"), "g no es hexadecimal");
+        assert!(!is_hex_color("#-9f73c"), "guion donde va un dígito");
+        assert!(!is_hex_color(""), "vacío");
+    }
+
+    /// What the check is actually for: a value that would end the property and
+    /// start another one.
+    #[test]
+    fn a_value_that_would_escape_the_property_is_refused() {
+        assert!(!is_hex_color("#c9f73c; background: red"));
+        assert!(!is_hex_color("#c9f73c;} :root{--color-accent:red"));
+        assert!(!is_hex_color("url(javascript:alert(1))"));
+    }
 }

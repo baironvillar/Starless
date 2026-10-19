@@ -131,7 +131,7 @@ export function CrashPrompt({ t }: CrashPromptProps) {
             type="button"
             onClick={() => void send()}
             disabled={busy}
-            className="flex-1 rounded-pill bg-accent px-5 py-3 text-[13.5px] font-semibold text-ground transition-opacity duration-200 hover:opacity-90 disabled:opacity-45"
+            className="flex-1 rounded-pill bg-accent px-5 py-3 text-[13.5px] font-semibold text-on-accent transition-opacity duration-200 hover:opacity-90 disabled:opacity-45"
           >
             {busy ? t.crashSending : t.crashSend}
           </button>

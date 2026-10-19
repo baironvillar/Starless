@@ -162,7 +162,7 @@ export function LibrarySidebar({
           } ${activeId === "liked" ? "bg-white/12" : "hover:bg-white/6"}`}
         >
           {mark(activeId === "liked")}
-          <span className="grid size-9 shrink-0 place-items-center rounded-[9px] bg-accent text-ground">
+          <span className="grid size-9 shrink-0 place-items-center rounded-[9px] bg-accent text-on-accent">
             <Heart className="size-4 fill-current" strokeWidth={2} />
           </span>
           {!collapsed && (

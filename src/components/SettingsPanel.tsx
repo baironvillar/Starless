@@ -14,11 +14,15 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { CHANGELOG, PREVIOUS_NOTE } from "../lib/changelog";
 import type { Lang, StringKey } from "../lib/i18n";
 import {
+  ACCENT_DEFAULT,
+  accentColor,
+  applyAccentColor,
   applyMenuOpacity,
   MENU_OPACITY_DEFAULT,
   MENU_OPACITY_MAX,
   MENU_OPACITY_MIN,
   menuOpacity,
+  setAccentColor,
   setMenuOpacity,
   signOut,
   type Account as UserAccount,
@@ -47,6 +51,16 @@ type SettingsPanelProps = {
   onClose: () => void;
   onLangChange: (lang: Lang) => void;
 };
+
+/**
+ * The colours offered before the free picker.
+ *
+ * Every one of them is light enough to carry the dark label, which is the whole
+ * point: an accent is a fill under text as often as it is a mark beside text, and
+ * a preset that made a button unreadable would be a preset that ships a bug. The
+ * shipped lime comes first and is also how the section gets its default back.
+ */
+const ACCENT_PRESETS = ["#c9f73c", "#3ddc97", "#4cc9f0", "#7aa2ff", "#c08bff", "#ff8fb1"];
 
 const SECTIONS = [
   "sectionGeneral",
@@ -313,6 +327,7 @@ function Audio({ t }: { t: Record<StringKey, string> }) {
  */
 function Custom({ t }: { t: Record<StringKey, string> }) {
   const [opacity, setOpacity] = useState<number | null>(null);
+  const [accent, setAccent] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -343,6 +358,29 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
     void setMenuOpacity(value).catch(() => {});
   };
 
+  // Same answer for the same reason: the panel is the preview of its own choice.
+  // The write is not awaited for the same reason the opacity one is not — a slow
+  // disk must not make the colour arrive late.
+  useEffect(() => {
+    let alive = true;
+    void accentColor()
+      .then((value) => {
+        if (alive) setAccent(value);
+      })
+      .catch(() => {
+        if (alive) setAccent(ACCENT_DEFAULT);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const changeAccent = (value: string) => {
+    setAccent(value);
+    applyAccentColor(value);
+    void setAccentColor(value).catch(() => {});
+  };
+
   return (
     <div className="max-w-[620px]">
       <Group>
@@ -360,7 +398,7 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
               disabled={opacity === null}
               onChange={(e) => change(Number(e.target.value))}
               aria-label={t.menuOpacity}
-              className="w-[180px] accent-[var(--accent)] disabled:opacity-45"
+              className="w-[180px] accent-[var(--color-accent)] disabled:opacity-45"
             />
             {/*
               The swatch is what makes this control legible while it is being
@@ -376,6 +414,46 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
         <span>{t.menuOpacitySolid}</span>
         <span>{t.menuOpacityGlass}</span>
       </p>
+
+      {/*
+        The accent is the one colour the user owns outright. It reaches the Inicio
+        button, the mark beside the selected playlist, the play buttons and every
+        primary action in the app — so the control shows the consequence instead of
+        describing it: the swatches *are* the accent, and picking one repaints this
+        panel's own controls while the finger is still on it.
+
+        Presets first and the native picker last: the presets are the colours that
+        are known to keep a readable label on top of them, and the picker is the
+        door for the one that is not.
+      */}
+      <div className="mt-9">
+        <Group>
+          <Row label={t.accentColor} hint={t.accentColorHint}>
+            <span className="flex items-center gap-2">
+              {ACCENT_PRESETS.map((hex) => (
+                <button
+                  key={hex}
+                  type="button"
+                  onClick={() => changeAccent(hex)}
+                  aria-label={hex}
+                  aria-pressed={(accent ?? ACCENT_DEFAULT) === hex}
+                  style={{ backgroundColor: hex }}
+                  className={`size-7 rounded-pill border-2 transition-transform duration-150 hover:scale-105 ${
+                    (accent ?? ACCENT_DEFAULT) === hex ? "border-ink" : "border-white/14"
+                  }`}
+                />
+              ))}
+              <input
+                type="color"
+                value={accent ?? ACCENT_DEFAULT}
+                onChange={(e) => changeAccent(e.target.value)}
+                aria-label={t.accentColorCustom}
+                className="ml-1 size-7 cursor-pointer rounded-pill border border-white/14 bg-transparent p-0"
+              />
+            </span>
+          </Row>
+        </Group>
+      </div>
     </div>
   );
 }
@@ -634,7 +712,7 @@ function Toggle() {
         className={`absolute top-1 size-4 rounded-pill bg-white shadow-sm ${on ? "right-1" : "left-1"}`}
       />
       {on && (
-        <Check className="pointer-events-none absolute top-1/2 left-1.5 size-3 -translate-y-1/2 text-ground" />
+        <Check className="pointer-events-none absolute top-1/2 left-1.5 size-3 -translate-y-1/2 text-on-accent" />
       )}
     </motion.button>
   );

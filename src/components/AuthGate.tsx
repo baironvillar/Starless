@@ -296,7 +296,7 @@ export function AuthGate({
           disabled={busy}
           whileTap={{ scale: 0.98 }}
           transition={SPRING}
-          className="flex w-full items-center justify-center gap-2 rounded-pill bg-accent px-6 py-3.5 text-[14px] font-semibold text-ground transition-opacity duration-200 disabled:opacity-45"
+          className="flex w-full items-center justify-center gap-2 rounded-pill bg-accent px-6 py-3.5 text-[14px] font-semibold text-on-accent transition-opacity duration-200 disabled:opacity-45"
         >
           {busy ? t.authWaiting : t.authConnect}
         </motion.button>

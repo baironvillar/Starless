@@ -130,7 +130,7 @@ export function MediaCard({
             // Hidden until the card is approached, but still reachable by keyboard.
             // A pending play stays visible: the click registered, and hiding the
             // only feedback the card has would read as a dead button.
-            className={`absolute right-2 bottom-2 z-10 grid size-10 place-items-center rounded-pill bg-accent text-ground shadow-[0_6px_16px_-4px_rgba(0,0,0,0.8)] transition-opacity duration-200 ${
+            className={`absolute right-2 bottom-2 z-10 grid size-10 place-items-center rounded-pill bg-accent text-on-accent shadow-[0_6px_16px_-4px_rgba(0,0,0,0.8)] transition-opacity duration-200 ${
               busy
                 ? "opacity-100"
                 : "opacity-0 group-hover/card:opacity-100 focus-visible:opacity-100"

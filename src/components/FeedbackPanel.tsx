@@ -145,7 +145,7 @@ export function FeedbackPanel({ t, onClose }: FeedbackPanelProps) {
               setAttachLog(e.target.checked);
               setPreview(null);
             }}
-            className="mt-0.5 size-4 shrink-0 accent-[var(--accent)]"
+            className="mt-0.5 size-4 shrink-0 accent-[var(--color-accent)]"
           />
           <span className="flex min-w-0 flex-col gap-1">
             <span className="text-[12.5px] font-semibold">{t.feedbackAttachLog}</span>
@@ -197,7 +197,7 @@ export function FeedbackPanel({ t, onClose }: FeedbackPanelProps) {
             type="button"
             onClick={() => void send()}
             disabled={busy || sent !== null}
-            className="flex-1 rounded-pill bg-accent px-5 py-3 text-[13.5px] font-semibold text-ground transition-opacity duration-200 hover:opacity-90 disabled:opacity-45"
+            className="flex-1 rounded-pill bg-accent px-5 py-3 text-[13.5px] font-semibold text-on-accent transition-opacity duration-200 hover:opacity-90 disabled:opacity-45"
           >
             {busy ? t.crashSending : t.feedbackSend}
           </button>

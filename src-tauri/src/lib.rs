@@ -451,6 +451,22 @@ fn set_menu_opacity(opacity: u8) {
     settings::save_menu_opacity(opacity);
 }
 
+/// The accent colour the user picked, or `None` for the one DESIGN.md ships.
+///
+/// It crosses to the webview as a plain string and nothing else: no token, no
+/// file path, no way to reach the disk from the value.
+#[tauri::command]
+fn accent() -> Option<String> {
+    settings::saved_accent()
+}
+
+/// Remember it. `settings` refuses anything that is not `#rrggbb`, because this
+/// value becomes a custom property on `:root` and reaches every element.
+#[tauri::command]
+fn set_accent(color: String) {
+    settings::save_accent(&color);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -575,6 +591,8 @@ pub fn run() {
             set_volume,
             menu_opacity,
             set_menu_opacity,
+            accent,
+            set_accent,
             previous_session_crashed,
             announce_clean_exit,
             simulate_crash,

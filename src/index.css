@@ -15,6 +15,11 @@
 
   --color-accent: #c9f73c;
   --color-accent-soft: #d9ff6b;
+  /* The label that sits on top of a filled accent surface. A token, not a
+   * literal, because the accent is the user's to change and a dark one with a
+   * dark label is a button nobody can read. `applyAccentColor` overwrites all
+   * three at runtime when there is a colour to apply. */
+  --color-on-accent: #0a0a12;
   --color-live: #ff5a36;
   --color-ok: #3ddc97;
   --color-warn: #ffb020;

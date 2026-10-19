@@ -300,6 +300,100 @@ export function applyMenuOpacity(opacity: number): void {
   document.documentElement.style.setProperty("--menu-alpha", String(clampOpacity(opacity) / 100));
 }
 
+/**
+ * The accent colour, as `#rrggbb`, or `null` when the user never picked one and
+ * the one from DESIGN.md stays.
+ *
+ * Mirrors the opacity path exactly, localStorage included: `bun run dev` has no
+ * backend, and a personalisation setting that only works in the packaged build
+ * is a setting nobody finds while they are designing it.
+ */
+const ACCENT_KEY = "starless:accent";
+
+/** The colour DESIGN.md ships. Also what "back to default" writes. */
+export const ACCENT_DEFAULT = "#c9f73c";
+
+export function isHexColor(value: string): boolean {
+  return /^#[0-9a-f]{6}$/i.test(value);
+}
+
+export async function accentColor(): Promise<string | null> {
+  if (!hasBackend()) {
+    const raw = window.localStorage.getItem(ACCENT_KEY);
+    return raw !== null && isHexColor(raw) ? raw.toLowerCase() : null;
+  }
+  return invoke<string | null>("accent");
+}
+
+export async function setAccentColor(color: string): Promise<void> {
+  if (!isHexColor(color)) return;
+  const value = color.toLowerCase();
+  if (!hasBackend()) {
+    window.localStorage.setItem(ACCENT_KEY, value);
+    return;
+  }
+  return invoke<void>("set_accent", { color: value });
+}
+
+/**
+ * Three variables, because one colour cannot stay one hex when it has to work
+ * as a fill *and* as the label on top of that fill.
+ *
+ * The accent itself is the user's. `--color-accent-soft` is the tint the focus
+ * outline uses, mixed toward white by the same ratio the shipped pair has
+ * (#c9f73c → #d9ff6b) so the focus ring keeps its relationship to the accent
+ * instead of being the one lime thing left on screen after a repaint.
+ *
+ * `--color-on-accent` is the foreground for everything filled with the accent —
+ * the Inicio button, the play buttons, the primary buttons of every prompt. It
+ * is the ground colour or the ink colour depending on how dark the accent is,
+ * because the accent is free and a dark one on a dark label is a button nobody
+ * can read. That is why the filled buttons say `text-on-accent` and not
+ * `text-ground`: the alternative is a colour picker that can produce an
+ * invisible button.
+ */
+export function applyAccentColor(color: string | null): void {
+  const root = document.documentElement.style;
+  if (!color || !isHexColor(color)) {
+    // Remove rather than write the default: `@theme` in index.css is the source
+    // of truth for the shipped colour, and duplicating it here would be a
+    // second place to keep in sync.
+    root.removeProperty("--color-accent");
+    root.removeProperty("--color-accent-soft");
+    root.removeProperty("--color-on-accent");
+    return;
+  }
+  const value = color.toLowerCase();
+  root.setProperty("--color-accent", value);
+  root.setProperty("--color-accent-soft", mixToward(value, 0.22));
+  root.setProperty("--color-on-accent", isDark(value) ? "#f4f4fa" : "#0a0a12");
+}
+
+/** `amount` of white mixed into `hex`, as `#rrggbb`. */
+function mixToward(hex: string, amount: number): string {
+  const channels = [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16));
+  return `#${channels
+    .map((c) =>
+      Math.round(c + (255 - c) * amount)
+        .toString(16)
+        .padStart(2, "0"),
+    )
+    .join("")}`;
+}
+
+/**
+ * WCAG relative luminance, and the reason `--color-on-accent` exists.
+ *
+ * The threshold is 0.45 and not the 0.5 of a contrast formula: the filled
+ * surfaces here are large and saturated, and a mid-tone accent at exactly 0.5
+ * still reads better with the dark label than with the light one.
+ */
+function isDark(hex: string): boolean {
+  const [r, g, b] = [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16) / 255);
+  const linear = [r, g, b].map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2] < 0.45;
+}
+
 export const keys = {
   account: ["account"] as const,
   playlists: ["playlists"] as const,
