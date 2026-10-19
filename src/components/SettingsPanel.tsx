@@ -2,9 +2,11 @@ import {
   Check,
   ChevronDown,
   Download,
+  FlaskConical,
   Loader2,
   LogOut,
   MessageSquarePlus,
+  Pencil,
   RefreshCw,
   User,
   X,
@@ -29,9 +31,15 @@ import {
 } from "../lib/spotify";
 import {
   checkForUpdate,
+  checkPrerelease,
+  installablePrerelease,
   installableUpdate,
+  installPrerelease,
   installUpdate,
   pendingVersion,
+  prereleaseState,
+  prereleaseVersion,
+  subscribePrerelease,
   subscribeUpdate,
   updateState,
 } from "../lib/updater";
@@ -194,6 +202,8 @@ function General({
 
       <Updates t={t} />
 
+      <Prerelease t={t} />
+
       <DevPanel t={t} />
     </div>
   );
@@ -320,6 +330,89 @@ function Audio({ t }: { t: Record<StringKey, string> }) {
  * the common case, and the label says plainly what it does.
  */
 /**
+ * The prerelease channel: a second row, and nothing else about it changes.
+ *
+ * **It does not touch the badge.** The badge on the Settings button asks the
+ * release channel, and a build of `develop` has no business being the reason
+ * somebody gets nagged about maintenance. This is a button somebody goes and
+ * presses, which is the same rule the release updater already follows.
+ *
+ * The row says what is about to happen — it installs over what is running — and
+ * says it before the button, not in a dialog afterwards. Installing a develop
+ * build replaces the installed app; that is what an update is, and the only
+ * reason it was ever a problem is that nobody said it out loud.
+ */
+function Prerelease({ t }: { t: Record<StringKey, string> }) {
+  const state = useSyncExternalStore(subscribePrerelease, prereleaseState, prereleaseState);
+  const update = installablePrerelease(state);
+  const version = prereleaseVersion(state);
+
+  const hint = (() => {
+    switch (state.status) {
+      case "available":
+      case "ready":
+        return t.prereleaseAvailable.replace("{version}", version ?? "");
+      case "same":
+        return t.prereleaseSame.replace("{version}", version ?? "");
+      case "error":
+        return t.prereleaseError;
+      default:
+        return t.prereleaseHint;
+    }
+  })();
+
+  return (
+    <div className="mt-5">
+      <Group>
+        <Row label={t.prereleaseTitle} hint={hint}>
+          <div className="flex items-center gap-2">
+            {state.status === "downloading" && (
+              <span className="flex items-center gap-2 text-[13px] text-ink-muted">
+                <Loader2 className="size-3.5 animate-spin" strokeWidth={2} />
+                {state.total > 0
+                  ? `${Math.round((state.received / state.total) * 100)}%`
+                  : t.updateDownloading}
+              </span>
+            )}
+
+            {update && state.status !== "downloading" && (
+              <button
+                type="button"
+                onClick={() => void installPrerelease(update)}
+                className="flex items-center gap-2 rounded-pill bg-accent px-4 py-2.5 text-[13px] font-semibold text-on-accent transition-opacity duration-200 hover:opacity-90"
+              >
+                <Download className="size-4" strokeWidth={2} />
+                {t.prereleaseInstall}
+              </button>
+            )}
+
+            {!update && state.status !== "downloading" && (
+              <button
+                type="button"
+                onClick={() => void checkPrerelease()}
+                disabled={state.status === "checking"}
+                className="flex items-center gap-2 rounded-pill border border-white/14 bg-white/6 px-4 py-2.5 text-[13px] font-medium transition-colors duration-200 hover:bg-white/10 disabled:opacity-50"
+              >
+                {state.status === "checking" ? (
+                  <Loader2 className="size-4 animate-spin" strokeWidth={2} />
+                ) : (
+                  <FlaskConical className="size-4" strokeWidth={2} />
+                )}
+                {state.status === "checking"
+                  ? t.prereleaseChecking
+                  : state.status === "none"
+                    ? t.prereleaseNone
+                    : t.prereleaseCheck}
+              </button>
+            )}
+          </div>
+        </Row>
+      </Group>
+    </div>
+  );
+}
+
+/**
  * Where the app stops deciding for the user.
  *
  * One control on purpose: this section earns its place by existing, and the second
@@ -380,6 +473,11 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
     applyAccentColor(value);
     void setAccentColor(value).catch(() => {});
   };
+
+  // The ring around the pencil answers "which one is mine?" for a colour that is
+  // not one of the six. Without it, picking a custom colour de-selects all six and
+  // marks nothing, and the row looks like it forgot what it is showing.
+  const isCustom = accent !== null && !ACCENT_PRESETS.includes(accent);
 
   return (
     <div className="max-w-[620px]">
@@ -443,13 +541,41 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
                   }`}
                 />
               ))}
-              <input
-                type="color"
-                value={accent ?? ACCENT_DEFAULT}
-                onChange={(e) => changeAccent(e.target.value)}
-                aria-label={t.accentColorCustom}
-                className="ml-1 size-7 cursor-pointer rounded-pill border border-white/14 bg-transparent p-0"
-              />
+              <span className="relative ml-1 size-7 shrink-0">
+                <input
+                  type="color"
+                  value={accent ?? ACCENT_DEFAULT}
+                  onChange={(e) => changeAccent(e.target.value)}
+                  aria-label={t.accentColorCustom}
+                  className="absolute inset-0 size-full cursor-pointer opacity-0"
+                />
+                {/* The native control is the invisible one. What shows is this: a
+                  wheel of colours with a pencil on it, because a lone colour
+                  swatch next to six swatches reads as a seventh colour, and a
+                  rounded rectangle reads as a button that is broken. */}
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-pill"
+                  style={{
+                    background:
+                      "conic-gradient(#ff5a36, #ffb020, #3ddc97, #4cc9f0, #7aa2ff, #c08bff, #ff8fb1, #ff5a36)",
+                  }}
+                />
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-pill bg-black/45"
+                />
+                <Pencil
+                  className="pointer-events-none absolute inset-0 m-auto size-3.5 text-white"
+                  strokeWidth={2}
+                />
+                {isCustom && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute -inset-[3px] rounded-pill border-2 border-ink"
+                  />
+                )}
+              </span>
             </span>
           </Row>
         </Group>

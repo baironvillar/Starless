@@ -187,6 +187,17 @@ export const strings = {
     updateAvailable: "Hay una versión más nueva: {version}. Se instalará al cerrar Starless.",
     updateInstall: "Actualizar",
     updateDownloading: "Descargando…",
+    prereleaseTitle: "Prerelease de develop",
+    prereleaseHint:
+      "La build que sale de `develop`, antes de que sea pública. Se instala encima de la que tenés y la reemplaza, así que te deja corriendo la versión de desarrollo hasta que salga la próxima pública.",
+    prereleaseCheck: "Buscar prerelease",
+    prereleaseChecking: "Buscando…",
+    prereleaseNone: "No hay prerelease",
+    prereleaseSame: "Ya estás corriendo la {version} de develop.",
+    prereleaseAvailable: "Hay una {version} de develop lista. Se instalará al cerrar Starless.",
+    prereleaseInstall: "Instalar la prerelease",
+    prereleaseError:
+      "No se pudo preguntar a GitHub. Eso dice de la conexión, no de la copia que tenés instalada.",
     updateAlertTitle: "Hay una versión nueva",
     updateAlertBody: "v{version} está lista. Se instala desde Ajustes, cuando tú lo decidas.",
     updateSimulated: "v{version} (simulada). No hay nada que instalar: es un estado de prueba.",
@@ -429,6 +440,18 @@ export const strings = {
     updateAvailable: "A newer version is out: {version}. It installs when Starless closes.",
     updateInstall: "Update",
     updateDownloading: "Downloading…",
+    prereleaseTitle: "Develop prerelease",
+    prereleaseHint:
+      "The build that comes out of `develop`, before it goes public. It installs over what you are running and replaces it, so it leaves you on the development version until the next public one is out.",
+    prereleaseCheck: "Check prerelease",
+    prereleaseChecking: "Checking…",
+    prereleaseNone: "No prerelease",
+    prereleaseSame: "You are already running the {version} from develop.",
+    prereleaseAvailable:
+      "There is a {version} from develop ready. It installs when Starless closes.",
+    prereleaseInstall: "Install the prerelease",
+    prereleaseError:
+      "GitHub could not be reached. That says something about the connection, not about the copy you have installed.",
     updateAlertTitle: "There is a newer version",
     updateAlertBody: "v{version} is ready. It installs from Settings, when you decide.",
     updateSimulated: "v{version} (simulated). There is nothing to install: this is a test state.",
