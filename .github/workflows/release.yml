@@ -121,9 +121,11 @@ jobs:
           if ($enMain) {
             Write-Host "El tag llegó a main: release normal."
             "prerelease=false" >> $env:GITHUB_OUTPUT
+            "desdeMain=true" >> $env:GITHUB_OUTPUT
           } else {
             Write-Host "El tag no llegó a main: release como prerelease, invisible para la app instalada."
             "prerelease=true" >> $env:GITHUB_OUTPUT
+            "desdeMain=false" >> $env:GITHUB_OUTPUT
           }
           # Este `exit 0` no es una formalidad. El shell `pwsh` de los runners
           # cierra cada paso con `exit $LASTEXITCODE`, y después del `merge-base`
@@ -166,3 +168,13 @@ jobs:
           uploadUpdaterJson: true
           uploadUpdaterSignatures: true
           tauriScript: bun tauri
+          # El ícono de `develop` vive en `src-tauri/tauri.dev.conf.json`, y
+          # `bun run app` lo pasa por `--config`. La build del runner no lo pasaba, así que
+          # toda release publicada llevaba el ícono de producción y una prerelease
+          # se veía exactamente igual que la app de verdad. Es el mismo archivo que
+          # ya usa la máquina de quien la desarrolla.
+          #
+          # La expresión pone la cadena vacía del lado del `||` a propósito: en
+          # `a && 'x' || ''` el `''` es falsy y el resultado termina siendo el
+          # otro lado igual. Así el orden es el correcto sin tener que pensarlo.
+          args: ${{ steps.canal.outputs.desdeMain == 'false' && '--config src-tauri/tauri.dev.conf.json' || '' }}
