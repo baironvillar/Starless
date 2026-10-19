@@ -41,7 +41,10 @@ export type ChangelogEntry = {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     version: "0.4.0",
-    date: null,
+    date: "2026-10-18",
+    // La 0.4.0 sale de `develop` y se publica como prerelease: la app instalada
+    // no la ofrece como actualización, así que para quien lee esto sigue siendo
+    // una versión en desarrollo. La fecha sí va, porque es la del build.
     released: false,
     sections: {
       es: [
