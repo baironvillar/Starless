@@ -32,6 +32,11 @@ latest.json
 # repo root and both committed. Everything under here is throwaway state.
 .impeccable/
 
+# Scratch harnesses: a page that mounts one real component with a fake
+# backend, so a screen can be looked at without the app and without a session.
+# They are tools for the next iteration, not sources.
+.mockup/
+
 # The impeccable skill keeps one self-contained binary per platform plus a
 # generated font index. They are build artifacts of a released tool, not source,
 # and once committed they stay in the history forever. The launcher fetches
