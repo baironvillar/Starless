@@ -70,7 +70,7 @@ y hace el resto: corre `lint`, `typecheck`, `bun run version` y `cargo test
 `latest.json`; crea la release y adjunta los instaladores, los `.sig` y el
 manifest.
 
-Dos cosas las hace él y hay que saber que están:
+Cosas las hace él y hay que saber que están:
 
 - **Verifica que el tag coincida con la versión** de `src-tauri/tauri.conf.json`.
   Un tag que no coincide produce un `latest.json` que promete un archivo que la app
@@ -82,6 +82,13 @@ Dos cosas las hace él y hay que saber que están:
 - **Cobra que el commit etiquetado siga la convención de mensajes**, antes de
   instalar nada. Es el paso más barato de todos y el que decide si el nombre de la
   corrida queda legible o si es una frase entera.
+- **Escribe el cuerpo de la release con la sección del changelog de esa versión.**
+  La busca en `CHANGELOG.md` por la versión del manifiesto y falla si no la
+  encuentra, así que un tag sin notas es un error y no una release muda. GitHub
+  puede escribir ese cuerpo solo (`generateReleaseNotes`), y lo que escribe es
+  una lista de commits con una sección de "nuevo contribuidor" —que en un repo de
+  una sola persona es el dueño de la app, dicho como si fuera otra—. Las notas de
+  una versión están escritas: están en el changelog, y la 0.3.0 las tenía.
 
 Cuando termine, la release aparece como borrador en la pestaña *Releases*. Revisala
 y le das a **Publish release**. Recién ahí la app instalada la ve.
