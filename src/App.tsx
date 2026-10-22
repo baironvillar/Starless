@@ -824,9 +824,31 @@ export default function App() {
    */
   const upNext = useMemo(() => {
     const at = queueAt;
-    if (at < 0) return visibleTracks;
+    // **Antes de que suene nada no hay "a continuación".** El panel muestra lo
+    // que viene después de la canción que está sonando, y si no está sonando
+    // ninguna no hay después: lo que se ve en pantalla es el contenido de la
+    // pantalla, no una cola. Una app recién abierta con ocho canciones bajo
+    // "a continuación" es una cola que se inventó sola, y el usuario tiene
+    // razón: nadie la pidió.
+    if (at < 0) return queueOverride ?? [];
     return visibleTracks.slice(at + 1);
-  }, [queueAt, visibleTracks]);
+  }, [queueAt, visibleTracks, queueOverride]);
+
+  /**
+   * How many songs of the station's page are still ahead.
+   *
+   * **The station's count and the panel's list are not the same question.** The
+   * panel shows what comes after the song that is sounding, and before any song
+   * is sounding there is nothing to show. The station, on the other hand, has to
+   * know how much of *its own* page is left so it can ask for more, and its page
+   * exists from the moment the DJ answers — before the first song is even asked
+   * for. Asking the panel would make the station fetch a page too early.
+   */
+  const stationLeft = useMemo(() => {
+    if (!queue?.station) return 0;
+    const total = queue.tracks.length;
+    return Math.max(0, total - (queueAt + 1));
+  }, [queue?.station, queue?.tracks, queueAt]);
 
   /**
    * Advance when a track runs out.
@@ -1331,7 +1353,10 @@ export default function App() {
   const djFetching = useRef(false);
   useEffect(() => {
     if (!queue?.station) return;
-    if (upNext.length > DJ_TOP_UP) return;
+    // **La cuenta es de la estación, no del panel.** El panel no tiene "a
+    // continuación" mientras no suena nada, y la estación sí tiene que saber
+    // cuánto le queda de su página.
+    if (stationLeft > DJ_TOP_UP) return;
     if (djFetching.current) return;
 
     djFetching.current = true;
@@ -1363,7 +1388,7 @@ export default function App() {
       .finally(() => {
         djFetching.current = false;
       });
-  }, [queue?.station, upNext.length]);
+  }, [queue?.station, stationLeft]);
 
   /**
    * The playlist's big button, in its playing half.
@@ -1595,29 +1620,32 @@ export default function App() {
   /**
    * Put one song at the end of the queue without touching what is playing.
    *
-   * **Appended to `visibleTracks`, which is the array the queue is walked out
-   * of** — so the song on screen keeps its index and everything after it shifts
-   * down one. That is the only shape that works without a second queue: the
-   * queue is derived by slicing one list at the current track, and a separate
-   * "pending additions" list would be a second source of truth for what plays
-   * next, which is the drift this whole design exists to prevent.
+   * **Appended to the queue, and the queue is the one that exists.** When there
+   * is one, that array is the array the queue is walked out of — so the song on
+   * screen keeps its index and everything after it shifts down one. That is the
+   * only shape that works without a second queue: the queue is derived by
+   * slicing one list at the current track, and a separate "pending additions"
+   * list would be a second source of truth for what plays next, which is the
+   * drift this whole design exists to prevent.
+   *
+   * **And when there is no queue, the song IS the queue.** Adding one song to a
+   * list of eight that nobody asked for is not adding a song: it is turning
+   * whatever the screen happens to be showing into a queue, and the panel would
+   * then show eight songs the user never put there.
    *
    * A duplicate is not deduplicated. A queue is not a set — somebody who adds the
    * same song twice meant to hear it twice, and quietly dropping the second is
    * the app disagreeing with a decision that was made on purpose.
    */
-  const onAddToQueue = useCallback(
-    (track: Track) => {
-      // La cola del DJ sigue siendo la cola del DJ: agregar una canción no
-      // borra las frases que la trajeron, ni la convierte en una lista.
-      setQueue((current) => ({
-        tracks: [...visibleTracks, track],
-        lines: current?.lines ?? {},
-        station: current?.station ?? false,
-      }));
-    },
-    [visibleTracks],
-  );
+  const onAddToQueue = useCallback((track: Track) => {
+    // La cola del DJ sigue siendo la cola del DJ: agregar una canción no
+    // borra las frases que la trajeron, ni la convierte en una lista.
+    setQueue((current) => ({
+      tracks: current ? [...current.tracks, track] : [track],
+      lines: current?.lines ?? {},
+      station: current?.station ?? false,
+    }));
+  }, []);
 
   /**
    * Open an artist or an album, and come back from one.
