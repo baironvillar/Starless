@@ -40,6 +40,43 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.5.1",
+    date: "2026-10-22",
+    released: true,
+    sections: {
+      es: [
+        {
+          title: "Nuevo",
+          items: [
+            "La app ahora dice si es una pre-release. Al lado de la versión en Ajustes aparece una pastilla «pre-release» cuando la build salió de `develop`; en una release no aparece nada. El ícono invertido ya lo decía, pero sólo para quien sabe qué significa: dos copias de la app en la misma máquina se ven iguales, y ahora se distinguen.",
+          ],
+        },
+        {
+          title: "Corregido",
+          items: [
+            "La app se abría con una cola que nadie había pedido. Al abrir Starless, el panel «A CONTINUACIÓN» traía las canciones que se veían en pantalla: ocho canciones bajo un encabezado de cola, antes de que hubiera sonado una sola. Ahora la cola no existe hasta que vos la creás: hasta que suena algo, el panel dice que no hay nada en cola, y lo que se ve en pantalla es lo que se ve.",
+            "Agregar una canción a la cola convertía la pantalla entera en cola. Si no había cola, la canción que agregabas era la cola: quedaban ocho canciones en el panel, siete de las cuales nunca pediste. Ahora, cuando no hay cola, la canción agregada es la cola —y queda una sola—; cuando hay cola, se agrega al final, como siempre.",
+          ],
+        },
+      ],
+      en: [
+        {
+          title: "New",
+          items: [
+            "The app now says whether it is a prerelease. Next to the version in Settings there is a 'pre-release' pill when the build came from `develop`; in a release there is nothing. The inverted icon already said so, but only to somebody who knew what it meant: two copies of the app on the same machine used to look the same, and now they do not.",
+          ],
+        },
+        {
+          title: "Fixed",
+          items: [
+            "The app used to open with a queue nobody had asked for. When you opened Starless, the 'Up next' panel carried the songs that were on screen: eight songs under a queue heading, before a single song had played. Now the queue does not exist until you make it: until something plays, the panel says there is nothing queued, and what you see on screen is only what you see.",
+            "Adding a song to the queue turned the whole screen into a queue. With no queue, the song you added was the queue: eight songs in the panel, seven of which you never asked for. Now, with no queue, the song you added is the queue —and there is just the one—; with a queue, it goes to the end, as always.",
+          ],
+        },
+      ],
+    },
+  },
+  {
     version: "0.5.0",
     date: "2026-10-22",
     released: true,

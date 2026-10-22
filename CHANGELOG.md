@@ -30,6 +30,19 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [0.5.1] — 2026-10-22 · prerelease
+
+### New / Nuevo
+
+- **La app ahora dice si es una pre-release.** Al lado de la versión en Ajustes aparece una pastilla «pre-release» cuando la build salió de `develop`; en una release no aparece nada. El ícono invertido ya lo decía, pero sólo para quien sabe qué significa: dos copias de la app en la misma máquina se ven iguales, y ahora se distinguen.
+
+### Fixed / Corregido
+
+- **La app se abría con una cola que nadie había pedido.** Al abrir Starless, el panel «A CONTINUACIÓN» traía las canciones que se veían en pantalla: ocho canciones bajo un encabezado de cola, antes de que hubiera sonado una sola. Ahora la cola no existe hasta que vos la creás: hasta que suena algo, el panel dice que no hay nada en cola, y lo que se ve en pantalla es lo que se ve.
+- **Agregar una canción a la cola convertía la pantalla entera en cola.** Si no había cola, la canción que agregabas era la cola: quedaban ocho canciones en el panel, siete de las cuales nunca pediste. Ahora, cuando no hay cola, la canción agregada *es* la cola —y queda una sola—; cuando hay cola, se agrega al final, como siempre.
+
+---
+
 ## [0.5.0] — 2026-10-22 · prerelease
 
 ### New / Nuevo
@@ -214,6 +227,7 @@ Nunca se publicó. / Never published.
 
 ---
 
+[0.5.1]: https://github.com/baironvillar/Starless/releases/tag/v0.5.1
 [0.5.0]: https://github.com/baironvillar/Starless/releases/tag/v0.5.0
 [0.3.1]: https://github.com/baironvillar/Starless/releases/tag/v0.3.1
 [0.3.0]: https://github.com/baironvillar/Starless/releases/tag/v0.3.0
