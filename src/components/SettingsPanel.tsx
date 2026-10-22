@@ -44,7 +44,7 @@ import {
   subscribeUpdate,
   updateState,
 } from "../lib/updater";
-import { appVersion } from "../lib/version";
+import { appVersion, isPrerelease } from "../lib/version";
 import { DevPanel } from "./DevPanel";
 
 type SettingsPanelProps = {
@@ -94,6 +94,14 @@ export function SettingsPanel({
 }: SettingsPanelProps) {
   const [section, setSection] = useState<Section>("sectionGeneral");
   const [version, setVersion] = useState<string>("");
+  /**
+   * Whether this build is a prerelease.
+   *
+   * **It is not a question with an answer that changes.** It is decided when the
+   * bundle is built, so it is a constant and not a state: there is nothing to
+   * wait for and nothing that can arrive late.
+   */
+  const prerelease = isPrerelease();
 
   useEffect(() => {
     void appVersion().then(setVersion);
@@ -133,7 +141,23 @@ export function SettingsPanel({
 
         <div className="mt-auto border-t border-white/8 px-2 pt-3">
           <p className="text-[12px] text-ink-muted">{t.savedAutomatically}</p>
-          <p className="tabular mt-0.5 text-[12px] text-ink-faint">v{version}</p>
+          {/*
+              Which build this is, in words.
+
+              **The inverted icon says it too, but only to somebody who knows
+              what it means.** Two copies of the app on the same machine look
+              the same otherwise, and "which one am I running" is the question
+              that comes up exactly when something is wrong. A prerelease says
+              so here; a release says nothing, because there is nothing to say.
+          */}
+          <p className="tabular mt-0.5 flex items-center gap-1.5 text-[12px] text-ink-faint">
+            <span>v{version}</span>
+            {prerelease && (
+              <span className="rounded-pill bg-accent/15 px-1.5 py-px text-[10.5px] font-semibold tracking-wide uppercase text-accent">
+                {t.prereleaseBadge}
+              </span>
+            )}
+          </p>
         </div>
       </nav>
 

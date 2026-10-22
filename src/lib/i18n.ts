@@ -231,6 +231,7 @@ export const strings = {
     changelogs: "Changelogs",
     changelogUnreleased: "En desarrollo",
     changelogReconstructed: "Reconstruido",
+    prereleaseBadge: "pre-release",
 
     // Updates
     updatesTitle: "Actualizaciones",
@@ -537,6 +538,7 @@ export const strings = {
     changelogs: "Changelogs",
     changelogUnreleased: "In development",
     changelogReconstructed: "Reconstructed",
+    prereleaseBadge: "pre-release",
 
     updatesTitle: "Updates",
     updatesHint: "Starless checks on its own when it opens. Nothing downloads until you ask.",

@@ -185,6 +185,11 @@ jobs:
           # que una clave nueva los dejaría sin poder actualizarse nunca más.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # El canal de la build, que es la misma pregunta que la del ícono: de
+          # dónde salió el tag. La app lo muestra al lado de la versión en
+          # Ajustes, para que "esta es una pre-release" se lea y no se deduzca
+          # del ícono invertido.
+          STARLESS_CHANNEL: ${{ steps.canal.outputs.desdeMain == 'false' && 'develop' || 'release' }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Starless ${{ github.ref_name }}'
