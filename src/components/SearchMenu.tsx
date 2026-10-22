@@ -1,9 +1,8 @@
 import { CornerDownLeft, Loader2 } from "lucide-react";
 import { motion } from "motion/react";
 import type { StringKey } from "../lib/i18n";
-import { largestImage, type Track, trackArtists, trackRowKeys } from "../lib/spotify";
-
-const SPRING = { type: "spring" as const, stiffness: 420, damping: 32 };
+import { SPRING } from "../lib/motion";
+import { coverImage, type Track, trackArtists, trackRowKeys } from "../lib/spotify";
 
 /** Lets the input point `aria-activedescendant` at the highlighted row. */
 export const SEARCH_MENU_ID = "starless-search-menu";
@@ -118,7 +117,7 @@ export function SearchMenu({
 
         {suggestions.map((track, index) => {
           const active = highlighted === index;
-          const cover = largestImage(track.album?.images);
+          const cover = coverImage(track.album?.images);
 
           return (
             <button

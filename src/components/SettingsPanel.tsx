@@ -15,6 +15,7 @@ import { motion } from "motion/react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { CHANGELOG, PREVIOUS_NOTE } from "../lib/changelog";
 import type { Lang, StringKey } from "../lib/i18n";
+import { SPRING, SPRING_SHEET } from "../lib/motion";
 import {
   ACCENT_DEFAULT,
   accentColor,
@@ -102,7 +103,7 @@ export function SettingsPanel({
     <motion.div
       initial={{ opacity: 0, scale: 0.97, y: 12 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
-      transition={{ type: "spring", stiffness: 380, damping: 34 }}
+      transition={SPRING_SHEET}
       className="glass-sheet absolute inset-4 z-40 flex overflow-hidden rounded-card"
       role="dialog"
       aria-modal="true"
@@ -827,7 +828,7 @@ function Toggle() {
       aria-checked={on}
       onClick={() => setOn((v) => !v)}
       whileTap={{ scale: 0.94 }}
-      transition={{ type: "spring", stiffness: 420, damping: 32 }}
+      transition={SPRING}
       className={`relative h-6 w-11 rounded-pill transition-colors duration-200 ${
         on ? "bg-accent" : "bg-white/14"
       }`}

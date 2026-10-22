@@ -1,12 +1,14 @@
 import { motion } from "motion/react";
 import type { StringKey } from "../lib/i18n";
+import { SPRING } from "../lib/motion";
 import {
+  type Artist,
+  coverImage,
   formatDuration,
-  largestImage,
   type Track as SpotifyTrack,
-  trackArtists,
   trackRowKeys,
 } from "../lib/spotify";
+import { ArtistLine } from "./ArtistLine";
 
 type TrackListProps = {
   tracks: SpotifyTrack[];
@@ -28,6 +30,10 @@ type TrackListProps = {
    * broken.
    */
   empty?: string | null;
+  /** The row's extras: the artist's name opens their page. */
+  onOpenArtist?: (artist: Artist) => void;
+  /** The row's extras: the three dots. Absent and the column is not drawn. */
+  trackMenu?: (track: SpotifyTrack) => React.ReactNode;
 };
 
 /**
@@ -72,14 +78,17 @@ export function TrackList({
   loading,
   error,
   empty,
+  onOpenArtist,
+  trackMenu,
 }: TrackListProps) {
   const showStatus = Boolean(nowPlayingId) || Boolean(loadingId) || Boolean(onPlay);
   const rowKeys = trackRowKeys(tracks);
   // Header and rows have to agree on the columns or the header drifts one slot to
-  // the left of the thing it labels.
+  // the left of the thing it labels. The dots column is drawn only when the
+  // caller asked for the dots, and both sides ask the same question.
   const columns = showStatus
-    ? "grid-cols-[minmax(0,1fr)_auto_64px]"
-    : "grid-cols-[minmax(0,1fr)_64px]";
+    ? `grid-cols-[minmax(0,1fr)_auto_64px${trackMenu ? "_40px" : ""}]`
+    : `grid-cols-[minmax(0,1fr)_64px${trackMenu ? "_40px" : ""}]`;
 
   return (
     <div className="overflow-hidden rounded-card border border-white/8 bg-white/4">
@@ -95,6 +104,7 @@ export function TrackList({
         <span className="text-right text-[12px] font-semibold tracking-wide uppercase text-ink-faint">
           {t.columnTime}
         </span>
+        {trackMenu && <span />}
       </div>
 
       {loading && <Row className="justify-center py-6 text-[13px] text-ink-faint">{t.loading}</Row>}
@@ -111,7 +121,7 @@ export function TrackList({
           const isPlaying = track.id === nowPlayingId;
           const isLoading = track.id === loadingId;
           const isFailed = track.id === failedId;
-          const cover = largestImage(track.album?.images);
+          const cover = coverImage(track.album?.images);
 
           return (
             <motion.div
@@ -128,9 +138,7 @@ export function TrackList({
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{
-                type: "spring",
-                stiffness: 420,
-                damping: 32,
+                ...SPRING,
                 delay: Math.min(index, STAGGER_CAP) * STAGGER_STEP,
               }}
               className={`group grid w-full cursor-pointer items-center gap-4 border-b border-white/8 px-5 py-2.5 text-left transition-colors duration-200 last:border-b-0 hover:bg-white/6 ${columns}`}
@@ -160,7 +168,11 @@ export function TrackList({
 
                 <div className="min-w-0">
                   <p className="truncate text-[13.5px] font-semibold">{track.name}</p>
-                  <p className="truncate text-[12.5px] text-ink-muted">{trackArtists(track)}</p>
+                  <ArtistLine
+                    track={track}
+                    onOpenArtist={onOpenArtist}
+                    className="truncate text-[12.5px] text-ink-muted"
+                  />
                 </div>
               </div>
 
@@ -177,6 +189,10 @@ export function TrackList({
               <span className="tabular text-right text-[12.5px] text-ink-muted">
                 {formatDuration(track.duration_ms)}
               </span>
+
+              {/* Stops the row's own click: a dot that both opened a menu and
+                  started the song is not a control. */}
+              {trackMenu?.(track)}
             </motion.div>
           );
         })}
@@ -200,7 +216,7 @@ function Row({ className, children }: { className?: string; children: React.Reac
 
 /** Real cover art when Spotify gave us one, and never a coloured placeholder in
  *  its place: a grey square reads as "missing" and, in a list, as a bug. */
-function Cover({ cover, alt }: { cover: ReturnType<typeof largestImage>; alt: string }) {
+function Cover({ cover, alt }: { cover: ReturnType<typeof coverImage>; alt: string }) {
   if (!cover) {
     return <span className="size-10 shrink-0 rounded-[10px] bg-white/8" aria-hidden />;
   }

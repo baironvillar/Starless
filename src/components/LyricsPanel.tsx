@@ -1,9 +1,8 @@
 import { motion } from "motion/react";
 import { useEffect, useRef } from "react";
 import type { StringKey } from "../lib/i18n";
+import { SPRING } from "../lib/motion";
 import { formatDuration, type Lyrics, seekPlayback } from "../lib/spotify";
-
-const SPRING = { type: "spring" as const, stiffness: 420, damping: 32 };
 
 type LyricsPanelProps = {
   t: Record<StringKey, string>;

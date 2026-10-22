@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { useMemo } from "react";
 
 /**
  * The account's real data, as Spotify sends it.
@@ -12,8 +13,6 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
  */
 export type Image = {
   url: string;
-  width: number | null;
-  height: number | null;
 };
 
 export type Artist = { id: string; name: string };
@@ -29,6 +28,14 @@ export type Track = {
   album: Album | null;
   /** Spotify stopped returning this for apps created after February 2026. */
   popularity: number | null;
+  /**
+   * Milliseconds since the epoch, and **only when the track came from a playlist**.
+   *
+   * It is a fact about the row in a list, not about the song: liked songs and
+   * search results come from a `Context`, which carries no per-item timestamp, and
+   * `null` there is the honest answer rather than a missing one.
+   */
+  added_at: number | null;
 };
 
 export type Playlist = {
@@ -41,78 +48,51 @@ export type Playlist = {
 };
 
 /**
- * An album as a search returns it, which is not the same object as the album a
- * track carries.
+ * Is this one of Spotify's cards rather than a playlist?
  *
- * The track's album is a name and a picture. This one also carries the year — so
- * a card can say "2016" — and the track count, which the per-track album does not
- * have at all.
- */
-export type AlbumCard = {
-  id: string;
-  name: string;
-  images: Image[];
-  artists: Artist[];
-  /** `2016`, or `2016-08-20` when Spotify had the precision for it. */
-  release_date: string | null;
-  release_date_precision: string | null;
-  total_tracks: number | null;
-  album_type: string | null;
-};
-
-/**
- * The year, and only the year.
+ * The DJ is one: it arrives with Spotify as its owner and **no songs at all** —
+ * zero here is not a count, it is the sign that the content lives somewhere else
+ * and this playlist is only its name. A Spotify-made playlist that does have
+ * songs is a playlist, and it opens like one.
  *
- * Mirrors `AlbumCard::year` in Rust, because the two must agree: a card that
- * says 2016 in one place and 2016-08-20 in another is not a rounding detail.
- * Returns `null` for anything that is not a four-digit year rather than
- * rendering half a date.
+ * The predicate lives here and not in the screen that first needed it, because
+ * the second place that needs it is the one that was broken: the rail lists the
+ * DJ among the playlists, and opening it from there showed an empty page.
  */
-export function albumYear(album: AlbumCard): string | null {
-  const year = album.release_date?.split("-")[0] ?? null;
-  return year && /^\d{4}$/.test(year) ? year : null;
+export function isDjCard(playlist: Playlist): boolean {
+  return playlist.owner?.display_name === "spotify" && !playlist.tracks?.total;
 }
-
-export type ArtistCard = { id: string; name: string; images: Image[] };
-
-/**
- * An artist, their songs, and a discography that never arrives.
- *
- * There is no `topTracks` here on purpose: Spotify answers 403 to
- * `/artists/{id}/top-tracks` for apps created after February 2026, and removed
- * `popularity` along with it. These songs are real and they are in search order,
- * which is not the same as ranked by popularity, so nothing calls them that.
- *
- * `albums` is part of the answer and is always empty: the channel the library is
- * read through has no way to ask for an artist's albums, so there is no request
- * that could fill it. It is declared because the payload carries it, and nothing
- * renders it — a "0 albums" on screen would be a claim this client cannot make.
- */
-export type ArtistProfile = {
-  artist: ArtistCard;
-  albums: AlbumCard[];
-  tracks: Track[];
-};
 
 export type Account = {
   id: string;
   display_name: string | null;
-  email: string | null;
   /** `premium`, or something else. The difference is whether audio exists. */
   product: string | null;
   images: Image[];
 };
 
 /**
- * The largest image offered.
+ * The picture to draw for a cover, or `null` when there is none.
  *
- * Taking `images[0]` looks equivalent and is not: the array is not guaranteed to
- * be sorted by size, so it is a coin flip between a 64px icon and a 640px cover
- * that then gets downscaled anyway.
+ * **This used to pick the largest, and it never did.** It compared `width`, and
+ * the backend sent `null` for every image — so the comparison was `0 > 0` on
+ * both sides, the `reduce` returned the first element, and the function did
+ * exactly the thing its own comment warned against. The comment was right about
+ * the risk and wrong about the code.
+ *
+ * The sizes are gone from both sides now, on purpose: `PictureSize` in
+ * `playlist4_external.proto` carries `target_name` and `url` and no dimensions at
+ * all, so there was never a real number to compare. Guessing one by parsing
+ * `"small"` out of a target name would be a heuristic wearing a measurement's
+ * clothes.
+ *
+ * So this says what it does: the first image offered, which is the one every
+ * track and playlist in this app has always shown. When the channel carries real
+ * sizes again, comparing them is a two-line change — and it will be a change,
+ * not a fix, because the cover this returns today is the cover this always drew.
  */
-export function largestImage(images: Image[] | null | undefined): Image | null {
-  if (!images?.length) return null;
-  return images.reduce((best, image) => ((image.width ?? 0) > (best.width ?? 0) ? image : best));
+export function coverImage(images: Image[] | null | undefined): Image | null {
+  return images?.[0] ?? null;
 }
 
 export function trackArtists(track: Track): string {
@@ -124,6 +104,49 @@ export function formatDuration(ms: number | null): string {
   const minutes = Math.floor(total / 60);
   const seconds = total % 60;
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+/**
+ * The day a track joined this playlist, or `null` when the row does not say.
+ *
+ * **The app's language, not the system's.** The collator above is deliberately
+ * locale-`undefined`, and it is right there: an A–Z either respects accents or it
+ * does not, and there is no "wrong" shape to get. A date does have shapes —
+ * `Aug 17, 2026` against `17 ago 2026` — and Starless has a language switch that
+ * already changes every other word on screen. A column left in the system locale
+ * under an interface the user just switched is the one line that reads as a
+ * different app.
+ *
+ * `dateStyle: "medium"` is the shortest form that keeps the year: a list you
+ * revisit needs to know *which* August a song arrived in.
+ */
+export function formatAddedAt(ms: number | null, lang: string): string | null {
+  if (ms === null || !Number.isFinite(ms) || ms <= 0) return null;
+  try {
+    return new Intl.DateTimeFormat(lang, { dateStyle: "medium" }).format(new Date(ms));
+  } catch {
+    // A locale this build does not carry falls back to the default one rather
+    // than taking the column down.
+    return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(ms));
+  }
+}
+
+/**
+ * How long a whole playlist runs, the way a header says it: `4 hr 44 min`.
+ *
+ * Built here rather than in the component so the two halves — playlist and liked
+ * songs — cannot spell the same duration differently. Minutes are dropped when
+ * there are none: `48 min` reads as a length, and `0 hr 48 min` reads as a
+ * timestamp.
+ */
+export function formatRuntime(tracks: Pick<Track, "duration_ms">[], lang: string): string {
+  const totalMs = tracks.reduce((sum, track) => sum + (track.duration_ms ?? 0), 0);
+  const minutes = Math.floor(totalMs / 60_000);
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+
+  if (hours === 0) return `${rest} min`;
+  return lang === "es" ? `${hours} h ${rest} min` : `${hours} hr ${rest} min`;
 }
 
 /**
@@ -141,10 +164,6 @@ export function formatDuration(ms: number | null): string {
  */
 export function listCount(tracks: unknown[]): string {
   return String(tracks.length);
-}
-
-export function accountName(account: Account): string {
-  return account.display_name || account.id;
 }
 
 /**
@@ -171,10 +190,6 @@ export function trackRowKeys(tracks: Pick<Track, "id">[]): string[] {
   });
 }
 
-export function isPremium(account: Account): boolean {
-  return account.product === "premium";
-}
-
 // --- Playback ---------------------------------------------------------------
 //
 // The webview never sees audio. These commands move integers around; the PCM
@@ -197,15 +212,89 @@ export type PlaybackStatus = {
   error: string | null;
 };
 
-export function usePlayback() {
-  return useQuery({
-    queryKey: ["player"] as const,
-    queryFn: () => invoke<PlaybackStatus>("player_status"),
-    // The player only changes on a command, so polling it is noise. The
-    // `player://status` event is the thing that actually moves the needle.
-    staleTime: Infinity,
-    refetchInterval: false,
-  });
+/**
+ * El DJ: lo que Spotify le fabricó a la cuenta.
+ *
+ * **El mix y la voz son dos cosas, y las dos se pueden tener.** Las canciones
+ * son pistas del catálogo, con su nombre y su audio, y suenan. La narración
+ * llega como texto —la frase que el DJ dice— y el audio lo pide el backend al
+ * servicio que lo fabrica, para que suene por el mismo dispositivo que la
+ * música. Acá queda la frase escrita, que es lo mismo que dijo.
+ */
+export type DjNarration = {
+  /** Quién la dice: "DJ Livi". */
+  speaker: string;
+  /** La frase, en texto y sin el SSML. */
+  line: string;
+};
+
+export type DjMix = {
+  /** Las canciones que eligió el DJ, en el orden que las eligió. */
+  tracks: Track[];
+  /**
+   * Lo que dice el DJ, por id de canción.
+   *
+   * **La frase va con su canción, y no suelta.** El DJ abre el tramo con una
+   * frase y lo cierra con otra, y el servicio las cuelga de la primera y de
+   * la última canción. La que se muestra es la de la que está sonando.
+   */
+  lines: Record<string, DjNarration>;
+};
+
+/**
+ * Ask the DJ to say the phrase that belongs to a song.
+ *
+ * **The phrase is of the song, and it is said before it.** The service hangs
+ * the opening phrase on the first song of a stretch and the closing one on the
+ * last, and both are said *before* that song —"this stretch ends with The
+ * Weeknd" is said, and then The Weeknd plays. So the app keeps the phrases
+ * until the song is about to sound: a page arrives two songs before the queue
+ * empties, and asking then would be talking over the song that is playing.
+ *
+ * The answer is the number of the voice, or `null` when the DJ has nothing to
+ * say for that song: then the music starts right away. The number is what
+ * tells two voices apart —two clicks in a row are two voices, and the one that
+ * finished first is not the one the second click is waiting for.
+ */
+export async function djSpeak(trackId: string): Promise<number | null> {
+  return invoke<number | null>("dj_speak", { trackId });
+}
+
+/**
+ * El DJ terminó de hablar.
+ *
+ * `id` es el número de la voz, el mismo que volvió en el mix. `done` dice que
+ * ya no está sonando: se haya oído entera o la hayan cortado.
+ */
+export type DjVoiceEvent = {
+  id: number;
+  done: boolean;
+};
+
+/**
+ * Ask for the DJ's mix.
+ *
+ * Not a query hook: this is an action, and the mix changes. The DJ's session
+ * has an expiry of its own —`lexicon_expiration_time`— and asking again after
+ * it gives a new one.
+ */
+export async function djMix(playlistId: string): Promise<DjMix> {
+  return invoke<DjMix>("dj_mix", { playlistId });
+}
+
+/**
+ * Ask for the DJ's next page.
+ *
+ * **This is what makes it a station and not a list.** The cursor lives in the
+ * backend —the service's own address for the next page, with its segment and
+ * its request— so the webview asks for "the next one" and never handles the
+ * path.
+ *
+ * An empty list is the answer when the DJ is done: the station ends there, and
+ * that is a fact about the session, not a failure.
+ */
+export async function djMore(): Promise<DjMix> {
+  return invoke<DjMix>("dj_more");
 }
 
 /**
@@ -217,6 +306,18 @@ export function usePlayback() {
  */
 export function onPlaybackStatus(handler: (status: PlaybackStatus) => void): Promise<UnlistenFn> {
   return listen<PlaybackStatus>("player://status", (event) => handler(event.payload));
+}
+
+/**
+ * Subscribe to the DJ's voice.
+ *
+ * The event says that the DJ stopped talking —whether it was heard to the end
+ * or cut off— and carries the number of the voice it was about. The number is
+ * the whole point: two clicks in a row are two voices, and the one that
+ * finished first is not the one the second click is waiting for.
+ */
+export function onDjVoice(handler: (event: DjVoiceEvent) => void): Promise<UnlistenFn> {
+  return listen<DjVoiceEvent>("dj://voice", (event) => handler(event.payload));
 }
 
 export async function playTrack(
@@ -232,6 +333,21 @@ export async function playTrack(
 
 export async function togglePlayback(): Promise<void> {
   return invoke<void>("toggle_playback");
+}
+
+/**
+ * Ask the backend what the player is doing right now.
+ *
+ * **The events alone are not enough.** `player://status` is emitted when the
+ * player does something, and the first thing it does may be never: the DJ
+ * speaks through the mixer and the player does not even know. So a frontend
+ * that only listens starts with nothing, and "nothing" is read as volume zero
+ * —the bar said "muted" while the music was audible.
+ *
+ * This is the question to ask at startup, before anything is played.
+ */
+export async function playerStatus(): Promise<PlaybackStatus> {
+  return invoke<PlaybackStatus>("player_status");
 }
 
 export async function seekPlayback(positionMs: number): Promise<void> {
@@ -394,13 +510,183 @@ function isDark(hex: string): boolean {
   return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2] < 0.45;
 }
 
+/**
+ * How the library is ordered, and why there are exactly these four.
+ *
+ * **There is no "recently added" and no "last played", and that is not an omission.**
+ * A playlist carries an id, a name, its images, the owner's display name and a track
+ * count — see `models.rs`. Not one of those is a date. An order called "recent" built
+ * on that would be the order in which the list happened to arrive wearing the label
+ * of a fact this app does not have, which is worse than not offering it: the user
+ * trusts the label. Spotify's own "Recently added" is a server-side order over a
+ * field this session cannot see.
+ *
+ * So the orders are the four the data can answer honestly.
+ */
+export const LIBRARY_SORTS = ["name-asc", "name-desc", "creator", "tracks"] as const;
+export type LibrarySort = (typeof LIBRARY_SORTS)[number];
+
+/** Which of the two ways of looking at the shelf is on. */
+export const LIBRARY_VIEWS = ["grid", "list"] as const;
+export type LibraryView = (typeof LIBRARY_VIEWS)[number];
+
+export function isLibrarySort(value: string): value is LibrarySort {
+  return (LIBRARY_SORTS as readonly string[]).includes(value);
+}
+
+export function isLibraryView(value: string): value is LibraryView {
+  return (LIBRARY_VIEWS as readonly string[]).includes(value);
+}
+
+/** Whoever made it, or `null` when the playlist does not say. */
+export function playlistCreator(playlist: Playlist): string | null {
+  return playlist.owner?.display_name ?? null;
+}
+
+function trackCount(playlist: Playlist): number {
+  return playlist.tracks?.total ?? 0;
+}
+
+/**
+ * `undefined` as the locale on purpose: an A–Z that ignores accents is wrong in
+ * Spanish and right in English, and the user's language is the one that decides.
+ *
+ * `numeric` is not a nicety either. Half of this account's shelf is called "Mi
+ * playlist n.º 4", and without it the tenth of those sorts between the first and
+ * the second.
+ */
+const byName = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
+/**
+ * The order, as a new array. `Array.prototype.sort` rearranges in place, and the
+ * array coming out of React Query is the cache's own — sorting it would reorder the
+ * cached value under every other screen that reads it.
+ */
+export function sortPlaylists(playlists: Playlist[], sort: LibrarySort): Playlist[] {
+  const sorted = [...playlists];
+
+  switch (sort) {
+    case "name-desc":
+      sorted.sort((a, b) => byName.compare(b.name, a.name));
+      break;
+
+    case "creator":
+      sorted.sort((a, b) => {
+        const left = playlistCreator(a);
+        const right = playlistCreator(b);
+        // An absent owner is not a creator who sorts before every real one.
+        if (left === null || right === null) return left === right ? 0 : left === null ? 1 : -1;
+        // The name breaks the tie, so the order does not shuffle when two people
+        // made the same number of playlists.
+        return byName.compare(left, right) || byName.compare(a.name, b.name);
+      });
+      break;
+
+    case "tracks":
+      sorted.sort((a, b) => trackCount(b) - trackCount(a) || byName.compare(a.name, b.name));
+      break;
+
+    default:
+      sorted.sort((a, b) => byName.compare(a.name, b.name));
+  }
+
+  return sorted;
+}
+
+const LIBRARY_SORT_KEY = "starless:library-sort";
+const LIBRARY_VIEW_KEY = "starless:library-view";
+
+/**
+ * Both preferences cross to `localStorage` when there is no bridge, for the same
+ * reason the accent and the menu opacity do: `bun run dev` is where a setting is
+ * easiest to try and the one place it would otherwise be dead.
+ */
+export async function librarySort(): Promise<LibrarySort> {
+  if (!hasBackend()) {
+    const raw = window.localStorage.getItem(LIBRARY_SORT_KEY);
+    return raw !== null && isLibrarySort(raw) ? raw : "name-asc";
+  }
+  // Checked on this side too, and the Rust gate is the one that matters — this is
+  // the same shape of check on the other side of the bridge, so that a value which
+  // somehow is not an order cannot reach a `switch` that has no case for it.
+  const value = await invoke<string>("library_sort");
+  return isLibrarySort(value) ? value : "name-asc";
+}
+
+export async function setLibrarySort(sort: LibrarySort): Promise<void> {
+  if (!hasBackend()) {
+    window.localStorage.setItem(LIBRARY_SORT_KEY, sort);
+    return;
+  }
+  return invoke<void>("set_library_sort", { sort });
+}
+
+export async function libraryView(): Promise<LibraryView> {
+  if (!hasBackend()) {
+    const raw = window.localStorage.getItem(LIBRARY_VIEW_KEY);
+    return raw !== null && isLibraryView(raw) ? raw : "grid";
+  }
+  const value = await invoke<string>("library_view");
+  return isLibraryView(value) ? value : "grid";
+}
+
+export async function setLibraryView(view: LibraryView): Promise<void> {
+  if (!hasBackend()) {
+    window.localStorage.setItem(LIBRARY_VIEW_KEY, view);
+    return;
+  }
+  return invoke<void>("set_library_view", { view });
+}
+
+/**
+ * Crea una playlist y devuelve su id.
+ *
+ * El error que llega es el código de Rust tal cual, y hay dos que no son el
+ * mismo problema: `create_failed` no creó nada, `attach_failed` la creó y existe
+ * pero no llegó a la biblioteca. La pantalla los muestra distinto porque las dos
+ * cosas dejan la cuenta en un estado distinto y sólo una se arregla reintentando.
+ *
+ * Sin backend devuelve un id inventado en vez de fallar: es la única forma de que
+ * `bun run dev` muestre el diálogo completo sin una sesión detrás.
+ */
+export async function createPlaylist(name: string): Promise<string> {
+  if (!hasBackend()) {
+    throw new Error("create_failed");
+  }
+  return invoke<string>("create_playlist", { name });
+}
+
+/**
+ * Mete una canción en una playlist que ya existe.
+ *
+ * El error que llega es el código de Rust tal cual, y hay tres que no son el
+ * mismo problema: `playlist_not_found` es una playlist que no está en la
+ * biblioteca —o que no existe—, `add_failed` es un rechazo del servicio, y
+ * `network_failed` es que no hubo red. La pantalla los muestra distinto porque
+ * las tres cosas dejan la cuenta en un estado distinto: una se arregla
+ * eligiendo otra lista, otra se reintenta y la tercera se espera.
+ *
+ * La revisión de la playlist la lee el backend en el momento de escribir, que
+ * es lo único que garantiza que sea la última: el servicio contesta `409` a un
+ * cambio cosido contra una revisión vieja.
+ *
+ * Sin backend no hay nada que agregar: el error es la verdad.
+ */
+export async function addToPlaylist(playlistId: string, trackId: string): Promise<void> {
+  if (!hasBackend()) {
+    throw new Error("add_failed");
+  }
+  await invoke<void>("add_to_playlist", { playlistId, trackId });
+}
+
 export const keys = {
   account: ["account"] as const,
   playlists: ["playlists"] as const,
   liked: ["liked-tracks"] as const,
   search: (query: string) => ["search", query] as const,
+  artistSongs: (artistId: string) => ["artist-songs", artistId] as const,
+  albumSongs: (albumId: string) => ["album-songs", albumId] as const,
   playlistTracks: (playlistId: string) => ["playlist-tracks", playlistId] as const,
-  artistProfile: (artistId: string) => ["artist-profile", artistId] as const,
   lyrics: (trackId: string) => ["lyrics", trackId] as const,
 };
 
@@ -418,7 +704,6 @@ export type LyricLine = {
 
 export type Lyrics = {
   lines: LyricLine[];
-  language: string | null;
   /** True when the lines carry timings and can be followed along. */
   synced: boolean;
 };
@@ -518,22 +803,72 @@ export async function runSearch(query: string): Promise<Track[]> {
 }
 
 /**
- * What is on an album, in order.
+ * One artist's songs — and the honest description of what that is.
  *
- * This is what makes a play button on an album card real: it hands back an
- * actual queue instead of a cover that looks tappable.
+ * **This is a search that keeps only the right ones.** There is no artist read
+ * behind this screen. What `get_context` answers for `spotify:artist:<id>` was
+ * never measured, and the one context this app has proved it reaches —
+ * `spotify:search:<query>` — returns whatever Spotify thinks matches the words.
+ * So the page asks by name and then throws away everything whose artist list
+ * does not carry the same *id*.
+ *
+ * The id is the part that matters. Matching on the name would keep "The Weeknd"
+ * and every other artist whose name happens to contain it; matching on the id
+ * keeps Renzo Pikette and nothing else, because the id is the thing that cannot
+ * be confused.
+ *
+ * **Which means the list is not everything by the artist**, and the screen says
+ * "what this app can find" instead of "Popular" or "Songs". A page that claims a
+ * complete discography behind a result set nobody counted is the same overclaim
+ * as a "Popular" shelf with no ranking behind it.
+ *
+ * Disabled without a name, for the same reason the playlist hook is: there is
+ * nothing to ask about, and a request with no query is a request about nothing.
  */
-export async function runAlbumTracks(albumId: string): Promise<Track[]> {
-  return invoke<Track[]>("album_tracks", { albumId });
+export function useArtistSongs(artist: Artist | null) {
+  const query = useQuery({
+    queryKey: keys.artistSongs(artist?.id ?? ""),
+    queryFn: () => runSearch(artist?.name ?? ""),
+    enabled: Boolean(artist?.name),
+    staleTime: PLAYLIST_STALE_MS,
+  });
+
+  const tracks = useMemo(() => {
+    if (!artist) return [];
+    return (query.data ?? []).filter((track) =>
+      track.artists.some((candidate) => candidate.id === artist.id),
+    );
+  }, [query.data, artist]);
+
+  return { ...query, tracks };
 }
 
-export function useArtistProfile(artistId: string | null) {
-  return useQuery({
-    queryKey: keys.artistProfile(artistId ?? ""),
-    queryFn: () => invoke<ArtistProfile>("artist_profile", { artistId }),
-    enabled: Boolean(artistId),
-    staleTime: 5 * 60_000,
+/**
+ * One album's songs — the same bargain as [`useArtistSongs`](src/lib/spotify.ts),
+ * and for the same reason.
+ *
+ * Searched by the album's name and then filtered on the album **id**, because a
+ * name is not an identity: "Greatest Hits" is thousands of records, and matching
+ * on it would hand somebody a shelf of songs from bands they have never heard of.
+ * The id is the one thing that cannot be confused with another album.
+ *
+ * So the heading on that page is what this app finds, not "Every song", and the
+ * count is the count of what came back rather than a track total nobody counted.
+ */
+export function useAlbumSongs(album: Album | null) {
+  const query = useQuery({
+    queryKey: keys.albumSongs(album?.id ?? ""),
+    queryFn: () => runSearch(album?.name ?? ""),
+    enabled: Boolean(album?.name),
+    staleTime: PLAYLIST_STALE_MS,
   });
+
+  const tracks = useMemo(() => {
+    if (!album) return [];
+    return (query.data ?? []).filter((track) => track.album?.id === album.id);
+  }, [query.data, album]);
+
+  return { ...query, tracks };
 }
 
 /**
@@ -572,7 +907,7 @@ export async function signOut(): Promise<void> {
  * Anything unlisted is reported as-is rather than swallowed: a new code showing
  * up on screen is a signal, not noise.
  */
-export const API_ERRORS: Record<string, string> = {
+const API_ERRORS: Record<string, string> = {
   unauthorised: "La sesión venció. Vuelve a entrar.",
   // Deliberately not "your account can't access this". In development mode a 403
   // on a playlist means Spotify will not serve its contents to a third-party app
@@ -581,11 +916,16 @@ export const API_ERRORS: Record<string, string> = {
   // for a permissions problem that is not theirs to fix.
   forbidden: "Spotify no entrega el contenido de esta playlist a una app en desarrollo.",
   rate_limited: "Spotify está limitando las peticiones. Espera un momento.",
-  // A transient outage on Spotify's side, not a verdict about the request. Worth
-  // its own sentence because it is the one failure that resolves by itself, and
-  // the app retries it while you are still looking at the screen.
-  service_unavailable:
-    "Spotify está teniendo problemas en este momento. Starless sigue reintentando.",
+  // A failure that resolves by itself, and the one the app really does retry
+  // while the user is still looking at the screen.
+  //
+  // **It does not say whose fault it is, on purpose.** librespot raises this for
+  // a service that is down *and* for a `ConnectionRefused` on this machine — the
+  // home network went down — and the two arrive as the same kind. "Spotify está
+  // teniendo problemas" is the wrong sentence for someone whose router just
+  // rebooted: it sends them off to look for a problem they do not have, in a
+  // service they cannot go and check.
+  service_unavailable: "No se pudo llegar a Spotify en este momento. Starless sigue reintentando.",
   not_signed_in: "Primero hay que iniciar sesión.",
   login_expired: "La sesión venció. Vuelve a entrar.",
   network_failed: "No se pudo hablar con Spotify.",
@@ -598,7 +938,18 @@ export const API_ERRORS: Record<string, string> = {
   // nothing, and a click that produces nothing with no explanation is the single
   // worst failure an app can have.
   no_player: "El reproductor todavía no está listo. Inténtalo de nuevo.",
+  // The play button with nothing loaded behind it. The app does not press it
+  // in this state — the button is disabled when there is no track — but the
+  // command can be asked anyway, and the answer has to be a sentence and not a
+  // code the user would have to decode.
+  no_track: "No hay ninguna canción cargada.",
   audio_device_failed: "No se pudo abrir el dispositivo de audio de Windows.",
+  // The player stopped answering. Not a broken song and not a broken
+  // connection: the output device stopped consuming, librespot's sink waits
+  // for it forever, and the app noticed that the position had stopped moving
+  // and went to build another player. The app is doing something about it, so
+  // this is what it says while it does.
+  audio_stalled: "El audio se trabó. Volviendo a abrir el dispositivo de salida…",
   // Phrased as a fact about this app, not an accusation. The event behind it has
   // at least two very different causes — Spotify refusing to serve the track, and
   // the decoder choking on bytes that were delivered fine — and the status carries
@@ -610,14 +961,34 @@ export const API_ERRORS: Record<string, string> = {
   // that decrypts it — and librespot, which never reconnects on its own, answers
   // a missing key by playing the file undecrypted. The decoder then reports
   // ciphertext as an unplayable song. Same event, opposite truth.
+  //
+  // **This is the end of the road.** The app tries to build the session again
+  // on its own, and this is what is left when that does not work: the
+  // connection is gone and it could not be brought back.
   connection_lost:
-    "Se perdió la conexión con Spotify y no vuelve sola. Cerrá y abrí Starless para seguir escuchando.",
+    "Se perdió la conexión con Spotify y no se pudo volver. Cerrá y abrí Starless para seguir escuchando.",
+  // Not a failure yet. The session died and the app is going to build it again
+  // — the same credentials, a new connection — and the track that failed goes
+  // back on when it is up. Saying "it was lost" here would be a lie about a
+  // thing that is still being fixed.
+  reconnecting: "Se perdió la conexión con Spotify. Volviendo a conectarse…",
   bad_track_id: "Esa canción no tiene un identificador válido.",
   // Not a failure. Spotify answers 404 when nobody wrote the words down, and that
   // is a fact about the song; saying "could not read" instead would point the user
   // at their own machine when the answer was about the track.
   no_lyrics: "Esta canción no tiene letra.",
   session_dropped: "Se cayó la sesión de reproducción.",
+
+  // Playlist writes. The three that can come out of an "add to playlist" are
+  // three different problems: the playlist is not in the library, the service
+  // refused the change, and the id was not an id. Saying "it failed" for all
+  // three sends the user looking in the wrong place.
+  playlist_not_found: "Esa playlist no está en tu biblioteca.",
+  add_failed: "No se pudo agregar la canción a la playlist.",
+  // These two were emitted by Rust and had no sentence here, so the user read
+  // the raw code on screen. They are the two the playlist commands can answer.
+  bad_id: "Ese identificador no es válido.",
+  no_session: "La sesión no está lista. Inténtalo de nuevo.",
 };
 
 /** Best-effort sentence for an error thrown by `invoke`. */
@@ -626,3 +997,31 @@ export function explain(error: unknown): string {
   const code = raw.replace(/^.*?:\s*/, "");
   return API_ERRORS[code] ?? code;
 }
+
+/**
+ * The errors that are about the connection or the audio device, and not about
+ * the track.
+ *
+ * **A dead connection and an unplayable song are the same event with
+ * opposite meanings.** When the connection to Spotify dies, every track fails
+ * exactly the same way, one after another, and the answer the player used to
+ * give — skip to the next one — is the wrong answer to the right question: it
+ * burns through the queue in seconds and it overwrites the one message that
+ * says what is actually wrong.
+ *
+ * So the codes that mean "the connection" are named here, and the player does
+ * not skip on them. It waits, because the app is already building the session
+ * again underneath.
+ *
+ * The two about the audio device belong here for the same reason: the song
+ * was fine and the device was not, so a row painted as failed would accuse
+ * the song of something it did not do, and skipping would throw away a track
+ * the user wanted to hear.
+ */
+export const SESSION_ERRORS = new Set([
+  "connection_lost",
+  "session_dropped",
+  "reconnecting",
+  "audio_stalled",
+  "audio_device_failed",
+]);

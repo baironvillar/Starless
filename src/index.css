@@ -8,7 +8,6 @@
 @theme {
   /* Colour. Saturation lives in the bloom and in state marks, never in flat panel fills. */
   --color-ground: #0a0a12;
-  --color-ground-lift: #10101c;
   --color-ink: #f4f4fa;
   --color-ink-muted: #9a9ab0;
   --color-ink-faint: #9090a8;
@@ -21,12 +20,9 @@
    * three at runtime when there is a colour to apply. */
   --color-on-accent: #0a0a12;
   --color-live: #ff5a36;
-  --color-ok: #3ddc97;
   --color-warn: #ffb020;
 
   /* Radius. Corner radius on a floating surface is what tells the eye it is detached. */
-  --radius-rail: 24px;
-  --radius-bar: 28px;
   --radius-card: 20px;
   --radius-pill: 999px;
 
@@ -64,22 +60,34 @@
  * prefix by itself for the Safari targets it assumes, so writing the standard
  * property alone is what comes out correct.
  *
- * Three stacked layers, never one. The base layer is what guarantees the contrast
- * floor over a bright album cover — omitting it is what makes translucency unreadable.
- *
  * Performance rules that keep this cheap enough for the sub-second-start promise:
  *   - blur radius is capped at 24px
  *   - this utility is never nested inside another one
  *   - only `transform` and `opacity` are ever animated on a glass surface
  *     (animating `backdrop-filter` forces a full re-sample every frame)
+ *
+ * **There is no specular border and no inset highlight, and that is a decision rather
+ * than an omission.** Both were hairlines of white at 12% and 10%. Over the bloom —
+ * which is all that sits behind the three bars — they were a line you had to look at
+ * to see, and the radius (24-28px) plus the lift already say "this floats". It was a
+ * fourth signal for one sentence.
+ *
+ * They go together on purpose. Drop the border and keep the inset highlight and what
+ * is left is a bright line along the top edge and nothing on the other three sides,
+ * which reads as a rendering fault rather than as a choice.
+ *
+ * The one surface that kept its hairline is the track list, and it is not glass: it is
+ * a bordered card, and a list of songs needs a structure to hang on. Chrome edges are
+ * decoration; that one is information.
+ *
+ * Two layers and the lift. The base layer is what guarantees the contrast floor over a
+ * bright album cover, and that is the one thing here that is not optional: without it
+ * translucency stops being depth and becomes a readability problem.
  */
 @utility glass {
   background-color: rgb(20 20 32 / 0.55);
   backdrop-filter: blur(24px) saturate(180%);
-  border: 1px solid rgb(255 255 255 / 0.12);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.1),
-    0 24px 48px -12px rgb(0 0 0 / 0.6);
+  box-shadow: 0 24px 48px -12px rgb(0 0 0 / 0.6);
   contain: paint;
 }
 
@@ -100,10 +108,7 @@
 @utility glass-overlay {
   background-color: rgb(20 20 32 / var(--menu-alpha, 0.55));
   backdrop-filter: blur(24px) saturate(180%);
-  border: 1px solid rgb(255 255 255 / 0.12);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.1),
-    0 24px 48px -12px rgb(0 0 0 / 0.6);
+  box-shadow: 0 24px 48px -12px rgb(0 0 0 / 0.6);
   contain: paint;
 }
 
@@ -148,24 +153,21 @@
 @utility glass-sheet {
   background-color: rgb(20 20 32 / var(--menu-alpha, 0.55));
   backdrop-filter: blur(24px) saturate(180%);
-  border: 1px solid rgb(255 255 255 / 0.12);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.1),
-    0 24px 48px -12px rgb(0 0 0 / 0.6);
+  box-shadow: 0 24px 48px -12px rgb(0 0 0 / 0.6);
   contain: paint;
 }
 
-/* A control that sits ON a glass surface. Tinted, never a second glass layer. */
+/*
+ * A control that sits ON a glass surface. Tinted, never a second glass layer.
+ *
+ * No border either, for the reason in `glass`: a hairline around a 36px pill is a
+ * second outline wrapped around one that the fill already draws.
+ */
 @utility glass-control {
   background-color: rgb(255 255 255 / 0.08);
-  border: 1px solid rgb(255 255 255 / 0.1);
   transition:
     background-color 160ms var(--ease-glass),
     transform 160ms var(--ease-glass);
-}
-
-@utility glass-control-hover {
-  background-color: rgb(255 255 255 / 0.14);
 }
 
 /*
@@ -323,10 +325,17 @@
    * corner on a 6px bar is not a pill, it is a rectangle with rounded corners, and
    * at that size the eye reads "square" — which is what it was asked about. A thumb
    * has to be wide enough for its semicircular ends to be *visible* to look round.
+   *
+   * **8px is the floor, and it was measured rather than guessed.** At 10px the thumb
+   * was the heaviest grey on screen next to the text; at 8px the semicircular ends are
+   * still legible as a pill and the difference shows without hunting for it. At 6px
+   * the pill stops reading as one, which is the same failure the 6px attempt above had
+   * already paid for. Below that it is not a thinner scrollbar, it is a different
+   * shape.
    */
   ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
   }
 
   ::-webkit-scrollbar-track,

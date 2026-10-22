@@ -26,19 +26,56 @@ export const strings = {
     artistKind: "Artista",
     artistSongs: "Canciones",
     artistLoadFailed: "No se pudo cargar el perfil del artista.",
+    // La ficha del artista. El encabezado no dice "Populares" ni "Discografía"
+    // porque ninguna de las dos cosas se puede calcular acá — el listado es lo
+    // que esta app encuentra para ese nombre, y se dice eso.
+    artistSongsFound: "Lo que Starless encuentra",
+    artistSongsNone: "No se encontraron canciones de este artista.",
+    // El álbum, con el mismo trato que el artista: se busca por nombre y se
+    // filtra por id, así que el encabezado no puede prometer un catálogo entero.
+    albumKind: "Álbum",
+    albumSongsFound: "Lo que Starless encuentra",
+    albumSongsNone: "No se encontraron canciones de este álbum.",
+    back: "Volver",
     columnAlbum: "Álbum",
     navHome: "Inicio",
     navLibrary: "Tu biblioteca",
     collapseLibrary: "Contraer la biblioteca",
     expandLibrary: "Expandir la biblioteca",
-    navSearch: "Buscar",
-    navPlaylists: "Tus playlists",
     navSettings: "Ajustes",
 
     libraryTitle: "Tu biblioteca",
     likedSongs: "Canciones que te gustan",
     yourPlaylists: "Tus playlists",
     madeForYou: "Hecho para vos",
+    // El DJ de la cuenta. Su card no muestra cuántas canciones tiene —no se
+    // sabe hasta que se pide el mix— sino lo que es: alguien que elige.
+    djSubtitle: "Elige la música por vos",
+    djPlay: "Reproducir",
+    djUnavailable: "No se pudo leer el DJ",
+    // El DJ hablando, en la barra. El nombre y la frase los manda el
+    // servicio; estos dos son lo que se pone cuando no vinieron.
+    djSpeaker: "DJ",
+    djSpeaking: "Hablando",
+    // El botón de la barra: el DJ elige otra tanda.
+    djNext: "Pedirle al DJ otra tanda",
+    // Con el DJ hablando: el botón que corta la frase y deja sonar la
+    // canción que el DJ eligió.
+    djSkipVoice: "Saltar la voz del DJ y escuchar la canción",
+    librarySort: "Ordenar",
+    sortNameAsc: "Nombre, de A a Z",
+    sortNameDesc: "Nombre, de Z a A",
+    sortCreator: "Por creador",
+    sortTracks: "Por cantidad de canciones",
+    viewGrid: "Cuadrícula",
+    viewList: "Lista",
+    newPlaylistName: "Nombre",
+    newPlaylistCreate: "Crear",
+    newPlaylistCancel: "Cancelar",
+    newPlaylistBusy: "Creando…",
+    newPlaylistFailedCreate: "No se pudo crear la playlist",
+    newPlaylistFailedAttach: "La playlist se creó pero no apareció en la biblioteca",
+    newPlaylistFailedAdd: "La playlist se creó, pero la canción no entró",
     homeTitle: "Inicio",
     openPlaylist: "Abrir",
     lyricsTitle: "Letra",
@@ -54,19 +91,43 @@ export const strings = {
     loading: "Cargando…",
     emptyList: "Nada por aquí todavía",
     playlistEmpty: "Esta playlist todavía no tiene canciones.",
+    // La playlist, dibujada como la dibuja el cliente de escritorio: el tipo de
+    // lista arriba y el orden y el filtro al lado de las canciones.
+    playlistCollaborative: "Playlist colaborativa",
+    playlistSearch: "Buscar en esta playlist",
+    playlistNoMatches: "Ninguna canción de esta playlist coincide con la búsqueda.",
+    playlistOrder: "Orden de la lista",
+    orderCustom: "Orden personalizado",
+    orderTitle: "Título",
+    orderArtist: "Artista",
+    orderAlbum: "Álbum",
+    playAll: "Reproducir todo",
+    // El menú de los tres puntos de una canción. Tres filas y las tres hacen
+    // algo: las que no podrían, se leen como averiadas.
+    trackMenu: "Opciones de la canción",
+    trackMenuFor: "Opciones de {name}",
+    goToArtist: "Ir al artista {name}",
+    goToAlbum: "Ir al álbum {name}",
+    addToQueue: "Agregar a la cola",
+    addToPlaylist: "Agregar a la playlist",
+    findPlaylist: "Buscar una playlist",
+    addedToPlaylist: "Agregada a «{name}»",
+    noPlaylistsYet: "Todavía no tenés ninguna playlist.",
+    noPlaylistMatches: "Ninguna playlist coincide con la búsqueda.",
+    copyLink: "Copiar enlace",
+    copyFailed: "No se pudo copiar",
     playlistNotReadable:
       "Esta playlist la creó otra persona. Spotify solo deja leer el contenido de las que te pertenecen o en las que colaboras.",
     librarySubtitle: "Tu música, tal cual la guardaste",
     songs: "canciones",
 
     nowPlaying: "Reproduciendo ahora",
-    queued: "En cola",
     failed: "No se pudo cargar",
-    played: "Reproducido",
 
     columnTitle: "Título",
     columnStatus: "Estado",
     columnTime: "Duración",
+    columnAdded: "Fecha de adición",
 
     play: "Reproducir",
     pause: "Pausar",
@@ -74,6 +135,7 @@ export const strings = {
     next: "Siguiente",
     shuffle: "Aleatorio",
     shuffleOn: "Aleatorio activado",
+    shuffleOff: "Aleatorio desactivado",
     repeat: "Repetir",
     repeatAll: "Repetir toda la lista",
     repeatOne: "Repetir esta canción",
@@ -81,16 +143,9 @@ export const strings = {
     mute: "Silenciar",
     unmute: "Activar el sonido",
     position: "Posición",
-    like: "Me gusta",
-    unlike: "Quitar de Me gusta",
 
-    nothingPlaying: "Nada sonando",
-    nothingPlayingHint: "Elige una canción de tu biblioteca",
     playbackErrorTitle: "No se pudo reproducir",
     loadingPlayback: "Cargando…",
-    logFile: "Archivo de registro",
-    logFileHint:
-      "Starless no envía telemetría. Este es el registro local donde queda por qué una canción no sonó.",
 
     language: "Idioma",
     premiumRequired: "Requiere Spotify Premium",
@@ -104,7 +159,6 @@ export const strings = {
     authReport: "¿Algo no anda? Cuéntanos qué pasó.",
     feedbackEmpty: "Cuéntanos qué pasó, o adjunta el log para que el reporte sirva de algo.",
     authWaiting: "Termina la autorización en el navegador…",
-    authConnected: "Conectado como",
     authPremium:
       "Se necesita Premium. Sin Premium, Spotify no entrega audio aunque la cuenta sea válida.",
     authPrivate: "Tu sesión se queda en este equipo. Ni credenciales ni historial salen de aquí.",
@@ -121,7 +175,6 @@ export const strings = {
     queue: "Cola de reproducción",
     queueNowPlaying: "Ahora suena",
     queueNextUp: "A continuación",
-    queueRecentlyPlayed: "Reproducido recientemente",
     queueEmpty: "Nada en cola",
     device: "Dispositivo",
     more: "Más opciones",
@@ -283,19 +336,55 @@ export const strings = {
     artistKind: "Artist",
     artistSongs: "Songs",
     artistLoadFailed: "Couldn't load this artist.",
+    // The artist's page. The heading says neither "Popular" nor "Discography",
+    // because neither can be computed here — the list is what this app finds for
+    // that name, and it says so.
+    artistSongsFound: "What Starless finds",
+    artistSongsNone: "No songs were found for this artist.",
+    albumKind: "Album",
+    albumSongsFound: "What Starless finds",
+    albumSongsNone: "No songs were found for this album.",
+    back: "Back",
     columnAlbum: "Album",
     navHome: "Home",
     navLibrary: "Your library",
     collapseLibrary: "Collapse the library",
     expandLibrary: "Expand the library",
-    navSearch: "Search",
-    navPlaylists: "Your playlists",
     navSettings: "Settings",
 
     libraryTitle: "Your library",
     likedSongs: "Liked Songs",
     yourPlaylists: "Your playlists",
     madeForYou: "Made for you",
+    // The account's DJ. Its card does not say how many songs it has —that is
+    // only known once the mix is asked for— but what it is: someone who picks.
+    djSubtitle: "Picks the music for you",
+    djPlay: "Play",
+    djUnavailable: "Couldn't read the DJ",
+    // The DJ talking, in the player bar. The name and the line come from the
+    // service; these two are what goes in when they don't.
+    djSpeaker: "DJ",
+    djSpeaking: "Speaking",
+    // The bar's button: the DJ picks another set.
+    djNext: "Ask the DJ for another set",
+    // With the DJ talking: the button that cuts the line off and lets the
+    // song the DJ picked play.
+    djSkipVoice: "Skip the DJ's voice and hear the song",
+    librarySort: "Sort",
+    sortNameAsc: "Name, A to Z",
+    sortNameDesc: "Name, Z to A",
+    sortCreator: "By creator",
+    sortTracks: "By song count",
+    viewGrid: "Grid",
+    viewList: "List",
+    newPlaylistName: "Name",
+    newPlaylistCreate: "Create",
+    newPlaylistCancel: "Cancel",
+    newPlaylistBusy: "Creating…",
+    newPlaylistFailedCreate: "The playlist could not be created",
+    newPlaylistFailedAttach: "The playlist was created but did not reach your library",
+    newPlaylistFailedAdd: "The playlist was created, but the song did not go in",
+    newPlaylistDone: "Playlist created",
     homeTitle: "Home",
     openPlaylist: "Open",
     lyricsTitle: "Lyrics",
@@ -311,19 +400,43 @@ export const strings = {
     loading: "Loading…",
     emptyList: "Nothing here yet",
     playlistEmpty: "This playlist has no songs yet.",
+    // The playlist, drawn the way the desktop client draws it: what kind of list
+    // this is, then the order and the filter beside the songs.
+    playlistCollaborative: "Collaborative playlist",
+    playlistSearch: "Search in this playlist",
+    playlistNoMatches: "No song in this playlist matches that search.",
+    playlistOrder: "Playlist order",
+    orderCustom: "Custom order",
+    orderTitle: "Title",
+    orderArtist: "Artist",
+    orderAlbum: "Album",
+    playAll: "Play all",
+    // A song's three dots. Three rows, and all three do something: the ones that
+    // could not would read as broken.
+    trackMenu: "Song options",
+    trackMenuFor: "Options for {name}",
+    goToArtist: "Go to {name}",
+    goToAlbum: "Go to album {name}",
+    addToQueue: "Add to queue",
+    addToPlaylist: "Add to playlist",
+    findPlaylist: "Find a playlist",
+    addedToPlaylist: "Added to “{name}”",
+    noPlaylistsYet: "You don't have any playlists yet.",
+    noPlaylistMatches: "No playlist matches that search.",
+    copyLink: "Copy link",
+    copyFailed: "Couldn't copy",
     playlistNotReadable:
       "Someone else made this playlist. Spotify only lets an app read the contents of the ones you own or collaborate on.",
     librarySubtitle: "Your music, exactly as you saved it",
     songs: "songs",
 
     nowPlaying: "Now playing",
-    queued: "Queued",
     failed: "Couldn't load",
-    played: "Played",
 
     columnTitle: "Title",
     columnStatus: "Status",
     columnTime: "Time",
+    columnAdded: "Date added",
 
     play: "Play",
     pause: "Pause",
@@ -331,6 +444,7 @@ export const strings = {
     next: "Next",
     shuffle: "Shuffle",
     shuffleOn: "Shuffle on",
+    shuffleOff: "Shuffle off",
     repeat: "Repeat",
     repeatAll: "Repeat the whole list",
     repeatOne: "Repeat this song",
@@ -338,16 +452,9 @@ export const strings = {
     mute: "Mute",
     unmute: "Unmute",
     position: "Seek",
-    like: "Like",
-    unlike: "Remove from Liked Songs",
 
-    nothingPlaying: "Nothing playing",
-    nothingPlayingHint: "Pick a song from your library",
     playbackErrorTitle: "Couldn't play this",
     loadingPlayback: "Loading…",
-    logFile: "Log file",
-    logFileHint:
-      "Starless sends no telemetry. This local log is where the reason a song would not play ends up.",
 
     language: "Language",
     premiumRequired: "Requires Spotify Premium",
@@ -361,7 +468,6 @@ export const strings = {
     authReport: "Something not working? Tell us what happened.",
     feedbackEmpty: "Tell us what happened, or attach the log so the report is worth reading.",
     authWaiting: "Finish the approval in your browser…",
-    authConnected: "Connected as",
     authPremium:
       "Premium is required. Without it, Spotify delivers no audio even when the account is valid.",
     authPrivate: "Your session stays on this machine. Neither credentials nor history leave it.",
@@ -377,7 +483,6 @@ export const strings = {
     queue: "Play queue",
     queueNowPlaying: "Now playing",
     queueNextUp: "Next up",
-    queueRecentlyPlayed: "Recently played",
     queueEmpty: "Nothing queued",
     device: "Device",
     more: "More options",

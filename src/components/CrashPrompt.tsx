@@ -3,9 +3,19 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { motion } from "motion/react";
 import { useCallback, useEffect, useState } from "react";
 import type { StringKey } from "../lib/i18n";
+import { SPRING } from "../lib/motion";
 
 type CrashPromptProps = {
   t: Record<StringKey, string>;
+  /**
+   * Whether the player bar is on screen.
+   *
+   * The bar arrives with the music, so the quiet line at the bottom of the window
+   * has to move with it: at rest it sits on the window inset, and with music it
+   * steps up over the bar. An offset computed for a bar that is always there is
+   * an offset that floats in the middle of nothing.
+   */
+  barPresent: boolean;
 };
 
 /**
@@ -23,7 +33,7 @@ type CrashPromptProps = {
  * Mounted once, at the top of the app, above everything — including the auth
  * gate. A crash report is worth reading before signing in again.
  */
-export function CrashPrompt({ t }: CrashPromptProps) {
+export function CrashPrompt({ t, barPresent }: CrashPromptProps) {
   const [open, setOpen] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
@@ -82,7 +92,7 @@ export function CrashPrompt({ t }: CrashPromptProps) {
   }, []);
 
   if (!open) {
-    return done ? <Sent url={done} t={t} /> : null;
+    return done ? <Sent url={done} t={t} barPresent={barPresent} /> : null;
   }
 
   // Same reason as the feedback form: this one shows up over the sign-in screen as
@@ -93,7 +103,7 @@ export function CrashPrompt({ t }: CrashPromptProps) {
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ type: "spring", stiffness: 420, damping: 32 }}
+        transition={SPRING}
         className="glass-overlay flex w-full max-w-[520px] flex-col gap-5 rounded-card px-8 py-8"
       >
         <div>
@@ -158,7 +168,15 @@ export function CrashPrompt({ t }: CrashPromptProps) {
  * person has already pressed the button and already read the screen, and a modal
  * arriving afterwards to confirm it would only be in the way.
  */
-function Sent({ url, t }: { url: string; t: Record<StringKey, string> }) {
+function Sent({
+  url,
+  t,
+  barPresent,
+}: {
+  url: string;
+  t: Record<StringKey, string>;
+  barPresent: boolean;
+}) {
   const [visible, setVisible] = useState(true);
 
   useEffect(() => {
@@ -169,7 +187,11 @@ function Sent({ url, t }: { url: string; t: Record<StringKey, string> }) {
   if (!visible) return null;
 
   return (
-    <div className="pointer-events-auto absolute bottom-[136px] left-1/2 z-30 -translate-x-1/2">
+    <div
+      className={`pointer-events-auto absolute left-1/2 z-30 -translate-x-1/2 transition-[bottom] duration-300 ease-[var(--ease-glass)] ${
+        barPresent ? "bottom-[136px]" : "bottom-5"
+      }`}
+    >
       <button
         type="button"
         onClick={() => void openUrl(url)}

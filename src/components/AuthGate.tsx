@@ -25,7 +25,7 @@ type AuthStatus = {
   detail: string | null;
 };
 
-const SPRING = { type: "spring" as const, stiffness: 380, damping: 32 };
+import { SPRING_GATE } from "../lib/motion";
 
 /**
  * How long to keep hoping for a saved session before admitting there isn't one.
@@ -253,7 +253,7 @@ export function AuthGate({
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={SPRING}
+        transition={SPRING_GATE}
         className="glass flex w-full max-w-[460px] flex-col items-center gap-6 rounded-card px-9 py-10 text-center"
       >
         <div
@@ -295,7 +295,7 @@ export function AuthGate({
           onClick={connect}
           disabled={busy}
           whileTap={{ scale: 0.98 }}
-          transition={SPRING}
+          transition={SPRING_GATE}
           className="flex w-full items-center justify-center gap-2 rounded-pill bg-accent px-6 py-3.5 text-[14px] font-semibold text-on-accent transition-opacity duration-200 disabled:opacity-45"
         >
           {busy ? t.authWaiting : t.authConnect}
@@ -347,7 +347,7 @@ function Restoring({ t }: { t: Record<StringKey, string> }) {
         aria-label={t.loading}
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
-        transition={SPRING}
+        transition={SPRING_GATE}
         className="size-16 rounded-pill"
         style={{ background: "linear-gradient(140deg, hsl(78 72% 58%), hsl(18 65% 38%))" }}
       />

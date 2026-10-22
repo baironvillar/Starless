@@ -1,6 +1,7 @@
 import type { StringKey } from "../lib/i18n";
-import type { Track } from "../lib/spotify";
+import type { Artist, Track } from "../lib/spotify";
 import { NumberedTrackList } from "./NumberedTrackList";
+import { TrackMenu } from "./TrackMenu";
 
 type SearchScreenProps = {
   t: Record<StringKey, string>;
@@ -11,6 +12,11 @@ type SearchScreenProps = {
   failedId: string | null;
   /** Plays one song and makes these songs the queue that follows. */
   onPlay: (tracks: Track[], track: Track) => void;
+  /** The row's extras, forwarded to the list. See `TrackMenu`. */
+  onOpenArtist?: (artist: Artist) => void;
+  onAddToQueue: (track: Track) => void;
+  /** The row's extras, forwarded to the list. See `TrackMenu`. */
+  onNewPlaylist: (track: Track) => void;
 };
 
 /**
@@ -29,6 +35,9 @@ export function SearchScreen({
   loadingId,
   failedId,
   onPlay,
+  onOpenArtist,
+  onAddToQueue,
+  onNewPlaylist,
 }: SearchScreenProps) {
   /**
    * Alphabetical, because a list of results is a lookup.
@@ -53,6 +62,16 @@ export function SearchScreen({
       loadingId={loadingId}
       failedId={failedId}
       onPlay={(track) => onPlay(songs, track)}
+      onOpenArtist={onOpenArtist}
+      trackMenu={(track) => (
+        <TrackMenu
+          t={t}
+          track={track}
+          onOpenArtist={onOpenArtist}
+          onAddToQueue={onAddToQueue}
+          onNewPlaylist={onNewPlaylist}
+        />
+      )}
       empty={t.searchNoResults}
     />
   );

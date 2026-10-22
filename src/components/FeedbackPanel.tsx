@@ -3,6 +3,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { StringKey } from "../lib/i18n";
+import { SPRING } from "../lib/motion";
 
 /**
  * How long the confirmation is on screen before the panel gets out of the way.
@@ -115,7 +116,7 @@ export function FeedbackPanel({ t, onClose }: FeedbackPanelProps) {
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ type: "spring", stiffness: 420, damping: 32 }}
+        transition={SPRING}
         className="glass-overlay flex max-h-full w-full max-w-[560px] flex-col gap-5 overflow-auto rounded-card px-8 py-8"
       >
         <div>

@@ -41,7 +41,7 @@ type TopBarProps = {
   updateVersion?: string | null;
 };
 
-const SPRING = { type: "spring" as const, stiffness: 420, damping: 32 };
+import { SPRING } from "../lib/motion";
 
 /**
  * The top bar: floating glass, carrying the whole chrome of the app.

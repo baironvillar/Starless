@@ -2,34 +2,60 @@ import { useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { AlbumScreen } from "./components/AlbumScreen";
+import { ArtistScreen } from "./components/ArtistScreen";
 import { AuthGate } from "./components/AuthGate";
 import { CrashPrompt } from "./components/CrashPrompt";
 import { FeedbackPanel } from "./components/FeedbackPanel";
 import { HomeScreen } from "./components/HomeScreen";
 import { LibrarySidebar } from "./components/LibrarySidebar";
 import { LyricsPanel } from "./components/LyricsPanel";
+import { NewPlaylistDialog } from "./components/NewPlaylistDialog";
 import { PlayerBar, type RepeatMode } from "./components/PlayerBar";
+import { PlaylistScreen } from "./components/PlaylistScreen";
 import { QueuePanel } from "./components/QueuePanel";
 import { SearchScreen } from "./components/SearchScreen";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { TopBar } from "./components/TopBar";
 import { TrackList } from "./components/TrackList";
+import { TrackMenu } from "./components/TrackMenu";
 import { UpdateAlert } from "./components/UpdateAlert";
 import { type Lang, type StringKey, strings } from "./lib/i18n";
+import { SPRING } from "./lib/motion";
 import {
+  type Album,
+  type Artist,
   accentColor,
+  addToPlaylist,
   applyAccentColor,
   applyMenuOpacity,
+  createPlaylist as createPlaylistCall,
+  type DjNarration,
+  djMix,
+  djMore,
+  djSpeak,
   explain,
+  isDjCard,
   keys,
+  type LibrarySort,
+  type LibraryView,
+  librarySort,
+  libraryView,
   listCount,
   menuOpacity,
+  onDjVoice,
   onPlaybackStatus,
   PLAYLIST_STALE_MS,
   type PlaybackStatus,
+  type Playlist,
+  playerStatus,
   playTrack,
-  runSearch,
+  SESSION_ERRORS,
+  setLibrarySort,
+  setLibraryView,
+  sortPlaylists,
   type Track,
+  togglePlayback,
   trackArtists,
   useAccount,
   useLikedTracks,
@@ -38,6 +64,7 @@ import {
   usePlaylistTracks,
 } from "./lib/spotify";
 import { checkForUpdate, pendingVersion, subscribeUpdate, updateState } from "./lib/updater";
+import { useSearch } from "./lib/useSearch";
 
 /**
  * How many tracks in a row may fail before Starless stops skipping.
@@ -49,18 +76,75 @@ import { checkForUpdate, pendingVersion, subscribeUpdate, updateState } from "./
 const MAX_CONSECUTIVE_FAILURES = 5;
 
 /**
- * How long typing pauses before Spotify is asked.
+ * What the app is playing, and what came with it.
  *
- * Long enough that a word typed at normal speed is one request, short enough that
- * the menu feels attached to the keyboard rather than trailing behind it.
+ * **The DJ is the only queue here that is a session.** A playlist is a list and
+ * ends where it ends; the DJ keeps choosing, so its queue has to be able to
+ * grow while it plays. `station` says "this one is still being fed", and the
+ * lines are the DJ's phrases — one per song, because the DJ opens a stretch
+ * with one and closes it with another.
  */
-const SEARCH_DEBOUNCE_MS = 280;
+type Queue = {
+  tracks: Track[];
+  lines: Record<string, DjNarration>;
+  station: boolean;
+};
 
-/** Below this, Spotify answers with whatever it felt like, which reads as broken. */
-const MIN_QUERY_LENGTH = 2;
+/**
+ * How many songs are left before the station asks for more.
+ *
+ * **Two, and not zero.** The page takes about a second to arrive, and the queue
+ * is empty for exactly that second if the app waits until the last song: that
+ * silence is the one thing a radio station cannot do. Two songs of margin is
+ * a song and a half of music — enough for a request, little enough that the
+ * queue does not grow forever.
+ */
+const DJ_TOP_UP = 2;
 
-/** Songs offered in the menu. More than this and the menu stops being a menu. */
-const MAX_SUGGESTIONS = 5;
+/**
+ * The fade that dissolves the edges of the content area, as a mask.
+ *
+ * **A mask, and not a gradient painted over the content.** A gradient element
+ * would have to sit on top of the card, and then it would also hide the card's
+ * rounded bottom corner at the end of the list — the one place where that edge
+ * has to be seen whole. A mask does the opposite: it takes the pixels away
+ * where there is more list, and leaves them alone where there is not.
+ *
+ * **Both edges, decided separately.** A scrolled list is cut at the top and at
+ * the bottom, and both cuts are the same problem: a row sliced in half, which
+ * reads as a rendering fault rather than as "there is more". So each edge gets
+ * its own fade, and only when there is really something on that side. A list
+ * that fits on the screen has neither, and then there is no mask at all — the
+ * card's rounded corners are the best thing on screen and nothing takes them
+ * away.
+ *
+ * **Both spellings, and the standard one last.** These are inline styles, so
+ * Lightning CSS never sees them and never collapses the pair into the prefixed
+ * one — the failure this repo already paid once with `backdrop-filter`. The two
+ * properties are aliases of each other, so whichever one the engine picks, the
+ * gradient that ends up painted is the same.
+ */
+function fadeMask(above: boolean, below: boolean): string | undefined {
+  if (!above && !below) return undefined;
+
+  const stops: string[] = [];
+  if (above) stops.push("transparent 0", "#000 44px");
+  else stops.push("#000 0");
+  if (below) stops.push("#000 calc(100% - 44px)", "transparent 100%");
+  else stops.push("#000 100%");
+
+  return `linear-gradient(to bottom, ${stops.join(", ")})`;
+}
+
+/**
+ * The two "a page about one thing" destinations, as one state.
+ *
+ * An album screen and an artist screen are the same shape with a different name
+ * on it, and they are opened from the same row by the same gesture. Modelling
+ * them as two states means every navigation has to remember to clear both, and
+ * the one that forgets shows a page with nothing behind it.
+ */
+type Detail = { kind: "artist"; artist: Artist } | { kind: "album"; album: Album };
 
 /**
  * A new order for the queue, with the song that is playing left where it is.
@@ -113,6 +197,125 @@ export default function App() {
    * → Diagnostics is one door to it; the sign-in screen is the other.
    */
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  /**
+   * Where the "a page about something" surface is pointed, or `null`.
+   *
+   * **One state for artists and albums, not two.** They are the same screen with
+   * a different name and a different picture, they are opened from the same row,
+   * they are closed by the same back button and they both need the scroll reset
+   * and the heading suppressed. Two parallel states would be two answers to "is
+   * something open right now", and the bug is always the place where one of them
+   * forgot to be cleared.
+   *
+   * **The whole object, not an id.** Each page's header is instant from the two
+   * things the row already carried — the name, and the id the filter needs — and
+   * a request to look up what the click was handed is a request for nothing.
+   */
+  const [detail, setDetail] = useState<Detail | null>(null);
+
+  /**
+   * How the shelf is ordered and drawn, read once at startup for the same reason the
+   * glass and the accent are: the library is the first screen there is, and a shelf
+   * that resets to A–Z every launch makes the control look like it does not save.
+   *
+   * The value is trusted as it arrives — `settings.rs` refuses an order this build
+   * does not know in both directions — and `sortPlaylists` falls through to the
+   * default anyway, so an unknown one would still land on a real order.
+   */
+  const [sortOrder, setSortOrder] = useState<LibrarySort>("name-asc");
+  const [shelfView, setShelfView] = useState<LibraryView>("grid");
+
+  useEffect(() => {
+    let alive = true;
+    void librarySort()
+      .then((value) => {
+        if (alive) setSortOrder(value);
+      })
+      .catch(() => {});
+    void libraryView()
+      .then((value) => {
+        if (alive) setShelfView(value);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  /**
+   * The screen changes first and the write follows. A save that fails leaves the user
+   * with the shelf they just asked for, which is the thing they will notice; losing
+   * it across a restart is not.
+   */
+  const changeSort = (sort: LibrarySort) => {
+    setSortOrder(sort);
+    void setLibrarySort(sort).catch(() => {});
+  };
+
+  const changeView = (view: LibraryView) => {
+    setShelfView(view);
+    void setLibraryView(view).catch(() => {});
+  };
+
+  /**
+   * A playlist appears before the library is asked again.
+   *
+   * The refetch is still the source of truth — a list assembled by hand would
+   * need the cover, the track count and the owner that only a read can bring —
+   * but the dialog closes on the call succeeding, and a screen that keeps the
+   * dialog open for the length of a refetch reads as a failed write.
+   *
+   * A rejected call is re-thrown for the dialog: it is the only thing on screen
+   * that can say "it exists but has no name", which is a different problem from
+   * the one where nothing happened.
+   *
+   * **And the song goes in right after, when there is one.** A playlist created
+   * from the "add to playlist" menu that comes out empty is a promise broken
+   * in the only place the user could tell — and the song is added with the
+   * same command the menu uses, so the revision is read fresh and the write
+   * cannot fail for being old.
+   */
+  const createPlaylist = async (name: string) => {
+    const id = await createPlaylistCall(name);
+    void queryClient.invalidateQueries({ queryKey: keys.playlists });
+    void queryClient.invalidateQueries({ queryKey: keys.liked });
+
+    if (pendingTrack) {
+      try {
+        await addToPlaylist(id, pendingTrack.id);
+      } catch {
+        // The playlist exists and is in the library; the song did not go in.
+        // The dialog says exactly that, and it does not offer to create a
+        // second playlist.
+        throw new Error("add_failed");
+      }
+      void queryClient.invalidateQueries({ queryKey: keys.playlistTracks(id) });
+      return;
+    }
+
+    setActiveItem(id);
+  };
+
+  /**
+   * The new-playlist dialog, and the song that is waiting to go into it.
+   *
+   * Two buttons open it — the rail's "+" and the track menu's "New playlist" —
+   * so it lives here, above the two. The track is part of the request: a
+   * playlist made from the "add to playlist" menu has to come out with the
+   * song in it.
+   */
+  const [naming, setNaming] = useState(false);
+  const [pendingTrack, setPendingTrack] = useState<Track | null>(null);
+
+  const openNaming = useCallback((track?: Track) => {
+    setPendingTrack(track ?? null);
+    setNaming(true);
+  }, []);
+
+  const closeNaming = useCallback(() => {
+    setNaming(false);
+    setPendingTrack(null);
+  }, []);
 
   // The chosen glass, applied once at startup rather than when the settings panel
   // happens to be opened: the first menu somebody sees is the crash prompt, and it
@@ -171,6 +374,20 @@ export default function App() {
   const liked = useLikedTracks();
 
   /**
+   * Sorted once, here, and handed to both surfaces.
+   *
+   * The rail and the shelf are the same library drawn twice, so an order applied to
+   * one of them and not the other would be a bug report with a delay: you pick "por
+   * creador" on the rail, walk to Inicio, and the shelf is back in A–Z.
+   * `sortPlaylists` copies rather than rearranging, so the cached query value is
+   * left alone.
+   */
+  const orderedPlaylists = useMemo(
+    () => sortPlaylists(playlists.data ?? [], sortOrder),
+    [playlists.data, sortOrder],
+  );
+
+  /**
    * One reader for the updater, so the badge on the Settings button and the row
    * inside Settings can never disagree about whether an update exists.
    */
@@ -210,8 +427,149 @@ export default function App() {
    * jumps back into a playlist the user left twenty screens ago, which is exactly
    * the drift described above. It is cleared whenever the user navigates somewhere
    * that defines its own list.
+   *
+   * **The override carries the DJ's line with it.** The line belongs to the
+   * queue that brought it —it is what the DJ says before its own mix— so it
+   * lives in the same place, and a queue that replaces it takes the line with
+   * it. Two separate states were a way for one DJ's words to stay on screen
+   * above another playlist's songs.
    */
-  const [queueOverride, setQueueOverride] = useState<Track[] | null>(null);
+  /**
+   * Where we are in the queue: the index of the song that is playing.
+   *
+   * **The index, not the id.** A station can offer the same song twice — the DJ
+   * does, and on his side it is not a bug— and looking the current song up by
+   * its id finds the *first* copy, which is the one that already played. From
+   * there "the next one" is a song from the past: the app jumps backwards, the
+   * queue panel lies about what is coming, and pressing next twice lands on
+   * the same song. That is the "salta".
+   */
+  const [queueAt, setQueueAt] = useState(-1);
+  /**
+   * The same place, readable right now.
+   *
+   * **A state alone is not enough.** Two clicks in the same breath have to land
+   * on two different songs, and the state that the second click reads is still
+   * the one of the first: the app would ask for the same song twice. The
+   * reference is what the decisions read; the state is what the panel draws.
+   */
+  const queueAtRef = useRef(-1);
+  const moveTo = useCallback((at: number) => {
+    queueAtRef.current = at;
+    setQueueAt(at);
+  }, []);
+
+  /**
+   * The song the app is waiting for.
+   *
+   * **The status can be about a song that is already over.** The user presses
+   * next while the old one is still finishing, and the status that comes back
+   * says "that one ended": an ending that was already handled. Advancing on it
+   * puts a song on top of the one the user just asked for.
+   */
+  const asked = useRef<string | null>(null);
+
+  /**
+   * The number of the last request to make something sound.
+   *
+   * Every decision to play takes a number, and every asynchronous continuation
+   * carries the number it was born with: if the world moved on since then — the
+   * user pressed next, picked another song, the DJ's voice finished late — the
+   * continuation does nothing at all.
+   *
+   * **This is what keeps two songs from starting nineteen milliseconds apart.**
+   * The DJ's voice is the case that needs it: the phrase is asked for, the
+   * answer comes back, and by then the user may have asked for something else.
+   * Without the number, the late answer puts a song on top of the one that is
+   * already playing.
+   */
+  const intent = useRef(0);
+
+  const [queue, setQueue] = useState<Queue | null>(null);
+  const queueOverride = queue?.tracks ?? null;
+  /**
+   * The one door into the queue.
+   *
+   * Everything that sets a queue goes through here, so the lines that came
+   * with a queue go with it. The DJ is the one that brings lines.
+   */
+  const setQueueOverride = useCallback(
+    (tracks: Track[] | null) => {
+      djLines.current = {};
+      // **La cola cambió: el lugar en ella también.** El índice que guardamos
+      // era de la cola anterior, y seguir usándolo haría saltar la app a una
+      // canción que ya no está donde estaba.
+      moveTo(-1);
+      setQueue(tracks ? { tracks, lines: {}, station: false } : null);
+    },
+    [moveTo],
+  );
+  /**
+   * The DJ, while it is being asked for and while it could not be read.
+   *
+   * Both are about one card —the account has exactly one DJ— so they are two
+   * flags rather than a map of playlists. The failure is shown on the card
+   * that caused it, which is the only place the user is looking when it
+   * happens: a click that does nothing is the bug this whole thing started
+   * from.
+   */
+  const [djBusy, setDjBusy] = useState(false);
+  const [djUnavailable, setDjUnavailable] = useState(false);
+
+  /**
+   * El DJ está hablando.
+   *
+   * **La voz va antes que la música.** Cuando el backend pide una tanda que
+   * trae narración, corta lo que estuviera sonando, deja que el DJ hable y
+   * avisa cuando terminó. La música arranca después, y este estado es lo que
+   * pone el icono del DJ abajo a la izquierda mientras pasa.
+   *
+   * El número es el de la voz: dos clicks seguidos son dos voces, y el que
+   * terminó primero no es el que el segundo click está esperando.
+   */
+  const [djVoice, setDjVoice] = useState<{
+    id: number;
+    speaker: string | null;
+    line: string | null;
+  } | null>(null);
+
+  /**
+   * La canción que quedó esperando la voz del DJ.
+   *
+   * Vive en una referencia y no en un estado porque no se dibuja: es lo que el
+   * frontend arranca cuando llega el evento de la voz. Si el usuario elige
+   * otra cosa mientras tanto, se borra —y con ella la espera—.
+   *
+   * **Trae el lugar en la cola y el número del pedido.** La canción que arranca
+   * cuando la voz termina es la que el DJ presentó, y tiene que arrancar en el
+   * lugar en que se pidió: si la cola se movió mientras el DJ hablaba, la
+   * canción arranca donde el DJ dijo, no donde la lista esté ahora. Y el
+   * número es lo que distingue una voz que todavía cuenta de una que ya no la
+   * cuenta.
+   */
+  const djPending = useRef<{ id: number; track: Track; at: number; intent: number } | null>(null);
+
+  /**
+   * La última voz que terminó, para cuando el aviso llega antes que la tanda.
+   *
+   * El backend puede fallar al pedir el audio y avisar en el mismo instante en
+   * que devolvió la tanda: si el frontend todavía no guardó qué voz espera, el
+   * aviso se pierde y la música no arranca nunca. El número de la voz siempre
+   * es más grande que el de la anterior, así que un número guardado no puede
+   * confundirse con una voz nueva.
+   */
+  const djFinished = useRef<number | null>(null);
+
+  /**
+   * Las frases del DJ, por id de canción, y siempre al día.
+   *
+   * Vive en una referencia y no en un estado porque no se dibuja: lo que la
+   * necesita es el momento de poner una canción, y en ese momento la cola
+   * puede ser la de un render anterior. Se actualiza en el mismo lugar donde
+   * se actualiza la cola.
+   */
+  const djLines = useRef<Record<string, DjNarration>>({});
+
   const libraryTracks = isLiked ? (liked.data ?? []) : (playlistTracks.data ?? []);
   const visibleTracks = queueOverride ?? libraryTracks;
 
@@ -242,14 +600,113 @@ export default function App() {
    */
   const [loadedTrack, setLoadedTrack] = useState<Track | null>(null);
 
+  /**
+   * Whether the bar is on screen.
+   *
+   * **The window gives the bar its room, and it gives it when the bar
+   * arrives.** The bar floats over the bottom of the window, so everything
+   * above it has to stop short of it — and when the bar is not there, that
+   * space belongs to the content: a band of 144px of empty ground under the
+   * library is not breathing room, it is a hole.
+   *
+   * So the surfaces that float over the content change their bottom inset
+   * with the bar: with it, they stop where the bar begins; without it, they
+   * go down to the window's own 20px inset. The movement is the same 300ms
+   * the panels already use, because the bar arriving and the content moving
+   * are one movement and not two.
+   *
+   * **The rule is the bar's own:** what there is to say — a song, the DJ, or a
+   * refusal. The bar and this flag are the same question asked twice, so the
+   * answer lives in one place and the bar is told.
+   */
+  const barPresent = Boolean(loadedTrack || djVoice || status?.error);
+
+  /**
+   * The line the DJ is saying right now.
+   *
+   * **The line belongs to the song it is attached to.** The DJ opens a stretch
+   * with one phrase and closes it with another, and the service hangs each of
+   * them on a song: the first one and the last one. So what is shown is the
+   * line of the song that is sounding — not the last one that arrived, which
+   * would leave the words of a song that ended on top of the one that started.
+   */
+  const narration = useMemo(() => {
+    const current = status?.trackId ?? loadedTrack?.id ?? null;
+    if (!current || !queue) return null;
+    return queue.lines[current] ?? null;
+  }, [status?.trackId, loadedTrack?.id, queue]);
+
+  /**
+   * Ask what the player is doing, because the events alone leave a hole.
+   *
+   * `player://status` is emitted when the player does something, and the first
+   * thing it does may be never: the DJ talks through the mixer and the player
+   * does not know. A frontend that only listens starts with nothing, and
+   * "nothing" reads as volume zero —the bar said "muted" and the slider at the
+   * minimum while the music was audible at the volume the user had set.
+   *
+   * The answer is only applied if no event has arrived yet: a question that
+   * takes its time must not overwrite a newer truth with an older one.
+   */
   useEffect(() => {
-    const unlisten = onPlaybackStatus(setStatus);
+    let heard = false;
+    const unlisten = onPlaybackStatus((next) => {
+      heard = true;
+      setStatus(next);
+    });
     // The listener is async, so the cleanup has to wait for it — returning a
     // promise from the effect would leave a dangling subscription behind.
+    void playerStatus()
+      .then((next) => {
+        if (!heard) setStatus(next);
+      })
+      .catch(() => {});
     return () => {
       unlisten.then((off) => off());
     };
   }, []);
+  /**
+   * El DJ terminó de hablar: la música arranca.
+   *
+   * **El evento es lo que hace arrancar la música, y no al revés.** El backend
+   * corta la canción que estuviera sonando, deja que el DJ hable y recién ahí
+   * avisa; el frontend espera ese aviso. Por eso el backend lo emite siempre,
+   * se haya oído la voz o no: si la voz falla, el DJ tiene que seguir sonando
+   * igual, y el que decide eso es que el aviso llega en los dos casos.
+   *
+   * El número es lo que evita confundir dos voces: si el evento no es el de la
+   * voz que este click está esperando, no se toca nada.
+   */
+  useEffect(() => {
+    const unlisten = onDjVoice((event) => {
+      const pending = djPending.current;
+      if (!pending || pending.id !== event.id) {
+        // No es la voz que este click está esperando: se guarda, por si el
+        // aviso llegó antes de que la tanda llegara.
+        djFinished.current = event.id;
+        return;
+      }
+      djPending.current = null;
+      setDjVoice(null);
+      // **La voz que terminó es la que este click estaba esperando.** Si
+      // mientras el DJ hablaba el usuario pidió otra cosa, esta ya no manda:
+      // lo que se pidió después es lo que suena. Sin esto, la música del DJ
+      // arranca encima de la canción que el usuario acaba de elegir.
+      if (pending.intent !== intent.current) return;
+      asked.current = pending.track.id;
+      moveTo(pending.at);
+      // La música arranca: es un pedido nuevo, y deja atrás a los que estaban
+      // en camino.
+      intent.current += 1;
+      setLoadedTrack(pending.track);
+      playTrack(pending.track).catch((e) => {
+        console.error("Starless: no se pudo reproducir el DJ", explain(e));
+      });
+    });
+    return () => {
+      unlisten.then((off) => off());
+    };
+  }, [moveTo]);
 
   /**
    * The words for whatever is sounding.
@@ -271,18 +728,36 @@ export default function App() {
    */
   const closeLyrics = useCallback(() => setLyricsOpen(false), []);
 
-  const onPlay = useCallback((track: Track) => {
-    // A deliberate choice clears the advance guard. Without this, replaying the
-    // same track by hand would still carry the previous "already handled this
-    // ending" mark, and the next finish would be silently ignored.
-    advancedRef.current = null;
-    setLoadedTrack(track);
-    playTrack(track).catch((e) => {
-      // A refusal that only reaches the console is a refusal the user never sees.
-      // The bar shows whatever `status.error` says; this is the console copy.
-      console.error("Starless: no se pudo reproducir", explain(e));
-    });
-  }, []);
+  const onPlay = useCallback(
+    (track: Track, at?: number) => {
+      // A deliberate choice clears the advance guard. Without this, replaying the
+      // same track by hand would still carry the previous "already handled this
+      // ending" mark, and the next finish would be silently ignored.
+      advancedRef.current = null;
+      // **Poner una canción calla al DJ.** La frase que estaba diciendo era para
+      // esta otra canción, y seguir escuchándola es una conversación que nadie
+      // pidió. El backend también la corta —allá se corta el audio— pero acá se
+      // borra la espera: si no, el aviso de "el DJ terminó" haría arrancar la
+      // música del DJ encima de la que el usuario acaba de elegir.
+      djPending.current = null;
+      setDjVoice(null);
+      // **Esta es la canción que se espera.** El final que llegue de la
+      // anterior ya no cuenta: la app no avanza sobre un final que no es de la
+      // canción que está sonando.
+      asked.current = track.id;
+      moveTo(at ?? visibleTracks.findIndex((item) => item.id === track.id));
+      // El pedido nuevo invalida el que estaba en camino: una voz del DJ que
+      // estaba por hablar no habla, y la que hable después es otra.
+      intent.current += 1;
+      setLoadedTrack(track);
+      playTrack(track).catch((e) => {
+        // A refusal that only reaches the console is a refusal the user never sees.
+        // The bar shows whatever `status.error` says; this is the console copy.
+        console.error("Starless: no se pudo reproducir", explain(e));
+      });
+    },
+    [moveTo, visibleTracks],
+  );
 
   /**
    * Play from a list that is not a playlist, and decide the order now.
@@ -295,27 +770,42 @@ export default function App() {
    * queue forever and the app recommended the same songs forever. That is not a
    * playlist behaving like a playlist, it is a bug wearing the costume of one.
    *
-   * **This is not the shuffle button.** That one re-picks the next track at
-   * random while leaving the list on screen alone, on purpose: a queue panel that
-   * reshuffles while somebody is reading it reads as the app having lost the
-   * thread. Here the order is decided once, at the moment the user asked for
-   * something to play, and then stays still — which is what they mean when they
-   * ask for a different queue.
+   * **Turning shuffle on reaches this too, and that is not a second thing.** It is
+   * the same decision the shuffle button records: shuffle is a mode, and the
+   * moment you start playing under that mode the order has to be the shuffled one
+   * — `onPlayPlaylist` below. The distinction that used to be drawn here — "this
+   * is not the shuffle button" — described a version of `onToggleShuffle` that
+   * left the queue alone, and it does not do that any more. Both paths go through
+   * `shuffleFrom`, which keeps the song that is starting at the front and puts the
+   * randomness behind it.
    */
-  const playShuffled = useCallback((tracks: Track[], track: Track) => {
-    advancedRef.current = null;
-    setLoadedTrack(track);
-    setQueueOverride(shuffleFrom(tracks, track.id));
-    playTrack(track).catch((e) => {
-      console.error("Starless: no se pudo reproducir", explain(e));
-    });
-  }, []);
+  const playShuffled = useCallback(
+    (tracks: Track[], track: Track) => {
+      advancedRef.current = null;
+      setLoadedTrack(track);
+      setQueueOverride(shuffleFrom(tracks, track.id));
+      // **La canción que empieza queda adelante.** El orden nuevo la pone
+      // primero, y el lugar en la cola tiene que decir lo mismo.
+      asked.current = track.id;
+      moveTo(0);
+      intent.current += 1;
+      playTrack(track).catch((e) => {
+        console.error("Starless: no se pudo reproducir", explain(e));
+      });
+    },
+    [moveTo, setQueueOverride],
+  );
 
   // Only once audio is actually flowing. During the load, `loading` is true and
   // the row deliberately shows nothing rather than a dot we cannot justify.
   const nowPlayingId = status?.playing ? status.trackId : null;
   const loadingId = status?.loading ? status.trackId : null;
-  const failedId = status?.error ? status.trackId : null;
+  // A row painted as failed says "this song cannot be played". While the
+  // connection is being rebuilt that is not what is happening: the song is
+  // fine, it is the road to Spotify that is closed, and the row comes back
+  // playing a moment later. The same goes for a device that stopped answering
+  // — the song is fine, the sound is what is missing.
+  const failedId = status?.error && !SESSION_ERRORS.has(status.error) ? status.trackId : null;
 
   /**
    * The queue, in the order it will be played.
@@ -326,19 +816,17 @@ export default function App() {
    * visibly reshuffles under them, which reads as the app having lost track of
    * what they were looking at rather than as a mode they turned on.
    *
-   * `previous` is kept alongside `upNext` so that "back" never has to reconstruct
-   * what came before from a list that is only sliced forwards.
+   * **The cut is at the place, not at the song.** The list can hold the same
+   * song twice — the DJ does — and cutting at "the first song with this id"
+   * puts the cut in the wrong place: everything after the song that already
+   * played is still called "what comes next", and the app walks the queue
+   * backwards.
    */
-  const { previous, upNext } = useMemo(() => {
-    const index = status?.trackId
-      ? visibleTracks.findIndex((track) => track.id === status.trackId)
-      : -1;
-    if (index === -1) return { previous: [] as Track[], upNext: visibleTracks };
-    return {
-      previous: visibleTracks.slice(0, index),
-      upNext: visibleTracks.slice(index + 1),
-    };
-  }, [status?.trackId, visibleTracks]);
+  const upNext = useMemo(() => {
+    const at = queueAt;
+    if (at < 0) return visibleTracks;
+    return visibleTracks.slice(at + 1);
+  }, [queueAt, visibleTracks]);
 
   /**
    * Advance when a track runs out.
@@ -354,13 +842,83 @@ export default function App() {
    */
   const advancedRef = useRef<string | null>(null);
 
-  const playDirect = useCallback((track: Track) => {
-    setLoadedTrack(track);
-    playTrack(track).catch((e) => {
-      advancedRef.current = null;
-      console.error("Starless: no se pudo reproducir", explain(e));
-    });
-  }, []);
+  const playDirect = useCallback(
+    (track: Track, at?: number) => {
+      asked.current = track.id;
+      moveTo(at ?? visibleTracks.findIndex((item) => item.id === track.id));
+      // Un pedido nuevo: lo que estaba en camino deja de mandar.
+      intent.current += 1;
+      setLoadedTrack(track);
+      playTrack(track).catch((e) => {
+        advancedRef.current = null;
+        console.error("Starless: no se pudo reproducir", explain(e));
+      });
+    },
+    [moveTo, visibleTracks],
+  );
+
+  /**
+   * Poner una canción de la estación, y dejar que el DJ la presente.
+   *
+   * **La frase es de la canción, y se dice antes que ella.** El servicio
+   * cuelga la frase de apertura de la primera canción de un tramo y la de
+   * cierre de la última, y las dos se dicen *antes* de esa canción: "así
+   * termina este segmento, al ritmo de The Weeknd" se dice, y después suena
+   * The Weeknd.
+   *
+   * Por eso la frase se pide acá y no cuando llegó la página: la página llega
+   * dos canciones antes de que la cola se vacíe, y pedirla entonces sería
+   * hablar encima de la canción que está sonando.
+   *
+   * **Si el DJ no tiene nada que decir para esa canción, la música no
+   * espera.** Y si la voz falla, tampoco: la voz es un extra sobre una
+   * estación que ya funciona.
+   */
+  const playStationTrack = useCallback(
+    async (track: Track, at: number) => {
+      // **Este pedido tiene un número.** La respuesta del backend —la frase que
+      // el DJ tiene para esta canción— llega después, y para entonces el
+      // usuario puede haber apretado otra vez. Lo que venga de acá pertenece a
+      // este pedido: si el número ya no es el último, no se toca nada.
+      const mine = ++intent.current;
+      // La canción queda en su lugar de la cola desde el pedido, no desde que
+      // suena: el DJ la está presentando, y lo que viene después es lo que
+      // sigue.
+      asked.current = track.id;
+      moveTo(at);
+      const narration = djLines.current[track.id] ?? null;
+      let voice: number | null = null;
+      try {
+        voice = await djSpeak(track.id);
+      } catch (e) {
+        console.error("Starless: el DJ no pudo hablar", explain(e));
+      }
+      // El mundo se movió mientras se pedía la frase: lo que se pidió después
+      // manda, y esta canción no arranca.
+      if (mine !== intent.current) return;
+      if (voice == null) {
+        setLoadedTrack(track);
+        await playTrack(track);
+        return;
+      }
+      // Si el aviso de "terminó" ya llegó —la voz terminó antes de que el
+      // frontend guardara qué espera—, la música arranca derecho: no hay nada
+      // que esperar.
+      if (djFinished.current === voice) {
+        djFinished.current = null;
+        setLoadedTrack(track);
+        await playTrack(track);
+        return;
+      }
+      // Una voz anterior puede haber quedado esperando, de un click anterior: la
+      // última que se pide es la que vale, y la que quedó no se dice dos veces.
+      djPending.current = { id: voice, track, at, intent: mine };
+      // Lo que falte lo pone la barra, con los textos del idioma de ahora: el
+      // estado guarda lo que dijo el servicio y nada más.
+      setDjVoice({ id: voice, speaker: narration?.speaker ?? null, line: narration?.line ?? null });
+    },
+    [moveTo],
+  );
 
   /**
    * Order of decisions when a track ends, and each one is a *different question*:
@@ -379,32 +937,50 @@ export default function App() {
    */
   const advance = useCallback(() => {
     if (repeat === "one") {
-      const current = status?.trackId
-        ? visibleTracks.find((track) => track.id === status.trackId)
-        : loadedTrack;
+      // **La que está sonando es la del lugar**, no la primera con ese id: la
+      // cola puede tener la misma canción dos veces.
+      const current = visibleTracks[queueAtRef.current] ?? loadedTrack;
       if (current) {
-        playDirect(current);
+        playDirect(current, queueAtRef.current);
         return true;
       }
     }
 
-    const next = upNext[0];
+    // **El siguiente es el que sigue en la cola, por lugar y no por nombre.**
+    // La cola puede tener la misma canción dos veces —el DJ lo hace— y
+    // buscarla por su id encuentra la primera: la que ya sonó. Desde ahí, "el
+    // siguiente" es una canción del pasado, y la app salta para atrás.
+    const at = queueAtRef.current + 1;
+    const next = visibleTracks[at];
     if (next) {
-      playDirect(next);
+      // **La estación pide la canción como la pide el DJ:** primero la frase,
+      // si la hay, y después la música. Una playlist no tiene frases.
+      if (queue?.station) {
+        void playStationTrack(next, at);
+        return true;
+      }
+      playDirect(next, at);
       return true;
     }
     // Out of tracks. Only repeat-all brings the first one back.
     if (repeat === "all" && visibleTracks[0]) {
-      playDirect(visibleTracks[0]);
+      playDirect(visibleTracks[0], 0);
       return true;
     }
     return false;
-  }, [repeat, upNext, visibleTracks, loadedTrack, status?.trackId, playDirect]);
+  }, [repeat, visibleTracks, loadedTrack, playDirect, queue?.station, playStationTrack]);
 
   useEffect(() => {
     if (!status?.finished) return;
     const ended = status.trackId;
-    if (!ended || advancedRef.current === ended) return;
+    if (!ended) return;
+    // **El final tiene que ser el de la canción que se está esperando.** El
+    // usuario puede apretar siguiente mientras la anterior todavía termina, y
+    // el estado que llega dice "esa terminó": un final que ya se atendería.
+    // Avanzar sobre él pone una canción encima de la que el usuario acaba de
+    // elegir, y la app salta sola.
+    if (ended !== asked.current) return;
+    if (advancedRef.current === ended) return;
 
     advancedRef.current = ended;
     if (!advance()) {
@@ -425,6 +1001,19 @@ export default function App() {
    * Counted *consecutively*, and only reset when something actually sounds, so a
    * session that cannot play anything at all stops after five tries instead of
    * sprinting through the whole library.
+   *
+   * **But a dead connection is not a track that will not play.** When the
+   * session to Spotify dies, every track fails the same way, one after
+   * another, and skipping is the wrong answer twice over: it burns through the
+   * queue in seconds — six songs in sixteen seconds, the log said — and each
+   * skip overwrites the one message that says what is actually wrong. The
+   * backend already tells the two apart, and here the app listens: on a
+   * connection failure it waits, because the session is being rebuilt
+   * underneath and the track goes back on when it is up.
+   *
+   * **And a device that stopped answering is not a track that will not play
+   * either.** The song is fine — the sound is what is missing, and the
+   * backend is opening another player underneath.
    */
   const failures = useRef(0);
   useEffect(() => {
@@ -433,7 +1022,12 @@ export default function App() {
 
   useEffect(() => {
     if (!status?.error || !status.trackId) return;
+    if (SESSION_ERRORS.has(status.error)) return;
     const failed = status.trackId;
+    // **El error tiene que ser de la canción que se está esperando.** Uno viejo,
+    // de una canción que ya se cambió, no salta nada: la app ya está playing
+    // otra cosa y saltar sería poner una tercera encima.
+    if (failed !== asked.current) return;
     if (advancedRef.current === failed) return;
 
     failures.current += 1;
@@ -448,15 +1042,39 @@ export default function App() {
   }, [status?.error, status?.trackId, advance]);
 
   const onNext = useCallback(() => {
+    // **Con el DJ hablando, "siguiente" es "cállate y seguí".**
+    //
+    // La frase es de la canción que va a sonar, y el usuario la está oyendo
+    // antes de que suene: apretar siguiente es decir "no la quiero escuchar",
+    // no "pasame otra". Así que la voz se corta —el backend la corta con la
+    // misma canción, que es la que la calla— y la canción arranca.
+    const pending = djPending.current;
+    if (pending) {
+      djPending.current = null;
+      setDjVoice(null);
+      // La canción del DJ suena en el lugar en que el DJ la presentó, no en el
+      // que la cola tenga ahora.
+      asked.current = pending.track.id;
+      moveTo(pending.at);
+      // La voz se terminó: lo que estaba en camino deja de mandar.
+      intent.current += 1;
+      setLoadedTrack(pending.track);
+      playTrack(pending.track).catch((e) => {
+        console.error("Starless: no se pudo reproducir el DJ", explain(e));
+      });
+      return;
+    }
+
     // Pressing "next" is a decision, so it overrides repeat-one the way pressing
     // pause does. Honouring the mode here would make the button useless in it.
     if (repeat === "one") {
-      const next = upNext[0];
-      if (next) playDirect(next);
+      const at = queueAtRef.current + 1;
+      const next = visibleTracks[at];
+      if (next) playDirect(next, at);
       return;
     }
     advance();
-  }, [advance, repeat, upNext, playDirect]);
+  }, [advance, moveTo, repeat, visibleTracks, playDirect]);
 
   const onPrevious = useCallback(() => {
     // The Spotify convention, and the one people already have in their fingers:
@@ -465,15 +1083,18 @@ export default function App() {
     // is no way to restart what you are listening to.
     const restartAfter = 3_000;
     if ((status?.positionMs ?? 0) > restartAfter && loadedTrack) {
-      playDirect(loadedTrack);
+      playDirect(loadedTrack, queueAtRef.current);
       return;
     }
-    const back = previous[previous.length - 1];
-    if (back) playDirect(back);
+    // **Atrás es el lugar anterior de la cola**, y no "la canción anterior por
+    // su id": la cola puede tener la misma canción dos veces.
+    const at = queueAtRef.current - 1;
+    const back = at >= 0 ? visibleTracks[at] : undefined;
+    if (back) playDirect(back, at);
     else if (repeat === "all" && visibleTracks[visibleTracks.length - 1]) {
-      playDirect(visibleTracks[visibleTracks.length - 1]);
+      playDirect(visibleTracks[visibleTracks.length - 1], visibleTracks.length - 1);
     }
-  }, [status?.positionMs, loadedTrack, previous, repeat, visibleTracks, playDirect]);
+  }, [status?.positionMs, loadedTrack, repeat, visibleTracks, playDirect]);
 
   /**
    * Shuffle decides the order once, here, instead of at every jump.
@@ -494,7 +1115,10 @@ export default function App() {
     setShuffle(turningOn);
     if (!turningOn || visibleTracks.length < 2) return;
     setQueueOverride(shuffleFrom(visibleTracks, status?.trackId ?? loadedTrack?.id ?? null));
-  }, [shuffle, visibleTracks, status?.trackId, loadedTrack]);
+    // **El orden nuevo deja la canción que suena adelante**, así que el lugar
+    // en la cola también es el primero.
+    moveTo(0);
+  }, [shuffle, visibleTracks, status?.trackId, loadedTrack, setQueueOverride, moveTo]);
 
   /**
    * Ask once at startup whether there is a newer Starless.
@@ -510,124 +1134,289 @@ export default function App() {
     return () => clearTimeout(id);
   }, []);
 
+  const mainRef = useRef<HTMLElement | null>(null);
+
   /**
-   * Search, in two steps: typing offers, Enter commits.
+   * Whether there is more list above or below the fold.
    *
-   * `draft` is what the field holds and `committed` is what the screen is
-   * showing, and they are deliberately different values. Binding one to the other
-   * means the screen is rewritten on every keystroke — the user loses the list
-   * they were reading before they have finished typing the word, and has to
-   * remember it to get back. Suggestions are cheap enough to show while typing;
-   * replacing the screen is a decision, and Enter is how it gets made.
+   * **This is what decides whether the edges of the content area dissolve or
+   * show the card's edge.** At the end of a list the card's rounded bottom is
+   * the best thing on screen and it has to be seen whole; in the middle of one,
+   * the same edge is a row sliced in half, and a sliced row reads as a rendering
+   * fault rather than as "there is more".
    *
-   * And the two ask the same thing — songs — at two different times. They used to
-   * ask for different things: the screen wanted albums, artists and playlists as
-   * well, because a search for "frank ocean" was four questions and the tabs
-   * answered them. The parser on the other side drops the type of whatever it
-   * matched, so those extra answers were the same songs under other headings and
-   * only the request was bigger.
-   *
-   * Each answer is kept with the query that produced it. A screen showing results
-   * for "chanel" while the field says "frank ocean" is a lie, and matching on the
-   * query is what makes that impossible rather than merely unlikely.
-   *
-   * Deliberately not query hooks: a cache keyed by every intermediate keystroke is
-   * a cache nobody benefits from, and a request per keypress is a request per
-   * keypress. So the state lives here and the calls sit behind a debounce.
+   * So the fade is a thing that is *there when there is more* and *not there when
+   * there is not*, and these two booleans are the whole of that decision. It is
+   * the difference between a panel that ends and a panel that was cut — and it
+   * takes two booleans because a scrolled list is cut at the top and at the
+   * bottom at the same time, and each edge answers on its own.
    */
-  const [draft, setDraft] = useState("");
-  const [committed, setCommitted] = useState("");
-  const [suggested, setSuggested] = useState<{ query: string; tracks: Track[] } | null>(null);
-  const [searching, setSearching] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
-  const [screen, setScreen] = useState<{ query: string; tracks: Track[] } | null>(null);
-  const [screenError, setScreenError] = useState<string | null>(null);
+  const [moreBelow, setMoreBelow] = useState(false);
+  const [moreAbove, setMoreAbove] = useState(false);
 
-  useEffect(() => {
-    const trimmed = draft.trim();
-    if (trimmed.length < MIN_QUERY_LENGTH) {
-      setSuggested(null);
-      setSearching(false);
-      setSearchError(null);
-      return;
-    }
+  /**
+   * The mask for the edges, or nothing at all.
+   *
+   * It is built here and not inside the `<main>` so that the two spellings are
+   * the same value: a mask written twice with different gradients is a mask
+   * that shows whichever side the engine happened to prefer.
+   */
+  const fade = fadeMask(moreAbove, moreBelow);
 
-    let alive = true;
-    setSearching(true);
-    const id = setTimeout(() => {
-      runSearch(trimmed)
-        .then((tracks) => {
-          if (!alive) return;
-          setSuggested({ query: trimmed, tracks });
-          setSearchError(null);
-        })
-        .catch((e) => {
-          if (!alive) return;
-          setSuggested(null);
-          setSearchError(explain(e));
-        })
-        .finally(() => {
-          if (alive) setSearching(false);
-        });
-    }, SEARCH_DEBOUNCE_MS);
+  /**
+   * The scroll container is measured, not guessed.
+   *
+   * **This is a callback ref and not an effect on purpose.** The `<main>` lives
+   * inside `AuthGate`: on a machine that is not signed in it is not in the DOM
+   * yet, so an effect running on mount would find nothing, and the listener it
+   * installed would still be missing by the time the library arrived. A callback
+   * ref attaches to the element when it actually appears and detaches when it
+   * goes.
+   *
+   * And the `ResizeObserver` watches the *children* rather than the container,
+   * because the container never changes size — it is pinned between the top bar
+   * and the player — while the content inside it does, every time a playlist
+   * arrives, a filter empties the list or the screen underneath is replaced.
+   * The scroll listener only hears about scrolling, and a list that just loaded
+   * is exactly the case where the answer changed without a scroll.
+   */
+  const attachMain = useCallback((el: HTMLElement | null) => {
+    if (!el) return;
+    mainRef.current = el;
+
+    const update = () => {
+      const below = el.scrollHeight - el.scrollTop - el.clientHeight > 4;
+      setMoreBelow((prev) => (prev === below ? prev : below));
+      const above = el.scrollTop > 4;
+      setMoreAbove((prev) => (prev === above ? prev : above));
+    };
+
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+
+    const sizes = new ResizeObserver(update);
+    const watch = () => {
+      for (const child of Array.from(el.children)) sizes.observe(child);
+    };
+    watch();
+
+    // A screen swap replaces the children, and the new ones are not being
+    // watched yet. This is the one case where the height changes without
+    // anything already observed changing size.
+    const swaps = new MutationObserver(() => {
+      watch();
+      update();
+    });
+    swaps.observe(el, { childList: true });
 
     return () => {
-      alive = false;
-      clearTimeout(id);
+      el.removeEventListener("scroll", update);
+      sizes.disconnect();
+      swaps.disconnect();
+      // React 19 does not call the ref with `null` when the callback returns a
+      // cleanup, so the pointer is cleared here or it would keep aiming at an
+      // element that is no longer in the document.
+      mainRef.current = null;
     };
-  }, [draft]);
+  }, []);
 
   /**
-   * The results screen's own request, fired by Enter rather than by typing.
+   * Play one song and make these songs the queue behind it.
    *
-   * No debounce here on purpose: by the time this runs the word is already
-   * written, so waiting another 280ms would delay a deliberate action for no
-   * reason.
+   * The click and the queue are one decision, never two: a play button that
+   * starts a track nobody chose to follow is how a player loses the user.
    */
-  useEffect(() => {
-    if (committed.length < MIN_QUERY_LENGTH) return;
+  const playFrom = useCallback(
+    (tracks: Track[], track: Track) => {
+      setQueueOverride(tracks);
+      // **El lugar se busca en la lista nueva.** La cola que se acaba de poner
+      // es la que va a mandar, y el índice de la canción en ella es lo que
+      // después decide qué sigue.
+      onPlay(
+        track,
+        tracks.findIndex((item) => item.id === track.id),
+      );
+    },
+    [onPlay, setQueueOverride],
+  );
 
-    let alive = true;
-    runSearch(committed)
-      .then((tracks) => {
-        if (!alive) return;
-        setScreen({ query: committed, tracks });
-        setScreenError(null);
+  /**
+   * Que suene el DJ.
+   *
+   * **El DJ no es una playlist: es una lista que Spotify le fabricó a la
+   * cuenta, y su contenido no está en la playlist.** La playlist del DJ llega
+   * vacía —cero canciones, dueño `spotify`— porque lo que la llena vive en
+   * otra puerta: hay que pedirla.
+   *
+   * Lo que vuelve son las canciones que eligió el DJ —pistas del catálogo,
+   * con nombre y con audio— y la frase que dice. **La frase es texto y voz a
+   * la vez**: el backend pide el audio de la narración al servicio que lo
+   * fabrica y lo pone en la misma salida que la música, así que lo que dice el
+   * DJ se escucha; lo que queda acá es la frase escrita, que es lo mismo que
+   * dijo, para que también se pueda leer.
+   *
+   * **Y la cola es una estación, no una lista.** Cada click abre una sesión
+   * nueva —el servicio arma un mix distinto cada vez— y esa sesión sigue: el
+   * DJ elige la siguiente tanda cuando la cola se está por vaciar, que es lo
+   * que lo separa de una playlist con nombre de DJ.
+   */
+  const onPlayDj = useCallback(
+    async (playlist: Playlist) => {
+      setDjUnavailable(false);
+      setDjBusy(true);
+      try {
+        const mix = await djMix(playlist.id);
+        if (mix.tracks.length === 0) {
+          setDjUnavailable(true);
+          return;
+        }
+        setQueue({ tracks: mix.tracks, lines: mix.lines, station: true });
+        djLines.current = mix.lines;
+        advancedRef.current = null;
+
+        // **El DJ presenta la primera canción, y la música espera.**
+        //
+        // La frase va con su canción, y se dice antes que ella: el backend corta
+        // lo que estuviera sonando, deja que el DJ hable y avisa con `dj://voice`.
+        // La música arranca con ese aviso, no antes: hablar encima de la canción
+        // es exactamente lo que el DJ de Spotify no hace.
+        await playStationTrack(mix.tracks[0], 0);
+      } catch (e) {
+        console.error("Starless: no se pudo reproducir el DJ", e);
+        setDjUnavailable(true);
+      } finally {
+        setDjBusy(false);
+      }
+    },
+    [playStationTrack],
+  );
+
+  /**
+   * La card del DJ, si la biblioteca la tiene.
+   *
+   * **El botón de la barra necesita la misma card que la repisa.** La cuenta
+   * tiene un DJ y es el mismo en los dos lugares: el botón no busca su propia
+   * playlist, usa la que ya está en la biblioteca, así que no puede pedirle al
+   * DJ a una cuenta que no lo tiene. Y aparece sólo con la sesión del DJ
+   * encima: la barra es cromo y el cromo no anuncia atajos que no aplican.
+   */
+  const djCard = useMemo(
+    () => orderedPlaylists.find((playlist) => isDjCard(playlist)) ?? null,
+    [orderedPlaylists],
+  );
+
+  /**
+   * Pedirle al DJ otra tanda, desde la barra.
+   *
+   * **Es el mismo camino que la card de la repisa**, y por eso el DJ avanza en
+   * vez de empezar de cero: el cursor es del backend y sigue donde estaba.
+   */
+  const onPlayDjAgain = useCallback(() => {
+    if (!djCard) return;
+    void onPlayDj(djCard);
+  }, [djCard, onPlayDj]);
+
+  /**
+   * La estación sigue.
+   *
+   * **Un DJ que se acaba es una playlist.** El servicio tiene más páginas, y
+   * la cola hay que llenarla *antes* de que se vacíe: cuando la cola está
+   * vacía la música se corta, y eso es justo lo que una estación no puede
+   * hacer.
+   *
+   * La bandera de "ya estoy pidiendo" está en una referencia y no en un
+   * estado: el efecto se vuelve a correr con cada canción, y un estado sería
+   * un render de más por cada uno.
+   */
+  const djFetching = useRef(false);
+  useEffect(() => {
+    if (!queue?.station) return;
+    if (upNext.length > DJ_TOP_UP) return;
+    if (djFetching.current) return;
+
+    djFetching.current = true;
+    djMore()
+      .then((mix) => {
+        if (mix.tracks.length === 0) {
+          // El DJ dijo que se terminó. La estación deja de pedir y la cola
+          // sigue con lo que tiene.
+          setQueue((current) => (current?.station ? { ...current, station: false } : current));
+          return;
+        }
+        djLines.current = { ...djLines.current, ...mix.lines };
+        setQueue((current) =>
+          current?.station
+            ? {
+                ...current,
+                tracks: [...current.tracks, ...mix.tracks],
+                lines: { ...current.lines, ...mix.lines },
+              }
+            : current,
+        );
       })
       .catch((e) => {
-        if (!alive) return;
-        setScreen(null);
-        setScreenError(explain(e));
+        // Una falla aquí no es una canción rota: la estación se queda con lo
+        // que ya tiene y sigue sonando.
+        console.error("Starless: el DJ no pudo seguir", explain(e));
+        setQueue((current) => (current?.station ? { ...current, station: false } : current));
+      })
+      .finally(() => {
+        djFetching.current = false;
       });
-
-    return () => {
-      alive = false;
-    };
-  }, [committed]);
-
-  const draftTrimmed = draft.trim();
-  /** Songs that belong to the text as it stands right now, not older answers. */
-  const freshDraft = suggested?.query === draftTrimmed ? suggested : null;
-  const suggestions = (freshDraft?.tracks ?? []).slice(0, MAX_SUGGESTIONS);
-  /** `null` while unknown — which is not the same as "none found". */
-  const suggestionCount = freshDraft ? freshDraft.tracks.length : null;
-
-  const onSubmitSearch = useCallback(() => {
-    if (draftTrimmed.length < MIN_QUERY_LENGTH) return;
-    setCommitted(draftTrimmed);
-  }, [draftTrimmed]);
+  }, [queue?.station, upNext.length]);
 
   /**
-   * What the main screen is showing.
+   * The playlist's big button, in its playing half.
    *
-   * Only the committed query gets a screen, and only when the answer on hand
-   * belongs to *it*. Committing while the request is still in flight is normal —
-   * it is what Enter feels like — so the mismatch shows as the loading state
-   * rather than as someone else's results.
+   * **Under shuffle it starts somewhere random, not at the top.** That is the
+   * whole difference the shuffle button exists for: it puts the playlist in
+   * random and starts nothing, and the next thing the user presses — this one —
+   * plays *a* song from it rather than song one. Always starting at the top would
+   * make the button contradict the mode sitting lit up right beside it.
+   *
+   * The queue behind whatever starts is the shuffled order, because `playShuffled`
+   * keeps the chosen song at the front and shuffles the rest — so "next" keeps
+   * going at random instead of dropping back into the order it was saved in.
+   *
+   * Declared here because it is `playFrom` under one condition and
+   * `playShuffled` under the other, and both of those live above this point.
    */
-  const showResults = committed.length >= MIN_QUERY_LENGTH;
-  const results = screen?.query === committed ? screen.tracks : null;
-  const resultsLoading = showResults && results === null && screenError === null;
+  const onPlayPlaylist = useCallback(
+    (list: Track[]) => {
+      if (list.length === 0) return;
+      if (!shuffle) {
+        playFrom(list, list[0]);
+        return;
+      }
+      playShuffled(list, list[Math.floor(Math.random() * list.length)]);
+    },
+    [shuffle, playFrom, playShuffled],
+  );
+
+  /**
+   * Everything about the search field, the dropdown and the results screen.
+   *
+   * Declared here rather than above because picking a song out of the menu has
+   * to make the queue, and that is `playFrom`. It used to be interleaved with
+   * the transport above and the scroll reset below, with nothing marking where
+   * one concern ended.
+   */
+  const {
+    draft,
+    suggestions,
+    suggestionCount,
+    searching,
+    searchError,
+    onQueryChange,
+    onSubmitSearch,
+    onPickSuggestion,
+    committed,
+    showResults,
+    results,
+    resultsLoading,
+    screenError,
+    leaveResults,
+  } = useSearch(playFrom);
 
   /**
    * The area starts at the top of whatever it is now showing.
@@ -647,7 +1436,6 @@ export default function App() {
    * same reason: the words are a different list in the same box, and arriving in
    * the middle of them meant arriving with the song's name already scrolled off.
    */
-  const mainRef = useRef<HTMLElement>(null);
   // The dependencies are the trigger, not an input: nothing in the body reads
   // them, on purpose. Putting the reset in each navigation handler instead would
   // scatter one decision across four call sites, and the first one missed brings
@@ -655,62 +1443,7 @@ export default function App() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: trigger, not input
   useEffect(() => {
     mainRef.current?.scrollTo({ top: 0 });
-  }, [activeItem, showResults, lyricsOpen]);
-
-  /**
-   * Leaving the results screen, whichever way it is done.
-   *
-   * The text stays in the field when the user just navigates somewhere else —
-   * they did not ask to lose what they typed, only to go away — so Enter brings
-   * them straight back.
-   *
-   * Emptying the field is the one exception: there is no text left to come back
-   * to, and a results screen titled after a query nobody can see is a screen
-   * about nothing.
-   */
-  const leaveResults = useCallback(() => setCommitted(""), []);
-
-  const onQueryChange = useCallback((value: string) => {
-    setDraft(value);
-    if (value.trim().length === 0) setCommitted("");
-  }, []);
-
-  /**
-   * Play one song and make these songs the queue behind it.
-   *
-   * The click and the queue are one decision, never two: a play button that
-   * starts a track nobody chose to follow is how a player loses the user.
-   */
-  const playFrom = useCallback(
-    (tracks: Track[], track: Track) => {
-      setQueueOverride(tracks);
-      onPlay(track);
-    },
-    [onPlay],
-  );
-
-  /**
-   * A song chosen from the dropdown owes the user a queue too.
-   *
-   * This called `onPlay` on its own, which starts the track and leaves the queue
-   * on whatever was open before. So searching for a song, clicking it in the menu
-   * and waiting put the *liked songs* on afterwards — the click said "this song"
-   * and the queue said "a different list you are no longer looking at".
-   *
-   * It also commits the query, so the results screen is what is on screen while
-   * that list plays. That is the rule the rest of the app follows — what plays
-   * next is something the user can see — and keeping the user on the shelf while a
-   * search queue runs would break it.
-   */
-  const onPickSuggestion = useCallback(
-    (track: Track) => {
-      const query = freshDraft?.query ?? draft.trim();
-      playFrom(freshDraft?.tracks ?? [track], track);
-      if (query.length >= MIN_QUERY_LENGTH) setCommitted(query);
-      setDraft(query);
-    },
-    [freshDraft, draft, playFrom],
-  );
+  }, [activeItem, showResults, lyricsOpen, detail]);
 
   /**
    * Warm a playlist before it is opened.
@@ -737,6 +1470,39 @@ export default function App() {
     [queryClient],
   );
 
+  /**
+   * Open a row of the rail.
+   *
+   * **The DJ is a card, and the rail lists it among the playlists.** Clicking it
+   * here used to open the playlist screen — an empty page, because the DJ's
+   * songs are not in the playlist: they live in another door. From the rail the
+   * DJ sounds, exactly as it does from the shelf.
+   *
+   * The row keeps its own navigation for everything else, including the
+   * Spotify-made playlists that do have songs: those open like playlists.
+   */
+  const onSelectFromRail = useCallback(
+    (id: string) => {
+      const card = orderedPlaylists.find((playlist) => playlist.id === id);
+      if (card && isDjCard(card)) {
+        void onPlayDj(card);
+        return;
+      }
+      setActiveItem(id);
+      setActive("navLibrary");
+      // A library list is its own queue again: the songs played from a
+      // search have nothing to do with the playlist they just opened.
+      setQueueOverride(null);
+      setLyricsOpen(false);
+      // Leaving an artist behind here would strand it: this click is
+      // navigation, and the artist page is the thing it navigates away
+      // from.
+      setDetail(null);
+      leaveResults();
+    },
+    [orderedPlaylists, onPlayDj, setQueueOverride, leaveResults],
+  );
+
   const onCycleRepeat = useCallback(() => {
     setRepeat((mode) => (mode === "off" ? "all" : mode === "all" ? "one" : "off"));
   }, []);
@@ -761,6 +1527,122 @@ export default function App() {
   }, [settingsOpen, queueOpen, libraryOpen]);
 
   /**
+   * Which main surface is on, and only one of them draws a heading.
+   *
+   * The playlist screen brought its own — artwork, title, who made it, how long it
+   * runs — and the generic header here says two thirds of that again, 30px above
+   * a 44px title of the same words. So the header stands down while it is on
+   * screen, the same way `LyricsPanel` already made it stand down for the words.
+   *
+   * `playlistView` is the question "is the thing on screen a playlist"; the
+   * second half is whether its *data* is here yet. They are separate because a
+   * playlist just created is opened by id before the library has been re-read, and
+   * for that moment `selected` is `undefined` — which is why the plain
+   * `TrackList` still exists below it as the honest "we have not loaded it yet"
+   * answer rather than a screen with no name on it.
+   */
+  const playlistView = !lyricsOpen && !showResults && !isHome && !isLiked && !detail;
+  const playlistScreen = playlistView && selected !== undefined;
+
+  /**
+   * Is the playlist on screen the one that is sounding? It is what turns the big
+   * button into a pause button.
+   *
+   * **The whole loaded list, not the filtered one.** The filter is a way of
+   * reading the playlist, not a different playlist: hiding the song that is
+   * playing and showing a Play triangle for it is the button denying what the
+   * player bar is doing three centimetres away.
+   *
+   * `loading` counts as sounding so the button does not flicker back to Play
+   * during the second and a half a track spends being fetched.
+   */
+  const soundingFrom = status?.trackId ?? null;
+  const inPlaylist =
+    playlistScreen &&
+    soundingFrom !== null &&
+    libraryTracks.some((track) => track.id === soundingFrom);
+  const playlistPlaying = inPlaylist && Boolean(status?.playing || status?.loading);
+
+  /**
+   * The playlist's big button, in the three states it actually has.
+   *
+   * Pause, resume, or start — and the middle one is the one that was easy to
+   * miss. A triangle that restarts the playlist instead of picking the song back
+   * up is the kind of thing that gets a screen called broken: the button looks
+   * right, the player bar says the same song is loaded, and pressing it throws
+   * the song away. Resuming goes through `playDirect`, which leaves the queue
+   * exactly where it is.
+   *
+   * Declared here because it is all three of `playDirect`, `togglePlayback` and
+   * `onPlayPlaylist`, and the question it answers needs `status` — which is why
+   * it cannot live in the screen that draws the button.
+   */
+  const onPlaylistPlayPause = useCallback(
+    (list: Track[]) => {
+      if (playlistPlaying) {
+        void togglePlayback().catch(() => {});
+        return;
+      }
+      if (inPlaylist && loadedTrack) {
+        playDirect(loadedTrack);
+        return;
+      }
+      onPlayPlaylist(list);
+    },
+    [playlistPlaying, inPlaylist, loadedTrack, playDirect, onPlayPlaylist],
+  );
+
+  /**
+   * Put one song at the end of the queue without touching what is playing.
+   *
+   * **Appended to `visibleTracks`, which is the array the queue is walked out
+   * of** — so the song on screen keeps its index and everything after it shifts
+   * down one. That is the only shape that works without a second queue: the
+   * queue is derived by slicing one list at the current track, and a separate
+   * "pending additions" list would be a second source of truth for what plays
+   * next, which is the drift this whole design exists to prevent.
+   *
+   * A duplicate is not deduplicated. A queue is not a set — somebody who adds the
+   * same song twice meant to hear it twice, and quietly dropping the second is
+   * the app disagreeing with a decision that was made on purpose.
+   */
+  const onAddToQueue = useCallback(
+    (track: Track) => {
+      // La cola del DJ sigue siendo la cola del DJ: agregar una canción no
+      // borra las frases que la trajeron, ni la convierte en una lista.
+      setQueue((current) => ({
+        tracks: [...visibleTracks, track],
+        lines: current?.lines ?? {},
+        station: current?.station ?? false,
+      }));
+    },
+    [visibleTracks],
+  );
+
+  /**
+   * Open an artist or an album, and come back from one.
+   *
+   * **The queue is left alone.** Reading about a person or a record is not a
+   * decision about what plays next, and replacing the queue because somebody
+   * clicked a name would mean clicking anything at all rewrites what you were
+   * listening to. Same reasoning as the Home button.
+   *
+   * **Leaving clears it.** `detail` is the only record of where "back" comes
+   * from, and a stale one is a back button that goes somewhere nobody asked for.
+   */
+  const openArtist = useCallback((artist: Artist) => {
+    setDetail({ kind: "artist", artist });
+    setLyricsOpen(false);
+  }, []);
+
+  const openAlbum = useCallback((album: Album) => {
+    setDetail({ kind: "album", album });
+    setLyricsOpen(false);
+  }, []);
+
+  const closeDetail = useCallback(() => setDetail(null), []);
+
+  /**
    * The heading, and the line under it.
    *
    * Pulled out of the markup because four nested ternaries in JSX is a wall, and
@@ -768,33 +1650,41 @@ export default function App() {
    * each branch says what is actually on it, including "nothing yet", which is the
    * one that keeps a stalled screen from claiming to hold a library.
    */
-  const headerTitle = showResults
-    ? t.searchResultsTitle
-    : isHome
-      ? t.homeTitle
-      : isLiked
-        ? t.likedSongs
-        : (selected?.name ?? t.libraryTitle);
+  const headerTitle = detail
+    ? detail.kind === "artist"
+      ? detail.artist.name
+      : detail.album.name
+    : showResults
+      ? t.searchResultsTitle
+      : isHome
+        ? t.homeTitle
+        : isLiked
+          ? t.likedSongs
+          : (selected?.name ?? t.libraryTitle);
 
-  const headerSubtitle = showResults
-    ? results
-      ? t.searchResultsFor.replace("{query}", committed)
-      : resultsLoading
-        ? t.searching
-        : (screenError ?? t.searchNoResults)
-    : isHome
-      ? playlists.data
-        ? `${listCount(playlists.data)} ${t.playlists}`
-        : t.loading
-      : isLiked
-        ? liked.data
-          ? `${listCount(liked.data)} ${t.songs}`
+  const headerSubtitle = detail
+    ? detail.kind === "artist"
+      ? t.artistKind
+      : t.albumKind
+    : showResults
+      ? results
+        ? t.searchResultsFor.replace("{query}", committed)
+        : resultsLoading
+          ? t.searching
+          : (screenError ?? t.searchNoResults)
+      : isHome
+        ? playlists.data
+          ? `${listCount(playlists.data)} ${t.playlists}`
           : t.loading
-        : playlistTracks.data
-          ? `${listCount(playlistTracks.data)} ${t.songs}`
-          : playlistTracks.isLoading
-            ? t.loading
-            : t.librarySubtitle;
+        : isLiked
+          ? liked.data
+            ? `${listCount(liked.data)} ${t.songs}`
+            : t.loading
+          : playlistTracks.data
+            ? `${listCount(playlistTracks.data)} ${t.songs}`
+            : playlistTracks.isLoading
+              ? t.loading
+              : t.librarySubtitle;
 
   return (
     <div className="relative h-full overflow-hidden bg-ground">
@@ -858,22 +1748,20 @@ export default function App() {
             <LibrarySidebar
               t={t}
               account={account.data ?? null}
-              playlists={playlists.data ?? []}
+              playlists={orderedPlaylists}
               likedCount={liked.data?.length ?? null}
               error={Boolean(playlists.error ?? account.error) && !playlists.isLoading}
               activeId={activeItem}
               collapsed={libraryCollapsed}
+              barPresent={barPresent}
               onToggleCollapsed={() => setLibraryCollapsed((v) => !v)}
+              sort={sortOrder}
+              onSortChange={changeSort}
+              view={shelfView}
+              onViewChange={changeView}
               onPrefetch={onPrefetchPlaylist}
-              onSelect={(id) => {
-                setActiveItem(id);
-                setActive("navLibrary");
-                // A library list is its own queue again: the songs played from a
-                // search have nothing to do with the playlist they just opened.
-                setQueueOverride(null);
-                setLyricsOpen(false);
-                leaveResults();
-              }}
+              onNewPlaylist={() => openNaming()}
+              onSelect={onSelectFromRail}
             />
           )}
         </AnimatePresence>
@@ -884,6 +1772,10 @@ export default function App() {
               t={t}
               playing={status?.trackId ? loadedTrack : null}
               upNext={upNext}
+              narration={narration}
+              dj={djVoice}
+              station={queue?.station === true}
+              barPresent={barPresent}
               onPlay={onPlay}
               onClose={() => setQueueOpen(false)}
             />
@@ -901,6 +1793,13 @@ export default function App() {
         20px of gap — and both of them dock at every width, because the layout that
         fits is the one where nothing is a sheet over the content.
 
+        **The bottom inset has two values, and they follow the bar.** With the
+        bar on screen the surfaces stop at 144px, where the bar begins. Without
+        it they go down to the window's own 20px: that space belongs to the
+        content, and a band of empty ground under the library is a hole, not
+        breathing room. The bar arriving and the content moving are one
+        movement, so they share the 300ms the panels already use.
+
         `overflow-x-hidden` is spelled out because it is not the default and the
         default is a trap: writing only `overflow-y: auto` leaves the horizontal
         axis `visible` in the source, and CSS then *computes* it to `auto`. The box
@@ -908,25 +1807,35 @@ export default function App() {
         the bottom of the content area, which is not a thing anybody can explain.
       */}
         <main
-          ref={mainRef}
-          className={`absolute top-[104px] bottom-[144px] overflow-x-hidden overflow-y-auto transition-[left,right] duration-300 ease-[var(--ease-glass)] ${
+          ref={attachMain}
+          // The fade lives on the element that scrolls, and not on a wrapper
+          // around the content: a mask on the scroller is pinned to the visible
+          // box, so it stays put while the list moves under it. On the content
+          // it would travel with the list and fade the wrong edge.
+          style={{
+            WebkitMaskImage: fade,
+            maskImage: fade,
+          }}
+          // `pr-3` is the air between the shelf and the scrollbar. Chromium draws the
+          // thumb inside the padding box, so padding on the right is exactly that
+          // gap — and without it the last column of cards ended up touching the
+          // thumb, which read as one object instead of two.
+          className={`absolute top-[104px] ${barPresent ? "bottom-[144px]" : "bottom-5"} overflow-x-hidden overflow-y-auto pr-3 transition-[left,right,bottom] duration-300 ease-[var(--ease-glass)] ${
             libraryOpen ? (libraryCollapsed ? "left-[112px]" : "left-[280px]") : "left-9"
           } ${queueOpen ? "right-[280px]" : "right-9"}`}
         >
           {/*
-            The heading belongs to the list, and with the lyrics open there is no
-            list. It used to stay anyway: the playlist's name up here, the song's
-            name underneath in the panel, and between them a subtitle counting the
-            songs of a playlist nobody could see — the same fact twice, in two
-            sizes, one of them about something that was not on screen. `LyricsPanel`
-            brings its own heading now, cut to the same recipe, so the page changes
-            subject instead of repeating itself.
+            The heading belongs to the list, and there are three screens that bring
+            their own: the words, the playlist and the artist. It used to stay for
+            the lyrics anyway — the playlist's name up here, the song's name
+            underneath in the panel, and between them a subtitle counting the songs
+            of a playlist nobody could see.
           */}
-          {!lyricsOpen && (
+          {!lyricsOpen && !playlistScreen && !detail && (
             <motion.header
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ type: "spring", stiffness: 420, damping: 32 }}
+              transition={SPRING}
               className="mb-5"
             >
               <h1 className="truncate text-[30px] leading-tight font-semibold tracking-tight">
@@ -964,6 +1873,9 @@ export default function App() {
                 loadingId={loadingId}
                 failedId={failedId}
                 onPlay={playFrom}
+                onOpenArtist={openArtist}
+                onAddToQueue={onAddToQueue}
+                onNewPlaylist={openNaming}
               />
             ) : (
               <p className="rounded-card border border-white/8 bg-white/4 px-5 py-6 text-center text-[13px] text-ink-faint">
@@ -973,18 +1885,56 @@ export default function App() {
           ) : isHome ? (
             <HomeScreen
               t={t}
-              playlists={playlists.data ?? []}
+              playlists={orderedPlaylists}
               loading={playlists.isLoading}
               error={playlists.error ? explain(playlists.error) : null}
               playlistCount={(playlist) => `${playlist.tracks?.total ?? 0} ${t.songs}`}
+              onPlayDj={onPlayDj}
+              djBusy={djBusy}
+              djUnavailable={djUnavailable}
               onOpenPlaylist={(playlist) => {
                 setActiveItem(playlist.id);
                 setActive("navLibrary");
                 setQueueOverride(null);
                 setLyricsOpen(false);
+                setDetail(null);
               }}
               onPrefetch={(playlist) => onPrefetchPlaylist(playlist.id)}
             />
+          ) : detail ? (
+            /*
+              A page about one artist or one album, over everything that was on
+              screen and with its own back button. It is a destination and not a
+              filter: the rail, the queue and the transport all stay exactly where
+              they were, because reading about somebody is not a decision about
+              what plays next.
+
+              **Both cases share one branch** because they are the same screen —
+              same back button, same list, same scroll reset, same heading rule.
+              Splitting them here would mean the next thing added to one of them
+              has to be remembered for the other.
+            */
+            detail.kind === "artist" ? (
+              <ArtistScreen
+                t={t}
+                artist={detail.artist}
+                nowPlayingId={nowPlayingId}
+                loadingId={loadingId}
+                failedId={failedId}
+                onPlay={playFrom}
+                onBack={closeDetail}
+              />
+            ) : (
+              <AlbumScreen
+                t={t}
+                album={detail.album}
+                nowPlayingId={nowPlayingId}
+                loadingId={loadingId}
+                failedId={failedId}
+                onPlay={playFrom}
+                onBack={closeDetail}
+              />
+            )
           ) : isLiked ? (
             <TrackList
               tracks={libraryTracks}
@@ -996,13 +1946,64 @@ export default function App() {
               // takes the list so it can decide one. Playlists below pass `onPlay`
               // and keep the order they were made in.
               onPlay={(track) => playShuffled(libraryTracks, track)}
+              onOpenArtist={openArtist}
+              trackMenu={(track) => (
+                <TrackMenu
+                  t={t}
+                  track={track}
+                  onOpenArtist={openArtist}
+                  onOpenAlbum={openAlbum}
+                  onAddToQueue={onAddToQueue}
+                  onNewPlaylist={openNaming}
+                />
+              )}
               loading={liked.isLoading}
               error={liked.error ? explain(liked.error) : null}
+            />
+          ) : playlistScreen && selected ? (
+            /*
+              The playlist as the client everybody knows draws one: artwork, name,
+              who made it, how many songs and how long it runs, then the songs with
+              the album and the day each one joined.
+
+              `playFrom` and `playShuffled` both already take the list and the
+              song, which is what this screen hands them — and it hands them the
+              list *it is showing*, because it can filter and reorder. The screen
+              the user is looking at and the queue behind the song are the same
+              array, by construction, and not by two props happening to agree.
+            */
+            <PlaylistScreen
+              t={t}
+              lang={lang}
+              playlist={selected}
+              account={account.data ?? null}
+              tracks={libraryTracks}
+              nowPlayingId={nowPlayingId}
+              loadingId={loadingId}
+              failedId={failedId}
+              onPlay={playFrom}
+              onShuffle={playShuffled}
+              onOpenArtist={openArtist}
+              onOpenAlbum={openAlbum}
+              onAddToQueue={onAddToQueue}
+              onNewPlaylist={openNaming}
+              // The two controls the playlist shares with the transport, handed the
+              // transport's own state and handlers. Two shuffle buttons showing two
+              // different answers is the thing this cannot be.
+              shuffle={shuffle}
+              onToggleShuffle={onToggleShuffle}
+              playing={playlistPlaying}
+              onPlayPause={onPlaylistPlayPause}
+              loading={playlistTracks.isLoading}
+              error={playlistError}
+              empty={!playlistTracks.isLoading ? t.playlistEmpty : null}
             />
           ) : (
             // A playlist the user does not own 404s, and a playlist with no tracks
             // is a real empty state rather than a loading one — both need to say
-            // something different from "cargando".
+            // something different from "cargando". This is also what a playlist
+            // shows for the moment between being opened by id and being found in
+            // the library, which is exactly the loading state and nothing more.
             <TrackList
               tracks={libraryTracks}
               t={t}
@@ -1030,6 +2031,10 @@ export default function App() {
         <PlayerBar
           track={loadedTrack}
           status={status}
+          dj={djVoice}
+          present={barPresent}
+          onPlayDj={queue?.station && djCard ? onPlayDjAgain : undefined}
+          djBusy={djBusy}
           t={t}
           queueOpen={queueOpen}
           onToggleQueue={() => setQueueOpen((v) => !v)}
@@ -1057,11 +2062,21 @@ export default function App() {
         </AnimatePresence>
       </AuthGate>
 
+      {/*
+        The new-playlist dialog lives here because two buttons open it: the
+        rail's "+" and the track menu's "New playlist". A dialog with two
+        owners is a dialog that ends up open twice, and the one that opens
+        from the menu has to carry the song with it — a playlist made from
+        "add to playlist" comes out with the song in it, or the promise was
+        broken in the only place the user could tell.
+      */}
+      <NewPlaylistDialog t={t} open={naming} onClose={closeNaming} onCreate={createPlaylist} />
+
       {/* Outside the gate on purpose. A report about a crash is worth reading
           before signing in again, and `AuthGate` returns early while it decides
           whether to show a session — anything inside it would simply not be
           mounted on exactly the launch where the crash prompt matters. */}
-      <CrashPrompt t={t} />
+      <CrashPrompt t={t} barPresent={barPresent} />
 
       {/* Also outside the gate, and for a sharper reason: the crash prompt appears
           on a launch where the app may never get past the door, so a report about
