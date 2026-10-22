@@ -589,6 +589,30 @@ salen de una captura:
     canciones" y "dj: la estación pidió la página siguiente y recibió M"—, así que
     no hace falta una sonda para saber cuántas trajo cada página ni cuántas veces
     pidió la estación.
+- **La cola no existe hasta que el usuario la crea.** El panel de cola y la
+  estación del DJ son dos preguntas distintas, y el panel las confundía: el "A
+  continuación" caía a `visibleTracks` —lo que se ve en pantalla— cuando todavía
+  no había sonado nada, así que una app recién abierta mostraba ocho canciones
+  bajo un encabezado de cola, y nadie las había pedido. Ahora `upNext` es `[]`
+  mientras `queueAt < 0`: hasta que suena algo, el panel dice que no hay nada en
+  cola. Y **agregar una canción a la cola ya no convierte la pantalla en cola**:
+  `onAddToQueue` agregaba a `visibleTracks`, o sea a lo que se estaba viendo,
+  así que una canción agregada a una biblioteca de ocho dejaba ocho canciones
+  en la cola —siete de las cuales nadie pidió—. Ahora, si no hay cola, la
+  canción agregada *es* la cola.
+  Y **la cuenta de la estación es su propia cuenta**: `stationLeft` mide lo que
+  le queda de su página al DJ, no lo que el panel muestra. El panel no tiene "A
+  continuación" mientras no suena nada, así que pedirle la cuenta a la estación
+  hacía que el DJ pidiera una página de más en la ventana en la que todavía no
+  se está reproduciendo.
+- **El canal de la build es un hecho del build, no una consulta a la red.**
+  `STARLESS_CHANNEL` (develop|release) → `__STARLESS_CHANNEL__` (Vite define) →
+  `isPrerelease()`. Es la misma pregunta que decide el ícono invertido —¿el tag
+  viene de `main`?— así que los dos no pueden contradecirse: una build de
+  `develop` trae el ícono de desarrollo y la pastilla "pre-release" al lado de la
+  versión en Ajustes; una de `main` no trae ninguna de las dos. Preguntarle a
+  GitHub sería peor: la respuesta dependería de que la máquina tenga conexión,
+  y el canal no cambia con la red.
 - **`API_ERRORS` está en español y fuera de `i18n.ts`.** Veinte mensajes de error
   de usuario en un solo idioma, en el archivo que la regla 5 excluye. Los dos
   códigos que Rust emite y que no estaban en el mapa —`no_session` y `bad_id`—

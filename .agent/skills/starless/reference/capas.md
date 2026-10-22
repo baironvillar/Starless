@@ -21,6 +21,8 @@ este repo.
 | Una dependencia | usarla en el código, o sacarla de `package.json` | `bun install` se lleva 3 paquetes que nadie importa |
 | Un archivo de panic / marker | los **tres** lugares de nombre juntos (`AGENTS.md`, trampa del panic) | los reportes salen sin el panic, que es justo la falla que el reporte existe para contar |
 | Un elemento de biblioteca que no es una playlist | `isDjCard` (`spotify.ts`) y el mismo predicado en **cada** lugar donde el elemento aparece | el DJ se abre como una playlist y muestra una pantalla vacía: su contenido no está en la lista |
+| El panel "A continuación" | que la cuenta salga de la **cola** (`queueAt`), no de lo que se ve en pantalla | una app recién abierta muestra ocho canciones bajo un encabezado de cola que nadie pidió |
+| Un dato que sólo la build sabe (el canal) | la env en el paso de CI **y** el `define` de `vite.config.ts` **y** la declaración en `vite-env.d.ts` | el frontend no compila, o la app se dice "release" en una build de `develop` |
 
 ## Por qué la tabla es la parte importante
 
