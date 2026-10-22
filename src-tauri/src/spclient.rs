@@ -40,13 +40,17 @@ use librespot_protocol::context::Context;
 use librespot_protocol::extended_metadata::{BatchedEntityRequest, EntityRequest, ExtensionQuery};
 use librespot_protocol::extension_kind::ExtensionKind;
 use librespot_protocol::metadata::Track as TrackMessage;
-use librespot_protocol::playlist4_external::SelectedListContent;
-use protobuf::{EnumOrUnknown, Message};
+use librespot_protocol::playlist4_external::{
+    Add, ChangeInfo, Delta, Item, ItemAttributes, ListAttributes, ListAttributesPartialState,
+    ListChanges, Op, SelectedListContent, UpdateListAttributes, op,
+};
+use protobuf::{EnumOrUnknown, Message, MessageField};
 
 use crate::models::{
-    Account, Album, Artist, ArtistCard, ArtistProfile, Image, LyricLine, Lyrics, Playlist, Track,
+    Account, Album, Artist, DjMix, DjNarration, DjPage, Image, LyricLine, Lyrics, Playlist, Track,
     TrackTotal,
 };
+use crate::voice::VoiceParams;
 
 /// Cuánto espera una llamada antes de rendirse.
 ///
@@ -97,6 +101,33 @@ fn call<T: Send + 'static>(
 /// `SpotifyUri` para pedirle de vuelta el id.
 fn bare_id(uri: &str) -> String {
     uri.rsplit(':').next().unwrap_or(uri).to_string()
+}
+
+/// El código de error que le corresponde a un fallo de librespot.
+///
+/// **Esto estaba faltando, y no era cosmético.** El frontend reintenta ante
+/// `rate_limited` y `service_unavailable` — `main.tsx` los cuenta entre las
+/// razones para volver a intentarlo — y ninguno de los dos códigos llegaba
+/// nunca: cada `map_err` colapsaba cualquier error a `network_failed`. Una
+/// política de reintentos que espera un código que nadie emite no es una política
+/// de reintentos: es texto que promete que la app reintenta.
+///
+/// librespot sí distingue los dos casos. `ResourceExhausted` es el servicio
+/// pidiendo que uno baje el ritmo; `Unavailable` es "no hay nadie del otro lado".
+/// Los dos tienen su frase en `spotify.ts` y los dos se reintentan.
+///
+/// Lo que este helper **no** hace es decidir de quién es la culpa.
+/// `Unavailable` también lo produce un `ConnectionRefused` local —la red de la
+/// casa se cayó—, así que el mensaje del frente dice que no se pudo llegar, no
+/// que Spotify esté de pie. Decirle a alguien cuya red se fue abajo que Spotify
+/// tiene problemas lo manda a buscar un problema que no tiene.
+fn net_code(error: &librespot_core::error::Error) -> String {
+    match error.kind {
+        ErrorKind::ResourceExhausted => "rate_limited",
+        ErrorKind::Unavailable => "service_unavailable",
+        _ => "network_failed",
+    }
+    .to_string()
 }
 
 /// Cuántas pistas se piden por viaje de metadata.
@@ -248,7 +279,7 @@ fn playlist_covers(session: &Session, ids: &[String]) -> HashMap<String, Vec<Str
                 .await
                 .map_err(|e| {
                     log::error!("spclient: las portadas de las playlists fallaron: {e}");
-                    "network_failed".to_string()
+                    net_code(&e)
                 })
         }) else {
             // La biblioteca entera se muestra igual sin las fotos. Perder las
@@ -309,10 +340,13 @@ fn convert(track: &MetaTrack, session: &Session) -> Track {
             name: album.name.clone(),
             images: cover
                 .into_iter()
-                .map(|url| Image { url, width: None, height: None })
+                .map(|url| Image { url })
                 .collect(),
         }),
         popularity: Some(track.popularity.max(0) as u32),
+        // La metadata extendida de una pista no sabe en qué lista se encontró ni
+        // cuándo entró: eso viene en la fila, y lo agrega [`hydrate`].
+        added_at: None,
     }
 }
 
@@ -367,7 +401,7 @@ async fn details(owned: Session, uris: Vec<String>) -> Result<HashMap<String, Tr
             .await
             .map_err(|e| {
                 log::error!("spclient: la metadata en lote falló: {e}");
-                "network_failed".to_string()
+                net_code(&e)
             })?;
 
         for array in response.extended_metadata {
@@ -393,26 +427,37 @@ async fn details(owned: Session, uris: Vec<String>) -> Result<HashMap<String, Tr
     Ok(out)
 }
 
-/// Resuelve una lista de URIs a filas con todo lo que la lista muestra.
+/// Resuelve una lista de filas a lo que la lista muestra.
+///
+/// **La fecha de agregado viaja pegada a la URI, no aparte.** Un `Vec<String>` de
+/// URIs y un `Vec<i64>` de fechas al lado son dos listas que el servicio puede
+/// desalinear sin que nada falle, y el síntoma es una columna de fechas correcta
+/// pegada a las canciones equivocadas. Como par, la fecha sobrevive el reordenado
+/// que hace esta función y sobrevive que una fila se caiga por metadata ilegible.
 fn hydrate(
     session: &Session,
-    uris: Vec<String>,
+    rows: Vec<(String, Option<i64>)>,
 ) -> Result<Vec<Track>, String> {
-    if uris.is_empty() {
+    if rows.is_empty() {
         return Ok(Vec::new());
     }
     let owned = session.clone();
     // Copia aparte porque la promesa vive en otro hilo y después se usa la
     // lista: sin esto, el `move` se la lleva.
-    let wanted = uris.clone();
+    let wanted: Vec<String> = rows.iter().map(|(uri, _)| uri.clone()).collect();
     let known = call(session, async move { details(owned, wanted).await })?;
 
     // En el orden que vinieron las pistas, no en el orden en que llegaron los
     // metadatos: una lista de reproducción tiene un orden y la pantalla lo
     // muestra.
-    Ok(uris
+    Ok(rows
         .into_iter()
-        .filter_map(|uri| known.get(&uri).cloned())
+        .filter_map(|(uri, added_at)| {
+            known.get(&uri).cloned().map(|mut track| {
+                track.added_at = added_at;
+                track
+            })
+        })
         .collect())
 }
 
@@ -422,6 +467,12 @@ fn hydrate(
 /// `spotify:search:<consulta>` la búsqueda. Los dos son URIs que el servicio
 /// entiende por su forma, así que no hacen falta client id ni scopes: son la
 /// misma llamada que pide una playlist, con otra URI.
+///
+/// **Sin fecha de agregado, y no por descuido.** Un context trae `Item`s sin
+/// `attributes`, así que `timestamp` no existe para él: no hay dato que mandar, y
+/// mandarle un cero dibujaría el 1 de enero de 1970 en una columna de fechas. La
+/// columna dice lo que sabe —canciones guardadas no llevan fecha— y la lista de
+/// reproducción, que sí la trae, sí la muestra.
 fn context_tracks(session: &Session, uri: String) -> Result<Vec<Track>, String> {
     let owned = session.clone();
     let uris = call(session, async move {
@@ -432,11 +483,11 @@ fn context_tracks(session: &Session, uri: String) -> Result<Vec<Track>, String> 
             .map(|context| context_uris(&context))
             .map_err(|e| {
                 log::error!("spclient: get_context falló: {e}");
-                "network_failed".to_string()
+                net_code(&e)
             })
     })?;
 
-    hydrate(session, uris)
+    hydrate(session, uris.into_iter().map(|uri| (uri, None)).collect())
 }
 
 // ---------------------------------------------------------------------------
@@ -473,7 +524,7 @@ pub fn account(session: &Session) -> Result<Account, String> {
             .await
             .map_err(|e| {
                 log::error!("spclient: get_user_profile falló: {e}");
-                "network_failed".to_string()
+                net_code(&e)
             })
     })?;
 
@@ -485,11 +536,10 @@ pub fn account(session: &Session) -> Result<Account, String> {
     Ok(Account {
         id: session.username().to_string(),
         display_name: profile.name,
-        email: None,
         product: Some("premium".to_string()),
         images: profile
             .image_url
-            .map(|url| Image { url, width: None, height: None })
+            .map(|url| Image { url })
             .into_iter()
             .collect(),
     })
@@ -515,7 +565,7 @@ pub fn playlists(session: &Session) -> Result<Vec<Playlist>, String> {
             .await
             .map_err(|e| {
                 log::error!("spclient: get_rootlist falló: {e}");
-                "network_failed".to_string()
+                net_code(&e)
             })
     })?;
 
@@ -559,8 +609,6 @@ pub fn playlists(session: &Session) -> Result<Vec<Playlist>, String> {
                             .filter(|size| !size.url().is_empty())
                             .map(|size| Image {
                                 url: size.url().to_owned(),
-                                width: None,
-                                height: None,
                             })
                             .collect()
                     })
@@ -595,11 +643,7 @@ pub fn playlists(session: &Session) -> Result<Vec<Playlist>, String> {
             if let Some(playlist) = library.iter_mut().find(|p| p.id == id) {
                 playlist.images = urls
                     .into_iter()
-                    .map(|url| Image {
-                        url,
-                        width: None,
-                        height: None,
-                    })
+                    .map(|url| Image { url })
                     .collect();
             }
         }
@@ -612,6 +656,15 @@ pub fn playlists(session: &Session) -> Result<Vec<Playlist>, String> {
 ///
 /// La misma llamada que arma [`playlists`] con una sola de las entradas: acá se
 /// pide por id y trae las pistas.
+///
+/// **Cada fila trae su fecha de agregado, y es la única lectura de la app que la
+/// trae.** Vive en `ItemAttributes.timestamp` —milisegundos desde la época Unix, la
+/// misma unidad que ya usa [`now_millis`] para los cambios—, y viaja con la URI
+/// hasta [`hydrate`] para terminar en el `added_at` de la pista.
+///
+/// Se descarta el `0` que devuelve el getter cuando el campo no vino: es la misma
+/// razón por la que un total negativo se guarda como cero en [`playlists`], y acá
+/// la consecuencia sería una columna llena del 1 de enero de 1970.
 pub fn playlist_tracks(session: &Session, playlist_id: &str) -> Result<Vec<Track>, String> {
     let id = SpotifyId::from_base62(playlist_id).map_err(|e| {
         log::error!("spclient: id de playlist inválido ({playlist_id}): {e}");
@@ -626,7 +679,7 @@ pub fn playlist_tracks(session: &Session, playlist_id: &str) -> Result<Vec<Track
             .await
             .map_err(|e| {
                 log::error!("spclient: get_playlist falló: {e}");
-                "network_failed".to_string()
+                net_code(&e)
             })
     })?;
 
@@ -636,13 +689,448 @@ pub fn playlist_tracks(session: &Session, playlist_id: &str) -> Result<Vec<Track
     })?;
 
     let contents = message.contents.get_or_default();
-    let ids: Vec<String> = contents
+    let rows: Vec<(String, Option<i64>)> = contents
         .items
         .iter()
-        .map(|item| bare_id(item.uri()))
+        .map(|item| {
+            let added_at = item
+                .attributes
+                .as_ref()
+                .map(|attributes| attributes.timestamp())
+                .filter(|timestamp| *timestamp > 0);
+            (bare_id(item.uri()), added_at)
+        })
         .collect();
 
-    hydrate(session, ids)
+    hydrate(session, rows)
+}
+
+/// El DJ: la lista que Spotify fabricó para la cuenta.
+///
+/// **Una playlist y una "jellyfish card" no son lo mismo, aunque las dos
+/// digan `spotify:playlist:`.** La del DJ tiene dueño `spotify`, largo 0, y
+/// `get_playlist` sobre ella no devuelve ni un item: su contenido lo
+/// materializa otro servicio y llega por otra puerta.
+///
+/// La puerta es `/lexicon-session-provider/context-resolve/v2/session` —el
+/// path que la propia metadata del context señala detrás de un `hm://` que no
+/// se puede pedir— y lo que contesta es un Context en JSON: páginas de pistas,
+/// cada una con su uri y su metadata.
+///
+/// **Lo que vuelve no es la voz del DJ.** La narración —"Up next", lo que dice
+/// antes de la primera canción— viaja como metadata de la primera fila: el
+/// texto (`narration.intro.ssml`) y los parámetros de la mezcla, pero no el
+/// audio que la produce. La fila misma, en cambio, es la canción que el DJ
+/// introduce: su uri es una canción del catálogo, con su nombre y su
+/// duración. Lo que se puede reproducir es el mix; lo que se puede mostrar es
+/// la frase.
+///
+/// **Y no es una lista: es una sesión.** La primera página trae las canciones
+/// del tramo y un `next_page_url`; el servicio tiene más. Por eso esto devuelve
+/// también **por dónde sigue**: una estación que se acaba en la primera página no
+/// es el DJ, es una lista de diez con el nombre de DJ.
+///
+/// **La forma del path es lo que hace que el DJ no se repita, y costó
+/// encontrarlo.** Hay dos puertas que parecen la misma y no lo son:
+///
+/// - `/lexicon-session-provider/context-resolve/v2/session?contextUri=…` —con lo
+///   que se empieza— devuelve la línea de tiempo **desde el principio**, y por
+///   eso siempre arranca por la misma canción. Medido: dos pedidos seguidos con
+///   tres segundos de diferencia devolvieron las mismas primeras cuatro, y una
+///   hora después seguían siendo las mismas. La lista crece —125, 130— porque
+///   la línea de tiempo crece, pero la cabeza no se mueve.
+/// - `/lexicon-session-provider/context-resolve/v2/session/0000…?contextUri=…`
+///   —con los ceros en el path— devuelve el tramo **de ahora**, y avanza: dos
+///   pedidos seguidos con cinco segundos de diferencia devolvieron canciones
+///   completamente distintas.
+///
+/// La segunda es la que el servicio usa como "la siguiente": el `next_page_url`
+/// que devuelve ya viene con esa forma, y es con esa forma con la que la
+/// estación avanza.
+///
+/// La app usaba la primera: el DJ sonaba siempre igual y era un bug, no una
+/// rareza del servicio.
+pub fn dj_mix(session: &Session, playlist_id: &str) -> Result<DjPage, String> {
+    let context_uri = format!("spotify:playlist:{playlist_id}");
+    // El comodín del segmento dice "el de ahora" y el `requestId` distingue
+    // este pedido de todos los demás: es la forma que el propio servicio usa
+    // para el cursor, con la parte que cambia puesta.
+    let path = format!(
+        "/lexicon-session-provider/context-resolve/v2/session/00000000000000000000000000000000\
+?contextUri={context_uri}&previousSegmentId=XX-Segment-XXXXX&requestId={}",
+        request_id()
+    );
+    dj_page(session, &path)
+}
+
+/// Un `requestId` nuevo para cada pedido.
+///
+/// **Es lo que hace que dos pedidos no sean el mismo pedido.** El servicio lo usa
+/// para correlacionar la respuesta con el pedido, y con un id nuevo devuelve un
+/// tramo distinto: medido, el mismo pedido con dos ids distintos dio canciones
+/// distintas y con el mismo id dio las mismas. No hace falta que sea
+/// criptográfico —sólo que sea distinto en cada pedido—, así que se arma con el
+/// reloj y un contador.
+fn request_id() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_nanos() as u64)
+        .unwrap_or(0);
+    let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("{nanos:016x}{seq:016x}")
+}
+
+/// El audio de la voz del DJ.
+///
+/// **La puerta:** `POST /client-tts/v1/fulfill`, en el spclient. Lo que se
+/// midió de ella:
+///
+/// - Pide el **token de la cuenta**: con el client token solo contesta `401`.
+/// - Exige el cuerpo en protobuf **binario**: en texto contesta `400`.
+/// - Contesta con el **audio**: un MP3 de 320 kbps, 44,1 kHz y mono.
+///
+/// **No es una URL.** El proto declara `GetTtsUrl → TtsResponse { url }`, y esa
+/// es la forma vieja: la puerta que anda contesta con el audio en el cuerpo.
+///
+/// **El host va escrito, y no sale del access point.** El spclient de
+/// librespot resuelve un punto regional —`guc3-spclient.spotify.com`— y esa
+/// puerta contesta `303`; el host canónico es el que responde.
+///
+/// Y el `User-Agent` es el del cliente de Windows, que es el que se midió.
+pub fn dj_voice(session: &Session, params: &VoiceParams) -> Result<Vec<u8>, String> {
+    let owned = session.clone();
+    let body = params.request_body();
+
+    call(session, async move {
+        let token = owned
+            .login5()
+            .auth_token()
+            .await
+            .map_err(|e| {
+                log::error!("spclient: el token de la cuenta no salió: {e}");
+                "connection_lost".to_string()
+            })?;
+
+        let response = reqwest::Client::new()
+            .post("https://spclient.wg.spotify.com/client-tts/v1/fulfill")
+            .header(
+                "User-Agent",
+                "Spotify/124200290 Windows/0 (librespot)",
+            )
+            .bearer_auth(token.access_token)
+            .header("Content-Type", "application/x-protobuf")
+            .body(body)
+            .send()
+            .await
+            .map_err(|e| {
+                log::error!("spclient: la voz del DJ no se pudo pedir: {e}");
+                "network_failed".to_string()
+            })?;
+
+        let status = response.status();
+        let bytes = response.bytes().await.map_err(|e| {
+            log::error!("spclient: la voz del DJ no se pudo leer: {e}");
+            "network_failed".to_string()
+        })?;
+
+        if !status.is_success() {
+            log::error!("spclient: la voz del DJ contestó {status}");
+            return Err("bad_response".to_string());
+        }
+
+        log::info!("spclient: la voz del DJ vino en {} bytes", bytes.len());
+        Ok(bytes.to_vec())
+    })
+}
+
+/// La página siguiente de la sesión del DJ.
+///
+/// El path es el que el servicio dio, ya traducido: el `hm://` es el nombre
+/// interno del servicio y en el host de Spotify se pide el path.
+pub fn dj_page(session: &Session, path: &str) -> Result<DjPage, String> {
+    let owned = session.clone();
+    let endpoint = path.to_owned();
+    let body = call(session, async move {
+        owned
+            .spclient()
+            .request(&reqwest::Method::GET, &endpoint, None, None)
+            .await
+            .map_err(|e| {
+                log::error!("spclient: la página del DJ falló: {e}");
+                net_code(&e)
+            })
+    })?;
+
+    let json: serde_json::Value = serde_json::from_slice(&body).map_err(|e| {
+        log::error!("spclient: la sesión del DJ vino con otra forma: {e}");
+        "bad_response".to_string()
+    })?;
+
+    let (rows, lines, next, voices) = dj_rows(&json);
+    if rows.is_empty() {
+        log::error!("spclient: la página del DJ vino sin pistas");
+        return Err("bad_response".to_string());
+    }
+
+    // La metadata en lote es una sola llamada para todas, como en las
+    // playlists. Si no resuelve ni una, queda la puerta del player: una
+    // llamada por pista, más lenta pero es la que sabe responder por estas.
+    let mut tracks = hydrate(session, rows.clone())?;
+    if tracks.is_empty() {
+        log::warn!("spclient: la metadata en lote no resolvió el DJ; se pide pista por pista");
+        tracks = details_one_by_one(session, &rows)?;
+    }
+    if tracks.is_empty() {
+        log::error!("spclient: las pistas del DJ no resolvieron");
+        return Err("bad_response".to_string());
+    }
+
+    // Cuántas trayó la página y si por dónde sigue: sin esto no se puede
+    // distinguir "el DJ terminó" de "esta página vino corta", y las dos se
+    // ven igual desde afuera.
+    log::info!(
+        "spclient: la página del DJ trajo {} canciones y {} frases; {}",
+        tracks.len(),
+        lines.len(),
+        if next.is_some() {
+            "sigue"
+        } else {
+            "es la última"
+        }
+    );
+
+    Ok(DjPage {
+        mix: DjMix {
+            tracks,
+            lines,
+        },
+        next,
+        voices,
+    })
+}
+
+/// Las pistas de una página del DJ, sus frases, y por dónde sigue.
+///
+/// **La primera página y las siguientes no tienen la misma forma.** La primera
+/// viene como `pages[].tracks`, con su `next_page_url` adentro de la página;
+/// las siguientes traen las canciones en la raíz, con el `next_page_url` al
+/// lado. Es el mismo servicio con dos envelopes, y leer sólo uno de los dos
+/// convierte una estación en una lista.
+///
+/// Por eso esto mira en los dos lados y junta lo que encuentre, en el orden en
+/// que lo encuentra.
+fn dj_rows(
+    json: &serde_json::Value,
+) -> (
+    Vec<(String, Option<i64>)>,
+    HashMap<String, DjNarration>,
+    Option<String>,
+    HashMap<String, VoiceParams>,
+) {
+    let mut rows: Vec<(String, Option<i64>)> = Vec::new();
+    let mut lines: HashMap<String, DjNarration> = HashMap::new();
+    let mut next: Option<String> = None;
+    let mut voices: HashMap<String, VoiceParams> = HashMap::new();
+
+    fn take(
+        tracks: &serde_json::Value,
+        rows: &mut Vec<(String, Option<i64>)>,
+        lines: &mut HashMap<String, DjNarration>,
+        voices: &mut HashMap<String, VoiceParams>,
+    ) {
+        let Some(list) = tracks.as_array() else {
+            return;
+        };
+        for track in list {
+            let Some(uri) = track.get("uri").and_then(|value| value.as_str()) else {
+                continue;
+            };
+            let id = bare_id(uri);
+            if id.is_empty() {
+                continue;
+            }
+            // La frase viene pegada a la fila, como metadata: el DJ abre el
+            // tramo con una y lo cierra con otra.
+            if let Some(narration) = narration_of(track) {
+                lines.entry(id.clone()).or_insert(narration);
+                // Y los parámetros de la voz son los de la misma frase: lo que
+                // el panel muestra y lo que el DJ dice no pueden ser dos
+                // frases distintas. Van por canción, y no uno para la página:
+                // una página tiene cinco canciones y dos frases, y cada
+                // frase va con la canción que le corresponde —la de apertura
+                // con la primera, la de cierre con la última—, así que la
+                // frase se dice cuando esa canción va a sonar.
+                if let Some(params) = voice_of(track) {
+                    voices.entry(id.clone()).or_insert(params);
+                }
+            }
+            rows.push((id, None));
+        }
+    }
+
+    if let Some(pages) = json.get("pages").and_then(|value| value.as_array()) {
+        for page in pages {
+            if let Some(tracks) = page.get("tracks") {
+                take(tracks, &mut rows, &mut lines, &mut voices);
+            }
+            if next.is_none() {
+                next = page
+                    .get("next_page_url")
+                    .and_then(|value| value.as_str())
+                    .map(host_path);
+            }
+        }
+    }
+
+    if let Some(tracks) = json.get("tracks") {
+        take(tracks, &mut rows, &mut lines, &mut voices);
+    }
+    if next.is_none() {
+        next = json
+            .get("next_page_url")
+            .and_then(|value| value.as_str())
+            .map(host_path);
+    }
+
+    (rows, lines, next, voices)
+}
+
+/// Los parámetros de la voz de una fila del DJ.
+///
+/// **Las dos frases se dicen, cada una con su canción.** El servicio cuelga
+/// dos frases de cada tramo: una en la primera canción y otra en la última. La
+/// de apertura anuncia el tramo y la de cierre anuncia su última canción, y
+/// las dos se dicen **antes** de su canción: es lo mismo que hace la de
+/// apertura, y es lo que dicen los textos.
+///
+/// La de apertura va primero y la de cierre después, y no por gusto: una fila
+/// con las dos frases es una fila que tiene que abrir su tramo.
+///
+/// Los parámetros son los de la misma fila que la frase: lo que el panel
+/// muestra y lo que el DJ dice no pueden ser dos frases distintas.
+fn voice_of(track: &serde_json::Value) -> Option<VoiceParams> {
+    let metadata = track.get("metadata")?.as_object()?;
+    VoiceParams::from_metadata(metadata, "narration.intro.")
+        .or_else(|| VoiceParams::from_metadata(metadata, "narration.outro."))
+}
+
+/// El `hm://` del servicio, traducido al path que se pide en el host.
+///
+/// `hm://lexicon-session-provider/context-resolve/v2/session/…` es el nombre
+/// interno del servicio. En el host de Spotify lo que existe es
+/// `/lexicon-session-provider/context-resolve/v2/session/…`, con el query
+/// intacto: ahí van el `previousSegmentId` y el `requestId` que el servicio
+/// usa para saber qué segmento se está pidiendo.
+fn host_path(url: &str) -> String {
+    match url.strip_prefix("hm://") {
+        Some(rest) => format!("/{rest}"),
+        None => url.to_owned(),
+    }
+}
+
+/// La narración de una fila del DJ, si la trae.
+///
+/// El SSML viene con las etiquetas y las referencias: `<speak xml:lang="es-MX">Para
+/// comenzar, elegí temas como este de <entity type="artist" uri="…">bôa</entity>…</speak>`.
+/// Lo que se muestra es la frase con el nombre adentro: la `entity` es una
+/// referencia, no una palabra.
+/// La narración de una fila del DJ, si la trae.
+///
+/// El SSML viene con las etiquetas y las referencias: `<speak xml:lang="es-MX">Para
+/// comenzar, elegí temas como este de <entity type="artist" uri="…">bôa</entity>…</speak>`.
+/// Lo que se muestra es la frase con el nombre adentro: la `entity` es una
+/// referencia, no una palabra.
+///
+/// **El DJ abre y cierra.** La primera fila del tramo trae `narration.intro` y
+/// la última trae `narration.outro`: la de apertura es la que se muestra, y la
+/// de cierre está de repuesto para una fila que no tenga otra.
+fn narration_of(track: &serde_json::Value) -> Option<DjNarration> {
+    let metadata = track.get("metadata")?;
+
+    for kind in ["narration.intro", "narration.outro"] {
+        let Some(line) = metadata
+            .get(format!("{kind}.ssml"))
+            .and_then(|value| value.as_str())
+        else {
+            continue;
+        };
+        let speaker = metadata
+            .get(format!("{kind}.artist"))
+            .and_then(|value| value.as_str())
+            .unwrap_or("DJ")
+            .to_owned();
+
+        return Some(DjNarration {
+            speaker,
+            line: plain_speech(line),
+        });
+    }
+
+    None
+}
+
+/// El texto de una narración, sin el SSML.
+///
+/// Se quitan las etiquetas y se desenvuelven las entidades de XML. El orden
+/// importa: primero las etiquetas, después las entidades, porque al revés un
+/// `&lt;` volvería a ser una etiqueta y la frase se comería la mitad.
+fn plain_speech(ssml: &str) -> String {
+    let mut text = String::with_capacity(ssml.len());
+    let mut inside_tag = false;
+
+    for character in ssml.chars() {
+        match character {
+            '<' => inside_tag = true,
+            '>' => inside_tag = false,
+            _ if !inside_tag => text.push(character),
+            _ => {}
+        }
+    }
+
+    text.replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .trim()
+        .to_owned()
+}
+
+/// Las pistas de una en una, por la misma puerta que usa el player.
+///
+/// La metadata en lote es la que se usa para las playlists, y es una sola
+/// llamada para todas. Cuando no resuelve nada, esta es la que queda: una
+/// llamada por pista, con el mismo camino que el player va a usar después, que
+/// es la única forma de que lo que se muestra sea lo que se puede escuchar.
+fn details_one_by_one(
+    session: &Session,
+    rows: &[(String, Option<i64>)],
+) -> Result<Vec<Track>, String> {
+    let mut out = Vec::new();
+
+    for (uri, _) in rows {
+        let Ok(parsed) = SpotifyUri::from_uri(&format!("spotify:track:{uri}")) else {
+            continue;
+        };
+        // La llamada vive en otro hilo: la referencia al nombre no puede
+        // viajar con ella.
+        let uri = uri.clone();
+        let owned = session.clone();
+        let track = call(session, async move {
+            MetaTrack::get(&owned, &parsed)
+                .await
+                .map_err(|e| {
+                    log::error!("spclient: la metadata de {uri} falló: {e}");
+                    "bad_response".to_string()
+                })
+        })?;
+        out.push(convert(&track, session));
+    }
+
+    Ok(out)
 }
 
 /// Las canciones guardadas.
@@ -686,7 +1174,7 @@ pub fn lyrics(session: &Session, track_id: &str) -> Result<Lyrics, String> {
                 return "no_lyrics".to_string();
             }
             log::error!("spclient: las letras de {label} no llegaron: {e}");
-            "network_failed".to_string()
+            net_code(&e)
         })
     })?;
 
@@ -714,11 +1202,7 @@ pub fn lyrics(session: &Session, track_id: &str) -> Result<Lyrics, String> {
         })
         .collect();
 
-    Ok(Lyrics {
-        synced,
-        language: Some(parsed.lyrics.language).filter(|l| !l.is_empty()),
-        lines,
-    })
+    Ok(Lyrics { synced, lines })
 }
 
 /// La búsqueda, por ahora de canciones.
@@ -739,636 +1223,571 @@ pub fn search_tracks(session: &Session, query: &str) -> Result<Vec<Track>, Strin
     context_tracks(session, format!("spotify:search:{encoded}"))
 }
 
-/// Las pistas de un álbum.
-pub fn album_tracks(session: &Session, album_id: &str) -> Result<Vec<Track>, String> {
-    context_tracks(session, format!("spotify:album:{album_id}"))
-}
-
-/// La ficha de un artista: quién es y qué canciones tiene.
-///
-/// **Sin la discografía, y no por falta de ganas.** El context de un artista
-/// contesta con sus canciones —diecisiete páginas para uno chico— y con el
-/// nombre en los metadatos, pero no hay ningún URI que devuelva sus álbumes:
-/// `spotify:artist:{id}:albums` responde 404 y el buscador descarta el tipo. La
-/// sección de álbumes queda vacía y la pantalla la esconde.
-pub fn artist_profile(session: &Session, artist_id: &str) -> Result<ArtistProfile, String> {
-    let owned = session.clone();
-    let uri = format!("spotify:artist:{artist_id}");
-
-    // One trip, not two. The context carries the name and the songs together, and
-    // asking twice for the same answer is asking a question the app already has
-    // the answer to.
-    let (name, uris) = call(session, async move {
-        owned
-            .spclient()
-            .get_context(&uri)
-            .await
-            .map(|context| {
-                let name = context
-                    .metadata
-                    .get("context_description")
-                    .cloned()
-                    .unwrap_or_default();
-                (name, context_uris(&context))
-            })
-            .map_err(|e| {
-                log::error!("spclient: el context del artista falló: {e}");
-                "network_failed".to_string()
-            })
-    })?;
-
-    let tracks = hydrate(session, uris)?;
-
-    // Un nombre inventado sería peor que un id: el id se puede copiar y buscar,
-    // un nombre falso no.
-    let name = if name.is_empty() {
-        log::warn!("spclient: el context del artista vino sin nombre");
-        artist_id.to_string()
-    } else {
-        name
-    };
-
-    Ok(ArtistProfile {
-        artist: ArtistCard {
-            id: artist_id.to_string(),
-            name,
-            images: Vec::new(),
-        },
-        albums: Vec::new(),
-        tracks,
-    })
-}
-
 // ---------------------------------------------------------------------------
-// La sonda
+// Escribir
 // ---------------------------------------------------------------------------
 
-/// `true` when the environment asks for the probe. Read once, at startup.
+/// El reloj del cliente en milisegundos, que es lo que viaja en `timestamp`.
 ///
-/// Separate from `STARLESS_DIAGNOSTIC` on purpose: that one plays a real track
-/// for twenty seconds, and a question about the library does not need a song
-/// playing on the developer's desk to be answered.
-#[cfg(debug_assertions)]
-pub fn requested() -> bool {
-    std::env::var("STARLESS_SP_PROBE")
-        .map(|value| value != "0" && !value.is_empty())
-        .unwrap_or(false)
+/// Se lee una vez y se usa en los dos lugares que lo piden. Dos valores distintos
+/// para un mismo cambio es una forma de que el servicio lo rechace por un motivo
+/// que nadie va a poder leer en el log después.
+fn now_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or_default()
 }
 
-/// A second, narrower question: which context URIs exist at all.
-#[cfg(debug_assertions)]
-pub fn shapes_requested() -> bool {
-    std::env::var("STARLESS_SP_SHAPES")
-        .map(|value| value != "0" && !value.is_empty())
-        .unwrap_or(false)
+/// El id de una playlist nueva, generado del lado del cliente.
+///
+/// Spotify no lo asigna: el `ADD` lo manda adentro del pedido, y por eso un
+/// `GET` de permisos sobre esa playlist contesta `404` un instante antes de que
+/// exista. Es base62 de 22 caracteres, como cualquier id de Spotify.
+///
+/// La entropía sale de dos `RandomState` —que el sistema siembra al arrancar el
+/// proceso— mezclados con el reloj y el pid. El reloj solo no alcanza: dos
+/// playlists creadas en el mismo milisegundo por dos Starless abiertos se
+/// pisarían, y una colisión no avisa. Es el `ADD` de otra persona lo que
+/// escribiría encima.
+fn new_playlist_id() -> String {
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hasher};
+
+    let clock = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or_default();
+
+    let mut first = RandomState::new().build_hasher();
+    first.write_u128(clock);
+    first.write_u32(std::process::id());
+    let high = first.finish();
+
+    let mut second = RandomState::new().build_hasher();
+    second.write_u64(high);
+    second.write_u128(clock.rotate_left(29));
+    let low = second.finish();
+
+    // 16 bytes big-endian, con el bit más alto apagado. El servicio acepta ids de
+    // 22 dígitos de base62 mientras no pasen de 2^127 —los que mandarón ocuparon
+    // 125 y 126 bits— y rechaza el resto con un `400 invalid argument` que no
+    // dice nada. Más chico es siempre seguro; el costo de quedarse sin id es
+    // escribir encima de la playlist de otro sin avisar.
+    let mut raw = [0u8; 16];
+    raw[..8].copy_from_slice(&high.to_be_bytes());
+    raw[8..].copy_from_slice(&low.to_be_bytes());
+    raw[0] &= 0x7f;
+
+    // El base62 canónico lo pone `SpotifyId`, que ya viene con la dependencia y
+    // que resuelve esto mejor que a mano: su `to_base62` termina en un
+    // `dst.reverse()` que pone los dígitos del más significativo al menos.
+    // Escribirlos al revés —lo natural con un `push`, que saca el dígito menor—
+    // deja el id valiendo 130 bits en vez de 127 y el servicio lo rechaza con un
+    // `400` mudo. Es el bug que hizo que esto pareciera imposible: el id viaja
+    // en la URL y no en el cuerpo, así que comparar los cuerpos byte por byte
+    // nunca lo podía mostrar.
+    //
+    // Un `unwrap_or_default` no es una preocupación: acá no puede fallar —dieciséis
+    // bytes entran siempre y un `u128` no desbota 22 dígitos— y si algún día
+    // llegara a fallar, `create_playlist` rechaza el id vacío antes de mandar
+    // algo, que es la única forma de que el error se vea.
+    SpotifyId::from_raw(&raw)
+        .and_then(|id| id.to_base62())
+        .unwrap_or_default()
 }
 
-/// A third question, and the only one about an image: why do the account's own
-/// playlists come back with no cover at all.
+/// La revisión de una lista que todavía no existe.
 ///
-/// `get_rootlist` asks for a fixed set of decorations —revision, attributes,
-/// length, owner, capabilities, status_code— and `picture` is not one of them.
-/// Spotify's own playlists come back with `picture_size` filled anyway, which is
-/// what made this look like a parsing bug for a while. A playlist without a cover
-/// the owner uploaded has no URL of its own: the service builds one out of the
-/// first four tracks, and that picture is exactly what the missing decoration
-/// would have asked for.
-#[cfg(debug_assertions)]
-pub fn pictures_requested() -> bool {
-    std::env::var("STARLESS_SP_PICTURE")
-        .map(|value| value != "0" && !value.is_empty())
-        .unwrap_or(false)
-}
+/// No es un valor inventado: es lo que el cliente oficial manda en el primer
+/// pedido contra una playlist recién creada, y se lee como texto —cuatro ceros y
+/// la palabra `root`—, que es lo que significa "sin revisiones todavía". Es la
+/// razón de que crear una playlist no sea un endpoint propio: el `changes` de una
+/// lista inexistente es un `changes` como cualquier otro, sólo que cosido contra
+/// el principio.
+const UNBORN_REVISION: &[u8] = b"\0\0\0\0root";
 
-/// Corre el rootlist con decoraciones elegidas a mano y dice qué trae cada uno.
+/// Crea una playlist en la biblioteca y le pone el nombre. Devuelve su id.
 ///
-/// `SpClient::request` es público, así que la llamada se puede armar acá. No se
-/// reescribe a ciegas el `get_rootlist` de librespot por esto: primero se mide si
-/// la decoración devuelve URLs —que es lo que la pantalla necesita— o bytes
-/// crudos, que obligarían a pasar imágenes por base64 a través del webview.
-#[cfg(debug_assertions)]
-fn rootlist_with(session: &Session, decorate: &str) -> Result<SelectedListContent, String> {
-    // Two copies on purpose: one travels inside the future and one stays out here
-    // to name the call in the log if the answer comes back in a shape we cannot
-    // read. Moving the parameter itself would leave the outer error arm with
-    // nothing to print.
-    let tag = decorate.to_owned();
-    let inside = tag.clone();
-    let owned = session.clone();
-    let body = call(session, async move {
-        let user = owned.username().to_owned();
-        let endpoint = format!(
-            "/playlist/v2/user/{user}/rootlist?decorate={inside}&from=0&length={ROOTLIST_PAGE}"
-        );
-        owned
-            .spclient()
-            .request(&reqwest::Method::GET, &endpoint, None, None)
-            .await
-            .map_err(|e| {
-                log::error!("SP_PICTURE: la llamada con `{inside}` falló: {e}");
-                "network_failed".to_string()
-            })
-    })?;
-
-    SelectedListContent::parse_from_bytes(&body).map_err(|e| {
-        log::error!("SP_PICTURE: `{tag}` vino con otra forma: {e}");
-        "bad_response".to_string()
-    })
-}
-
-/// Una línea por playlist con las dos formas que puede traer una portada.
+/// **El orden importa, y por eso está escrito al revés de como se lee.** La
+/// playlist no nace cuando entra al rootlist: nace cuando se le escribe *contra
+/// ella*, con una revisión que dice que no tiene ninguna. El `ADD` al rootlist va
+/// después y sólo la pone en la biblioteca.
 ///
-/// Se miden las dos porque contestan preguntas distintas: `bytes` dice si el
-/// servicio mandó la imagen, `urls` dice si nos dio una dirección para bajarla.
-/// Con las dos vacías, laplaylist no tiene ninguna de las dos y hay que buscar la
-/// imagen por otro lado —por ejemplo, en la portada del primer disco que hay
-/// adentro— en vez de inventar una.
-#[cfg(debug_assertions)]
-fn report_pictures(tag: &str, message: &SelectedListContent) {
-    let contents = message.contents.get_or_default();
-    log::info!(
-        "SP_PICTURE: [{tag}] {} playlists, {} items",
-        contents.meta_items.len(),
-        contents.items.len()
+/// Al revés no funciona, y no por una razón que se pueda deducir del proto: se le
+/// manda al servicio una uri de una playlist que no existe y contesta
+/// `400 invalid argument` a un cuerpo byte a byte igual al que él acepta. La
+/// diferencia entre el cuerpo bueno y el malo no estaba en el cuerpo: estaba en
+/// qué se le pedía.
+///
+/// Las dos llamadas van contra la misma revisión de la lista de biblioteca, y
+/// eso también es lo que hace el cliente oficial: el `ADD` se cose contra la
+/// revisión que ya tenía, que puede no ser la última. Es concurrencia optimista
+/// a la inversa —el servidor fusiona en vez de rechazar— y no hay que leerla
+/// antes para poder escribir.
+///
+/// `docs/escribir-playlists.md` tiene el procedimiento completo y de dónde salió.
+pub fn create_playlist(session: &Session, name: &str) -> Result<String, String> {
+    let wanted = name.trim();
+    if wanted.is_empty() {
+        return Err("empty_name".to_string());
+    }
+
+    let account_name = session.username().to_owned();
+    let timestamp = now_millis();
+    let playlist_id = new_playlist_id();
+
+    // No puede pasar, pero un id vacío acá sería un `400` sin explicar nada, y
+    // esa es la forma de fallo que costó horas encontrar. Si el id viene vacío,
+    // el problema está en el generador y tiene que decirse acá y no en el log
+    // del servidor.
+    if playlist_id.is_empty() {
+        log::error!("spclient: no se pudo generar un id de playlist");
+        return Err("bad_id".to_string());
+    }
+
+    let uri = format!("spotify:playlist:{playlist_id}");
+
+    // 1. Escribirle a la playlist que no existe todavía. Este pedido la crea.
+    let born = create_list_change(&account_name, timestamp, wanted);
+
+    send_changes(
+        session,
+        &format!("/playlist/v2/playlist/{playlist_id}/changes"),
+        &born,
+        "create_failed",
+    )?;
+
+    // 2. Recién ahora que existe, ponerla en la biblioteca.
+    let attach = add_list_change(
+        rootlist_revision(session)?,
+        &account_name,
+        timestamp,
+        &uri,
     );
 
-    for meta in &contents.meta_items {
-        let attributes = meta.attributes.as_ref();
-        let name = attributes
-            .map(|a| a.name().to_owned())
-            .unwrap_or_else(|| "(sin nombre)".to_owned());
-        let bytes = attributes.map(|a| a.picture().len()).unwrap_or(0);
-        let urls: Vec<String> = attributes
-            .map(|a| {
-                a.picture_size
-                    .iter()
-                    .map(|size| {
-                        let url = size.url();
-                        // La URL entera identifica la imagen y va a la red con el
-                        // id de la cuenta abajo; con la firma dentro es una URL
-                        // temporal y única, y no sirve para comparar dos llamadas.
-                        let base = url.split('?').next().unwrap_or(url);
-                        format!("{}/{}", size.target_name(), base)
-                    })
-                    .collect()
+    send_changes(
+        session,
+        &format!("/playlist/v2/user/{account_name}/rootlist/changes"),
+        &attach,
+        "attach_failed",
+    )?;
+
+    log::info!("spclient: creada la playlist {playlist_id}");
+    Ok(playlist_id)
+}
+
+/// Agrega una canción a una playlist que ya existe.
+///
+/// **Es el mismo endpoint que crea la playlist, con otra operación.** La
+/// creación escribe un `UPDATE_LIST_ATTRIBUTES` contra la revisión `0,root` de
+/// una lista que todavía no existe; esto escribe un `ADD` contra la revisión
+/// **actual** de una lista que ya existe. La diferencia entre los dos pedidos es
+/// el `base_revision` y el `Op`, y nada más.
+///
+/// **La revisión se lee en este momento, y no antes.** El servicio contesta
+/// `409 Aborted` a un cambio cosido contra una revisión vieja, así que una
+/// revisión cacheada es una revisión que puede estar equivocada. Y no se
+/// cachea por una razón que ya está escrita en [`rootlist_revision`]: cachear
+/// la revisión es un estado que hay que invalidar en cada frontera de
+/// autenticación, y un error ahí no se ve hasta que alguien pierde una
+/// canción. Cuesta una lectura de unos milisegundos en una acción que se hace
+/// unas pocas veces al mes, y a cambio la lectura se corrige sola.
+///
+/// **La canción va al final.** `Add` trae un `add_last` que dice exactamente
+/// eso, y es donde el usuario la esperaría: la lista que estaba, más la
+/// canción nueva, y no la canción nueva arriba de una lista que alguien viene
+/// usando.
+///
+/// `docs/escribir-playlists.md` tiene el procedimiento completo y de dónde salió.
+pub fn add_to_playlist(session: &Session, playlist_id: &str, track_id: &str) -> Result<(), String> {
+    // Los dos ids van en la URL y en el cuerpo, así que los dos tienen que ser
+    // de verdad: un id inventado es un `400` que no dice nada.
+    SpotifyId::from_base62(playlist_id).map_err(|e| {
+        log::error!("spclient: id de playlist inválido ({playlist_id}): {e}");
+        "bad_id".to_string()
+    })?;
+    SpotifyId::from_base62(track_id).map_err(|_| "bad_track_id".to_string())?;
+
+    let account_name = session.username().to_owned();
+    let timestamp = now_millis();
+    let uri = format!("spotify:track:{track_id}");
+
+    let revision = playlist_revision(session, playlist_id)?;
+    let changes = add_track_change(&revision, &account_name, timestamp, &uri);
+
+    send_changes(
+        session,
+        &format!("/playlist/v2/playlist/{playlist_id}/changes"),
+        &changes,
+        "add_failed",
+    )?;
+
+    log::info!("spclient: {track_id} agregada a {playlist_id}");
+    Ok(())
+}
+
+/// La revisión de una playlist, leída de la biblioteca.
+///
+/// **La biblioteca, y no un pedido a la playlist.** La biblioteca ya pide la
+/// revisión de cada playlist —`MetaItem.revision`, y `get_rootlist` la pide
+/// explícitamente con `decorate=revision`— así que el dato ya está en la
+/// respuesta que la app lee para dibujar la repisa y lo estaba tirando. No hace
+/// falta un pedido por playlist: uno por biblioteca, y la revisión de todas.
+///
+/// La biblioteca pagina, y esta es la misma página que usa [`playlists`]. Una
+/// biblioteca más larga que eso no entra, y la playlist que no está en la
+/// página no tiene revisión que leer: eso es un `playlist_not_found` y no una
+/// falla de red.
+fn playlist_revision(session: &Session, playlist_id: &str) -> Result<Vec<u8>, String> {
+    let owned = session.clone();
+    let body = call(session, async move {
+        owned
+            .spclient()
+            .get_rootlist(0, Some(ROOTLIST_PAGE))
+            .await
+            .map_err(|e| {
+                log::error!("spclient: no se pudo leer la biblioteca para escribir: {e}");
+                net_code(&e)
             })
-            .unwrap_or_default();
+    })?;
 
-        log::info!(
-            "SP_PICTURE: [{tag}] {name:?} → picture={bytes} bytes, {} urls {:?}",
-            urls.len(),
-            urls
-        );
-    }
+    let message = SelectedListContent::parse_from_bytes(&body).map_err(|e| {
+        log::error!("spclient: el rootlist vino con otra forma: {e}");
+        "bad_response".to_string()
+    })?;
+
+    let contents = message.contents.get_or_default();
+    contents
+        .items
+        .iter()
+        .zip(contents.meta_items.iter())
+        .find(|(item, _)| bare_id(item.uri()) == playlist_id)
+        .and_then(|(_, meta)| meta.revision.clone())
+        .ok_or_else(|| {
+            log::error!("spclient: la playlist {playlist_id} no vino en la biblioteca");
+            "playlist_not_found".to_string()
+        })
 }
 
-/// Lo que quedó después de que la decoración no siriera para nada.
+/// El `ListChanges` que mete una canción en una playlist.
 ///
-/// `get_rootlist` pidió `picture` y volvió exactamente igual: 0 bytes, 0 URLs,
-/// las seis playlists idénticas. Así que la respuesta no es una lista sin el
-/// campo pedido, es una lista donde ese campo no existe para las playlists del
-/// usuario — Spotify construye su portada como mosaico de las primeras cuatro
-/// pistas y no lo manda en el rootlist. Quedan dos caminos y se prueban juntos:
-/// el endpoint de una playlist, que es otra respuesta, y la metadata extendida
-/// de la URI de la playlist, que es donde Spotify guarda los atributos v2.
-#[cfg(debug_assertions)]
-pub fn run_picture_probe(app: tauri::AppHandle) {
-    tauri::async_runtime::spawn_blocking(move || {
-        let Some(session) = crate::selftest::wait_for_session(&app) else {
-            log::error!("SP_PICTURE: la sesión no llegó a conectar");
-            return;
-        };
-
-        log::info!("=== DIAGNOSTIC: sonda de portadas ===");
-
-        match rootlist_with(&session, "revision,attributes,length,owner,capabilities,status_code") {
-            Ok(message) => report_pictures("sin picture", &message),
-            Err(e) => log::error!("SP_PICTURE: la línea base falló con {e}"),
-        }
-
-        match rootlist_with(&session, "revision,attributes,length,owner,capabilities,status_code,picture")
-        {
-            Ok(message) => report_pictures("con picture", &message),
-            Err(e) => log::error!("SP_PICTURE: la llamada con `picture` falló con {e}"),
-        }
-
-        let Ok(library) = playlists(&session) else {
-            log::error!("SP_PICTURE: no se pudo leer la biblioteca para seguir preguntando");
-            return;
-        };
-        // Dos y sobra: la pregunta es "¿esta forma trae la imagen?", no "¿cada
-        // playlist tiene imagen?".
-        for playlist in library.iter().take(2) {
-            probe_one_playlist(&session, &playlist.id, &playlist.name);
-        }
-    });
-}
-
-/// Un playlist por los dos caminos que quedan.
-///
-/// Los bytes se vuelcan como hexadecimal porque todavía no se sabe qué mensaje
-/// son: el tamaño dice si hay algo, y los primeros bytes dicen cuál es. Volcar
-/// un PNG o un JPEG entero al log sería una forma lenta de no volver a mirar.
-#[cfg(debug_assertions)]
-fn probe_one_playlist(session: &Session, playlist_id: &str, name: &str) {
-    // Camino 1: el context de la playlist. Es la llamada que ya sabemos que
-    // responde y que trae `image_url` para un álbum.
-    probe_playlist_context(session, playlist_id, name);
-
-    // Camino 2: metadata extendida, ahora con las extensiones que hablan de
-    // imágenes.
-    let request = BatchedEntityRequest {
-        entity_request: PICTURE_KINDS
-            .iter()
-            .map(|kind| EntityRequest {
-                entity_uri: format!("spotify:playlist:{playlist_id}"),
-                query: vec![ExtensionQuery {
-                    extension_kind: EnumOrUnknown::new(*kind),
+/// Un `ADD` contra la revisión que se acaba de leer, con `add_last` para que
+/// quede al final. El `timestamp` es la hora en que se agregó —el mismo campo
+/// del que la columna "Fecha de adición" de la pantalla de playlist lee— y el
+/// `added_by` es la cuenta que la agregó.
+fn add_track_change(
+    base_revision: &[u8],
+    account: &str,
+    timestamp: i64,
+    track_uri: &str,
+) -> ListChanges {
+    ListChanges {
+        base_revision: Some(base_revision.to_vec()),
+        deltas: vec![single_delta(
+            Op {
+                kind: Some(EnumOrUnknown::new(op::Kind::ADD)),
+                add: MessageField::some(Add {
+                    add_last: Some(true),
+                    items: vec![Item {
+                        uri: Some(track_uri.to_owned()),
+                        attributes: MessageField::some(ItemAttributes {
+                            added_by: Some(account.to_owned()),
+                            timestamp: Some(timestamp),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    }],
                     ..Default::default()
-                }],
+                }),
                 ..Default::default()
-            })
-            .collect(),
+            },
+            account,
+            timestamp,
+        )],
+        want_resulting_revisions: Some(true),
+        want_sync_result: Some(true),
+        nonces: vec![1],
         ..Default::default()
-    };
+    }
+}
 
+/// El `ListChanges` que mete una playlist en la biblioteca.
+///
+/// **No la crea.** Es el segundo paso y va contra el rootlist; el primero es
+/// escribirle a la playlist todavía sin existir. Mandar este pedido solo, o
+/// mandarlo primero, es un `400 invalid argument` a un cuerpo que el servicio
+/// acepta byte por byte cuando la playlist existe.
+fn add_list_change(
+    base_revision: Vec<u8>,
+    account: &str,
+    timestamp: i64,
+    playlist_uri: &str,
+) -> ListChanges {
+    ListChanges {
+        base_revision: Some(base_revision),
+        deltas: vec![single_delta(
+            Op {
+                kind: Some(EnumOrUnknown::new(op::Kind::ADD)),
+                add: MessageField::some(Add {
+                    from_index: Some(0),
+                    items: vec![Item {
+                        uri: Some(playlist_uri.to_owned()),
+                        attributes: MessageField::some(ItemAttributes {
+                            timestamp: Some(timestamp),
+                            // `true`, como lo manda el cliente oficial. Starless
+                            // querría `false` —una lista que el usuario no pidió
+                            // hacer pública es el único error de todo esto que no
+                            // se puede deshacer desde la app— pero **no está
+                            // probado**: la vez que se mandó `false` el pedido
+                            // falló por otra razón y el resultado no dice nada
+                            // sobre este campo. Va `true` hasta que el camino
+                            // entero funcione, porque un `attach_failed` deja una
+                            // playlist que existe y no está en la biblioteca, y
+                            // esa no se ve ni se puede borrar desde la app.
+                            public: Some(true),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            account,
+            timestamp,
+        )],
+        want_resulting_revisions: Some(true),
+        want_sync_result: Some(true),
+        // Un `1`, como el que manda el cliente oficial. Es un nonce que el
+        // servicio usa para correlacionar la respuesta con el pedido, no una
+        // marca de tiempo: mandar acá el reloj del cliente convertía un campo
+        // que dice "soy yo" en uno que dice "fui yo a las 14:03".
+        nonces: vec![1],
+        ..Default::default()
+    }
+}
+
+/// El `ListChanges` que **crea** una playlist: atributos contra una lista que
+/// todavía no tiene ninguna.
+///
+/// Es un `UPDATE_LIST_ATTRIBUTES`, el mismo mensaje que usaría un renombrado. Lo
+/// que lo crea no es el mensaje sino la revisión contra la que se cose: cero. Por
+/// eso el nombre va en el primer pedido y no en un segundo —no hay segundo pedido,
+/// porque para cuando se manda el primero la playlist ya existe.
+fn create_list_change(account: &str, timestamp: i64, name: &str) -> ListChanges {
+    ListChanges {
+        base_revision: Some(UNBORN_REVISION.to_vec()),
+        deltas: vec![single_delta(
+            Op {
+                kind: Some(EnumOrUnknown::new(op::Kind::UPDATE_LIST_ATTRIBUTES)),
+                update_list_attributes: MessageField::some(UpdateListAttributes {
+                    new_attributes: MessageField::some(ListAttributesPartialState {
+                        values: MessageField::some(ListAttributes {
+                            name: Some(name.to_owned()),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            account,
+            timestamp,
+        )],
+        want_resulting_revisions: Some(true),
+        want_sync_result: Some(true),
+        nonces: vec![1],
+        ..Default::default()
+    }
+}
+
+/// Un `Delta` con una sola operación y la misma `ChangeInfo` que el resto.
+///
+/// La creación y el renombrado son dos deltas distintos con la misma forma
+/// alrededor, y sin este helper el mensaje se repite dos veces con un `?` de
+/// diferencia en algún lado.
+fn single_delta(op: Op, user: &str, timestamp: i64) -> Delta {
+    Delta {
+        ops: vec![op],
+        info: MessageField::some(ChangeInfo {
+            user: Some(user.to_owned()),
+            timestamp: Some(timestamp),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
+}
+
+/// Manda un `ListChanges`.
+///
+/// El error distingue **qué** pasó, no sólo **que** pasó: una playlist creada que
+/// quedó sin nombre es media operación hecha, y llamarla `network_failed` hace
+/// que el mensaje al frente diga que no pasó nada.
+fn send_changes(
+    session: &Session,
+    endpoint: &str,
+    changes: &ListChanges,
+    failure: &str,
+) -> Result<(), String> {
+    let body = changes.write_to_bytes().map_err(|e| {
+        log::error!("spclient: el cambio no se pudo serializar: {e}");
+        failure.to_string()
+    })?;
+
+    // `SpClient::request` manda `CONTENT_LENGTH`, la autorización y el client
+    // token, y **ningún `Content-Type`**. Para una lectura no importa; para esto
+    // sí: la primera vez que esto se corrió, sin cabecera, el servicio contestó
+    // `400 invalid argument` a un cuerpo idéntico byte por byte al que él mismo
+    // acepta. La cabecera que manda el cliente oficial es
+    // `x-www-form-urlencoded` sobre un cuerpo que no es formulario — y esa
+    // mentira es parte de lo que el router de Spotify espera ver.
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        reqwest::header::CONTENT_TYPE,
+        reqwest::header::HeaderValue::from_static("application/x-www-form-urlencoded"),
+    );
+
+    let printable = hex_without_account(&body, &session.username());
     let owned = session.clone();
-    let outcome = call(session, async move {
+    let path = endpoint.to_owned();
+    let tag = failure.to_owned();
+    call(session, async move {
         owned
             .spclient()
-            .get_extended_metadata(request)
+            .request(&reqwest::Method::POST, &path, Some(headers), Some(&body))
             .await
-            .map_err(|e| format!("ERROR: {e}"))
-    });
+            .map(|answer| log::info!("spclient: `{tag}` en `{path}` → {} bytes", answer.len()))
+            .map_err(|e| {
+                log::error!("spclient: `{tag}` en `{path}` falló: {e}");
+                log::error!("spclient: cuerpo enviado — {printable}");
+                tag
+            })
+    })
+}
 
-    let Ok(response) = outcome else {
-        log::error!("SP_PICTURE: {name} → la metadata extendida falló");
-        return;
-    };
+/// El cuerpo en hexadecimal, con el nombre de cuenta tapado.
+///
+/// Un `400` sin el cuerpo es un `400` que obliga a adivinar, y adivinar es lo
+/// que convirtió la primera vez en media hora de "probemos un cambio". El nombre
+/// de cuenta viaja dentro del `ChangeInfo` y no tiene por qué quedar en texto
+/// plano en un archivo que cualquiera abre: se sustituye por la misma cantidad de
+/// guiones, así que el hexadecimal sigue siendo comparable con el de otra corrida.
+fn hex_without_account(body: &[u8], account: &str) -> String {
+    let needle = account.as_bytes();
+    let hex: String = body.iter().map(|b| format!("{b:02x}")).collect();
 
-    let mut seen = 0;
-    for array in response.extended_metadata {
-        // La clase del extension va en el array, no en cada entrada: una
-        // respuesta trae un array por clase pedida.
-        let kind = array.extension_kind.enum_value_or_default();
-        for entry in array.extension_data {
-            let Some(payload) = entry.extension_data.as_ref() else {
-                continue;
-            };
-            seen += 1;
-            log::info!(
-                "SP_PICTURE: {name} → extension {kind:?}, {} bytes, head={}",
-                payload.value.len(),
-                head_hex(&payload.value)
+    if needle.is_empty() {
+        return hex;
+    }
+    hex.replace(&needle.iter().map(|b| format!("{b:02x}")).collect::<String>(), &"-".repeat(needle.len() * 2))
+}
+
+/// La revisión contra la que hay que escribir sobre el rootlist.
+///
+/// Si no viene, el `ADD` se mandaría sin base y el servicio lo trata como una
+/// escritura ciega contra un estado que puede no ser el de ahora. Es un dato que
+/// la biblioteca ya trae en cada lectura: no pedirlo de más sería una decisión
+/// difícil de explicar después.
+///
+/// **Se relee, y es un viaje de más a propósito.** El cliente de escritorio usa
+/// la revisión que ya tiene cacheada y se ahorra este `GET`; nosotros no, porque
+/// cachearla es un estado que hay que invalidar en cada frontera de autenticación
+/// y un error ahí no se ve hasta que alguien pierde una playlist. Cuesta una
+/// lectura de unos milisegundos en una acción que se hace unas pocas veces al
+/// mes, y a cambio el `GET` se corrige solo. Optimizarlo después, con el motivo
+/// anotado, es una decisión mejor que heredarlo sin entenderlo.
+///
+/// La revisión puede no ser la última y da lo mismo: el servicio fusiona en vez
+/// de rechazar, que es lo que hace el escritorio cuando escribe contra la que
+/// tenía.
+fn rootlist_revision(session: &Session) -> Result<Vec<u8>, String> {
+    let owned = session.clone();
+    let body = call(session, async move {
+        owned
+            .spclient()
+            .get_rootlist(0, Some(ROOTLIST_PAGE))
+            .await
+            .map_err(|e| {
+                log::error!("spclient: no se pudo leer la biblioteca para escribir: {e}");
+                net_code(&e)
+            })
+    })?;
+
+    SelectedListContent::parse_from_bytes(&body)
+        .map_err(|e| {
+            log::error!("spclient: el rootlist vino con otra forma: {e}");
+            "bad_response".to_string()
+        })?
+        .revision
+        .ok_or_else(|| {
+            log::error!("spclient: el rootlist vino sin revisión");
+            "bad_response".to_string()
+        })
+}
+
+#[cfg(debug_assertions)]
+mod probe;
+
+#[cfg(debug_assertions)]
+pub use probe::{
+    create_requested, dj_requested, home_requested, pictures_requested, requested, run_create_probe,
+    run_dj_probe, run_home_probe, run_picture_probe, run_probe, run_shape_probe, run_voice_probe,
+    shapes_requested, voice_requested,
+};
+
+#[cfg(test)]
+mod tests {
+    use super::new_playlist_id;
+    use librespot_core::SpotifyId;
+
+    /// El id tiene que ser un `SpotifyId` de verdad.
+    ///
+    /// `from_base62` valida las tres cosas a la vez que el servicio exige:
+    /// que sean 22 caracteres, que todos estén en el alfabeto canónico y que
+    /// el número que representan entre en un `u128`. Es exactamente la pregunta
+    /// que el servicio responde con un `400` mudo cuando falla.
+    #[test]
+    fn a_new_playlist_id_is_a_canonical_base62_spotify_id() {
+        for _ in 0..2_000 {
+            let id = new_playlist_id();
+            assert_eq!(id.chars().count(), 22, "id largo raro: {id}");
+            assert!(
+                SpotifyId::from_base62(&id).is_ok(),
+                "no es un id canónico de Spotify: {id}"
             );
         }
     }
-    if seen == 0 {
-        log::error!("SP_PICTURE: {name} → la metadata extendida volvió vacía");
-    }
-}
 
-/// `get_playlist` con decoraciones elegidas a mano.
-///
-/// Las extensiones que tienen "imagen" en el nombre, y que no se habían probado.
-///
-/// El enum tiene 195 variantes y siete hablan de imágenes. Cuatro son de contenido
-/// —thumbnail de video, carta con imagen— y tres podrían ser justo lo que se
-/// busca: `COVER_IMAGE`, `ARTWORK_TRAIT` y `VISUAL_IDENTITY_TRAIT`, que es la que
-/// Spotify usa hoy para las portadas de playlists y álbumes. Se prueban todas
-/// juntas porque el costo es una sola llamada por playlist, y adivinar cuál es la
-/// correcta sería volver a dejar un supuesto escrito como un hecho.
-#[cfg(debug_assertions)]
-const PICTURE_KINDS: [ExtensionKind; 7] = [
-    ExtensionKind::COVER_IMAGE,
-    ExtensionKind::ARTWORK_TRAIT,
-    ExtensionKind::VISUAL_IDENTITY_TRAIT,
-    ExtensionKind::LINK_CARD_WITH_IMAGE_TRAIT,
-    ExtensionKind::IMAGE_CUE,
-    ExtensionKind::IMAGE_SPARKLES_HACK,
-    ExtensionKind::VIDEO_THUMBNAIL,
-];
-
-/// La pista más fuerte: el context de un álbum ya devolvió `image_url`.
-///
-/// `/context-resolve/v1/{uri}` es la misma llamada que sabemos que funciona —la
-/// que trae las pistas de una playlist y las del artista— y para un álbum contesta
-/// con un `image_url` en sus metadatos. Si para una playlist contesta lo mismo, la
-/// foto original está ahí y no hay que dibujarla: viene hecha.
-///
-/// Se vuelca **todas** las claves y no las primeras seis, porque en una lista
-/// truncada la que interesa puede ser la que quedó fuera, y volver a correr la
-/// sonda por eso sería la forma más lenta de no mirar.
-#[cfg(debug_assertions)]
-fn probe_playlist_context(session: &Session, playlist_id: &str, name: &str) {
-    let owned = session.clone();
-    let uri = format!("spotify:playlist:{playlist_id}");
-    let owned_uri = uri.clone();
-    let outcome = call(session, async move {
-        owned
-            .spclient()
-            .get_context(&owned_uri)
-            .await
-            .map(|context| context.metadata)
-            .map_err(|e| format!("ERROR: {e}"))
-    });
-
-    match outcome {
-        Ok(metadata) => {
-            log::info!(
-                "SP_PICTURE: context {name} → {} claves: {:?}",
-                metadata.len(),
-                metadata
+    /// Y tiene que quedar por debajo de 2^127.
+    ///
+    /// La primera versión de esto escribía los dígitos del menos significativo al
+    /// más —lo natural con un `push`— y producía ids de 130 bits. El servicio los
+    /// rechaza igual que un cuerpo mal formado, sin decir cuál de las dos cosas
+    /// fue: el id viaja en la URL y no en el cuerpo, así que comparar los
+    /// cuerpos byte por byte no lo puede mostrar. Lo único que lo delata es
+    /// medir el número.
+    #[test]
+    fn a_new_playlist_id_stays_under_two_pow_127() {
+        for _ in 0..2_000 {
+            let id = new_playlist_id();
+            let value = SpotifyId::from_base62(&id).expect("id válido").id;
+            assert!(
+                value < (1u128 << 127),
+                "id fuera del techo que acepta el servicio: {id} = {} bits",
+                128 - value.leading_zeros()
             );
         }
-        Err(e) => log::error!("SP_PICTURE: context {name} → {e}"),
-    }
-}
-
-/// Los primeros bytes en hexadecimal, para reconocer un mensaje sin volcarlo.
-///
-/// Un PNG arranca con `89 50 4e 47` y un JPEG con `ff d8 ff`: si eso aparece, lo
-/// que volvió es una imagen y no un protobuf, y la decisión es otra.
-#[cfg(debug_assertions)]
-fn head_hex(bytes: &[u8]) -> String {
-    bytes
-        .iter()
-        .take(24)
-        .map(|b| format!("{b:02x}"))
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-/// Resumen de un context, para comparar candidatos sin volcar el contenido.
-#[cfg(debug_assertions)]
-fn describe(context: &Context) -> String {
-    let tracks: usize = context.pages.iter().map(|page| page.tracks.len()).sum();
-    let meta: Vec<String> = context
-        .metadata
-        .iter()
-        .take(6)
-        .map(|(key, value)| format!("{key}={value}"))
-        .collect();
-    format!(
-        "{} páginas, {} pistas, uri={:?}, metadata=[{}]",
-        context.pages.len(),
-        tracks,
-        context.uri,
-        meta.join(", ")
-    )
-}
-
-/// Prueba una lista de URIs de context y dice qué devolvió cada una.
-///
-/// Lo que se busca acá no es una respuesta: es no dejar un uri sin probar escrito
-/// en un comentario como si fuera una suposición. Cada candidato que vuelve con
-/// páginas es un tipo que el servicio reconoce; cada uno que vuelve vacío es un
-/// tipo que no existe, y también es un dato.
-#[cfg(debug_assertions)]
-fn probe_contexts(session: &Session, candidates: &[String]) {
-    for candidate in candidates {
-        let owned = session.clone();
-        let uri = candidate.clone();
-        let outcome = call(session, async move {
-            owned
-                .spclient()
-                .get_context(&uri)
-                .await
-                .map(|context| describe(&context))
-                .map_err(|e| format!("ERROR: {e}"))
-        });
-
-        match outcome {
-            Ok(summary) => log::info!("SP_PROBE: context {candidate} → {summary}"),
-            Err(e) => log::error!("SP_PROBE: context {candidate} → {e}"),
-        }
-    }
-}
-
-/// What this session can answer without a client id of Starless's own.
-///
-/// Development only. The answer decides whether the library moves off the Web
-/// API, and it is worth one line in the log more than it is worth a screen.
-#[cfg(debug_assertions)]
-pub fn run_probe(app: tauri::AppHandle) {
-    tauri::async_runtime::spawn_blocking(move || {
-        let Some(session) = crate::selftest::wait_for_session(&app) else {
-            log::error!("SP_PROBE: la sesión no llegó a conectar");
-            return;
-        };
-        probe(&session);
-    });
-}
-
-#[cfg(debug_assertions)]
-fn probe(session: &Session) {
-    log::info!("=== DIAGNOSTIC: sonda de spclient ===");
-
-    match account(session) {
-        Ok(account) => log::info!(
-            "SP_PROBE: cuenta {:?} con {} imagen",
-            account.display_name,
-            account.images.len()
-        ),
-        Err(e) => log::error!("SP_PROBE: la cuenta falló con {e}"),
     }
 
-    let playlists = match playlists(session) {
-        Ok(playlists) => {
-            for playlist in &playlists {
-                log::info!(
-                    "SP_PROBE: {} = {:?} ({} canciones, {} portadas, {:?})",
-                    playlist.id,
-                    playlist.name,
-                    playlist.tracks.as_ref().map(|t| t.total).unwrap_or(0),
-                    playlist.images.len(),
-                    playlist.owner.as_ref().and_then(|o| o.display_name.as_deref())
-                );
-            }
-            playlists
+    /// Una colisión no avisa: el `ADD` de otra persona escribiría encima.
+    #[test]
+    fn a_new_playlist_id_is_not_the_same_twice() {
+        let mut ids = std::collections::HashSet::new();
+        for _ in 0..500 {
+            ids.insert(new_playlist_id());
         }
-        Err(e) => {
-            log::error!("SP_PROBE: la biblioteca falló con {e}");
-            Vec::new()
-        }
-    };
-
-    // The smallest playlist **that has songs**: an editorial playlist comes back
-    // with a count of zero, and "it returned nothing" would look like a broken
-    // decoder when what it really means is that there was nothing to decode.
-    if let Some(smallest) = playlists
-        .iter()
-        .filter(|p| p.tracks.as_ref().is_some_and(|t| t.total > 0))
-        .min_by_key(|p| p.tracks.as_ref().map(|t| t.total).unwrap_or(u32::MAX))
-    {
-        match playlist_tracks(session, &smallest.id) {
-            Ok(tracks) => {
-                log::info!("SP_PROBE: {:?} devolvió {} pistas", smallest.name, tracks.len());
-                for track in tracks.iter().take(3) {
-                    log::info!(
-                        "SP_PROBE:   {:?} — {:?} {:?} — álbum {:?} — portada {:?}",
-                        track.name,
-                        track.duration_ms,
-                        track.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>(),
-                        track.album.as_ref().map(|a| a.name.as_str()),
-                        track
-                            .album
-                            .as_ref()
-                            .and_then(|a| a.images.first())
-                            .map(|i| &i.url)
-                    );
-                }
-            }
-            Err(e) => log::error!("SP_PROBE: el contenido de {:?} falló con {e}", smallest.name),
-        }
+        assert_eq!(ids.len(), 500, "se repitió un id");
     }
-
-    match liked_tracks(session) {
-        Ok(tracks) => log::info!("SP_PROBE: {} canciones guardadas", tracks.len()),
-        Err(e) => log::error!("SP_PROBE: las guardadas fallaron con {e}"),
-    }
-
-    match search_tracks(session, "dua lipa") {
-        Ok(tracks) => {
-            log::info!("SP_PROBE: la búsqueda devolvió {} pistas", tracks.len());
-            for track in tracks.iter().take(2) {
-                log::info!("SP_PROBE:   {:?} por {:?}", track.name, track.artists);
-            }
-        }
-        Err(e) => log::error!("SP_PROBE: la búsqueda falló con {e}"),
-    }
-
-    log::info!("=== DIAGNOSTIC: fin de la sonda de spclient ===");
-}
-
-/// Los otros tres tipos de la pantalla de resultados, y la ficha de un artista.
-///
-/// La pantalla de resultados quiere canciones, álbumes, artistas y playlists.
-/// Las canciones salen de `spotify:search:`; qué URI contesta por cada uno de los
-/// otros tres no está escrito en ninguna parte, y aqui se mide en vez de
-/// suponerse. Los que vuelven con páginas son los que existen.
-#[cfg(debug_assertions)]
-pub fn run_shape_probe(app: tauri::AppHandle) {
-    tauri::async_runtime::spawn_blocking(move || {
-        let Some(session) = crate::selftest::wait_for_session(&app) else {
-            log::error!("SP_PROBE: la sesión no llegó a conectar");
-            return;
-        };
-
-        // Un artista y un álbum que existen, tomados de lo que la biblioteca ya
-        // trajo: un id inventado se vería igual que uno real hasta que no.
-        let mut artist_id = "4Fl8dEtJlmvFkYb4HZr8Fi".to_string();
-        let mut album_id = "0VjIjW4GlUZAMYd2vXMi3b".to_string();
-        if let Ok(playlists) = playlists(&session)
-            && let Some(track) = playlists
-                .iter()
-                .flat_map(|playlist| playlist_tracks(&session, &playlist.id).unwrap_or_default())
-                .next()
-        {
-            if let Some(first_artist) = track.artists.first() {
-                artist_id = first_artist.id.clone();
-            }
-            if let Some(album) = track.album.as_ref() {
-                album_id = album.id.clone();
-            }
-        }
-        log::info!("SP_PROBE: probando con artista {artist_id} y álbum {album_id}");
-
-        // Con `+` y no con espacios: el parser de URIs rechaza el espacio antes
-        // de llegar a mirar qué tipo se pidió, así que un candidato con espacios
-        // no dice si el tipo existe — dice que la frase está mal escrita.
-        probe_contexts(
-            &session,
-            &[
-                format!("spotify:artist:{artist_id}"),
-                format!("spotify:artist:{artist_id}:albums"),
-                format!("spotify:search:dua+lipa:albums"),
-                format!("spotify:search:albums:dua+lipa"),
-                format!("spotify:search:dua+lipa:artists"),
-                format!("spotify:search:artists:dua+lipa"),
-                format!("spotify:search:dua+lipa:playlists"),
-                format!("spotify:search:playlists:dua+lipa"),
-                format!("spotify:search:album:dua+lipa"),
-                format!("spotify:search:artist:dua+lipa"),
-                format!("spotify:search:playlist:dua+lipa"),
-            ],
-        );
-
-        log::info!("=== DIAGNOSTIC: fin de la sonda de formas ===");
-    });
-}
-
-/// ¿Qué contenido personalized alcanza la sesión?
-///
-/// La biblioteca ya trae una playlist que Spotify fabricó para la cuenta —DJ—,
-/// así que el servicio *sí* personalize por este canal. Lo que no se sabe es
-/// cuánto. "Daily Mix", "Discover Weekly", "Release Radar" y las estaciones
-/// distintas son del motor de recomendaciones, que vivía en la Web API; pero
-/// antes de aceptar que no existe hay que haberlo probado, que es la diferencia
-/// entre "no lo encontramos" y "no está".
-///
-/// Las candidatas usan las formas que Spotify usa para las suyas. Con `+` y sin
-/// espacios, por la razón que ya está escrita más arriba: un uri mal escrito
-/// contesta que la frase está mal, no que la cosa no exista.
-#[cfg(debug_assertions)]
-pub fn home_requested() -> bool {
-    std::env::var("STARLESS_SP_HOME")
-        .map(|value| value != "0" && !value.is_empty())
-        .unwrap_or(false)
-}
-
-#[cfg(debug_assertions)]
-pub fn run_home_probe(app: tauri::AppHandle) {
-    tauri::async_runtime::spawn_blocking(move || {
-        let Some(session) = crate::selftest::wait_for_session(&app) else {
-            log::error!("SP_HOME: la sesión no llegó a conectar");
-            return;
-        };
-
-        log::info!("=== DIAGNOSTIC: sonda de contenido personalized ===");
-
-        let Ok(account) = account(&session) else {
-            log::error!("SP_HOME: sin cuenta, no hay nada personalized que probar");
-            return;
-        };
-        let user = account.id.clone();
-
-        let mut artist_id = "4Fl8dEtJlmvFkYb4HZr8Fi".to_string();
-        if let Ok(playlists) = playlists(&session)
-            && let Some(track) = playlists
-                .iter()
-                .flat_map(|playlist| playlist_tracks(&session, &playlist.id).unwrap_or_default())
-                .next()
-            && let Some(first_artist) = track.artists.first()
-        {
-            artist_id = first_artist.id.clone();
-        }
-
-        probe_contexts(
-            &session,
-            &[
-                // La línea de control: se sabe que responde. Si esta falla, el
-                // problema es la sonda y no la pregunta.
-                format!("spotify:user:{user}:collection"),
-                format!("spotify:user:{user}"),
-                format!("spotify:user:{user}:daylims"),
-                format!("spotify:user:{user}:daily"),
-                format!("spotify:user:{user}:discover-weekly"),
-                format!("spotify:user:{user}:discover"),
-                format!("spotify:user:{user}:release-radar"),
-                format!("spotify:user:{user}:stations"),
-                format!("spotify:user:{user}:made-for-{user}"),
-                format!("spotify:daily"),
-                format!("spotify:discover:weekly"),
-                format!("spotify:release-radar"),
-                // Una estación por artista es lo más parecido a "Recommended
-                // Stations" que se podría construir con lo propio.
-                format!("spotify:artist:{artist_id}:radio"),
-                format!("spotify:artist:{artist_id}:related"),
-                format!("spotify:artist:{artist_id}:station"),
-            ],
-        );
-
-        log::info!("=== DIAGNOSTIC: fin de la sonda de inicio ===");
-    });
 }

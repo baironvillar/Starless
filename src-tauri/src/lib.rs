@@ -17,15 +17,18 @@ mod report;
 mod selftest;
 mod settings;
 mod spclient;
+mod voice;
 
+use std::collections::HashMap;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use librespot_core::session::Session;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use playback::{PlaybackState, PlaybackStatus};
-use models::{Account, ArtistProfile, Lyrics, Playlist, Track};
+use models::{Account, DjMix, DjVoiceEvent, Lyrics, Playlist, Track};
 
 /// The version a report carries, read from the compiled-in crate metadata.
 ///
@@ -181,6 +184,38 @@ fn simulate_crash() -> Result<(), String> {
 /// The live streaming session, if any. `Mutex` because `Session` is not `Sync`.
 #[derive(Default)]
 pub struct SessionState(Mutex<Option<Session>>);
+
+/// Where the DJ's session is, and what it still has to say.
+///
+/// **The cursor lives in the backend on purpose.** It is the service's own
+/// address for the next page —with its segment and its request— and the
+/// webview is not the place that has to know how to follow it. One DJ at a
+/// time: the account has one, and a second click replaces the first.
+///
+/// **The phrases are kept by song.** The DJ opens a stretch with one and closes
+/// it with another, and the service hangs each of them on a song: the first and
+/// the last. They are said *before* that song, so the app has to hold them
+/// until the song is about to sound: a page arrives two songs before the queue
+/// empties, and saying the phrase then would be talking over the song that is
+/// playing.
+#[derive(Default)]
+pub struct DjState(Mutex<DjSession>);
+
+#[derive(Default)]
+struct DjSession {
+    /// Where the session continues.
+    next: Option<String>,
+    /// The phrases the DJ still has to say, by song.
+    voices: HashMap<String, crate::voice::VoiceParams>,
+    /// The audio that was asked for in advance, by song.
+    ///
+    /// **Making the audio takes a couple of seconds** —it is another service that
+    /// makes it— and the page that brings the phrase arrives five songs before
+    /// the queue empties. Asking for it when the page arrives leaves it ready
+    /// for the moment the song starts: the DJ takes the turn without a hole in
+    /// the middle.
+    audio: HashMap<String, Vec<u8>>,
+}
 
 /// Everything the login screen needs to decide what to show, and nothing else.
 #[derive(Serialize, Clone)]
@@ -372,10 +407,323 @@ spclient_command!(account, spclient::account, Account);
 spclient_command!(my_playlists, spclient::playlists, Vec<Playlist>);
 spclient_command!(liked_tracks, spclient::liked_tracks, Vec<Track>);
 spclient_command!(playlist_tracks, spclient::playlist_tracks, Vec<Track>, playlist_id: String);
-spclient_command!(album_tracks, spclient::album_tracks, Vec<Track>, album_id: String);
 spclient_command!(search_tracks, spclient::search_tracks, Vec<Track>, query: String);
-spclient_command!(artist_profile, spclient::artist_profile, ArtistProfile, artist_id: String);
 spclient_command!(lyrics, spclient::lyrics, Lyrics, track_id: String);
+
+// El DJ: las canciones que Spotify le fabricó a la cuenta, y lo que dice al
+// empezar.
+//
+// Es una lectura como las otras, pero por otra puerta: la playlist del DJ está
+// vacía y su contenido lo materializa el servicio de las "jellyfish cards".
+// Lo que vuelve son las canciones —reproducibles— y la frase del DJ, que
+// llega como texto y no como voz.
+//
+// **Y es una sesión, no una lista.** El DJ sigue: la primera página trae diez
+// canciones y un `next_page_url`, y el servicio tiene más. El cursor vive
+// acá, en el backend, y no en el frontend: es la dirección interna del
+// servicio, y no es cosa del webview.
+#[tauri::command]
+async fn dj_mix(
+    session_state: State<'_, SessionState>,
+    dj_state: State<'_, DjState>,
+    playlist_id: String,
+) -> Result<DjMix, String> {
+    let session = session_state
+        .0
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone())
+        .ok_or_else(|| "no_session".to_string())?;
+
+    // **La sesión del DJ no se reinicia: se sigue.**
+    //
+    // El primer pedido del servicio devuelve la línea de tiempo *desde el
+    // principio*, y siempre arranca por la misma canción: pedirlo otra vez
+    // devuelve las mismas —medido, cinco pedidos seguidos y una hora después
+    // seguían dando la misma primera—. Lo único que avanza es el cursor, que
+    // es la dirección del tramo siguiente. Así que un click nuevo sobre el DJ
+    // continúa la sesión abierta en vez de volver al primer tramo, que es lo
+    // que hace el cliente de Spotify, donde el DJ nunca vuelve atrás.
+    let cursor = dj_state
+        .0
+        .lock()
+        .ok()
+        .and_then(|guard| guard.next.clone());
+    let follows_cursor = cursor.is_some();
+    // La sesión se clona: una copia se la queda el pedido de la página y la
+    // otra la voz, que va por su cuenta.
+    let for_page = session.clone();
+    let page = tauri::async_runtime::spawn_blocking(move || match cursor {
+        Some(path) => spclient::dj_page(&for_page, &path),
+        None => spclient::dj_mix(&for_page, &playlist_id),
+    })
+    .await
+    .map_err(|e| {
+        eprintln!("Starless [command_failed]: {e}");
+        "command_failed".to_string()
+    })??;
+
+    // **La frase es de la canción, y se dice antes que ella.**
+    //
+    // El servicio cuelga la frase de apertura de la primera canción de un
+    // tramo y la de cierre de la última, y las dos se dicen *antes* de esa
+    // canción: "así termina este segmento, al ritmo de The Weeknd" se dice, y
+    // después suena The Weeknd.
+    //
+    // Por eso acá no se habla nada: la página llega dos canciones antes de
+    // que la cola se vacíe, y decir la frase en este momento sería hablar
+    // encima de la canción que está sonando. La frase queda guardada por
+    // canción, y el frontend la pide cuando esa canción va a sonar.
+    let follows = page.next.is_some();
+    let voices = page.voices;
+    if let Ok(mut guard) = dj_state.0.lock() {
+        // El cursor es lo único que sobrevive al click: la sesión que sigue es
+        // la misma, y por eso el click siguiente trae canciones nuevas.
+        guard.next = page.next;
+        // Las frases y los audios que quedaron de la tanda anterior no le
+        // sirven a nadie: la cola se reemplaza entera.
+        guard.voices.clear();
+        guard.audio.clear();
+        for (id, params) in voices {
+            guard.voices.insert(id, params);
+        }
+    }
+    log::info!(
+        "dj: {} con {} canciones; {}",
+        if follows_cursor {
+            "siguió la sesión"
+        } else {
+            "arrancó una sesión"
+        },
+        page.mix.tracks.len(),
+        if follows { "sigue" } else { "es la última" }
+    );
+
+    Ok(page.mix)
+}
+
+/// El DJ dice la frase que le corresponde a una canción.
+///
+/// **La frase es de la canción, y se dice antes que ella.** El servicio cuelga
+/// la frase de apertura de la primera canción de un tramo y la de cierre de la
+/// última, y las dos se dicen *antes* de esa canción. Por eso la app las
+/// guarda hasta que la canción va a sonar: pedirlas al llegar la página sería
+/// hablar encima de la canción que está sonando.
+///
+/// La respuesta es el número de la voz, o `None` cuando el DJ no tiene nada
+/// que decir para esa canción: entonces la música arranca derecho. El número
+/// es lo que distingue dos voces: dos clicks seguidos son dos voces, y la que
+/// terminó primero no es la que el segundo click está esperando.
+///
+/// **Si la voz falla, el DJ sigue sonando.** La voz es un extra sobre una
+/// estación que ya funciona; que el servicio de voz no conteste no puede ser
+/// motivo para que la música no suene. Por eso el evento va siempre.
+#[tauri::command]
+async fn dj_speak(
+    app: AppHandle,
+    session_state: State<'_, SessionState>,
+    dj_state: State<'_, DjState>,
+    track_id: String,
+) -> Result<Option<u64>, String> {
+    let Some(params) = take_voice(&dj_state, &track_id) else {
+        return Ok(None);
+    };
+
+    let session = session_state
+        .0
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone())
+        .ok_or_else(|| "no_session".to_string())?;
+
+    let id = next_voice_id();
+    // La bandera se crea acá, no en el hilo: es lo que permite cortar la voz
+    // antes de que llegue, y lo que corta la que ya está sonando.
+    let stop = voice::begin();
+
+    // **El audio que ya estaba pedido se usa, y no se vuelve a pedir.**
+    let ready = take_audio(&dj_state, &track_id);
+
+    // **La música se calla ahora, y no cuando llegue el audio.**
+    //
+    // Si siguiera sonando hasta que la voz esté lista, el usuario escucharía
+    // un pedazo de la canción que acaba de saltear y recién después al DJ: es
+    // la sensación de que la app no lo escuchó. El silencio de un segundo
+    // antes de la frase es la pausa del DJ, y es preferible a la canción
+    // equivocada.
+    if let Err(error) = playback::stop(&app) {
+        log::warn!("dj: no se pudo cortar la música: {error}");
+    }
+
+    let session = session.clone();
+    let app = app.clone();
+    std::thread::spawn(move || {
+        // **El dispositivo tiene que estar abierto antes de que la voz entre.**
+        // La voz sale por el mixer del player, y sin player no hay mixer: el
+        // primer click en el DJ de una app que nunca sonó nada sería mudo.
+        // Abrir el dispositivo es lo que hace `ensure_player`, y lo hace en
+        // este hilo porque tarda.
+        playback::ensure_player(&app, &session);
+
+        let spoken = (|| -> Result<bool, String> {
+            // Si al usuario ya le alcanzó, ni se pide el audio: el hilo se va
+            // sin tocar el player. La canción que el usuario puso hace un
+            // segundo está sonando, y cortarla sería dejar al DJ mudo y sin
+            // música.
+            if stop.load(Ordering::Relaxed) {
+                return Ok(false);
+            }
+            let audio = match ready {
+                Some(audio) => audio,
+                None => spclient::dj_voice(&session, &params)?,
+            };
+            if stop.load(Ordering::Relaxed) {
+                return Ok(false);
+            }
+            let voice = voice::speak(&audio, stop)?;
+            Ok(voice.wait())
+        })();
+
+        match spoken {
+            Ok(true) => log::info!("dj: la voz del DJ terminó de hablar"),
+            Ok(false) => log::info!("dj: la voz del DJ se cortó"),
+            Err(error) => log::error!("dj: la voz no se pudo poner: {error}"),
+        }
+        // El evento va siempre, se haya oído o no: el frontend está
+        // esperando esta voz, y dejarla esperando sería dejar el DJ mudo.
+        let _ = app.emit("dj://voice", DjVoiceEvent { id, done: true });
+    });
+
+    Ok(Some(id))
+}
+
+/// La frase que el DJ todavía tiene para una canción, y que se lleva.
+///
+/// Se lleva porque la frase se dice una sola vez: si el DJ la dijera dos
+/// veces, la segunda sería la conversación de otro tramo.
+fn take_voice(dj_state: &State<'_, DjState>, track_id: &str) -> Option<crate::voice::VoiceParams> {
+    let mut guard = dj_state.0.lock().ok()?;
+    guard.voices.remove(track_id)
+}
+
+/// El audio que ya estaba pedido para una canción, si lo hay.
+///
+/// Se lleva porque el audio pesa: son trescientos kilobytes por frase, y
+/// guardarlos de más no sirve de nada.
+fn take_audio(dj_state: &State<'_, DjState>, track_id: &str) -> Option<Vec<u8>> {
+    let mut guard = dj_state.0.lock().ok()?;
+    guard.audio.remove(track_id)
+}
+
+/// El número de la próxima voz del DJ.
+///
+/// Es un contador y nada más: sirve para que dos clicks seguidos no se
+/// confundan, no para identificar nada fuera de la app.
+static VOICE_ID: AtomicU64 = AtomicU64::new(1);
+
+fn next_voice_id() -> u64 {
+    VOICE_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+/// La página siguiente del DJ: la estación sigue.
+///
+/// **Sin cursor no hay página**, y eso no es un error: es el DJ diciendo que se
+/// terminó. La respuesta es una lista vacía, que es lo mismo que la app
+/// necesita saber para dejar de pedir.
+#[tauri::command]
+async fn dj_more(
+    app: AppHandle,
+    session_state: State<'_, SessionState>,
+    dj_state: State<'_, DjState>,
+) -> Result<DjMix, String> {
+    let path = dj_state
+        .0
+        .lock()
+        .ok()
+        .and_then(|guard| guard.next.clone())
+        .unwrap_or_default();
+    if path.is_empty() {
+        return Ok(DjMix {
+            tracks: Vec::new(),
+            lines: HashMap::new(),
+        });
+    }
+
+    let session = session_state
+        .0
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone())
+        .ok_or_else(|| "no_session".to_string())?;
+
+    // La sesión se clona: una copia se la queda el pedido de la página y la
+    // otra el audio que se pide por adelantado.
+    let for_page = session.clone();
+    let page = tauri::async_runtime::spawn_blocking(move || spclient::dj_page(&for_page, &path))
+        .await
+        .map_err(|e| {
+            eprintln!("Starless [command_failed]: {e}");
+            "command_failed".to_string()
+        })??;
+
+    // Las frases de esta página quedan guardadas por canción, y no se dicen
+    // ahora: la página llega dos canciones antes de que la cola se vacíe, y
+    // hablar acá sería hablar encima de la canción que está sonando. El DJ
+    // las dice cuando la canción va a sonar.
+    let voices = page.voices;
+    if let Ok(mut guard) = dj_state.0.lock() {
+        guard.next = page.next;
+        for (id, params) in voices.clone() {
+            guard.voices.insert(id, params);
+        }
+    }
+
+    // **El audio se pide ahora, y no cuando la canción va a sonar.**
+    //
+    // Fabricarlo tarda un par de segundos —el servicio que lo hace es otro— y
+    // esta página llega cinco canciones antes de que la cola se vacíe. Pedirlo
+    // ahora lo deja listo para el momento en que la canción arranca: el DJ
+    // toma la posta sin un hole en el medio.
+    for (id, params) in voices {
+        let session = session.clone();
+        let app = app.clone();
+        std::thread::spawn(move || {
+            let Ok(audio) = spclient::dj_voice(&session, &params) else {
+                return;
+            };
+            let state = tauri::Manager::state::<DjState>(&app);
+            if let Ok(mut guard) = state.0.lock() {
+                guard.audio.insert(id, audio);
+            }
+        });
+    }
+
+    log::info!(
+        "dj: la estación pidió la página siguiente y recibió {} canciones",
+        page.mix.tracks.len()
+    );
+
+    Ok(page.mix)
+}
+
+// Crea una playlist en la biblioteca y la nombra. Devuelve el id nuevo para que
+// la pantalla pueda abrirla sin volver a leer toda la biblioteca.
+// `create_failed` y `attach_failed` llegan al frente tal cual: una playlist que no
+// llegó a crearse y una que existe pero no entró en la biblioteca son dos
+// problemas distintos y un mensaje genérico los vuelve el mismo.
+spclient_command!(create_playlist, spclient::create_playlist, String, name: String);
+
+// Mete una canción en una playlist que ya existe. Es una escritura y no una
+// lectura, así que va por el mismo camino que las demás: la red no puede
+// tocar el hilo principal. La revisión de la playlist se lee acá adentro, que
+// es lo único que garantiza que sea la última.
+spclient_command!(
+    add_to_playlist,
+    spclient::add_to_playlist,
+    (),
+    playlist_id: String,
+    track_id: String
+);
 
 // --- Playback --------------------------------------------------------------
 
@@ -404,6 +752,38 @@ fn play_track(
         .map_err(|_| "session_busy".to_string())?
         .clone()
         .ok_or_else(|| "not_signed_in".to_string())?;
+
+    // **Poner una canción calla al DJ.** Si el DJ estaba hablando, era para
+    // esta canción: cuando el usuario elige otra, la frase que ya no tiene
+    // sentido seguir diciendo se corta. Va antes de mirar la conexión: la
+    // frase está de más aunque la canción tarde en arrancar.
+    voice::stop();
+
+    // A dead session does not get a player.
+    //
+    // `ensure_player` builds one on the session it is given, and a player on a
+    // dead session is a player that never plays anything — it would also
+    // displace the one the reconnection is about to build, and the two would
+    // fight over the audio device.
+    if session.is_invalid() {
+        // **But the click is not thrown away.**
+        //
+        // The session died on its own —librespot never reconnects by itself—,
+        // and nothing in the app may be rebuilding it: the reconnection exists
+        // for a track that *failed*, and a session that dies while the queue
+        // is empty never produces a failed track. So the connection was gone
+        // for hours, with a window that looked perfectly fine and a DJ that
+        // still spoke.
+        //
+        // A click is the same request a failure makes, and the only one a
+        // person can make: the session goes back up and the track that was
+        // asked for goes back on with it.
+        log::warn!("[connection_lost] la sesión de reproducción ya no está; se reconstruye");
+        playback::reconnect_and_play(&app, &track_id, duration_ms.unwrap_or(0))?;
+        let _ = app.emit("player://status", state.status());
+        return Ok(());
+    }
+
     playback::ensure_player(&app, &session);
     playback::play(
         &state,
@@ -427,11 +807,6 @@ fn toggle_playback(state: State<PlaybackState>) -> Result<(), String> {
 #[tauri::command]
 fn seek_playback(state: State<PlaybackState>, position_ms: u32) -> Result<(), String> {
     playback::seek(&state, position_ms)
-}
-
-#[tauri::command]
-fn stop_playback(state: State<PlaybackState>) -> Result<(), String> {
-    playback::stop(&state)
 }
 
 #[tauri::command]
@@ -467,6 +842,32 @@ fn set_accent(color: String) {
     settings::save_accent(&color);
 }
 
+/// How the library is ordered, or the default when nobody has chosen.
+///
+/// The default comes back from here rather than from the frontend so that "never
+/// chosen" is answered in one place: a value that only Rust knows about cannot
+/// disagree with a default the frontend also carries.
+#[tauri::command]
+fn library_sort() -> String {
+    settings::saved_library_sort().to_string()
+}
+
+/// `settings` refuses any order this build does not know, in both directions.
+#[tauri::command]
+fn set_library_sort(sort: String) {
+    settings::save_library_sort(&sort);
+}
+
+#[tauri::command]
+fn library_view() -> String {
+    settings::saved_library_view().to_string()
+}
+
+#[tauri::command]
+fn set_library_view(view: String) {
+    settings::save_library_view(&view);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -499,6 +900,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(SessionState::default())
         .manage(PlaybackState::default())
+        .manage(DjState::default())
         .setup(|app| {
             // librespot narrates every refusal through `log`, and Starless is a
             // windowed app with no console to narrate into. Both halves matter:
@@ -544,6 +946,44 @@ pub fn run() {
                 }
             });
 
+            // The watchdog that notices when the player stops answering.
+            //
+            // It lives for the whole session and it is started here, next to
+            // the rest of the app's machinery, because it is the app's way of
+            // asking a question that the player cannot answer by itself: is the
+            // music still moving? A player that is parked inside the audio
+            // device is alive as far as `is_invalid` is concerned, and the
+            // window looks perfect while the app is deaf.
+            playback::watch(handle.clone());
+
+            // **La conexión, cortada a propósito.**
+            //
+            // Una sesión que se muere sola no se puede reproducir cuando se
+            // quiere: Spotify la tira cuando la tira. Y lo que hay alrededor
+            // —una sesión muerta con la cola vacía no falla ninguna pista, así
+            // que nadie pide la sesión de vuelta, y la app queda muda con una
+            // ventana que se ve perfecta— vale más que las líneas que hacen
+            // falta para verlo.
+            //
+            // Se corta después del handshake: cortarla antes sólo probaría que
+            // la app no puede conectarse.
+            #[cfg(debug_assertions)]
+            if playback::kill_session_requested() {
+                let killer = handle.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(8));
+                    playback::kill_session(&killer);
+                    // **Y ahora lo mismo que hace un clic**, con la sesión
+                    // muerta: hay que armar la sesión de nuevo y poner la
+                    // pista. Si la música vuelve, la puerta se abre.
+                    if let Err(error) =
+                        playback::reconnect_and_play(&killer, playback::PROBE_TRACK, 0)
+                    {
+                        log::error!("[reconnect_failed] la reconexión a mano falló: {error}");
+                    }
+                });
+            }
+
             // Off the setup thread, and started independently of the restore
             // above: the self-test waits for the session itself.
             // Same shape, different question: what this session can answer on
@@ -566,6 +1006,22 @@ pub fn run() {
             if spclient::home_requested() {
                 spclient::run_home_probe(handle.clone());
             }
+            #[cfg(debug_assertions)]
+            if spclient::create_requested() {
+                spclient::run_create_probe(handle.clone());
+            }
+            // La playlist que Spotify fabrica para la cuenta —DJ— es la única
+            // que hace preguntas nuevas, y es la que todavía no está
+            // resuelta.
+            #[cfg(debug_assertions)]
+            if spclient::dj_requested() {
+                spclient::run_dj_probe(handle.clone());
+            }
+            // La voz del DJ, de punta a punta y sin que nadie haga clic.
+            #[cfg(debug_assertions)]
+            if spclient::voice_requested() {
+                spclient::run_voice_probe(handle.clone());
+            }
             if selftest::requested() {
                 selftest::run(handle);
             }
@@ -577,22 +1033,28 @@ pub fn run() {
             sign_out,
             account,
             my_playlists,
+            create_playlist,
+            add_to_playlist,
             liked_tracks,
             playlist_tracks,
             search_tracks,
-            album_tracks,
-            artist_profile,
             lyrics,
+            dj_mix,
+            dj_more,
+            dj_speak,
             player_status,
             play_track,
             toggle_playback,
             seek_playback,
-            stop_playback,
             set_volume,
             menu_opacity,
             set_menu_opacity,
             accent,
             set_accent,
+            library_sort,
+            set_library_sort,
+            library_view,
+            set_library_view,
             previous_session_crashed,
             announce_clean_exit,
             simulate_crash,
