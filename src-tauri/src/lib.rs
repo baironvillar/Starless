@@ -181,11 +181,6 @@ fn announce_clean_exit() {
 /// **The door is narrow on purpose.** The endpoint decides what gets installed
 /// on this machine, and the webview is not the one that gets to decide that:
 /// only a manifest served from this repository's own releases is accepted.
-/// Whether a manifest URL is one of ours.
-///
-/// **The door is narrow on purpose.** The endpoint decides what gets installed
-/// on this machine, and the webview is not the one that gets to decide that:
-/// only a manifest served from this repository's own releases is accepted.
 fn is_our_manifest(url: &tauri::Url) -> bool {
     url.host_str() == Some("github.com")
         && url
@@ -193,20 +188,144 @@ fn is_our_manifest(url: &tauri::Url) -> bool {
             .starts_with("/baironvillar/Starless/releases/download/")
 }
 
-#[tauri::command]
-async fn check_prerelease_manifest(
-    app: AppHandle,
-    url: String,
-) -> Result<Option<serde_json::Value>, String> {
-    let endpoint = tauri::Url::parse(&url).map_err(|_| "invalid_manifest_url".to_string())?;
-    if !is_our_manifest(&endpoint) {
-        return Err("invalid_manifest_url".to_string());
+#[derive(serde::Deserialize)]
+struct GithubTag {
+    name: String,
+}
+
+#[derive(serde::Deserialize)]
+struct GithubRelease {
+    prerelease: bool,
+    draft: bool,
+    assets: Vec<GithubAsset>,
+}
+
+#[derive(serde::Deserialize)]
+struct GithubAsset {
+    name: String,
+    browser_download_url: String,
+}
+
+/// The GitHub API, with the one header it insists on.
+///
+/// **Without a `User-Agent` the API answers `403` and nothing else.** The URL
+/// is right, the answer is right, and the body says the request was refused
+/// before it was read. `reqwest` sends exactly the headers it is told to
+/// send, and nobody told it: it does not add one on its own. So a client
+/// built without this header asks GitHub a question that is turned down at the
+/// door — and the develop channel was asking exactly that question, which is
+/// why the button said "GitHub could not be reached" about a GitHub that was
+/// perfectly reachable.
+fn github_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .user_agent(concat!("starless/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .map_err(|e| e.to_string())
+}
+
+/// The manifest of the newest prerelease that is really published.
+///
+/// **The tags, not the list of releases.** The list is an index, and an index
+/// can be behind: the release exists and the list that points at it is updated
+/// a few minutes later, which is exactly when somebody presses the button. The
+/// tags are the refs, and they exist from the moment the tag is pushed. So
+/// the walk goes through them — newest first — and each one is asked for by
+/// name, which is a direct read and not a lookup in a list.
+///
+/// **A tag without a release is a normal thing to find.** It is a tag that was
+/// pushed and whose release is still a draft, and drafts are invisible to
+/// everybody but the owner. It is skipped, not treated as a failure.
+///
+/// The cost is a request per candidate instead of one for everything, and
+/// there are sixty requests per hour and per address. This is a button
+/// somebody presses, not something the app polls, so the answer is worth
+/// more than the request.
+async fn find_prerelease_manifest(
+    client: &reqwest::Client,
+) -> Result<Option<tauri::Url>, String> {
+    const REPO: &str = "baironvillar/Starless";
+
+    let tags: Vec<GithubTag> = client
+        .get(format!("https://api.github.com/repos/{REPO}/tags?per_page=10"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    for tag in tags.iter().take(6) {
+        let response = client
+            .get(format!(
+                "https://api.github.com/repos/{REPO}/releases/tags/{}",
+                urlencoding::encode(&tag.name)
+            ))
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        // A tag without a release is a normal thing to find, not a failure.
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            continue;
+        }
+        let release: GithubRelease = response
+            .error_for_status()
+            .map_err(|e| e.to_string())?
+            .json()
+            .await
+            .map_err(|e| e.to_string())?;
+        if release.draft || !release.prerelease {
+            continue;
+        }
+
+        let Some(manifest) = release.assets.iter().find(|a| a.name == "latest.json") else {
+            continue;
+        };
+        let Ok(endpoint) = tauri::Url::parse(&manifest.browser_download_url) else {
+            continue;
+        };
+        if !is_our_manifest(&endpoint) {
+            return Err("invalid_manifest_url".to_string());
+        }
+        return Ok(Some(endpoint));
     }
+
+    Ok(None)
+}
+
+/// The develop channel, resolved in Rust.
+///
+/// **Everything the channel needs happens here, and that is not a style
+/// choice.** The webview used to ask GitHub for the releases and then fetch
+/// the manifest itself, and the second of those never worked: the manifest
+/// lives behind a redirect to `release-assets.githubusercontent.com`, and that
+/// answer carries no CORS headers, so the browser stopped the request before
+/// a byte arrived. From here the manifest is a URL the backend hands to the
+/// updater, and Rust has no CORS.
+///
+/// **The discovery is here for the same reason.** The tags and the releases
+/// come from the API, which does allow cross-origin reads — but it allows
+/// sixty of them per hour and per address, and a button that a person
+/// presses is not the place to spend that budget.
+///
+/// **The comparison is left to the webview.** The updater is asked for the
+/// update whatever the versions say, because "you are already running it" is
+/// an answer too, and only the frontend knows what is installed.
+#[tauri::command]
+async fn check_prerelease_manifest(app: AppHandle) -> Result<Option<serde_json::Value>, String> {
+    let client = github_client()?;
+    let Some(endpoint) = find_prerelease_manifest(&client).await? else {
+        return Ok(None);
+    };
 
     let updater = app
         .updater_builder()
         .endpoints(vec![endpoint])
         .map_err(|e| e.to_string())?
+        // The comparison is not this command's business: the webview says
+        // what is installed, and "you are already on it" is an answer.
+        .version_comparator(|_, _| true)
         .build()
         .map_err(|e| e.to_string())?;
     let update = updater.check().await.map_err(|e| e.to_string())?;
@@ -234,7 +353,6 @@ async fn check_prerelease_manifest(
     if let Some(body) = body {
         metadata["body"] = serde_json::Value::String(body);
     }
-
     Ok(Some(metadata))
 }
 
@@ -1162,8 +1280,9 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    use super::find_prerelease_manifest;
+    use super::github_client;
     use super::is_our_manifest;
-    use tauri_plugin_updater::UpdaterExt;
 
     /// The develop channel hands the updater a manifest URL and expects an
     /// update behind it. This walks the whole path —the endpoint, the
@@ -1200,6 +1319,31 @@ mod tests {
                 .as_str()
                 .is_some_and(|url| url.contains("releases/assets")),
             "el manifest no trae el instalador de Windows"
+        );
+    }
+
+    /// The develop channel has to find a prerelease that is really published.
+    ///
+    /// This is the walk the button does: the tags, then the release of each
+    /// tag, until one of them is a prerelease with a manifest. Every step of
+    /// it can be wrong in a way that only shows up when somebody presses the
+    /// button and nothing happens — the API turned down the request for
+    /// lacking a `User-Agent`, the list of releases was behind, the manifest
+    /// was not there. The walk is checked against the real repository, so the
+    /// answer is not a promise but a fact.
+    ///
+    /// It talks to GitHub, so it is `#[ignore]`d: the build must not depend on
+    /// somebody else's network. Run it with `cargo test --lib -- --ignored`.
+    #[test]
+    #[ignore = "habla con GitHub"]
+    fn the_develop_channel_finds_a_published_prerelease() {
+        let client = github_client().expect("no se pudo crear el cliente de GitHub");
+        let found = tauri::async_runtime::block_on(find_prerelease_manifest(&client))
+            .expect("GitHub no respondió");
+        let endpoint = found.expect("no se encontró ninguna prerelease publicada");
+        assert!(
+            is_our_manifest(&endpoint),
+            "el manifest encontrado no es de este repositorio"
         );
     }
 

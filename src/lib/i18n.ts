@@ -241,6 +241,9 @@ export const strings = {
     updateAvailable: "Hay una versión más nueva: {version}. Se instalará al cerrar Starless.",
     updateInstall: "Actualizar",
     updateDownloading: "Descargando…",
+    updateGoBack:
+      "Hay una versión pública ({version}) y estás corriendo una más nueva. Podés volver a la pública cuando quieras.",
+    updateGoBackShort: "Volver a la {version}",
     updateInstallError:
       "La descarga falló. La copia que tenés instalada no cambió, y podés intentarlo otra vez.",
     prereleaseTitle: "Prerelease de develop",
@@ -551,6 +554,9 @@ export const strings = {
     updateAvailable: "A newer version is out: {version}. It installs when Starless closes.",
     updateInstall: "Update",
     updateDownloading: "Downloading…",
+    updateGoBack:
+      "There is a public version ({version}) and you are running a newer one. You can go back to the public one whenever you want.",
+    updateGoBackShort: "Go back to {version}",
     updateInstallError:
       "The download failed. The copy you have installed did not change, and you can try again.",
     prereleaseTitle: "Develop prerelease",

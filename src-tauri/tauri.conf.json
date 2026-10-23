@@ -51,6 +51,7 @@
       "endpoints": [
         "https://github.com/baironvillar/Starless/releases/latest/download/latest.json"
       ],
+      "allowDowngrades": true,
       "windows": {
         "installMode": "passive"
       }

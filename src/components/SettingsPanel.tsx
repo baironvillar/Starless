@@ -37,6 +37,7 @@ import {
   installableUpdate,
   installPrerelease,
   installUpdate,
+  isGoingBack,
   pendingVersion,
   prereleaseState,
   prereleaseVersion,
@@ -252,6 +253,9 @@ function Updates({ t }: { t: Record<StringKey, string> }) {
   const update = installableUpdate(state);
   const version = pendingVersion(state);
   const simulated = state.status === "simulated";
+  // The public release is offered even when it is older: being on a prerelease
+  // and wanting the public one is a door, not a mistake.
+  const goingBack = update ? isGoingBack(update) : false;
 
   return (
     <div className="mt-5">
@@ -261,11 +265,13 @@ function Updates({ t }: { t: Record<StringKey, string> }) {
           hint={
             state.status === "installFailed"
               ? t.updateInstallError
-              : version === null
-                ? t.updatesHint
-                : simulated
-                  ? t.updateSimulated.replace("{version}", version)
-                  : t.updateAvailable.replace("{version}", version)
+              : goingBack
+                ? t.updateGoBack.replace("{version}", version ?? "")
+                : version === null
+                  ? t.updatesHint
+                  : simulated
+                    ? t.updateSimulated.replace("{version}", version)
+                    : t.updateAvailable.replace("{version}", version)
           }
         >
           <div className="flex items-center gap-2">
@@ -285,7 +291,9 @@ function Updates({ t }: { t: Record<StringKey, string> }) {
                 className="flex items-center gap-2 rounded-pill bg-live px-4 py-2.5 text-[13px] font-semibold text-ground transition-[filter] duration-200 hover:brightness-110"
               >
                 <Download className="size-4" strokeWidth={2} />
-                {t.updateInstall}
+                {goingBack
+                  ? t.updateGoBackShort.replace("{version}", version ?? "")
+                  : t.updateInstall}
               </button>
             )}
 
