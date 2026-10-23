@@ -166,6 +166,24 @@ salen de una captura:
   `releases/latest/download/latest.json` responde 200 apenas hay una release
   *publicada* —un borrador no se sirve—, y tanto el manifest como el `.msi` se
   bajan sin autenticación. Antes de culpar a la cadena, comprobá esa URL.
+- **La lista de releases es un índice, y un índice va con retraso.** GitHub publica
+  una release en dos pasos: la release existe, y la lista que la apunta se
+  actualiza —que no es lo mismo ni al mismo tiempo—. La lista puede ir minutos
+  atrás, y el botón de "Buscar prerelease" la usaba: se apretó un minuto después
+  de publicar la 0.5.1, la lista todavía describía el mundo anterior, y la app
+  dijo que no había prerelease mientras GitHub mostraba una. **Las etiquetas no
+  son ese índice**: son las refs, y existen desde que se empuja el tag. El
+  camino ahora va por `GET /tags` y pregunta cada etiqueta por su nombre
+  (`GET /releases/tags/<tag>`), que es una lectura directa y no una búsqueda.
+  Preguntar por nombre cuesta un request por etiqueta; preguntar por la lista
+  cuesta uno y a veces miente.
+- **Un `Update` del plugin es un handle a un recurso que vive en Rust.** El
+  `Update` de JavaScript lleva un `rid`, y el `rid` lo devuelve el backend: sin
+  él no hay nada que descargar. Armar un `Update` en el frontend con el JSON del
+  manifest no baja la barra de la firma —esa sigue verificándose en Rust contra
+  la llave embebida— pero deja un botón de instalar que no instala. Por eso el
+  manifest de la prerelease lo apunta `check_prerelease_manifest` en Rust: el
+  mismo updater, la misma llave, y lo que vuelve ya es instalable.
 - **GitHub devuelve 422 si le pasás una etiqueta que el repositorio no tiene**, y
   eso perdería el reporte entero. `report.rs` reintenta sin etiqueta por eso.
 - **Dos copias abiertas a la vez se hacen ver como un crash.** El marcador es un
