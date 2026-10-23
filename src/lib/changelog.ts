@@ -40,6 +40,33 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.5.2",
+    date: "2026-10-23",
+    released: true,
+    sections: {
+      es: [
+        {
+          title: "Corregido",
+          items: [
+            "El botón de «Buscar prerelease» no encontraba la prerelease. La app preguntaba a la lista de releases de GitHub, y esa lista es un índice que va con retraso: la release existe desde el minuto en que se publica, pero la lista que la apunta tarda unos minutos más en actualizarse. Con la 0.5.1 recién publicada, el botón decía «No hay prerelease» mientras la página de GitHub mostraba una. Ahora el camino va por las etiquetas —que existen desde que se empuja el tag— y cada una se pregunta por su nombre.",
+            "La prerelease se encontraba pero no se podía instalar. El frontend armaba el `Update` con el JSON del manifest, pero un `Update` del plugin es un handle a un recurso que vive en Rust: sin el `rid` que devuelve el backend no hay nada que descargar. El botón quedaba ahí, prometiendo instalar, y no instalaba. Ahora es el backend el que apunta el manifest —con el mismo updater, la misma llave y la misma verificación de firma— y lo que vuelve es algo instalable.",
+            "Una descarga que falla ahora lo dice. Antes la promesa se rechazaba sola: el botón no cambiaba y nada explicaba por qué. Ahora la fila dice que la descarga falló, que la copia instalada no cambió, y deja el botón para reintentar.",
+          ],
+        },
+      ],
+      en: [
+        {
+          title: "Fixed",
+          items: [
+            "The 'Check prerelease' button could not find the prerelease. The app asked GitHub for the list of releases, and that list is an index that runs behind: the release exists from the minute it is published, but the list pointing at it takes a few minutes longer to catch up. With the 0.5.1 just published, the button said 'No prerelease' while GitHub's page showed one. The path now goes through the tags —which exist from the moment the tag is pushed— and each one is asked for by name.",
+            "The prerelease was found but could not be installed. The frontend built the `Update` out of the manifest's JSON, but an `Update` in the plugin is a handle to a resource that lives in Rust: without the `rid` the backend returns there is nothing to download. The button sat there, promising to install, and installed nothing. Now the backend points the manifest —with the same updater, the same key and the same signature check— and what comes back is installable.",
+            "A download that fails now says so. Before, the promise rejected on its own: the button did not change and nothing explained why. Now the row says the download failed, that the installed copy did not change, and leaves the button there to try again.",
+          ],
+        },
+      ],
+    },
+  },
+  {
     version: "0.5.1",
     date: "2026-10-22",
     released: true,

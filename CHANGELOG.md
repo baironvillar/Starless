@@ -30,6 +30,16 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [0.5.2] — 2026-10-23 · prerelease
+
+### Fixed / Corregido
+
+- **El botón de "Buscar prerelease" no encontraba la prerelease.** La app preguntaba a la lista de releases de GitHub, y esa lista es un índice que va con retraso: la release existe desde el minuto en que se publica, pero la lista que la apunta tarda unos minutos más en actualizarse. Con la 0.5.1 recién publicada, el botón decía "No hay prerelease" mientras la página de GitHub mostraba una. Ahora el camino va por las etiquetas —que existen desde que se empuja el tag— y cada una se pregunta por su nombre.
+- **La prerelease se encontraba pero no se podía instalar.** El frontend armaba el `Update` con el JSON del manifest, pero un `Update` del plugin es un handle a un recurso que vive en Rust: sin el `rid` que devuelve el backend no hay nada que descargar. El botón quedaba ahí, prometiendo instalar, y no instalaba. Ahora es el backend el que apunta el manifest —con el mismo updater, la misma llave y la misma verificación de firma— y lo que vuelve es algo instalable.
+- **Una descarga que falla ahora lo dice.** Antes la promesa se rechazaba sola: el botón no cambiaba y nada explicaba por qué. Ahora la fila dice que la descarga falló, que la copia instalada no cambió, y deja el botón para reintentar.
+
+---
+
 ## [0.5.1] — 2026-10-22 · prerelease
 
 ### New / Nuevo
@@ -227,6 +237,7 @@ Nunca se publicó. / Never published.
 
 ---
 
+[0.5.2]: https://github.com/baironvillar/Starless/releases/tag/v0.5.2
 [0.5.1]: https://github.com/baironvillar/Starless/releases/tag/v0.5.1
 [0.5.0]: https://github.com/baironvillar/Starless/releases/tag/v0.5.0
 [0.3.1]: https://github.com/baironvillar/Starless/releases/tag/v0.3.1
