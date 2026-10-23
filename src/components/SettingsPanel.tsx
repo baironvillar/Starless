@@ -259,11 +259,13 @@ function Updates({ t }: { t: Record<StringKey, string> }) {
         <Row
           label={t.updatesTitle}
           hint={
-            version === null
-              ? t.updatesHint
-              : simulated
-                ? t.updateSimulated.replace("{version}", version)
-                : t.updateAvailable.replace("{version}", version)
+            state.status === "installFailed"
+              ? t.updateInstallError
+              : version === null
+                ? t.updatesHint
+                : simulated
+                  ? t.updateSimulated.replace("{version}", version)
+                  : t.updateAvailable.replace("{version}", version)
           }
         >
           <div className="flex items-center gap-2">
@@ -381,6 +383,8 @@ function Prerelease({ t }: { t: Record<StringKey, string> }) {
         return t.prereleaseSame.replace("{version}", version ?? "");
       case "error":
         return t.prereleaseError;
+      case "installFailed":
+        return t.prereleaseInstallError;
       default:
         return t.prereleaseHint;
     }

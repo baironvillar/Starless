@@ -26,6 +26,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use librespot_core::session::Session;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
+// The develop channel builds the same updater as the stable one, pointed at
+// another manifest. The trait is what hands out that builder.
+use tauri_plugin_updater::UpdaterExt;
 
 use playback::{PlaybackState, PlaybackStatus};
 use models::{Account, DjMix, DjVoiceEvent, Lyrics, Playlist, Track};
@@ -157,6 +160,82 @@ fn dismiss_crash_report() {
 fn announce_clean_exit() {
     log::info!("salida anunciada: la actualización se lleva la sesión");
     report::mark_session_end();
+}
+
+/// The develop channel's manifest, turned into something that can be installed.
+///
+/// **The same updater, pointed at another door.** The plugin's own `check`
+/// reads the endpoint baked into `tauri.conf.json` — the stable channel — and
+/// nothing else. The prerelease needs the same machinery (the signature is
+/// checked in Rust against the key embedded in this binary, and the download
+/// is the same one), but pointed at a manifest we chose.
+///
+/// **Why this cannot live in the frontend.** An `Update` in the plugin's
+/// JavaScript is a handle to a resource that lives in Rust: without the `rid`
+/// this command returns, there is nothing to download and nothing to install.
+/// A frontend that fetched a manifest and built an `Update` out of the JSON
+/// would look like it worked and fail at the download — an install button on
+/// screen that installs nothing, which is the exact confusion this row exists
+/// to prevent.
+///
+/// **The door is narrow on purpose.** The endpoint decides what gets installed
+/// on this machine, and the webview is not the one that gets to decide that:
+/// only a manifest served from this repository's own releases is accepted.
+/// Whether a manifest URL is one of ours.
+///
+/// **The door is narrow on purpose.** The endpoint decides what gets installed
+/// on this machine, and the webview is not the one that gets to decide that:
+/// only a manifest served from this repository's own releases is accepted.
+fn is_our_manifest(url: &tauri::Url) -> bool {
+    url.host_str() == Some("github.com")
+        && url
+            .path()
+            .starts_with("/baironvillar/Starless/releases/download/")
+}
+
+#[tauri::command]
+async fn check_prerelease_manifest(
+    app: AppHandle,
+    url: String,
+) -> Result<Option<serde_json::Value>, String> {
+    let endpoint = tauri::Url::parse(&url).map_err(|_| "invalid_manifest_url".to_string())?;
+    if !is_our_manifest(&endpoint) {
+        return Err("invalid_manifest_url".to_string());
+    }
+
+    let updater = app
+        .updater_builder()
+        .endpoints(vec![endpoint])
+        .map_err(|e| e.to_string())?
+        .build()
+        .map_err(|e| e.to_string())?;
+    let update = updater.check().await.map_err(|e| e.to_string())?;
+    let Some(update) = update else {
+        return Ok(None);
+    };
+
+    // The fields are read before the update is handed to the resource table:
+    // adding it moves it, and a moved value is not a value.
+    let current_version = update.current_version.clone();
+    let version = update.version.clone();
+    let body = update.body.clone();
+    let raw_json = update.raw_json.clone();
+    let rid = app.resources_table().add(update);
+
+    // The body is left out when there is none: the plugin's `Update` takes an
+    // optional string, and a `null` where it expects "absent" is a type error
+    // in the webview.
+    let mut metadata = serde_json::json!({
+        "rid": rid,
+        "currentVersion": current_version,
+        "version": version,
+        "rawJson": raw_json,
+    });
+    if let Some(body) = body {
+        metadata["body"] = serde_json::Value::String(body);
+    }
+
+    Ok(Some(metadata))
 }
 
 /// Development only: plant a crashed session on disk so the crash flow can be
@@ -1057,6 +1136,7 @@ pub fn run() {
             set_library_view,
             previous_session_crashed,
             announce_clean_exit,
+            check_prerelease_manifest,
             simulate_crash,
             crash_report_preview,
             submit_crash_report,
@@ -1078,4 +1158,36 @@ pub fn run() {
             report::mark_session_end();
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_our_manifest;
+
+    /// The develop channel installs whatever manifest it is pointed at, so the
+    /// door accepts this repository's releases and nothing else. A URL that
+    /// merely looks like ours —a different host, a sibling repository— is not
+    /// ours.
+    #[test]
+    fn only_our_own_releases_are_accepted() {
+        let ours = tauri::Url::parse(
+            "https://github.com/baironvillar/Starless/releases/download/v0.5.2/latest.json",
+        )
+        .unwrap();
+        assert!(is_our_manifest(&ours));
+
+        let other_host = tauri::Url::parse("https://example.com/latest.json").unwrap();
+        assert!(!is_our_manifest(&other_host));
+
+        let sibling = tauri::Url::parse(
+            "https://github.com/baironvillar/Starless-evil/releases/download/v0.5.2/latest.json",
+        )
+        .unwrap();
+        assert!(!is_our_manifest(&sibling));
+
+        let other_repo =
+            tauri::Url::parse("https://github.com/alguien/otro/releases/download/v1/latest.json")
+                .unwrap();
+        assert!(!is_our_manifest(&other_repo));
+    }
 }
