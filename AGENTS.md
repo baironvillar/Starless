@@ -208,6 +208,14 @@ salen de una captura:
   rango otra vez, con la base rota, y `git rev-list` **aborta**. En un runner
   un `abort` es un paso rojo. La base se cambia ahora por la punta cuando no
   está en el clon.
+- **La línea pública es una puerta de verdad, y hacen falta dos permisos.** El
+  plugin del updater sólo ofrece una versión más vieja si
+  `plugins.updater.allowDowngrades` está en `true`, y el instalador sólo la
+  instala si `bundle.windows.allowDowngrades` también lo está —que en Tauri
+  viene en `true` por default—. Con las dos cosas, "Volver a la 0.5.1" instala
+  la 0.5.1; con una sola, el botón promete una cosa y hace otra. Y ni la
+  pastilla del botón de Ajustes ni la alerta del arranque lo anuncian: un
+  «0.5.1» mientras corrés 0.5.3 es una vuelta atrás, no una actualización.
 - **GitHub devuelve 422 si le pasás una etiqueta que el repositorio no tiene**, y
   eso perdería el reporte entero. `report.rs` reintenta sin etiqueta por eso.
 - **Dos copias abiertas a la vez se hacen ver como un crash.** El marcador es un
