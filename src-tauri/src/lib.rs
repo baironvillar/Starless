@@ -1163,6 +1163,45 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::is_our_manifest;
+    use tauri_plugin_updater::UpdaterExt;
+
+    /// The develop channel hands the updater a manifest URL and expects an
+    /// update behind it. This walks the whole path —the endpoint, the
+    /// redirect, the platform key, the signature— against a prerelease that is
+    /// really published, because every one of those can be wrong in a way that
+    /// only shows up when somebody tries to install it.
+    ///
+    /// It talks to GitHub, so it is `#[ignore]`d: the build must not depend on
+    /// somebody else's network. Run it with `cargo test --lib -- --ignored`.
+    #[test]
+    #[ignore = "habla con GitHub"]
+    fn the_published_prerelease_manifest_is_the_one_we_can_install() {
+        // The manifest is what the updater reads, and the updater is the only
+        // thing that can install it. This checks the two things it needs to
+        // find: this platform's entry, and a signature to check the download
+        // against. The download itself is the plugin's, and it is the same one
+        // the stable channel uses.
+        let response = reqwest::blocking::get(
+            "https://github.com/baironvillar/Starless/releases/download/v0.5.1/latest.json",
+        )
+        .unwrap();
+        assert!(response.status().is_success(), "el manifest no se pudo bajar");
+
+        let manifest: serde_json::Value = response.json().unwrap();
+        let platform = &manifest["platforms"]["windows-x86_64"];
+        assert!(
+            platform["signature"]
+                .as_str()
+                .is_some_and(|signature| !signature.is_empty()),
+            "el manifest no trae la firma de esta plataforma"
+        );
+        assert!(
+            platform["url"]
+                .as_str()
+                .is_some_and(|url| url.contains("releases/assets")),
+            "el manifest no trae el instalador de Windows"
+        );
+    }
 
     /// The develop channel installs whatever manifest it is pointed at, so the
     /// door accepts this repository's releases and nothing else. A URL that
