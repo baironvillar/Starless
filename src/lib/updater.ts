@@ -116,6 +116,26 @@ export function isGoingBack(update: Update): boolean {
 }
 
 /**
+ * The version that is genuinely newer than what is running.
+ *
+ * **The badge and the alert must not lie.** With the public line open even to
+ * an older release, "there is an update" can also mean "there is a release
+ * you could go back to". That is a door inside Settings, not an announcement:
+ * a badge offering 0.5.1 while 0.5.2 is running is a lie about the machine,
+ * and the alert is worse — it interrupts somebody to talk about an older
+ * build.
+ */
+export function newerVersion(state: UpdateState): string | null {
+  const version = pendingVersion(state);
+  if (version === null) return null;
+  // The simulated version is a fiction of the dev panel, and there is nothing
+  // to compare it against.
+  if (state.status === "simulated") return version;
+  const update = installableUpdate(state);
+  return update && isGoingBack(update) ? null : version;
+}
+
+/**
  * Pretend a newer version exists, so the three surfaces can be looked at
  * without publishing anything.
  *
@@ -251,7 +271,16 @@ export type PrereleaseState =
   | { status: "ready"; update: TauriUpdate }
   /** The download failed. The update is still there, so the button can be pressed again. */
   | { status: "installFailed"; update: TauriUpdate }
-  | { status: "error" };
+  /**
+   * The channel could not be looked up.
+   *
+   * **The reason travels with it.** "GitHub could not be reached" and "GitHub
+   * ran out of queries for this machine" look identical from the outside —
+   * both are a request that did not come back with an answer — and they are
+   * not the same thing: one is a network that is not there and the other is a
+   * budget that runs out and comes back. The row says which one it was.
+   */
+  | { status: "error"; reason: string };
 
 let prerelease: PrereleaseState = { status: "idle" };
 const prereleaseListeners = new Set<(state: PrereleaseState) => void>();
@@ -345,10 +374,24 @@ export async function checkPrerelease(): Promise<void> {
     publishPrerelease({ status: "available", update: new Update(metadata) });
   } catch (e) {
     // The same reasoning as `checkForUpdate`: GitHub being unreachable is a fact
-    // about the network, not about the installation.
+    // about the network, not about the installation. What it is *not* is always
+    // the same fact: a spent rate limit is a different one, and the backend
+    // says so with a code of its own.
     console.warn("Starless: no se pudo comprobar la prerelease", e);
-    publishPrerelease({ status: "error" });
+    publishPrerelease({ status: "error", reason: errorReason(e) });
   }
+}
+
+/**
+ * The code behind a failed call, without whatever came before it.
+ *
+ * A Rust command that fails answers with a string, and `invoke` rejects with
+ * it. Sometimes that string carries a prefix —a context, a path— and the code
+ * is the last word.
+ */
+function errorReason(error: unknown): string {
+  const raw = typeof error === "string" ? error : String(error);
+  return raw.replace(/^.*?:\s*/, "");
 }
 
 /**

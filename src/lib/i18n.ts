@@ -257,6 +257,8 @@ export const strings = {
     prereleaseInstall: "Instalar la prerelease",
     prereleaseError:
       "No se pudo preguntar a GitHub. Eso dice de la conexión, no de la copia que tenés instalada.",
+    prereleaseRateLimited:
+      "GitHub limitó las consultas desde esta máquina. El presupuesto vuelve en una hora: probá otra vez después.",
     prereleaseInstallError:
       "La descarga de la prerelease falló. La copia que tenés instalada no cambió, y podés intentarlo otra vez.",
     updateAlertTitle: "Hay una versión nueva",
@@ -571,6 +573,8 @@ export const strings = {
     prereleaseInstall: "Install the prerelease",
     prereleaseError:
       "GitHub could not be reached. That says something about the connection, not about the copy you have installed.",
+    prereleaseRateLimited:
+      "GitHub limited the queries from this machine. The budget comes back in an hour: try again later.",
     prereleaseInstallError:
       "The prerelease download failed. The copy you have installed did not change, and you can try again.",
     updateAlertTitle: "There is a newer version",

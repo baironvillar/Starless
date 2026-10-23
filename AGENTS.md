@@ -184,6 +184,30 @@ salen de una captura:
   la llave embebida— pero deja un botón de instalar que no instala. Por eso el
   manifest de la prerelease lo apunta `check_prerelease_manifest` en Rust: el
   mismo updater, la misma llave, y lo que vuelve ya es instalable.
+- **El manifest de la release no se puede bajar desde el webview, y la API de
+  GitHub rechaza la petición si no lleva `User-Agent`.** Son dos motivos
+  distintos y los dos dicen lo mismo: la app no encuentra la prerelease y culpa
+  a GitHub.
+  El primero: `github.com/.../releases/download/<tag>/latest.json` responde 302
+  a `release-assets.githubusercontent.com`, y **esa respuesta no trae
+  `Access-Control-Allow-Origin`**: el `fetch` del webview moría en CORS antes de
+  un byte. La API sí lo trae, y por eso el descubrimiento sí se podía hacer
+  desde el navegador — lo que no se podía era bajar el manifest.
+  El segundo: `api.github.com` responde **403** a una petición sin
+  `User-Agent`, y `reqwest` **no manda ese encabezado solo**: manda exactamente
+  los que se le piden. Comprobado contra el socket crudo, sin nada de por medio:
+  la misma URL con `curl` responde 200 porque `curl` sí manda el suyo. Un
+  cliente sin ese encabezado pregunta algo que se rechaza en la puerta, y el
+  cuerpo de la respuesta dice "forbidden" sin explicar por qué.
+  Por eso el canal de develop se resuelve **entero en Rust**: las etiquetas, la
+  release y el manifest. En Rust no hay CORS y el `User-Agent` se pone.
+- **Un force-push rompe el job de mensajes de commit, y no por el mensaje.** El
+  job armaba su rango con `github.event.before`, y después de un force-push ese
+  commit ya no está en el clon: la rama se reescribió y nadie lo apunta. El job
+  lo detectaba y caía en la rama de la punta, pero enseguida después armaba el
+  rango otra vez, con la base rota, y `git rev-list` **aborta**. En un runner
+  un `abort` es un paso rojo. La base se cambia ahora por la punta cuando no
+  está en el clon.
 - **GitHub devuelve 422 si le pasás una etiqueta que el repositorio no tiene**, y
   eso perdería el reporte entero. `report.rs` reintenta sin etiqueta por eso.
 - **Dos copias abiertas a la vez se hacen ver como un crash.** El marcador es un

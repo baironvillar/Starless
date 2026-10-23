@@ -63,7 +63,7 @@ import {
   usePlaylists,
   usePlaylistTracks,
 } from "./lib/spotify";
-import { checkForUpdate, pendingVersion, subscribeUpdate, updateState } from "./lib/updater";
+import { checkForUpdate, newerVersion, subscribeUpdate, updateState } from "./lib/updater";
 import { useSearch } from "./lib/useSearch";
 
 /**
@@ -392,7 +392,7 @@ export default function App() {
    * inside Settings can never disagree about whether an update exists.
    */
   const updateStateSnapshot = useSyncExternalStore(subscribeUpdate, updateState, updateState);
-  const updateVersion = pendingVersion(updateStateSnapshot);
+  const updateVersion = newerVersion(updateStateSnapshot);
 
   const selected = playlists.data?.find((p) => p.id === activeItem);
   const isLiked = activeItem === "liked";

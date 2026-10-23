@@ -40,6 +40,33 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.5.3",
+    date: "2026-10-23",
+    released: true,
+    sections: {
+      es: [
+        {
+          title: "Corregido",
+          items: [
+            "El botón de «Buscar prerelease» no encontraba nada, y además daba la impresión de que GitHub estaba caído. Eran tres motivos apilados. El frontend bajaba el manifest, y el manifest vive detrás de una redirección a otro host que no trae cabeceras CORS: el navegador cortaba la petición antes de que llegara un byte. La API de GitHub rechaza con 403 toda petición sin `User-Agent`, y la biblioteca HTTP no manda ese encabezado solo. Y la lista de releases es un índice que va con retraso. Ahora el canal se resuelve entero en el backend —las etiquetas, la release y el manifest—, donde no hay CORS que pueda cortar nada y donde la pregunta se hace como hay que hacerla.",
+            "Si GitHub limitó las consultas desde esa máquina, la fila lo dice. El límite de la API es de sesenta consultas por hora y por dirección, y agotarlo se ve igual que una caída: un 403 sin explicación. Ahora la fila distingue los dos casos, porque uno se acaba y el otro no.",
+            "La línea pública también es una puerta. Estando en una prerelease, la release pública sólo se ofrecía si era más nueva, así que no había forma de volver a la línea estable desde la app. Ahora se ofrece igual —aunque sea más vieja— y la fila lo dice antes de hacerlo: «Volver a la 0.5.1». La pastilla del botón de Ajustes y la alerta del arranque no la anuncian: un «0.5.1» mientras corrés 0.5.3 no es una actualización, es una vuelta atrás.",
+          ],
+        },
+      ],
+      en: [
+        {
+          title: "Fixed",
+          items: [
+            "The 'Check prerelease' button found nothing, and made it look like GitHub was down. There were three reasons stacked. The webview fetched the manifest itself, and the manifest lives behind a redirect to another host that carries no CORS headers: the browser stopped the request before a byte arrived. The GitHub API refuses with 403 any request without a `User-Agent`, and the HTTP library does not send that header on its own. And the list of releases is an index that runs behind. The whole channel is now resolved in the backend —the tags, the release and the manifest— where there is no CORS to stop anything and where the question is asked the way it has to be asked.",
+            "If GitHub ran out of queries for this machine, the row says so. The API's limit is sixty queries per hour per address, and running out of it looks exactly like an outage: a 403 with no explanation. The row now tells the two apart, because one of them ends and the other does not.",
+            "The public line is a door too. While you were on a prerelease, the public release was only offered when it was newer, so there was no way back to the stable line from inside the app. It is offered now either way —even when it is older— and the row says so before it does: 'Go back to 0.5.1'. The badge on the Settings button and the alert at launch do not announce it: a '0.5.1' while you are running 0.5.3 is not an update, it is a way back.",
+          ],
+        },
+      ],
+    },
+  },
+  {
     version: "0.5.2",
     date: "2026-10-23",
     released: true,

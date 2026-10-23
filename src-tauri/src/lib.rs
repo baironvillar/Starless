@@ -223,6 +223,37 @@ fn github_client() -> Result<reqwest::Client, String> {
         .map_err(|e| e.to_string())
 }
 
+/// Whether GitHub refused because the hourly budget is spent.
+///
+/// The header is what tells the two apart; the reading of it is
+/// [`is_spent_budget`].
+fn is_rate_limited(response: &reqwest::Response) -> bool {
+    is_spent_budget(
+        response.status(),
+        response
+            .headers()
+            .get("x-ratelimit-remaining")
+            .and_then(|value| value.to_str().ok()),
+    )
+}
+
+/// Whether a 403 means the budget is spent, and not something else.
+///
+/// **A 403 is two different things.** The API answers 403 to a request without
+/// a `User-Agent` — a bug that does not go away — and also to a request that
+/// used up the hourly budget — a thing that happens. From the outside they
+/// look the same: a 403 with a body that says "forbidden" and nothing else.
+/// The header `x-ratelimit-remaining` tells them apart: if it says zero, it
+/// was not a mistake of the app but an empty purse.
+///
+/// **The difference is the one the person sees.** "GitHub could not be reached"
+/// and "GitHub ran out of queries for this machine" are two different facts,
+/// and the second one has an ending: the budget comes back. With the same
+/// sentence for both, the button looks broken and only is.
+fn is_spent_budget(status: reqwest::StatusCode, remaining: Option<&str>) -> bool {
+    status == reqwest::StatusCode::FORBIDDEN && remaining == Some("0")
+}
+
 /// The manifest of the newest prerelease that is really published.
 ///
 /// **The tags, not the list of releases.** The list is an index, and an index
@@ -245,11 +276,15 @@ async fn find_prerelease_manifest(
 ) -> Result<Option<tauri::Url>, String> {
     const REPO: &str = "baironvillar/Starless";
 
-    let tags: Vec<GithubTag> = client
+    let response = client
         .get(format!("https://api.github.com/repos/{REPO}/tags?per_page=10"))
         .send()
         .await
-        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+    if is_rate_limited(&response) {
+        return Err("rate_limited".to_string());
+    }
+    let tags: Vec<GithubTag> = response
         .error_for_status()
         .map_err(|e| e.to_string())?
         .json()
@@ -268,6 +303,9 @@ async fn find_prerelease_manifest(
         // A tag without a release is a normal thing to find, not a failure.
         if response.status() == reqwest::StatusCode::NOT_FOUND {
             continue;
+        }
+        if is_rate_limited(&response) {
+            return Err("rate_limited".to_string());
         }
         let release: GithubRelease = response
             .error_for_status()
@@ -1283,6 +1321,7 @@ mod tests {
     use super::find_prerelease_manifest;
     use super::github_client;
     use super::is_our_manifest;
+    use super::is_spent_budget;
 
     /// The develop channel hands the updater a manifest URL and expects an
     /// update behind it. This walks the whole path —the endpoint, the
@@ -1320,6 +1359,27 @@ mod tests {
                 .is_some_and(|url| url.contains("releases/assets")),
             "el manifest no trae el instalador de Windows"
         );
+    }
+
+    /// The 403 that means "the budget is spent" is not the 403 that means "you
+    /// forgot the User-Agent", and the row says a different thing for each.
+    #[test]
+    fn only_an_empty_purse_is_the_rate_limit() {
+        use reqwest::StatusCode;
+
+        // The spent one.
+        assert!(is_spent_budget(StatusCode::FORBIDDEN, Some("0")));
+
+        // A 403 with budget left is something else: a request that was refused
+        // for a different reason.
+        assert!(!is_spent_budget(StatusCode::FORBIDDEN, Some("57")));
+
+        // No header at all: nobody said anything about the budget.
+        assert!(!is_spent_budget(StatusCode::FORBIDDEN, None));
+
+        // And no other status is the rate limit, whatever the header says.
+        assert!(!is_spent_budget(StatusCode::NOT_FOUND, Some("0")));
+        assert!(!is_spent_budget(StatusCode::OK, Some("0")));
     }
 
     /// The develop channel has to find a prerelease that is really published.

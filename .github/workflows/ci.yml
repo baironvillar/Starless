@@ -89,16 +89,6 @@ jobs:
             base='${{ github.event.before }}'
             head='${{ github.sha }}'
           fi
-          # El primer push de una rama tiene un `before` de ceros, y una rama
-          # recreada o rebased puede dejar un `base` que no está en este clon.
-          # Recorrer toda la historia en ese caso bloquearía todos los pushes
-          # para siempre por commits que nadie puede reescribir, así que en ese
-          # caso se mira sólo la punta.
-          if printf '%s' "$base" | grep -qE '^0+$' || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
-            shas="$head"
-          else
-            shas=$(git rev-list "$base..$head")
-          fi
           # La regla no gobierna la historia que ya estaba escrita cuando entró.
           # `--not` saca del rango el commit que agregó el hook y todo lo que es
           # ancestro suyo, que es exactamente lo anterior a la regla: un PR que
@@ -110,7 +100,24 @@ jobs:
           # en el último que lo tocó: cambiar la regla no reinicia el reloj.
           regla=$(git log --diff-filter=A -1 --format=%H -- .githooks/commit-msg 2>/dev/null || true)
           if [ -n "$regla" ]; then
-            shas=$(git rev-list "$base..$head" --not "$regla")
+            corte="--not $regla"
+          else
+            corte=""
+          fi
+          # El primer push de una rama tiene un `before` de ceros, y una rama
+          # recreada, rebased o force-pushed deja un `base` que no está en este
+          # clon. Recorrer toda la historia en ese caso bloquearía todos los
+          # pushes para siempre por commits que nadie puede reescribir, así que
+          # en ese caso se mira lo que hay desde la regla hasta la punta.
+          #
+          # Y un rango con una base que no existe no se puede recorrer: `git
+          # rev-list` aborta, y en un runner un `abort` es un paso rojo. Por eso
+          # la base se cambia por la punta en vez de dejarse rota —un force-push
+          # es un push como cualquier otro y no puede dejar el CI en rojo—.
+          if printf '%s' "$base" | grep -qE '^0+$' || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            shas=$(git rev-list "$head" $corte)
+          else
+            shas=$(git rev-list "$base..$head" $corte)
           fi
           if [ -z "$shas" ]; then
             echo "No hay commits nuevos que mirar."

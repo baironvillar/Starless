@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { StringKey } from "../lib/i18n";
-import { pendingVersion, subscribeUpdate, updateState } from "../lib/updater";
+import { newerVersion, subscribeUpdate, updateState } from "../lib/updater";
 
 type UpdateAlertProps = {
   t: Record<StringKey, string>;
@@ -38,7 +38,7 @@ import { SPRING } from "../lib/motion";
  */
 export function UpdateAlert({ t }: UpdateAlertProps) {
   const state = useSyncExternalStore(subscribeUpdate, updateState, updateState);
-  const version = pendingVersion(state);
+  const version = newerVersion(state);
   const simulated = state.status === "simulated";
   /** The version already said out loud, so it is not said again. */
   const [dismissed, setDismissed] = useState<string | null>(null);

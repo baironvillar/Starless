@@ -390,7 +390,10 @@ function Prerelease({ t }: { t: Record<StringKey, string> }) {
       case "same":
         return t.prereleaseSame.replace("{version}", version ?? "");
       case "error":
-        return t.prereleaseError;
+        // The rate limit is a fact with an ending: the budget comes back. It is
+        // not the same thing as a GitHub that is not there, and the row says
+        // which one it is.
+        return state.reason === "rate_limited" ? t.prereleaseRateLimited : t.prereleaseError;
       case "installFailed":
         return t.prereleaseInstallError;
       default:
