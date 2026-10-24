@@ -215,7 +215,7 @@ salen de una captura:
   viene en `true` por default—. Con las dos cosas, "Volver a la 0.5.1" instala
   la 0.5.1; con una sola, el botón promete una cosa y hace otra. Y ni la
   pastilla del botón de Ajustes ni la alerta del arranque lo anuncian: un
-  «0.5.1» mientras corrés 0.5.3 es una vuelta atrás, no una actualización.
+  «0.5.1» mientras corres 0.5.3 es una vuelta atrás, no una actualización.
 - **GitHub devuelve 422 si le pasás una etiqueta que el repositorio no tiene**, y
   eso perdería el reporte entero. `report.rs` reintenta sin etiqueta por eso.
 - **Dos copias abiertas a la vez se hacen ver como un crash.** El marcador es un
@@ -283,7 +283,7 @@ salen de una captura:
   escribe nunca**. Todos los reportes de crash salían sin el panic, que es
   justamente la falla que el reporte existe para contar. Las dos puntas usan
   `reported_panic_path()`; el test `the_panic_file_has_one_name` lo fija.
-  **Si tocás un nombre de archivo acá, tocá los tres lugares juntos.**
+  **Si tocas un nombre de archivo acá, toca los tres lugares juntos.**
 - **Nada que use `reqwest::blocking` puede correr en un comando `async`.** Un
   cliente bloqueante levanta su propio runtime, y construirlo —o soltar el que se
   creó— dentro de un worker async hace panic. Lo único que hoy habla HTTP con
@@ -308,7 +308,7 @@ salen de una captura:
   resultado era vidrio sin difuminado: al 55% se leían las canciones de atrás a
   través del panel de Ajustes. El bug vivió semanas sin que nadie tocara el CSS.
   La regla: escribí **sólo** la propiedad estándar y dejá que Lightning CSS agregue
-  el prefijo él mismo. Si tocás `src/index.css`, comprobá el CSS emitido en
+  el prefijo él mismo. Si tocas `src/index.css`, comprueba el CSS emitido en
   `dist/assets/*.css`, no el fuente.
 - **`track.id` no es una key de React.** Una playlist puede tener la misma canción
   dos veces — en esta cuenta, `Mi playlist n.º 4` contesta 50 items con 46 ids
@@ -318,7 +318,7 @@ salen de una captura:
   n.º 4 arriba de las canciones de LoL, bajo un encabezado que decía "LoL" y un
   conteo que era de LoL. El array estaba bien todo el tiempo; las filas mentían.
   Por eso `trackRowKeys` cuenta ocurrencias: toda key es única y queda estable
-  mientras el orden no cambie. **Si tocás una lista de canciones, usá
+  mientras el orden no cambie. **Si tocas una lista de canciones, usa
   `trackRowKeys`, nunca `track.id` pelado.**
 - **El limpiado de logs reconoce formas, no personas.** Los patrones adivinan cómo
   se ve un nombre; el nombre de cuenta se quita por valor exacto, porque la
@@ -357,7 +357,7 @@ salen de una captura:
   hilo no vuelve) antes de abrir otro. Para probarlo sin esperar a que un
   dispositivo real se trabe: `STARLESS_STALL_TEST=1` fuerza una recuperación
   veinte segundos después de abrir la app (sólo en debug, como las sondas).
-  **Si tocás el player, mirá ese watchdog.**
+  **Si tocas el player, mira ese watchdog.**
 - **`Image` no tiene `width`, y no porque se le olvidó.** El canal que lee la
   biblioteca es `PictureSize`, en `playlist4_external.proto`, y **no tiene campos
   de dimensión**: trae `target_name` y `url`. El modelo declaraba `width: Option`,
@@ -503,7 +503,7 @@ salen de una captura:
     el DJ hablando hay algo —la música viene, y la voz es lo más fuerte de la
     sala—, así que el control de volumen y el transporte **no se bloquean**:
     un control que existe y no se puede usar no es un control. Y el botón de
-    reproducir, con el DJ hablando, es "**empezá la música**": la frase es de
+    reproducir, con el DJ hablando, es "**empieza la música**": la frase es de
     la canción que viene, así que cortar la voz y poner esa canción es lo que
     el botón dice. El mismo "siguiente" hace lo mismo.
   - **La barra no sabe el volumen hasta que se lo preguntan.**
@@ -695,7 +695,7 @@ salen de una captura:
 ## Antes de abrir un PR
 
 `bun run lint`, `bun run typecheck`, `bun run version`, `cargo check` y
-`cargo test --lib`. Si tocás UI, antes y después en captura: el diseño se juzga a
+`cargo test --lib`. Si tocas UI, antes y después en captura: el diseño se juzga a
 ojo, no leyendo el diff.
 
 El detalle de cada puerta —qué atrapa y qué **no** atrapa— está en

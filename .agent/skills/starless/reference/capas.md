@@ -6,7 +6,7 @@ este repo.
 
 ## La tabla
 
-| Si tocás | Tenés que | Si te lo saltás |
+| Si tocas | Tienes que | Si te lo saltas |
 |---|---|---|
 | Un comando Tauri nuevo | registrarlo en `generate_handler!` de `lib.rs` **y** su wrapper en `spotify.ts` | el webview invoca un comando que no existe; o el comando existe y nadie lo llama |
 | Un comando que hace I/O | `async`, o el macro `spclient_command!` | un comando sin `async` corre en el hilo principal: treinta segundos de ventana congelada |
@@ -26,7 +26,7 @@ este repo.
 
 ## Por qué la tabla es la parte importante
 
-Un cambio dentro de una capa es fácil de revisar: leés la función nueva y sabés
+Un cambio dentro de una capa es fácil de revisar: lees la función nueva y sabes
 si está bien. Un cambio entre capas no se puede revisar leyendo: **el síntoma
 aparece en un archivo que no tocaste**. Por eso la lista de archivos del paso 1
 existe — es la defensa contra la clase de defecto que este repo no detecta solo.

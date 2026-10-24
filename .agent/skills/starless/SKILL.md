@@ -25,11 +25,11 @@ En este orden, y en ninguno se saltea el primero:
 1. **`AGENTS.md` completo.** Es el mapa y la lista de trampas. Tiene reglas que
    no son preferencias.
 2. **`PRODUCT.md` y `DESIGN.md`** si el cambio se ve o se escucha. `DESIGN.md` es
-   la fuente de la verdad del color y del vidrio: si tocás `index.css`,
+   la fuente de la verdad del color y del vidrio: si tocas `index.css`,
    el valor nuevo va en `@theme` y no en una constante duplicada.
 3. **La trampa específica del área que vas a tocar.** `AGENTS.md` las lista todas
    con el "por qué" de cada una; buscala por palabra clave, no las leas de memoria.
-4. **Si tocás creación de playlists, `docs/escribir-playlists.md` primero.** Es
+4. **Si tocas creación de playlists, `docs/escribir-playlists.md` primero.** Es
    el único lugar con la receta y con la lista de lo ya descartado.
 
 ## El recorrido de un cambio

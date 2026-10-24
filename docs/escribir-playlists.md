@@ -337,7 +337,7 @@ Conviene no llegar como si nada de esto fuera nuevo:
 **Esto es lo que se manda.** Es un comentario, no un PR: no se toca código, no
 se pide ninguna función. Redactado en inglés, que es como se escriben ahí.
 **No está publicado** —en esta máquina no hay `gh` ni token de GitHub—, así que
-lo pegás vos.
+lo pegas tú.
 
 El PR agrega `post_playlist_changes`: escribir filas —agregar, sacar, mover— dentro
 de una playlist que ya existe. No crea playlists ni toca la biblioteca. El

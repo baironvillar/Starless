@@ -966,7 +966,7 @@ const API_ERRORS: Record<string, string> = {
   // on its own, and this is what is left when that does not work: the
   // connection is gone and it could not be brought back.
   connection_lost:
-    "Se perdió la conexión con Spotify y no se pudo volver. Cerrá y abrí Starless para seguir escuchando.",
+    "Se perdió la conexión con Spotify y no se pudo volver. Cierra y abre Starless para seguir escuchando.",
   // Not a failure yet. The session died and the app is going to build it again
   // — the same credentials, a new connection — and the track that failed goes
   // back on when it is up. Saying "it was lost" here would be a lie about a

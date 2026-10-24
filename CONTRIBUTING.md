@@ -18,7 +18,7 @@ constraints the code has to respect.
   se negocia: Premium obligatorio, cero telemetría, el audio no pasa por la
   webview.
 - **[`DESIGN.md`](DESIGN.md)** — el sistema visual y su presupuesto de
-  rendimiento. Si tocás una superficie de UI, este archivo dice cómo se hace y
+  rendimiento. Si tocas una superficie de UI, este archivo dice cómo se hace y
   qué no se puede romper.
 
 ## Requisitos / Requirements
@@ -124,7 +124,7 @@ hook on for a clone.
 ## El botón de reportar un crash
 
 Un build normal **no** lleva token: el botón arma el reporte y abre GitHub en el
-navegador con todo pre-cargado, y vos apretás "Create". Para que el botón cree el
+navegador con todo pre-cargado, y apretas "Create". Para que el botón cree el
 issue solo hay que hornear un token de GitHub con permiso `Issues: Write` sobre
 este repositorio y nada más:
 
@@ -147,7 +147,7 @@ justo lo que `SECURITY.md` dice al respecto.
 
 **La versión vive en un solo lugar.** `src-tauri/tauri.conf.json` es la fuente.
 `scripts/version.ts` la propaga a `Cargo.toml` y `package.json`, y falla si
-discrepan. Si tocás la versión, usá `bun run version:bump patch`; si tocás un
+discrepan. Si tocas la versión, usa `bun run version:bump patch`; si tocas un
 solo manifiesto a mano, el CI lo va a marcar.
 
 **Toda cadena pasa por el mapa de traducción.** Español e inglés se escriben
@@ -184,7 +184,7 @@ del skill espera.
 
 - Un tema por PR.
 - En español o inglés, como te quede natural.
-- Si tocás UI, incluí una captura antes y después. El diseño se juzga a ojo, no
+- Si tocas UI, incluye una captura antes y después. El diseño se juzga a ojo, no
   leyendo el diff.
 - El CI corre lint, typecheck, build y el chequeo de versión. Los cuatro tienen
   que pasar.
