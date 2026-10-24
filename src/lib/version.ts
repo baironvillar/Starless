@@ -15,3 +15,22 @@ export async function appVersion(): Promise<string> {
     return __APP_VERSION__;
   }
 }
+
+/**
+ * Whether this build came from `develop`.
+ *
+ * **A fact about the build, not a question for the network.** The app knows it
+ * because the build was told: the same decision that gives a develop build its
+ * inverted icon is the one that says so here. Asking GitHub would make the
+ * answer depend on whether the machine happens to have a connection, and the
+ * whole point is to be able to look at the app and know what it is.
+ *
+ * **The `typeof` is not paranoia.** Vite replaces `define` constants in the
+ * bundle, but in the dev server it hands them to the page as globals —and the
+ * constant is not there at all if the page is opened outside the dev server.
+ * A missing constant that throws takes the whole screen down, and this runs
+ * while the settings panel renders.
+ */
+export function isPrerelease(): boolean {
+  return typeof __STARLESS_CHANNEL__ !== "undefined" && __STARLESS_CHANNEL__ === "develop";
+}

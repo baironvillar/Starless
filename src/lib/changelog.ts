@@ -40,6 +40,97 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.5.3",
+    date: "2026-10-23",
+    released: true,
+    sections: {
+      es: [
+        {
+          title: "Corregido",
+          items: [
+            "El botón de «Buscar prerelease» no encontraba nada, y además daba la impresión de que GitHub estaba caído. Eran tres motivos apilados. El frontend bajaba el manifest, y el manifest vive detrás de una redirección a otro host que no trae cabeceras CORS: el navegador cortaba la petición antes de que llegara un byte. La API de GitHub rechaza con 403 toda petición sin `User-Agent`, y la biblioteca HTTP no manda ese encabezado solo. Y la lista de releases es un índice que va con retraso. Ahora el canal se resuelve entero en el backend —las etiquetas, la release y el manifest—, donde no hay CORS que pueda cortar nada y donde la pregunta se hace como hay que hacerla.",
+            "Si GitHub limitó las consultas desde esa máquina, la fila lo dice. El límite de la API es de sesenta consultas por hora y por dirección, y agotarlo se ve igual que una caída: un 403 sin explicación. Ahora la fila distingue los dos casos, porque uno se acaba y el otro no.",
+            "La línea pública también es una puerta. Estando en una prerelease, la release pública sólo se ofrecía si era más nueva, así que no había forma de volver a la línea estable desde la app. Ahora se ofrece igual —aunque sea más vieja— y la fila lo dice antes de hacerlo: «Volver a la 0.5.1». La pastilla del botón de Ajustes y la alerta del arranque no la anuncian: un «0.5.1» mientras corrés 0.5.3 no es una actualización, es una vuelta atrás.",
+          ],
+        },
+      ],
+      en: [
+        {
+          title: "Fixed",
+          items: [
+            "The 'Check prerelease' button found nothing, and made it look like GitHub was down. There were three reasons stacked. The webview fetched the manifest itself, and the manifest lives behind a redirect to another host that carries no CORS headers: the browser stopped the request before a byte arrived. The GitHub API refuses with 403 any request without a `User-Agent`, and the HTTP library does not send that header on its own. And the list of releases is an index that runs behind. The whole channel is now resolved in the backend —the tags, the release and the manifest— where there is no CORS to stop anything and where the question is asked the way it has to be asked.",
+            "If GitHub ran out of queries for this machine, the row says so. The API's limit is sixty queries per hour per address, and running out of it looks exactly like an outage: a 403 with no explanation. The row now tells the two apart, because one of them ends and the other does not.",
+            "The public line is a door too. While you were on a prerelease, the public release was only offered when it was newer, so there was no way back to the stable line from inside the app. It is offered now either way —even when it is older— and the row says so before it does: 'Go back to 0.5.1'. The badge on the Settings button and the alert at launch do not announce it: a '0.5.1' while you are running 0.5.3 is not an update, it is a way back.",
+          ],
+        },
+      ],
+    },
+  },
+  {
+    version: "0.5.2",
+    date: "2026-10-23",
+    released: true,
+    sections: {
+      es: [
+        {
+          title: "Corregido",
+          items: [
+            "El botón de «Buscar prerelease» no encontraba la prerelease. La app preguntaba a la lista de releases de GitHub, y esa lista es un índice que va con retraso: la release existe desde el minuto en que se publica, pero la lista que la apunta tarda unos minutos más en actualizarse. Con la 0.5.1 recién publicada, el botón decía «No hay prerelease» mientras la página de GitHub mostraba una. Ahora el camino va por las etiquetas —que existen desde que se empuja el tag— y cada una se pregunta por su nombre.",
+            "La prerelease se encontraba pero no se podía instalar. El frontend armaba el `Update` con el JSON del manifest, pero un `Update` del plugin es un handle a un recurso que vive en Rust: sin el `rid` que devuelve el backend no hay nada que descargar. El botón quedaba ahí, prometiendo instalar, y no instalaba. Ahora es el backend el que apunta el manifest —con el mismo updater, la misma llave y la misma verificación de firma— y lo que vuelve es algo instalable.",
+            "Una descarga que falla ahora lo dice. Antes la promesa se rechazaba sola: el botón no cambiaba y nada explicaba por qué. Ahora la fila dice que la descarga falló, que la copia instalada no cambió, y deja el botón para reintentar.",
+          ],
+        },
+      ],
+      en: [
+        {
+          title: "Fixed",
+          items: [
+            "The 'Check prerelease' button could not find the prerelease. The app asked GitHub for the list of releases, and that list is an index that runs behind: the release exists from the minute it is published, but the list pointing at it takes a few minutes longer to catch up. With the 0.5.1 just published, the button said 'No prerelease' while GitHub's page showed one. The path now goes through the tags —which exist from the moment the tag is pushed— and each one is asked for by name.",
+            "The prerelease was found but could not be installed. The frontend built the `Update` out of the manifest's JSON, but an `Update` in the plugin is a handle to a resource that lives in Rust: without the `rid` the backend returns there is nothing to download. The button sat there, promising to install, and installed nothing. Now the backend points the manifest —with the same updater, the same key and the same signature check— and what comes back is installable.",
+            "A download that fails now says so. Before, the promise rejected on its own: the button did not change and nothing explained why. Now the row says the download failed, that the installed copy did not change, and leaves the button there to try again.",
+          ],
+        },
+      ],
+    },
+  },
+  {
+    version: "0.5.1",
+    date: "2026-10-22",
+    released: true,
+    sections: {
+      es: [
+        {
+          title: "Nuevo",
+          items: [
+            "La app ahora dice si es una pre-release. Al lado de la versión en Ajustes aparece una pastilla «pre-release» cuando la build salió de `develop`; en una release no aparece nada. El ícono invertido ya lo decía, pero sólo para quien sabe qué significa: dos copias de la app en la misma máquina se ven iguales, y ahora se distinguen.",
+          ],
+        },
+        {
+          title: "Corregido",
+          items: [
+            "La app se abría con una cola que nadie había pedido. Al abrir Starless, el panel «A CONTINUACIÓN» traía las canciones que se veían en pantalla: ocho canciones bajo un encabezado de cola, antes de que hubiera sonado una sola. Ahora la cola no existe hasta que vos la creás: hasta que suena algo, el panel dice que no hay nada en cola, y lo que se ve en pantalla es lo que se ve.",
+            "Agregar una canción a la cola convertía la pantalla entera en cola. Si no había cola, la canción que agregabas era la cola: quedaban ocho canciones en el panel, siete de las cuales nunca pediste. Ahora, cuando no hay cola, la canción agregada es la cola —y queda una sola—; cuando hay cola, se agrega al final, como siempre.",
+          ],
+        },
+      ],
+      en: [
+        {
+          title: "New",
+          items: [
+            "The app now says whether it is a prerelease. Next to the version in Settings there is a 'pre-release' pill when the build came from `develop`; in a release there is nothing. The inverted icon already said so, but only to somebody who knew what it meant: two copies of the app on the same machine used to look the same, and now they do not.",
+          ],
+        },
+        {
+          title: "Fixed",
+          items: [
+            "The app used to open with a queue nobody had asked for. When you opened Starless, the 'Up next' panel carried the songs that were on screen: eight songs under a queue heading, before a single song had played. Now the queue does not exist until you make it: until something plays, the panel says there is nothing queued, and what you see on screen is only what you see.",
+            "Adding a song to the queue turned the whole screen into a queue. With no queue, the song you added was the queue: eight songs in the panel, seven of which you never asked for. Now, with no queue, the song you added is the queue —and there is just the one—; with a queue, it goes to the end, as always.",
+          ],
+        },
+      ],
+    },
+  },
+  {
     version: "0.5.0",
     date: "2026-10-22",
     released: true,

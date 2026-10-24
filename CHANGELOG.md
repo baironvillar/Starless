@@ -30,6 +30,39 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [0.5.3] — 2026-10-23 · prerelease
+
+### Fixed / Corregido
+
+- **El botón de "Buscar prerelease" no encontraba nada, y además daba la impresión de que GitHub estaba caído.** Eran tres motivos apilados. El frontend bajaba el manifest, y el manifest vive detrás de una redirección a otro host que no trae cabeceras CORS: el navegador cortaba la petición antes de que llegara un byte. La API de GitHub rechaza con 403 toda petición sin `User-Agent`, y la biblioteca HTTP no manda ese encabezado solo. Y la lista de releases es un índice que va con retraso. Ahora el canal se resuelve entero en el backend —las etiquetas, la release y el manifest—, donde no hay CORS que pueda cortar nada y donde la pregunta se hace como hay que hacerla.
+- **Si GitHub limitó las consultas desde esa máquina, la fila lo dice.** El límite de la API es de sesenta consultas por hora y por dirección, y agotarlo se ve igual que una caída: un 403 sin explicación. Ahora la fila distingue los dos casos, porque uno se acaba y el otro no.
+- **La línea pública también es una puerta.** Estando en una prerelease, la release pública sólo se ofrecía si era más nueva, así que no había forma de volver a la línea estable desde la app. Ahora se ofrece igual —aunque sea más vieja— y la fila lo dice antes de hacerlo: «Volver a la 0.5.1». La pastilla del botón de Ajustes y la alerta del arranque no la anuncian: un «0.5.1» mientras corrés 0.5.3 no es una actualización, es una vuelta atrás.
+
+---
+
+## [0.5.2] — 2026-10-23 · prerelease
+
+### Fixed / Corregido
+
+- **El botón de "Buscar prerelease" no encontraba la prerelease.** La app preguntaba a la lista de releases de GitHub, y esa lista es un índice que va con retraso: la release existe desde el minuto en que se publica, pero la lista que la apunta tarda unos minutos más en actualizarse. Con la 0.5.1 recién publicada, el botón decía "No hay prerelease" mientras la página de GitHub mostraba una. Ahora el camino va por las etiquetas —que existen desde que se empuja el tag— y cada una se pregunta por su nombre.
+- **La prerelease se encontraba pero no se podía instalar.** El frontend armaba el `Update` con el JSON del manifest, pero un `Update` del plugin es un handle a un recurso que vive en Rust: sin el `rid` que devuelve el backend no hay nada que descargar. El botón quedaba ahí, prometiendo instalar, y no instalaba. Ahora es el backend el que apunta el manifest —con el mismo updater, la misma llave y la misma verificación de firma— y lo que vuelve es algo instalable.
+- **Una descarga que falla ahora lo dice.** Antes la promesa se rechazaba sola: el botón no cambiaba y nada explicaba por qué. Ahora la fila dice que la descarga falló, que la copia instalada no cambió, y deja el botón para reintentar.
+
+---
+
+## [0.5.1] — 2026-10-22 · prerelease
+
+### New / Nuevo
+
+- **La app ahora dice si es una pre-release.** Al lado de la versión en Ajustes aparece una pastilla «pre-release» cuando la build salió de `develop`; en una release no aparece nada. El ícono invertido ya lo decía, pero sólo para quien sabe qué significa: dos copias de la app en la misma máquina se ven iguales, y ahora se distinguen.
+
+### Fixed / Corregido
+
+- **La app se abría con una cola que nadie había pedido.** Al abrir Starless, el panel «A CONTINUACIÓN» traía las canciones que se veían en pantalla: ocho canciones bajo un encabezado de cola, antes de que hubiera sonado una sola. Ahora la cola no existe hasta que vos la creás: hasta que suena algo, el panel dice que no hay nada en cola, y lo que se ve en pantalla es lo que se ve.
+- **Agregar una canción a la cola convertía la pantalla entera en cola.** Si no había cola, la canción que agregabas era la cola: quedaban ocho canciones en el panel, siete de las cuales nunca pediste. Ahora, cuando no hay cola, la canción agregada *es* la cola —y queda una sola—; cuando hay cola, se agrega al final, como siempre.
+
+---
+
 ## [0.5.0] — 2026-10-22 · prerelease
 
 ### New / Nuevo
@@ -214,6 +247,8 @@ Nunca se publicó. / Never published.
 
 ---
 
+[0.5.2]: https://github.com/baironvillar/Starless/releases/tag/v0.5.2
+[0.5.1]: https://github.com/baironvillar/Starless/releases/tag/v0.5.1
 [0.5.0]: https://github.com/baironvillar/Starless/releases/tag/v0.5.0
 [0.3.1]: https://github.com/baironvillar/Starless/releases/tag/v0.3.1
 [0.3.0]: https://github.com/baironvillar/Starless/releases/tag/v0.3.0

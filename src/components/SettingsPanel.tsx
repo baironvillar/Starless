@@ -37,6 +37,7 @@ import {
   installableUpdate,
   installPrerelease,
   installUpdate,
+  isGoingBack,
   pendingVersion,
   prereleaseState,
   prereleaseVersion,
@@ -44,7 +45,7 @@ import {
   subscribeUpdate,
   updateState,
 } from "../lib/updater";
-import { appVersion } from "../lib/version";
+import { appVersion, isPrerelease } from "../lib/version";
 import { DevPanel } from "./DevPanel";
 
 type SettingsPanelProps = {
@@ -94,6 +95,14 @@ export function SettingsPanel({
 }: SettingsPanelProps) {
   const [section, setSection] = useState<Section>("sectionGeneral");
   const [version, setVersion] = useState<string>("");
+  /**
+   * Whether this build is a prerelease.
+   *
+   * **It is not a question with an answer that changes.** It is decided when the
+   * bundle is built, so it is a constant and not a state: there is nothing to
+   * wait for and nothing that can arrive late.
+   */
+  const prerelease = isPrerelease();
 
   useEffect(() => {
     void appVersion().then(setVersion);
@@ -133,7 +142,23 @@ export function SettingsPanel({
 
         <div className="mt-auto border-t border-white/8 px-2 pt-3">
           <p className="text-[12px] text-ink-muted">{t.savedAutomatically}</p>
-          <p className="tabular mt-0.5 text-[12px] text-ink-faint">v{version}</p>
+          {/*
+              Which build this is, in words.
+
+              **The inverted icon says it too, but only to somebody who knows
+              what it means.** Two copies of the app on the same machine look
+              the same otherwise, and "which one am I running" is the question
+              that comes up exactly when something is wrong. A prerelease says
+              so here; a release says nothing, because there is nothing to say.
+          */}
+          <p className="tabular mt-0.5 flex items-center gap-1.5 text-[12px] text-ink-faint">
+            <span>v{version}</span>
+            {prerelease && (
+              <span className="rounded-pill bg-accent/15 px-1.5 py-px text-[10.5px] font-semibold tracking-wide uppercase text-accent">
+                {t.prereleaseBadge}
+              </span>
+            )}
+          </p>
         </div>
       </nav>
 
@@ -228,6 +253,9 @@ function Updates({ t }: { t: Record<StringKey, string> }) {
   const update = installableUpdate(state);
   const version = pendingVersion(state);
   const simulated = state.status === "simulated";
+  // The public release is offered even when it is older: being on a prerelease
+  // and wanting the public one is a door, not a mistake.
+  const goingBack = update ? isGoingBack(update) : false;
 
   return (
     <div className="mt-5">
@@ -235,11 +263,15 @@ function Updates({ t }: { t: Record<StringKey, string> }) {
         <Row
           label={t.updatesTitle}
           hint={
-            version === null
-              ? t.updatesHint
-              : simulated
-                ? t.updateSimulated.replace("{version}", version)
-                : t.updateAvailable.replace("{version}", version)
+            state.status === "installFailed"
+              ? t.updateInstallError
+              : goingBack
+                ? t.updateGoBack.replace("{version}", version ?? "")
+                : version === null
+                  ? t.updatesHint
+                  : simulated
+                    ? t.updateSimulated.replace("{version}", version)
+                    : t.updateAvailable.replace("{version}", version)
           }
         >
           <div className="flex items-center gap-2">
@@ -259,7 +291,9 @@ function Updates({ t }: { t: Record<StringKey, string> }) {
                 className="flex items-center gap-2 rounded-pill bg-live px-4 py-2.5 text-[13px] font-semibold text-ground transition-[filter] duration-200 hover:brightness-110"
               >
                 <Download className="size-4" strokeWidth={2} />
-                {t.updateInstall}
+                {goingBack
+                  ? t.updateGoBackShort.replace("{version}", version ?? "")
+                  : t.updateInstall}
               </button>
             )}
 
@@ -356,7 +390,12 @@ function Prerelease({ t }: { t: Record<StringKey, string> }) {
       case "same":
         return t.prereleaseSame.replace("{version}", version ?? "");
       case "error":
-        return t.prereleaseError;
+        // The rate limit is a fact with an ending: the budget comes back. It is
+        // not the same thing as a GitHub that is not there, and the row says
+        // which one it is.
+        return state.reason === "rate_limited" ? t.prereleaseRateLimited : t.prereleaseError;
+      case "installFailed":
+        return t.prereleaseInstallError;
       default:
         return t.prereleaseHint;
     }

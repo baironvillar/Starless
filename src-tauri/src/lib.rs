@@ -26,6 +26,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use librespot_core::session::Session;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
+// The develop channel builds the same updater as the stable one, pointed at
+// another manifest. The trait is what hands out that builder.
+use tauri_plugin_updater::UpdaterExt;
 
 use playback::{PlaybackState, PlaybackStatus};
 use models::{Account, DjMix, DjVoiceEvent, Lyrics, Playlist, Track};
@@ -157,6 +160,238 @@ fn dismiss_crash_report() {
 fn announce_clean_exit() {
     log::info!("salida anunciada: la actualización se lleva la sesión");
     report::mark_session_end();
+}
+
+/// The develop channel's manifest, turned into something that can be installed.
+///
+/// **The same updater, pointed at another door.** The plugin's own `check`
+/// reads the endpoint baked into `tauri.conf.json` — the stable channel — and
+/// nothing else. The prerelease needs the same machinery (the signature is
+/// checked in Rust against the key embedded in this binary, and the download
+/// is the same one), but pointed at a manifest we chose.
+///
+/// **Why this cannot live in the frontend.** An `Update` in the plugin's
+/// JavaScript is a handle to a resource that lives in Rust: without the `rid`
+/// this command returns, there is nothing to download and nothing to install.
+/// A frontend that fetched a manifest and built an `Update` out of the JSON
+/// would look like it worked and fail at the download — an install button on
+/// screen that installs nothing, which is the exact confusion this row exists
+/// to prevent.
+///
+/// **The door is narrow on purpose.** The endpoint decides what gets installed
+/// on this machine, and the webview is not the one that gets to decide that:
+/// only a manifest served from this repository's own releases is accepted.
+fn is_our_manifest(url: &tauri::Url) -> bool {
+    url.host_str() == Some("github.com")
+        && url
+            .path()
+            .starts_with("/baironvillar/Starless/releases/download/")
+}
+
+#[derive(serde::Deserialize)]
+struct GithubTag {
+    name: String,
+}
+
+#[derive(serde::Deserialize)]
+struct GithubRelease {
+    prerelease: bool,
+    draft: bool,
+    assets: Vec<GithubAsset>,
+}
+
+#[derive(serde::Deserialize)]
+struct GithubAsset {
+    name: String,
+    browser_download_url: String,
+}
+
+/// The GitHub API, with the one header it insists on.
+///
+/// **Without a `User-Agent` the API answers `403` and nothing else.** The URL
+/// is right, the answer is right, and the body says the request was refused
+/// before it was read. `reqwest` sends exactly the headers it is told to
+/// send, and nobody told it: it does not add one on its own. So a client
+/// built without this header asks GitHub a question that is turned down at the
+/// door — and the develop channel was asking exactly that question, which is
+/// why the button said "GitHub could not be reached" about a GitHub that was
+/// perfectly reachable.
+fn github_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .user_agent(concat!("starless/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .map_err(|e| e.to_string())
+}
+
+/// Whether GitHub refused because the hourly budget is spent.
+///
+/// The header is what tells the two apart; the reading of it is
+/// [`is_spent_budget`].
+fn is_rate_limited(response: &reqwest::Response) -> bool {
+    is_spent_budget(
+        response.status(),
+        response
+            .headers()
+            .get("x-ratelimit-remaining")
+            .and_then(|value| value.to_str().ok()),
+    )
+}
+
+/// Whether a 403 means the budget is spent, and not something else.
+///
+/// **A 403 is two different things.** The API answers 403 to a request without
+/// a `User-Agent` — a bug that does not go away — and also to a request that
+/// used up the hourly budget — a thing that happens. From the outside they
+/// look the same: a 403 with a body that says "forbidden" and nothing else.
+/// The header `x-ratelimit-remaining` tells them apart: if it says zero, it
+/// was not a mistake of the app but an empty purse.
+///
+/// **The difference is the one the person sees.** "GitHub could not be reached"
+/// and "GitHub ran out of queries for this machine" are two different facts,
+/// and the second one has an ending: the budget comes back. With the same
+/// sentence for both, the button looks broken and only is.
+fn is_spent_budget(status: reqwest::StatusCode, remaining: Option<&str>) -> bool {
+    status == reqwest::StatusCode::FORBIDDEN && remaining == Some("0")
+}
+
+/// The manifest of the newest prerelease that is really published.
+///
+/// **The tags, not the list of releases.** The list is an index, and an index
+/// can be behind: the release exists and the list that points at it is updated
+/// a few minutes later, which is exactly when somebody presses the button. The
+/// tags are the refs, and they exist from the moment the tag is pushed. So
+/// the walk goes through them — newest first — and each one is asked for by
+/// name, which is a direct read and not a lookup in a list.
+///
+/// **A tag without a release is a normal thing to find.** It is a tag that was
+/// pushed and whose release is still a draft, and drafts are invisible to
+/// everybody but the owner. It is skipped, not treated as a failure.
+///
+/// The cost is a request per candidate instead of one for everything, and
+/// there are sixty requests per hour and per address. This is a button
+/// somebody presses, not something the app polls, so the answer is worth
+/// more than the request.
+async fn find_prerelease_manifest(
+    client: &reqwest::Client,
+) -> Result<Option<tauri::Url>, String> {
+    const REPO: &str = "baironvillar/Starless";
+
+    let response = client
+        .get(format!("https://api.github.com/repos/{REPO}/tags?per_page=10"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if is_rate_limited(&response) {
+        return Err("rate_limited".to_string());
+    }
+    let tags: Vec<GithubTag> = response
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    for tag in tags.iter().take(6) {
+        let response = client
+            .get(format!(
+                "https://api.github.com/repos/{REPO}/releases/tags/{}",
+                urlencoding::encode(&tag.name)
+            ))
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        // A tag without a release is a normal thing to find, not a failure.
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            continue;
+        }
+        if is_rate_limited(&response) {
+            return Err("rate_limited".to_string());
+        }
+        let release: GithubRelease = response
+            .error_for_status()
+            .map_err(|e| e.to_string())?
+            .json()
+            .await
+            .map_err(|e| e.to_string())?;
+        if release.draft || !release.prerelease {
+            continue;
+        }
+
+        let Some(manifest) = release.assets.iter().find(|a| a.name == "latest.json") else {
+            continue;
+        };
+        let Ok(endpoint) = tauri::Url::parse(&manifest.browser_download_url) else {
+            continue;
+        };
+        if !is_our_manifest(&endpoint) {
+            return Err("invalid_manifest_url".to_string());
+        }
+        return Ok(Some(endpoint));
+    }
+
+    Ok(None)
+}
+
+/// The develop channel, resolved in Rust.
+///
+/// **Everything the channel needs happens here, and that is not a style
+/// choice.** The webview used to ask GitHub for the releases and then fetch
+/// the manifest itself, and the second of those never worked: the manifest
+/// lives behind a redirect to `release-assets.githubusercontent.com`, and that
+/// answer carries no CORS headers, so the browser stopped the request before
+/// a byte arrived. From here the manifest is a URL the backend hands to the
+/// updater, and Rust has no CORS.
+///
+/// **The discovery is here for the same reason.** The tags and the releases
+/// come from the API, which does allow cross-origin reads — but it allows
+/// sixty of them per hour and per address, and a button that a person
+/// presses is not the place to spend that budget.
+///
+/// **The comparison is left to the webview.** The updater is asked for the
+/// update whatever the versions say, because "you are already running it" is
+/// an answer too, and only the frontend knows what is installed.
+#[tauri::command]
+async fn check_prerelease_manifest(app: AppHandle) -> Result<Option<serde_json::Value>, String> {
+    let client = github_client()?;
+    let Some(endpoint) = find_prerelease_manifest(&client).await? else {
+        return Ok(None);
+    };
+
+    let updater = app
+        .updater_builder()
+        .endpoints(vec![endpoint])
+        .map_err(|e| e.to_string())?
+        // The comparison is not this command's business: the webview says
+        // what is installed, and "you are already on it" is an answer.
+        .version_comparator(|_, _| true)
+        .build()
+        .map_err(|e| e.to_string())?;
+    let update = updater.check().await.map_err(|e| e.to_string())?;
+    let Some(update) = update else {
+        return Ok(None);
+    };
+
+    // The fields are read before the update is handed to the resource table:
+    // adding it moves it, and a moved value is not a value.
+    let current_version = update.current_version.clone();
+    let version = update.version.clone();
+    let body = update.body.clone();
+    let raw_json = update.raw_json.clone();
+    let rid = app.resources_table().add(update);
+
+    // The body is left out when there is none: the plugin's `Update` takes an
+    // optional string, and a `null` where it expects "absent" is a type error
+    // in the webview.
+    let mut metadata = serde_json::json!({
+        "rid": rid,
+        "currentVersion": current_version,
+        "version": version,
+        "rawJson": raw_json,
+    });
+    if let Some(body) = body {
+        metadata["body"] = serde_json::Value::String(body);
+    }
+    Ok(Some(metadata))
 }
 
 /// Development only: plant a crashed session on disk so the crash flow can be
@@ -1057,6 +1292,7 @@ pub fn run() {
             set_library_view,
             previous_session_crashed,
             announce_clean_exit,
+            check_prerelease_manifest,
             simulate_crash,
             crash_report_preview,
             submit_crash_report,
@@ -1078,4 +1314,123 @@ pub fn run() {
             report::mark_session_end();
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::find_prerelease_manifest;
+    use super::github_client;
+    use super::is_our_manifest;
+    use super::is_spent_budget;
+
+    /// The develop channel hands the updater a manifest URL and expects an
+    /// update behind it. This walks the whole path —the endpoint, the
+    /// redirect, the platform key, the signature— against a prerelease that is
+    /// really published, because every one of those can be wrong in a way that
+    /// only shows up when somebody tries to install it.
+    ///
+    /// It talks to GitHub, so it is `#[ignore]`d: the build must not depend on
+    /// somebody else's network. Run it with `cargo test --lib -- --ignored`.
+    #[test]
+    #[ignore = "habla con GitHub"]
+    fn the_published_prerelease_manifest_is_the_one_we_can_install() {
+        // The manifest is what the updater reads, and the updater is the only
+        // thing that can install it. This checks the two things it needs to
+        // find: this platform's entry, and a signature to check the download
+        // against. The download itself is the plugin's, and it is the same one
+        // the stable channel uses.
+        let response = reqwest::blocking::get(
+            "https://github.com/baironvillar/Starless/releases/download/v0.5.1/latest.json",
+        )
+        .unwrap();
+        assert!(response.status().is_success(), "el manifest no se pudo bajar");
+
+        let manifest: serde_json::Value = response.json().unwrap();
+        let platform = &manifest["platforms"]["windows-x86_64"];
+        assert!(
+            platform["signature"]
+                .as_str()
+                .is_some_and(|signature| !signature.is_empty()),
+            "el manifest no trae la firma de esta plataforma"
+        );
+        assert!(
+            platform["url"]
+                .as_str()
+                .is_some_and(|url| url.contains("releases/assets")),
+            "el manifest no trae el instalador de Windows"
+        );
+    }
+
+    /// The 403 that means "the budget is spent" is not the 403 that means "you
+    /// forgot the User-Agent", and the row says a different thing for each.
+    #[test]
+    fn only_an_empty_purse_is_the_rate_limit() {
+        use reqwest::StatusCode;
+
+        // The spent one.
+        assert!(is_spent_budget(StatusCode::FORBIDDEN, Some("0")));
+
+        // A 403 with budget left is something else: a request that was refused
+        // for a different reason.
+        assert!(!is_spent_budget(StatusCode::FORBIDDEN, Some("57")));
+
+        // No header at all: nobody said anything about the budget.
+        assert!(!is_spent_budget(StatusCode::FORBIDDEN, None));
+
+        // And no other status is the rate limit, whatever the header says.
+        assert!(!is_spent_budget(StatusCode::NOT_FOUND, Some("0")));
+        assert!(!is_spent_budget(StatusCode::OK, Some("0")));
+    }
+
+    /// The develop channel has to find a prerelease that is really published.
+    ///
+    /// This is the walk the button does: the tags, then the release of each
+    /// tag, until one of them is a prerelease with a manifest. Every step of
+    /// it can be wrong in a way that only shows up when somebody presses the
+    /// button and nothing happens — the API turned down the request for
+    /// lacking a `User-Agent`, the list of releases was behind, the manifest
+    /// was not there. The walk is checked against the real repository, so the
+    /// answer is not a promise but a fact.
+    ///
+    /// It talks to GitHub, so it is `#[ignore]`d: the build must not depend on
+    /// somebody else's network. Run it with `cargo test --lib -- --ignored`.
+    #[test]
+    #[ignore = "habla con GitHub"]
+    fn the_develop_channel_finds_a_published_prerelease() {
+        let client = github_client().expect("no se pudo crear el cliente de GitHub");
+        let found = tauri::async_runtime::block_on(find_prerelease_manifest(&client))
+            .expect("GitHub no respondió");
+        let endpoint = found.expect("no se encontró ninguna prerelease publicada");
+        assert!(
+            is_our_manifest(&endpoint),
+            "el manifest encontrado no es de este repositorio"
+        );
+    }
+
+    /// The develop channel installs whatever manifest it is pointed at, so the
+    /// door accepts this repository's releases and nothing else. A URL that
+    /// merely looks like ours —a different host, a sibling repository— is not
+    /// ours.
+    #[test]
+    fn only_our_own_releases_are_accepted() {
+        let ours = tauri::Url::parse(
+            "https://github.com/baironvillar/Starless/releases/download/v0.5.2/latest.json",
+        )
+        .unwrap();
+        assert!(is_our_manifest(&ours));
+
+        let other_host = tauri::Url::parse("https://example.com/latest.json").unwrap();
+        assert!(!is_our_manifest(&other_host));
+
+        let sibling = tauri::Url::parse(
+            "https://github.com/baironvillar/Starless-evil/releases/download/v0.5.2/latest.json",
+        )
+        .unwrap();
+        assert!(!is_our_manifest(&sibling));
+
+        let other_repo =
+            tauri::Url::parse("https://github.com/alguien/otro/releases/download/v1/latest.json")
+                .unwrap();
+        assert!(!is_our_manifest(&other_repo));
+    }
 }

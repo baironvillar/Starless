@@ -166,6 +166,56 @@ salen de una captura:
   `releases/latest/download/latest.json` responde 200 apenas hay una release
   *publicada* —un borrador no se sirve—, y tanto el manifest como el `.msi` se
   bajan sin autenticación. Antes de culpar a la cadena, comprobá esa URL.
+- **La lista de releases es un índice, y un índice va con retraso.** GitHub publica
+  una release en dos pasos: la release existe, y la lista que la apunta se
+  actualiza —que no es lo mismo ni al mismo tiempo—. La lista puede ir minutos
+  atrás, y el botón de "Buscar prerelease" la usaba: se apretó un minuto después
+  de publicar la 0.5.1, la lista todavía describía el mundo anterior, y la app
+  dijo que no había prerelease mientras GitHub mostraba una. **Las etiquetas no
+  son ese índice**: son las refs, y existen desde que se empuja el tag. El
+  camino ahora va por `GET /tags` y pregunta cada etiqueta por su nombre
+  (`GET /releases/tags/<tag>`), que es una lectura directa y no una búsqueda.
+  Preguntar por nombre cuesta un request por etiqueta; preguntar por la lista
+  cuesta uno y a veces miente.
+- **Un `Update` del plugin es un handle a un recurso que vive en Rust.** El
+  `Update` de JavaScript lleva un `rid`, y el `rid` lo devuelve el backend: sin
+  él no hay nada que descargar. Armar un `Update` en el frontend con el JSON del
+  manifest no baja la barra de la firma —esa sigue verificándose en Rust contra
+  la llave embebida— pero deja un botón de instalar que no instala. Por eso el
+  manifest de la prerelease lo apunta `check_prerelease_manifest` en Rust: el
+  mismo updater, la misma llave, y lo que vuelve ya es instalable.
+- **El manifest de la release no se puede bajar desde el webview, y la API de
+  GitHub rechaza la petición si no lleva `User-Agent`.** Son dos motivos
+  distintos y los dos dicen lo mismo: la app no encuentra la prerelease y culpa
+  a GitHub.
+  El primero: `github.com/.../releases/download/<tag>/latest.json` responde 302
+  a `release-assets.githubusercontent.com`, y **esa respuesta no trae
+  `Access-Control-Allow-Origin`**: el `fetch` del webview moría en CORS antes de
+  un byte. La API sí lo trae, y por eso el descubrimiento sí se podía hacer
+  desde el navegador — lo que no se podía era bajar el manifest.
+  El segundo: `api.github.com` responde **403** a una petición sin
+  `User-Agent`, y `reqwest` **no manda ese encabezado solo**: manda exactamente
+  los que se le piden. Comprobado contra el socket crudo, sin nada de por medio:
+  la misma URL con `curl` responde 200 porque `curl` sí manda el suyo. Un
+  cliente sin ese encabezado pregunta algo que se rechaza en la puerta, y el
+  cuerpo de la respuesta dice "forbidden" sin explicar por qué.
+  Por eso el canal de develop se resuelve **entero en Rust**: las etiquetas, la
+  release y el manifest. En Rust no hay CORS y el `User-Agent` se pone.
+- **Un force-push rompe el job de mensajes de commit, y no por el mensaje.** El
+  job armaba su rango con `github.event.before`, y después de un force-push ese
+  commit ya no está en el clon: la rama se reescribió y nadie lo apunta. El job
+  lo detectaba y caía en la rama de la punta, pero enseguida después armaba el
+  rango otra vez, con la base rota, y `git rev-list` **aborta**. En un runner
+  un `abort` es un paso rojo. La base se cambia ahora por la punta cuando no
+  está en el clon.
+- **La línea pública es una puerta de verdad, y hacen falta dos permisos.** El
+  plugin del updater sólo ofrece una versión más vieja si
+  `plugins.updater.allowDowngrades` está en `true`, y el instalador sólo la
+  instala si `bundle.windows.allowDowngrades` también lo está —que en Tauri
+  viene en `true` por default—. Con las dos cosas, "Volver a la 0.5.1" instala
+  la 0.5.1; con una sola, el botón promete una cosa y hace otra. Y ni la
+  pastilla del botón de Ajustes ni la alerta del arranque lo anuncian: un
+  «0.5.1» mientras corrés 0.5.3 es una vuelta atrás, no una actualización.
 - **GitHub devuelve 422 si le pasás una etiqueta que el repositorio no tiene**, y
   eso perdería el reporte entero. `report.rs` reintenta sin etiqueta por eso.
 - **Dos copias abiertas a la vez se hacen ver como un crash.** El marcador es un
@@ -589,6 +639,30 @@ salen de una captura:
     canciones" y "dj: la estación pidió la página siguiente y recibió M"—, así que
     no hace falta una sonda para saber cuántas trajo cada página ni cuántas veces
     pidió la estación.
+- **La cola no existe hasta que el usuario la crea.** El panel de cola y la
+  estación del DJ son dos preguntas distintas, y el panel las confundía: el "A
+  continuación" caía a `visibleTracks` —lo que se ve en pantalla— cuando todavía
+  no había sonado nada, así que una app recién abierta mostraba ocho canciones
+  bajo un encabezado de cola, y nadie las había pedido. Ahora `upNext` es `[]`
+  mientras `queueAt < 0`: hasta que suena algo, el panel dice que no hay nada en
+  cola. Y **agregar una canción a la cola ya no convierte la pantalla en cola**:
+  `onAddToQueue` agregaba a `visibleTracks`, o sea a lo que se estaba viendo,
+  así que una canción agregada a una biblioteca de ocho dejaba ocho canciones
+  en la cola —siete de las cuales nadie pidió—. Ahora, si no hay cola, la
+  canción agregada *es* la cola.
+  Y **la cuenta de la estación es su propia cuenta**: `stationLeft` mide lo que
+  le queda de su página al DJ, no lo que el panel muestra. El panel no tiene "A
+  continuación" mientras no suena nada, así que pedirle la cuenta a la estación
+  hacía que el DJ pidiera una página de más en la ventana en la que todavía no
+  se está reproduciendo.
+- **El canal de la build es un hecho del build, no una consulta a la red.**
+  `STARLESS_CHANNEL` (develop|release) → `__STARLESS_CHANNEL__` (Vite define) →
+  `isPrerelease()`. Es la misma pregunta que decide el ícono invertido —¿el tag
+  viene de `main`?— así que los dos no pueden contradecirse: una build de
+  `develop` trae el ícono de desarrollo y la pastilla "pre-release" al lado de la
+  versión en Ajustes; una de `main` no trae ninguna de las dos. Preguntarle a
+  GitHub sería peor: la respuesta dependería de que la máquina tenga conexión,
+  y el canal no cambia con la red.
 - **`API_ERRORS` está en español y fuera de `i18n.ts`.** Veinte mensajes de error
   de usuario en un solo idioma, en el archivo que la regla 5 excluye. Los dos
   códigos que Rust emite y que no estaban en el mapa —`no_session` y `bad_id`—

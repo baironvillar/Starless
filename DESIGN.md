@@ -132,6 +132,12 @@ What that means concretely:
   `opacity-0` and is revealed by hover. Nothing performs on its own.
 - **No glow, no coloured border, no gradient on chrome.** The only saturated fills in
   the app are the accent home button and the reserved state marks.
+- **The version footer says which build this is.** A `pre-release` pill next to the
+  version, in the same reserved state mark the changelog uses —accent at 15%, 10.5px
+  uppercase— and only on builds that came from `develop`. A release says nothing,
+  because there is nothing to say. The inverted icon says the same thing, but only
+  to somebody who knows what it means; two copies of the app on one machine used to
+  look identical.
 
 ## Player bar geometry
 

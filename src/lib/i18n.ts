@@ -231,6 +231,7 @@ export const strings = {
     changelogs: "Changelogs",
     changelogUnreleased: "En desarrollo",
     changelogReconstructed: "Reconstruido",
+    prereleaseBadge: "pre-release",
 
     // Updates
     updatesTitle: "Actualizaciones",
@@ -240,6 +241,11 @@ export const strings = {
     updateAvailable: "Hay una versión más nueva: {version}. Se instalará al cerrar Starless.",
     updateInstall: "Actualizar",
     updateDownloading: "Descargando…",
+    updateGoBack:
+      "Hay una versión pública ({version}) y estás corriendo una más nueva. Podés volver a la pública cuando quieras.",
+    updateGoBackShort: "Volver a la {version}",
+    updateInstallError:
+      "La descarga falló. La copia que tenés instalada no cambió, y podés intentarlo otra vez.",
     prereleaseTitle: "Prerelease de develop",
     prereleaseHint:
       "La build que sale de `develop`, antes de que sea pública. Se instala encima de la que tenés y la reemplaza, así que te deja corriendo la versión de desarrollo hasta que salga la próxima pública.",
@@ -251,6 +257,10 @@ export const strings = {
     prereleaseInstall: "Instalar la prerelease",
     prereleaseError:
       "No se pudo preguntar a GitHub. Eso dice de la conexión, no de la copia que tenés instalada.",
+    prereleaseRateLimited:
+      "GitHub limitó las consultas desde esta máquina. El presupuesto vuelve en una hora: probá otra vez después.",
+    prereleaseInstallError:
+      "La descarga de la prerelease falló. La copia que tenés instalada no cambió, y podés intentarlo otra vez.",
     updateAlertTitle: "Hay una versión nueva",
     updateAlertBody: "v{version} está lista. Se instala desde Ajustes, cuando tú lo decidas.",
     updateSimulated: "v{version} (simulada). No hay nada que instalar: es un estado de prueba.",
@@ -537,6 +547,7 @@ export const strings = {
     changelogs: "Changelogs",
     changelogUnreleased: "In development",
     changelogReconstructed: "Reconstructed",
+    prereleaseBadge: "pre-release",
 
     updatesTitle: "Updates",
     updatesHint: "Starless checks on its own when it opens. Nothing downloads until you ask.",
@@ -545,6 +556,11 @@ export const strings = {
     updateAvailable: "A newer version is out: {version}. It installs when Starless closes.",
     updateInstall: "Update",
     updateDownloading: "Downloading…",
+    updateGoBack:
+      "There is a public version ({version}) and you are running a newer one. You can go back to the public one whenever you want.",
+    updateGoBackShort: "Go back to {version}",
+    updateInstallError:
+      "The download failed. The copy you have installed did not change, and you can try again.",
     prereleaseTitle: "Develop prerelease",
     prereleaseHint:
       "The build that comes out of `develop`, before it goes public. It installs over what you are running and replaces it, so it leaves you on the development version until the next public one is out.",
@@ -557,6 +573,10 @@ export const strings = {
     prereleaseInstall: "Install the prerelease",
     prereleaseError:
       "GitHub could not be reached. That says something about the connection, not about the copy you have installed.",
+    prereleaseRateLimited:
+      "GitHub limited the queries from this machine. The budget comes back in an hour: try again later.",
+    prereleaseInstallError:
+      "The prerelease download failed. The copy you have installed did not change, and you can try again.",
     updateAlertTitle: "There is a newer version",
     updateAlertBody: "v{version} is ready. It installs from Settings, when you decide.",
     updateSimulated: "v{version} (simulated). There is nothing to install: this is a test state.",
