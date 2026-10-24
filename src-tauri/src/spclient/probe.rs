@@ -1686,7 +1686,7 @@ pub fn run_home_probe(app: tauri::AppHandle) {
 ///
 /// El 19 de octubre de 2026, con una cuenta real. Siete rutas por los dos verbos,
 /// porque el router distingue y esa distinción es lo único que separa "no hay
-/// ruta acá" de "hay ruta pero no podés escribir por acá" sin escribir nada:
+/// ruta acá" de "hay ruta pero no puedes escribir por acá" sin escribir nada:
 ///
 /// | ruta | `GET` | `POST` |
 /// |---|---|---|

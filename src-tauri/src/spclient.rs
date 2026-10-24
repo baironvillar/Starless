@@ -549,7 +549,7 @@ pub fn account(session: &Session) -> Result<Account, String> {
 // La biblioteca
 // ---------------------------------------------------------------------------
 
-/// Todas las playlists de la cuenta: las suyas y las que seguís.
+/// Todas las playlists de la cuenta: las suyas y las que sigues.
 ///
 /// Las dos listas vienen en el mismo mensaje —las URIs en `items`, la metadata
 /// en `meta_items`— y van en el mismo orden, así que se leen de a pares. El
@@ -1031,12 +1031,6 @@ fn host_path(url: &str) -> String {
     }
 }
 
-/// La narración de una fila del DJ, si la trae.
-///
-/// El SSML viene con las etiquetas y las referencias: `<speak xml:lang="es-MX">Para
-/// comenzar, elegí temas como este de <entity type="artist" uri="…">bôa</entity>…</speak>`.
-/// Lo que se muestra es la frase con el nombre adentro: la `entity` es una
-/// referencia, no una palabra.
 /// La narración de una fila del DJ, si la trae.
 ///
 /// El SSML viene con las etiquetas y las referencias: `<speak xml:lang="es-MX">Para

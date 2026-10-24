@@ -16,8 +16,8 @@
 # que se lee como un error de git y no como un final de línea.
 #
 # Nunca reescribe el mensaje. Un hook que edita lo que escribiste es un hook del
-# que no te fiás después, y de todos modos no podría decidir si lo que está en
-# pantalla es la línea que vos pusiste o la que puso la máquina.
+# que no te fías después, y de todos modos no podría decidir si lo que está en
+# pantalla es la línea que pusiste o la que puso la máquina.
 
 set -u
 
@@ -53,8 +53,8 @@ Ejemplos:
 
 El cuerpo es libre y es donde va el porqué. Sólo el asunto tiene forma.
 
-Si el mensaje está bien y el hook se equivoca, pasalo con --no-verify
-y avisá: un hook que hay que violencear es un hook que hay que arreglar.
+Si el mensaje está bien y el hook se equivoca, pásalo con --no-verify
+y avisa: un hook que hay que violencear es un hook que hay que arreglar.
 
 FINAL
 	exit 1

@@ -68,7 +68,7 @@ docs/updates.md           cómo se publica una versión
 docs/escribir-playlists.md el protocolo para crear una playlist, y cómo se supo
 ```
 
-**Antes de tocar la creación de playlists, leé `docs/escribir-playlists.md`.** Es
+**Antes de tocar la creación de playlists, lee `docs/escribir-playlists.md`.** Es
 el único lugar donde está la receta, y el lugar donde está la lista de lo que ya
 se descartó —cuerpo, query, cabeceras, identidad, HTTP/2— para no volver a
 recorrerlo. Dos hechos que no están en ningún proto ni en ninguna issue y que
@@ -307,7 +307,7 @@ salen de una captura:
   **sólo con la prefijada** — que es justo la mitad que WebView2 ignora. El
   resultado era vidrio sin difuminado: al 55% se leían las canciones de atrás a
   través del panel de Ajustes. El bug vivió semanas sin que nadie tocara el CSS.
-  La regla: escribí **sólo** la propiedad estándar y dejá que Lightning CSS agregue
+  La regla: escribe **sólo** la propiedad estándar y deja que Lightning CSS agregue
   el prefijo él mismo. Si tocas `src/index.css`, comprueba el CSS emitido en
   `dist/assets/*.css`, no el fuente.
 - **`track.id` no es una key de React.** Una playlist puede tener la misma canción
