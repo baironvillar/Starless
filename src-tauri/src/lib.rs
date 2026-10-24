@@ -21,7 +21,7 @@ mod voice;
 
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use librespot_core::session::Session;
 use serde::Serialize;
@@ -420,6 +420,84 @@ fn simulate_crash() -> Result<(), String> {
 #[derive(Default)]
 pub struct SessionState(Mutex<Option<Session>>);
 
+/// How long a session may take to appear before the machine counts as signed out.
+///
+/// **The restore is a thread, and a thread takes a moment.** The session shows up
+/// in the slot as soon as the credentials are read from the cache, and the
+/// credentials are there —the machine signed in before. Three seconds is a
+/// hundred times what the read costs, and it is short enough that a signed-out
+/// machine answers at once instead of hanging.
+const SESSION_SLOT_WAIT: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// How long the handshake may take before the wait gives up.
+///
+/// **The handshake is the network talking to Spotify.** A good connection takes
+/// half a second; a bad one takes seconds. `auth::connect_now` waits twenty
+/// for the same handshake, so twenty is the number the app already believes.
+const SESSION_HANDSHAKE_WAIT: std::time::Duration = std::time::Duration::from_secs(20);
+
+impl SessionState {
+    /// The session, once it can actually carry a request.
+    ///
+    /// **A session that exists is not a session that works.** librespot fills the
+    /// username in as the last step of the handshake, and until then the spclient
+    /// answers "tried to acquire token without stored credentials" — a refusal
+    /// that says nothing about the call that asked for it. So the wait is for the
+    /// username and not for the slot.
+    ///
+    /// **The wait lives here and not in the frontend.** The commands used to fail
+    /// and the frontend retried them with a backoff: the first retry came four
+    /// seconds later, and the library — the first thing anybody looks at — took
+    /// five and a half seconds to appear. Waiting costs the milliseconds the
+    /// handshake takes and nothing else, and the failure never leaves the
+    /// backend at all.
+    ///
+    /// Blocking: it sleeps. Call it from a blocking thread.
+    pub fn ready(&self) -> Result<Session, String> {
+        let started = std::time::Instant::now();
+
+        // The session has to exist before it can be ready.
+        let session = loop {
+            if let Some(session) = self.0.lock().ok().and_then(|guard| guard.clone()) {
+                break session;
+            }
+            if started.elapsed() >= SESSION_SLOT_WAIT {
+                return Err("no_session".to_string());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        };
+
+        // And then it has to be authenticated.
+        let deadline = std::time::Instant::now() + SESSION_HANDSHAKE_WAIT;
+        while session.username().is_empty() {
+            if std::time::Instant::now() >= deadline {
+                return Err("no_session".to_string());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        Ok(session)
+    }
+}
+
+/// The session, once it can carry a request.
+///
+/// **The handle is cloned because the wait happens on another thread.** A
+/// `State` borrows the app it came from, and a closure that outlives the
+/// function it was written in cannot hold that borrow. The clone is cheap and
+/// the wait is where it belongs: a blocking thread, never the main one.
+async fn ready_session(app: &AppHandle) -> Result<Session, String> {
+    let owned = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = owned.state::<SessionState>();
+        state.ready()
+    })
+    .await
+    .map_err(|e| {
+        eprintln!("Starless [command_failed]: {e}");
+        "command_failed".to_string()
+    })?
+}
+
 /// Where the DJ's session is, and what it still has to say.
 ///
 /// **The cursor lives in the backend on purpose.** It is the service's own
@@ -615,25 +693,42 @@ fn sign_out(
 /// not a leftover from `webapi_command` — that one is gone, along with the token it
 /// refreshed.
 ///
-/// The lock is taken here and not inside the blocking thread: `State` cannot move
-/// to a blocking thread, but the session can, and all that is needed is a copy.
+/// The lock is taken inside the blocking thread and not here: `State` cannot move
+/// to a blocking thread, and the session can — but the *wait* for it cannot, so
+/// the state is reached through the app handle instead.
+///
+/// **The wait is the point.** These commands used to fail when they arrived
+/// before the handshake, and the frontend retried them with a backoff: the first
+/// retry came four seconds later, and the library — the first thing anybody
+/// looks at — took five and a half seconds to appear. Now the command waits the
+/// half second the handshake takes and answers with the library.
 macro_rules! spclient_command {
     ($name:ident, $inner:path, $ty:ty $(, $arg:ident : $arg_ty:ty)*) => {
         #[tauri::command]
-        async fn $name(session_state: State<'_, SessionState> $(, $arg: $arg_ty)*) -> Result<$ty, String> {
-            let session = session_state
-                .0
-                .lock()
-                .ok()
-                .and_then(|guard| guard.clone())
-                .ok_or_else(|| "no_session".to_string())?;
+        async fn $name(app: AppHandle $(, $arg: $arg_ty)*) -> Result<$ty, String> {
+            let started = std::time::Instant::now();
+            let result = tauri::async_runtime::spawn_blocking(move || {
+                let state = app.state::<SessionState>();
+                let session = state.ready()?;
+                $inner(&session $(, &$arg)*)
+            })
+            .await
+            .map_err(|e| {
+                eprintln!("Starless [command_failed]: {e}");
+                "command_failed".to_string()
+            })?;
 
-            tauri::async_runtime::spawn_blocking(move || $inner(&session $(, &$arg)*))
-                .await
-                .map_err(|e| {
-                    eprintln!("Starless [command_failed]: {e}");
-                    "command_failed".to_string()
-                })?
+            // **The time is in the log because the time is the complaint.**
+            // "Loading the library is slow" is not a bug report anybody can
+            // act on; "the library took two and a half seconds" is. The number
+            // covers the wait for the session too, so the two costs can be
+            // told apart.
+            log::info!(
+                "spclient: {} tardó {} ms",
+                stringify!($name),
+                started.elapsed().as_millis()
+            );
+            Ok(result?)
         }
     };
 }
@@ -659,16 +754,11 @@ spclient_command!(lyrics, spclient::lyrics, Lyrics, track_id: String);
 // servicio, y no es cosa del webview.
 #[tauri::command]
 async fn dj_mix(
-    session_state: State<'_, SessionState>,
+    app: AppHandle,
     dj_state: State<'_, DjState>,
     playlist_id: String,
 ) -> Result<DjMix, String> {
-    let session = session_state
-        .0
-        .lock()
-        .ok()
-        .and_then(|guard| guard.clone())
-        .ok_or_else(|| "no_session".to_string())?;
+    let session = ready_session(&app).await?;
 
     // **La sesión del DJ no se reinicia: se sigue.**
     //
@@ -719,10 +809,16 @@ async fn dj_mix(
         // sirven a nadie: la cola se reemplaza entera.
         guard.voices.clear();
         guard.audio.clear();
-        for (id, params) in voices {
+        for (id, params) in voices.clone() {
             guard.voices.insert(id, params);
         }
     }
+
+    // El audio de las frases se pide ahora y no cuando la canción va a sonar.
+    // La primera página también lo pide: no hacerlo dejaba el hole justo en
+    // la primera frase de la estación, que es la que nadie espera.
+    prefetch_voices(&app, &session, voices);
+
     log::info!(
         "dj: {} con {} canciones; {}",
         if follows_cursor {
@@ -756,7 +852,6 @@ async fn dj_mix(
 #[tauri::command]
 async fn dj_speak(
     app: AppHandle,
-    session_state: State<'_, SessionState>,
     dj_state: State<'_, DjState>,
     track_id: String,
 ) -> Result<Option<u64>, String> {
@@ -764,12 +859,7 @@ async fn dj_speak(
         return Ok(None);
     };
 
-    let session = session_state
-        .0
-        .lock()
-        .ok()
-        .and_then(|guard| guard.clone())
-        .ok_or_else(|| "no_session".to_string())?;
+    let session = ready_session(&app).await?;
 
     let id = next_voice_id();
     // La bandera se crea acá, no en el hilo: es lo que permite cortar la voz
@@ -777,6 +867,10 @@ async fn dj_speak(
     let stop = voice::begin();
 
     // **El audio que ya estaba pedido se usa, y no se vuelve a pedir.**
+    //
+    // Y el que estaba de camino se espera: la frase se pide cuando llega la
+    // página y se dice cuando la canción va a sonar, y las dos cosas pueden
+    // coincidir. Pedirla otra vez sería hacer dos pedidos por la misma frase.
     let ready = take_audio(&dj_state, &track_id);
 
     // **La música se calla ahora, y no cuando llegue el audio.**
@@ -810,7 +904,10 @@ async fn dj_speak(
             }
             let audio = match ready {
                 Some(audio) => audio,
-                None => spclient::dj_voice(&session, &params)?,
+                None => match wait_for_audio(&app, &track_id, &stop) {
+                    Some(audio) => audio,
+                    None => spclient::dj_voice(&session, &params)?,
+                },
             };
             if stop.load(Ordering::Relaxed) {
                 return Ok(false);
@@ -850,6 +947,37 @@ fn take_audio(dj_state: &State<'_, DjState>, track_id: &str) -> Option<Vec<u8>> 
     guard.audio.remove(track_id)
 }
 
+/// El audio que estaba de camino, si llega a tiempo.
+///
+/// **La frase se pide una sola vez.** Se pide por adelantado —cuando llega la
+/// página— y se dice en el momento en que la canción va a sonar, y las dos
+/// cosas pueden coincidir. Si el que habla pidiera el audio por su cuenta
+/// mientras el otro lo está trayendo, se harían dos pedidos por la misma frase
+/// y la segunda respuesta sería la que espera.
+///
+/// La espera tiene un tope: si el pedido se colgó, se pide acá y la música no
+/// espera a un hilo muerto.
+fn wait_for_audio(app: &AppHandle, track_id: &str, stop: &AtomicBool) -> Option<Vec<u8>> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        if let Some(state) = app.try_state::<DjState>() {
+            if let Ok(mut guard) = state.0.lock() {
+                if let Some(audio) = guard.audio.remove(track_id) {
+                    return Some(audio);
+                }
+            }
+        }
+        // El usuario se fue: la frase ya no tiene a quién decirse.
+        if stop.load(Ordering::Relaxed) {
+            return None;
+        }
+        if std::time::Instant::now() >= deadline {
+            return None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}
+
 /// El número de la próxima voz del DJ.
 ///
 /// Es un contador y nada más: sirve para que dos clicks seguidos no se
@@ -860,6 +988,40 @@ fn next_voice_id() -> u64 {
     VOICE_ID.fetch_add(1, Ordering::Relaxed)
 }
 
+/// El audio de las frases del DJ, pedido por adelantado.
+///
+/// **Fabricarlo tarda un par de segundos** —el servicio que lo hace es otro— y
+/// la página que trae la frase llega cinco canciones antes de que la cola se
+/// vacíe. Pedirlo cuando la página llega lo deja listo para el momento en que
+/// la canción arranca: el DJ toma la posta sin un hole en el medio.
+///
+/// **Las dos páginas lo piden.** La primera no lo pedía, y por eso la primera
+/// frase de la estación era la única que pagaba la espera: la música se cortaba
+/// para el DJ y el DJ todavía no estaba. El hole caía siempre en el mismo
+/// lugar, y ese lugar es el primero que se escucha.
+///
+/// Cada frase va en su propio hilo: son peticiones lentas y no tienen que
+/// esperarse entre ellas.
+fn prefetch_voices(
+    app: &AppHandle,
+    session: &Session,
+    voices: HashMap<String, crate::voice::VoiceParams>,
+) {
+    for (id, params) in voices {
+        let session = session.clone();
+        let app = app.clone();
+        std::thread::spawn(move || {
+            let Ok(audio) = spclient::dj_voice(&session, &params) else {
+                return;
+            };
+            let state = tauri::Manager::state::<DjState>(&app);
+            if let Ok(mut guard) = state.0.lock() {
+                guard.audio.insert(id, audio);
+            }
+        });
+    }
+}
+
 /// La página siguiente del DJ: la estación sigue.
 ///
 /// **Sin cursor no hay página**, y eso no es un error: es el DJ diciendo que se
@@ -868,7 +1030,6 @@ fn next_voice_id() -> u64 {
 #[tauri::command]
 async fn dj_more(
     app: AppHandle,
-    session_state: State<'_, SessionState>,
     dj_state: State<'_, DjState>,
 ) -> Result<DjMix, String> {
     let path = dj_state
@@ -884,12 +1045,7 @@ async fn dj_more(
         });
     }
 
-    let session = session_state
-        .0
-        .lock()
-        .ok()
-        .and_then(|guard| guard.clone())
-        .ok_or_else(|| "no_session".to_string())?;
+    let session = ready_session(&app).await?;
 
     // La sesión se clona: una copia se la queda el pedido de la página y la
     // otra el audio que se pide por adelantado.
@@ -913,25 +1069,8 @@ async fn dj_more(
         }
     }
 
-    // **El audio se pide ahora, y no cuando la canción va a sonar.**
-    //
-    // Fabricarlo tarda un par de segundos —el servicio que lo hace es otro— y
-    // esta página llega cinco canciones antes de que la cola se vacíe. Pedirlo
-    // ahora lo deja listo para el momento en que la canción arranca: el DJ
-    // toma la posta sin un hole en el medio.
-    for (id, params) in voices {
-        let session = session.clone();
-        let app = app.clone();
-        std::thread::spawn(move || {
-            let Ok(audio) = spclient::dj_voice(&session, &params) else {
-                return;
-            };
-            let state = tauri::Manager::state::<DjState>(&app);
-            if let Ok(mut guard) = state.0.lock() {
-                guard.audio.insert(id, audio);
-            }
-        });
-    }
+    // El audio de las frases se pide ahora, y no cuando la canción va a sonar.
+    prefetch_voices(&app, &session, voices);
 
     log::info!(
         "dj: la estación pidió la página siguiente y recibió {} canciones",
@@ -970,68 +1109,76 @@ fn player_status(state: State<PlaybackState>) -> PlaybackStatus {
 }
 
 #[tauri::command]
-fn play_track(
+async fn play_track(
     app: AppHandle,
-    state: State<PlaybackState>,
-    session_state: State<SessionState>,
     track_id: String,
     position_ms: Option<u32>,
     duration_ms: Option<u32>,
 ) -> Result<(), String> {
-    // The audio device is opened here, on the first request to make a sound —
-    // not at launch. An app that grabs an output handle before the user has asked
-    // for anything is holding a device it has not been given.
-    let session = session_state
-        .0
-        .lock()
-        .map_err(|_| "session_busy".to_string())?
-        .clone()
-        .ok_or_else(|| "not_signed_in".to_string())?;
-
     // **Poner una canción calla al DJ.** Si el DJ estaba hablando, era para
     // esta canción: cuando el usuario elige otra, la frase que ya no tiene
-    // sentido seguir diciendo se corta. Va antes de mirar la conexión: la
-    // frase está de más aunque la canción tarde en arrancar.
+    // sentido seguir diciendo se corta. Va antes de todo lo demás, y antes de
+    // la espera: la frase está de más aunque la canción tarde en arrancar.
     voice::stop();
 
-    // A dead session does not get a player.
-    //
-    // `ensure_player` builds one on the session it is given, and a player on a
-    // dead session is a player that never plays anything — it would also
-    // displace the one the reconnection is about to build, and the two would
-    // fight over the audio device.
-    if session.is_invalid() {
-        // **But the click is not thrown away.**
+    // **The wait happens here and not on the main thread.** A click that arrives
+    // before the handshake used to fail with "not signed in" —a lie, the user
+    // *is* signed in— and now waits for the session to be usable. A wait on the
+    // main thread is a frozen window, so the whole thing hops to a blocking
+    // thread first.
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<PlaybackState>();
+        let session_state = app.state::<SessionState>();
+        let session = session_state.ready()?;
+
+        // The audio device is opened here, on the first request to make a sound —
+        // not at launch. An app that grabs an output handle before the user has
+        // asked for anything is holding a device it has not been given.
         //
-        // The session died on its own —librespot never reconnects by itself—,
-        // and nothing in the app may be rebuilding it: the reconnection exists
-        // for a track that *failed*, and a session that dies while the queue
-        // is empty never produces a failed track. So the connection was gone
-        // for hours, with a window that looked perfectly fine and a DJ that
-        // still spoke.
+        // A dead session does not get a player.
         //
-        // A click is the same request a failure makes, and the only one a
-        // person can make: the session goes back up and the track that was
-        // asked for goes back on with it.
-        log::warn!("[connection_lost] la sesión de reproducción ya no está; se reconstruye");
-        playback::reconnect_and_play(&app, &track_id, duration_ms.unwrap_or(0))?;
+        // `ensure_player` builds one on the session it is given, and a player on a
+        // dead session is a player that never plays anything — it would also
+        // displace the one the reconnection is about to build, and the two would
+        // fight over the audio device.
+        if session.is_invalid() {
+            // **But the click is not thrown away.**
+            //
+            // The session died on its own —librespot never reconnects by itself—,
+            // and nothing in the app may be rebuilding it: the reconnection exists
+            // for a track that *failed*, and a session that dies while the queue
+            // is empty never produces a failed track. So the connection was gone
+            // for hours, with a window that looked perfectly fine and a DJ that
+            // still spoke.
+            //
+            // A click is the same request a failure makes, and the only one a
+            // person can make: the session goes back up and the track that was
+            // asked for goes back on with it.
+            log::warn!("[connection_lost] la sesión de reproducción ya no está; se reconstruye");
+            playback::reconnect_and_play(&app, &track_id, duration_ms.unwrap_or(0))?;
+            let _ = app.emit("player://status", state.status());
+            return Ok(());
+        }
+
+        playback::ensure_player(&app, &session);
+        playback::play(
+            &state,
+            &track_id,
+            position_ms.unwrap_or(0),
+            duration_ms.unwrap_or(0),
+        )?;
+
+        // Push the state we just set. Without this the UI learns nothing until
+        // librespot emits something, and on the failure paths it never does —
+        // which is why a click could produce no visible change whatsoever.
         let _ = app.emit("player://status", state.status());
-        return Ok(());
-    }
-
-    playback::ensure_player(&app, &session);
-    playback::play(
-        &state,
-        &track_id,
-        position_ms.unwrap_or(0),
-        duration_ms.unwrap_or(0),
-    )?;
-
-    // Push the state we just set. Without this the UI learns nothing until
-    // librespot emits something, and on the failure paths it never does — which
-    // is why a click could produce no visible change whatsoever.
-    let _ = app.emit("player://status", state.status());
-    Ok(())
+        Ok(())
+    })
+    .await
+    .map_err(|e| {
+        eprintln!("Starless [command_failed]: {e}");
+        "command_failed".to_string()
+    })?
 }
 
 #[tauri::command]

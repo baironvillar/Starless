@@ -2025,7 +2025,7 @@ pub fn run_voice_probe(app: tauri::AppHandle) {
         log::info!("=== DIAGNOSTIC: sonda de voz ===");
 
         let mix = tauri::async_runtime::block_on(crate::dj_mix(
-            tauri::Manager::state::<crate::SessionState>(&app),
+            app.clone(),
             tauri::Manager::state::<crate::DjState>(&app),
             "37i9dQZF1EYkqdzj48dyYq".to_owned(),
         ));
@@ -2046,7 +2046,6 @@ pub fn run_voice_probe(app: tauri::AppHandle) {
         if let Some(track_id) = first {
             let said = tauri::async_runtime::block_on(crate::dj_speak(
                 app.clone(),
-                tauri::Manager::state::<crate::SessionState>(&app),
                 tauri::Manager::state::<crate::DjState>(&app),
                 track_id,
             ));
