@@ -30,6 +30,34 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [0.5.0] — 2026-10-22 · prerelease
+
+### New / Nuevo
+
+- **El DJ de Spotify ahora suena, y se escucha.** La tarjeta de la repisa de Inicio —la que decía «0 canciones»— no es una playlist: su contenido no está en la lista y hay que pedirlo. Al hacer clic arranca la primera canción y el DJ sigue eligiendo: la cola se vuelve a llenar sola con las páginas siguientes de su sesión, así que no se acaba como una lista, y cada vez que lo tocás sigue con material nuevo en vez de repetir las mismas canciones. Y la voz del DJ también se oye: la pide al servicio que la fabrica y sale por el mismo auricular que la música, con el mismo volumen —si lo bajás, baja el del DJ—. La frase queda escrita arriba de la cola, en nombre del DJ, para poder leerla. La tarjeta también se ve como la de Spotify, con su fondo azul y su medusa: antes era un cuadro vacío, indistinguible de una portada rota.
+- **El DJ habla antes de que empiece la música.** Cuando lo tocás, Starless corta lo que estaba sonando, deja que el DJ diga su frase —con su ícono abajo a la izquierda, en la barra— y recién después arranca la canción. Si ponés una canción mientras habla, la frase se corta: estaba dicha para otra. Con el DJ sonando la cola no muestra qué viene después: el DJ sigue eligiendo, así que lo que viene todavía no está decidido, y la frase es una sorpresa.
+- **El DJ vuelve a hablar en cada tramo.** La frase va pegada a su canción, no a la tanda: la de apertura abre el tramo con la primera canción y la de cierre lo cierra con la última, y las dos se dicen antes de que suene esa canción. Antes Starless la pedía una sola vez, cuando le devolvía la tanda, así que después de la primera canción el DJ se callaba para siempre —la frase siguiente aparecía escrita arriba de la cola y nadie la decía—.
+- **El DJ tiene su botón en la barra**, como en el cliente oficial. Aparece con la sesión del DJ y desaparece con ella, y hace el mismo camino que la card: el DJ no arranca de cero, sigue su propia sesión y pasa a la tanda siguiente. Es la marca del DJ —el anillo de la medusa— en un solo color, porque la barra es cromo y el cromo va en tinta.
+- **La barra de reproducción ya no está ahí desde que abrís la app.** Antes aparecía con un fundido al abrir la ventana, y lo que aparecía era un rectángulo de vidrio vacío: un play apagado, dos ceros y nada a la izquierda. Ahora la barra llega con la música —cuando ponés una canción, o cuando el DJ empieza a hablar— y antes de eso la ventana es sólo la biblioteca. Y la ventana le hace lugar: la biblioteca, el riel y la cola bajan hasta el borde mientras no hay barra, y suben cuando la música llega a buscar su sitio.
+- **La pantalla de playlists.** Abrís una de tus listas y la ves como en Spotify: el mosaico de portadas, el nombre, quién la armó, cuántas canciones tiene y cuánto dura, los botones de reproducir y de aleatorio —el de aleatorio sólo enciende el modo, no empieza a sonar—, y la tabla con número, título, álbum, la fecha en que la agregaste y la duración. Podés filtrarla y ordenarla, el nombre del artista y el del álbum llevan a su ficha, y cada canción tiene su menú. La lista que ves es la que suena: filtrar o reordenar cambia lo que viene después.
+- **Desde el menú de cada canción se puede agregar a una playlist**, y también crear una playlist nueva desde ahí, con la canción ya adentro. Se escribe por la misma sesión con la que Starless reproduce: no hay ningún permiso nuevo ni una segunda pantalla de autorización.
+
+### Fixed / Corregido
+
+- **Starless saltaba para atrás, y a veces arrancaban dos canciones a la vez.** El «siguiente» se decidía buscando por su id la canción que estaba sonando, y el DJ ofrece la misma canción dos veces: la app encontraba la primera copia —la que ya había sonado— y de ahí el salto era a una canción del pasado. Ahora la app recuerda en qué lugar de la cola está, y cada pedido de reproducción lleva un número: si mientras tanto pediste otra cosa, la respuesta que llega tarde no pone ninguna canción encima de la que ya está sonando. En el log se veía: dos canciones arrancando con 19 milisegundos de diferencia.
+- **El DJ repetía las mismas canciones.** No era cosa de Spotify: Starless le preguntaba al servicio por la línea de tiempo desde el principio, y esa línea siempre empieza igual. Ahora le pregunta por el tramo de ahora —la misma puerta que usa el cliente de Spotify—, así que cada vez que lo tocás arranca con canciones distintas y la cola sigue llenándose con material nuevo.
+- **Con el DJ hablando, el volumen y el transporte quedaban bloqueados.** El control de volumen quedaba en gris y no se podía tocar, y el botón de siguiente tampoco. Ahora la barra no está apagada mientras el DJ habla: la música viene, y el volumen es justamente lo que se quiere bajar —la voz es lo más fuerte de la sala—. Y el botón de reproducir corta la frase y deja sonar la canción que el DJ eligió.
+- **Cuando salteabas, se oía un pedazo de la canción anterior antes de que el DJ hablara.** La música se cortaba recién cuando el audio de la frase ya estaba listo, y eso pasaba un par de segundos después del click: la app seguía con la canción que vos ya habías salteado. Ahora la música se calla en el momento, y el audio de la frase se pide por adelantado.
+- **Se cayó la conexión con Spotify y Starless se la levanta.** Antes saltaba canción tras canción diciendo que esa no se pudo reproducir —la pista estaba bien, lo que faltaba era la conexión— y terminabas viendo seis errores seguidos. Ahora la app avisa que está reconectando, arma una sesión nueva con las mismas credenciales y vuelve a poner la canción que había fallado.
+- **Starless se quedaba mudo y no volvía.** Cuando el dispositivo de salida dejaba de tomar el audio, el hilo que reproduce se quedaba esperando para siempre —no estaba muerto: estaba esperando— y la app seguía mandándole cosas que nadie leía. La ventana se veía perfecta y no sonaba nada. Ahora la app lo nota, deja el reproductor viejo atrás sin esperar a que vuelva, abre otro y pone la canción de nuevo.
+- **Starless perdía la música y no la recuperaba.** Si la conexión con Spotify se caía cuando no había nada en la cola, la app ni se enteraba: la reconexión estaba atada a una canción que falla, y con la cola vacía no falla ninguna. La conexión se quedaba muerta —y el DJ, que habla por su propio camino, seguía hablando— sin que nadie la volviera a levantar. Ahora un clic arma la sesión nueva y vuelve a poner la canción que pediste.
+
+### Removed / Eliminado
+
+- **El apartado «Reproducido recientemente» de la cola se fue por ahora.** El backend todavía no sabe qué se escuchó antes, y un encabezado sobre una lista vacía es una promesa que la app no puede cumplir. Cuando haya algo que contar, vuelve.
+
+---
+
 ## [0.4.0] — 2026-10-18 · prerelease
 
 ### New / Nuevo
@@ -186,5 +214,6 @@ Nunca se publicó. / Never published.
 
 ---
 
+[0.5.0]: https://github.com/baironvillar/Starless/releases/tag/v0.5.0
 [0.3.1]: https://github.com/baironvillar/Starless/releases/tag/v0.3.1
 [0.3.0]: https://github.com/baironvillar/Starless/releases/tag/v0.3.0

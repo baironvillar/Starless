@@ -2,9 +2,11 @@ import {
   Check,
   ChevronDown,
   Download,
+  FlaskConical,
   Loader2,
   LogOut,
   MessageSquarePlus,
+  Pencil,
   RefreshCw,
   User,
   X,
@@ -13,21 +15,32 @@ import { motion } from "motion/react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { CHANGELOG, PREVIOUS_NOTE } from "../lib/changelog";
 import type { Lang, StringKey } from "../lib/i18n";
+import { SPRING, SPRING_SHEET } from "../lib/motion";
 import {
+  ACCENT_DEFAULT,
+  accentColor,
+  applyAccentColor,
   applyMenuOpacity,
   MENU_OPACITY_DEFAULT,
   MENU_OPACITY_MAX,
   MENU_OPACITY_MIN,
   menuOpacity,
+  setAccentColor,
   setMenuOpacity,
   signOut,
   type Account as UserAccount,
 } from "../lib/spotify";
 import {
   checkForUpdate,
+  checkPrerelease,
+  installablePrerelease,
   installableUpdate,
+  installPrerelease,
   installUpdate,
   pendingVersion,
+  prereleaseState,
+  prereleaseVersion,
+  subscribePrerelease,
   subscribeUpdate,
   updateState,
 } from "../lib/updater";
@@ -47,6 +60,16 @@ type SettingsPanelProps = {
   onClose: () => void;
   onLangChange: (lang: Lang) => void;
 };
+
+/**
+ * The colours offered before the free picker.
+ *
+ * Every one of them is light enough to carry the dark label, which is the whole
+ * point: an accent is a fill under text as often as it is a mark beside text, and
+ * a preset that made a button unreadable would be a preset that ships a bug. The
+ * shipped lime comes first and is also how the section gets its default back.
+ */
+const ACCENT_PRESETS = ["#c9f73c", "#3ddc97", "#4cc9f0", "#7aa2ff", "#c08bff", "#ff8fb1"];
 
 const SECTIONS = [
   "sectionGeneral",
@@ -80,7 +103,7 @@ export function SettingsPanel({
     <motion.div
       initial={{ opacity: 0, scale: 0.97, y: 12 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
-      transition={{ type: "spring", stiffness: 380, damping: 34 }}
+      transition={SPRING_SHEET}
       className="glass-sheet absolute inset-4 z-40 flex overflow-hidden rounded-card"
       role="dialog"
       aria-modal="true"
@@ -179,6 +202,8 @@ function General({
       </Group>
 
       <Updates t={t} />
+
+      <Prerelease t={t} />
 
       <DevPanel t={t} />
     </div>
@@ -306,6 +331,89 @@ function Audio({ t }: { t: Record<StringKey, string> }) {
  * the common case, and the label says plainly what it does.
  */
 /**
+ * The prerelease channel: a second row, and nothing else about it changes.
+ *
+ * **It does not touch the badge.** The badge on the Settings button asks the
+ * release channel, and a build of `develop` has no business being the reason
+ * somebody gets nagged about maintenance. This is a button somebody goes and
+ * presses, which is the same rule the release updater already follows.
+ *
+ * The row says what is about to happen — it installs over what is running — and
+ * says it before the button, not in a dialog afterwards. Installing a develop
+ * build replaces the installed app; that is what an update is, and the only
+ * reason it was ever a problem is that nobody said it out loud.
+ */
+function Prerelease({ t }: { t: Record<StringKey, string> }) {
+  const state = useSyncExternalStore(subscribePrerelease, prereleaseState, prereleaseState);
+  const update = installablePrerelease(state);
+  const version = prereleaseVersion(state);
+
+  const hint = (() => {
+    switch (state.status) {
+      case "available":
+      case "ready":
+        return t.prereleaseAvailable.replace("{version}", version ?? "");
+      case "same":
+        return t.prereleaseSame.replace("{version}", version ?? "");
+      case "error":
+        return t.prereleaseError;
+      default:
+        return t.prereleaseHint;
+    }
+  })();
+
+  return (
+    <div className="mt-5">
+      <Group>
+        <Row label={t.prereleaseTitle} hint={hint}>
+          <div className="flex items-center gap-2">
+            {state.status === "downloading" && (
+              <span className="flex items-center gap-2 text-[13px] text-ink-muted">
+                <Loader2 className="size-3.5 animate-spin" strokeWidth={2} />
+                {state.total > 0
+                  ? `${Math.round((state.received / state.total) * 100)}%`
+                  : t.updateDownloading}
+              </span>
+            )}
+
+            {update && state.status !== "downloading" && (
+              <button
+                type="button"
+                onClick={() => void installPrerelease(update)}
+                className="flex items-center gap-2 rounded-pill bg-accent px-4 py-2.5 text-[13px] font-semibold text-on-accent transition-opacity duration-200 hover:opacity-90"
+              >
+                <Download className="size-4" strokeWidth={2} />
+                {t.prereleaseInstall}
+              </button>
+            )}
+
+            {!update && state.status !== "downloading" && (
+              <button
+                type="button"
+                onClick={() => void checkPrerelease()}
+                disabled={state.status === "checking"}
+                className="flex items-center gap-2 rounded-pill border border-white/14 bg-white/6 px-4 py-2.5 text-[13px] font-medium transition-colors duration-200 hover:bg-white/10 disabled:opacity-50"
+              >
+                {state.status === "checking" ? (
+                  <Loader2 className="size-4 animate-spin" strokeWidth={2} />
+                ) : (
+                  <FlaskConical className="size-4" strokeWidth={2} />
+                )}
+                {state.status === "checking"
+                  ? t.prereleaseChecking
+                  : state.status === "none"
+                    ? t.prereleaseNone
+                    : t.prereleaseCheck}
+              </button>
+            )}
+          </div>
+        </Row>
+      </Group>
+    </div>
+  );
+}
+
+/**
  * Where the app stops deciding for the user.
  *
  * One control on purpose: this section earns its place by existing, and the second
@@ -313,6 +421,7 @@ function Audio({ t }: { t: Record<StringKey, string> }) {
  */
 function Custom({ t }: { t: Record<StringKey, string> }) {
   const [opacity, setOpacity] = useState<number | null>(null);
+  const [accent, setAccent] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -343,6 +452,34 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
     void setMenuOpacity(value).catch(() => {});
   };
 
+  // Same answer for the same reason: the panel is the preview of its own choice.
+  // The write is not awaited for the same reason the opacity one is not — a slow
+  // disk must not make the colour arrive late.
+  useEffect(() => {
+    let alive = true;
+    void accentColor()
+      .then((value) => {
+        if (alive) setAccent(value);
+      })
+      .catch(() => {
+        if (alive) setAccent(ACCENT_DEFAULT);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const changeAccent = (value: string) => {
+    setAccent(value);
+    applyAccentColor(value);
+    void setAccentColor(value).catch(() => {});
+  };
+
+  // The ring around the pencil answers "which one is mine?" for a colour that is
+  // not one of the six. Without it, picking a custom colour de-selects all six and
+  // marks nothing, and the row looks like it forgot what it is showing.
+  const isCustom = accent !== null && !ACCENT_PRESETS.includes(accent);
+
   return (
     <div className="max-w-[620px]">
       <Group>
@@ -360,7 +497,7 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
               disabled={opacity === null}
               onChange={(e) => change(Number(e.target.value))}
               aria-label={t.menuOpacity}
-              className="w-[180px] accent-[var(--accent)] disabled:opacity-45"
+              className="w-[180px] accent-[var(--color-accent)] disabled:opacity-45"
             />
             {/*
               The swatch is what makes this control legible while it is being
@@ -376,6 +513,74 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
         <span>{t.menuOpacitySolid}</span>
         <span>{t.menuOpacityGlass}</span>
       </p>
+
+      {/*
+        The accent is the one colour the user owns outright. It reaches the Inicio
+        button, the mark beside the selected playlist, the play buttons and every
+        primary action in the app — so the control shows the consequence instead of
+        describing it: the swatches *are* the accent, and picking one repaints this
+        panel's own controls while the finger is still on it.
+
+        Presets first and the native picker last: the presets are the colours that
+        are known to keep a readable label on top of them, and the picker is the
+        door for the one that is not.
+      */}
+      <div className="mt-9">
+        <Group>
+          <Row label={t.accentColor} hint={t.accentColorHint}>
+            <span className="flex items-center gap-2">
+              {ACCENT_PRESETS.map((hex) => (
+                <button
+                  key={hex}
+                  type="button"
+                  onClick={() => changeAccent(hex)}
+                  aria-label={hex}
+                  aria-pressed={(accent ?? ACCENT_DEFAULT) === hex}
+                  style={{ backgroundColor: hex }}
+                  className={`size-7 rounded-pill border-2 transition-transform duration-150 hover:scale-105 ${
+                    (accent ?? ACCENT_DEFAULT) === hex ? "border-ink" : "border-white/14"
+                  }`}
+                />
+              ))}
+              <span className="relative ml-1 size-7 shrink-0">
+                <input
+                  type="color"
+                  value={accent ?? ACCENT_DEFAULT}
+                  onChange={(e) => changeAccent(e.target.value)}
+                  aria-label={t.accentColorCustom}
+                  className="absolute inset-0 size-full cursor-pointer opacity-0"
+                />
+                {/* The native control is the invisible one. What shows is this: a
+                  wheel of colours with a pencil on it, because a lone colour
+                  swatch next to six swatches reads as a seventh colour, and a
+                  rounded rectangle reads as a button that is broken. */}
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-pill"
+                  style={{
+                    background:
+                      "conic-gradient(#ff5a36, #ffb020, #3ddc97, #4cc9f0, #7aa2ff, #c08bff, #ff8fb1, #ff5a36)",
+                  }}
+                />
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-pill bg-black/45"
+                />
+                <Pencil
+                  className="pointer-events-none absolute inset-0 m-auto size-3.5 text-white"
+                  strokeWidth={2}
+                />
+                {isCustom && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute -inset-[3px] rounded-pill border-2 border-ink"
+                  />
+                )}
+              </span>
+            </span>
+          </Row>
+        </Group>
+      </div>
     </div>
   );
 }
@@ -623,7 +828,7 @@ function Toggle() {
       aria-checked={on}
       onClick={() => setOn((v) => !v)}
       whileTap={{ scale: 0.94 }}
-      transition={{ type: "spring", stiffness: 420, damping: 32 }}
+      transition={SPRING}
       className={`relative h-6 w-11 rounded-pill transition-colors duration-200 ${
         on ? "bg-accent" : "bg-white/14"
       }`}
@@ -634,7 +839,7 @@ function Toggle() {
         className={`absolute top-1 size-4 rounded-pill bg-white shadow-sm ${on ? "right-1" : "left-1"}`}
       />
       {on && (
-        <Check className="pointer-events-none absolute top-1/2 left-1.5 size-3 -translate-y-1/2 text-ground" />
+        <Check className="pointer-events-none absolute top-1/2 left-1.5 size-3 -translate-y-1/2 text-on-accent" />
       )}
     </motion.button>
   );

@@ -22,7 +22,7 @@ Four floating layers, and no more. Each sits above the one beneath.
 | Colour bloom | A large soft radial wash behind everything | full |
 | Top bar | Home, library toggle, centred search, secondary actions | 20px |
 | Library sidebar | The user's playlists and liked songs | 20px |
-| Player bar | Transport, progress, volume — always visible | 20px |
+| Player bar | Transport, progress, volume — arrives with the music | 20px |
 
 The three panels are the same width inset, cut from the same glass recipe. **They read as one sheet of glass floating over the content**, not as three components that happen to match. Anything that breaks that symmetry — a different radius on one of them, a different inset — makes the app look assembled instead of designed.
 
@@ -72,12 +72,16 @@ A glass surface is three stacked things, never one. Omitting the middle layer is
 ```
 1. base       rgba(20,20,32,0.55)   ← guarantees the contrast floor
 2. blur       blur(24px) saturate(180%)
-3. specular   1px rgba(255,255,255,0.12) border
-              + inset 0 1px 0 rgba(255,255,255,0.10)
-              + 0 24px 48px -12px rgba(0,0,0,0.6) lift
+3. lift       0 24px 48px -12px rgba(0,0,0,0.6)
 ```
 
 The base is not optional decoration. It is what makes text legible over a bright cover. **Any surface carrying text needs an opaque-enough base — alpha 0.5 or above. Never place text directly on unblurred artwork.**
+
+**There is no specular border.** A 1px `rgba(255,255,255,0.12)` ring with a matching `inset 0 1px 0` highlight used to be layer three, and it was a signal saying the same thing the radius and the lift already say. Measured against the bloom — which is all that sits behind the bars — it was a hairline you had to look at to see. **A floating surface reads as floating because of its radius and its shadow, not because it is outlined.** Adding an outline to a floating surface is how a design gets described as "boxes on a dark background".
+
+The border and the inset highlight go together: drop one and keep the other and what is left is a bright line along the top edge and nothing on the other three sides, which reads as a rendering fault.
+
+The one surface that keeps a hairline is the track list — `border-white/8` on a `bg-white/4` card — and it is deliberately not glass. It is content, not chrome: a list of songs needs a structure to hang on, and after the chrome lost its outlines that card is what still separates a list from the ground. Chrome edges were decoration; that one is information.
 
 Nesting glass inside glass is forbidden. Each level multiplies the blur cost and compounds the contrast loss. If a control sits on the player bar, it is a plain tinted control, not a second glass layer.
 
@@ -100,7 +104,8 @@ Motion is what separates "designed" from "assembled", and it is one of the three
 
 - Springs, not durations, for anything the user touches. Tailwind/Motion spring: stiffness ~420, damping ~32.
 - Press feedback is a scale to 0.94 with a ~120ms spring. It must feel instant.
-- The bar enters once on first launch: fade and rise 16px, ~320ms. Never on every navigation.
+- The bar enters **with the music**: fade and rise 16px, ~320ms. It is not on screen before the first song — an empty bar is the shape of an absence — and it never re-enters on navigation.
+- The bar leaves the way it came: the same fade, the same 16px, downward. The window gives the bar its room at the same time, so the two are one movement and not two gestures. The library, the rail and the queue stop 20px above the window's edge when there is no bar, and at 144px — where the bar begins — when there is one.
 - Track change: nothing in the chrome moves. The bloom is fixed, so a track change only updates the artwork swatch and the running-time column.
 - Nothing animates on a loop, with exactly one exception: the now-playing mark in the track list breathes slowly. It is the only thing on screen allowed to move indefinitely, and it is 8px across. An app open all day must otherwise be able to sit completely still.
 
@@ -143,6 +148,13 @@ own 768px minimum. The bar is 104px tall, which puts the content boundary at
 `bottom-[144px]` — one 20px gap beneath it, the same gap the top bar leaves at
 `top-[104px]`.
 
+**That boundary has two values, and they follow the bar.** While the bar is on screen the
+content, the rail and the queue stop at 144px, where the bar begins. Before the first song
+there is no bar, and they go down to the window's own 20px inset: that space belongs to
+the content, and a band of empty ground under the library is a hole, not breathing room.
+The bar arriving and the content moving are one movement, so both take the 300ms the
+panels already use.
+
 Native `<input type="range">` is redrawn by the `.slider` recipe in `index.css`: a 4px
 track, a 12px thumb, and a fill driven by the `--fill` custom property each control
 sets from its own value. The browser default looks like a different app wearing our
@@ -150,7 +162,7 @@ clothes, and there are only two of these, so one recipe covers both.
 
 ## Layout rules
 
-- The bar is always present. The user never navigates somewhere to control playback.
+- The bar is present whenever there is something to play. The user never navigates somewhere to control playback.
 - The rail persists and swaps its contents; the layout never reflows between sections.
 - The content area carries the only large artwork. Chrome stays quiet so the album is the brightest thing on screen.
 - Spanish and English ship together; every string comes from a translation map, never inline.

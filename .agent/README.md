@@ -12,7 +12,8 @@ podían desincronizar sin que nada lo anunciara.
 
 ```
 .agent/                       ← canónico, se versiona
-  skills/impeccable/          el skill, con rutas relativas a .agent/
+  skills/impeccable/          el skill de diseño, con rutas relativas a .agent/
+  skills/starless/            el skill del proyecto: cómo se hace un cambio
   README.md                   este archivo
 
 .claude/                      ← adaptador de Claude Code

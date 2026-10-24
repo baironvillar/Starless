@@ -1,13 +1,16 @@
 import { Play, X } from "lucide-react";
 import { motion } from "motion/react";
 import type { StringKey } from "../lib/i18n";
+import { SPRING, SPRING_SHEET } from "../lib/motion";
 import {
+  coverImage,
+  type DjNarration,
   formatDuration,
-  largestImage,
   type Track,
   trackArtists,
   trackRowKeys,
 } from "../lib/spotify";
+import { DjArtwork } from "./DjArtwork";
 
 type QueuePanelProps = {
   t: Record<StringKey, string>;
@@ -15,11 +18,44 @@ type QueuePanelProps = {
   playing: Track | null;
   /** In the order it will actually be played. */
   upNext: Track[];
+  /**
+   * What the DJ said before its first song.
+   *
+   * **It is text, and the voice is somewhere else.** The narration's audio is
+   * asked for by the backend and played through the same output as the music,
+   * so the DJ is heard; what comes here is the line, as words, so it can also
+   * be read. The two are the same sentence.
+   */
+  narration?: DjNarration | null;
+  /**
+   * The DJ, while it is talking.
+   *
+   * **It takes the "now playing" slot, not a place in the queue.** While the DJ
+   * speaks, the panel says what is sounding —the DJ— and says nothing about
+   * what comes after: the list of what is next is the spoiler, and the
+   * greeting is supposed to be a surprise.
+   */
+  dj?: { speaker: string | null; line: string | null } | null;
+  /**
+   * The queue is the DJ's session, not a list.
+   *
+   * **A station has no "next up".** The DJ keeps choosing, so what is coming
+   * is not decided yet, and a panel that shows it is telling the user what
+   * the DJ has not said. Spotify, for the DJ, has no such section either.
+   */
+  station?: boolean;
+  /**
+   * Whether the player bar is on screen.
+   *
+   * **The panel stops where the bar begins.** The bar floats over the bottom
+   * of the window and spans the whole width, so a queue that kept going down
+   * would end up behind it. When the bar is not there, the panel goes down to
+   * the window's own inset: that space is the queue's, not empty ground.
+   */
+  barPresent: boolean;
   onPlay: (track: Track) => void;
   onClose: () => void;
 };
-
-const SPRING = { type: "spring" as const, stiffness: 380, damping: 34 };
 
 /**
  * Real cover art, or an empty frame — never a generated gradient. See the note on
@@ -27,7 +63,7 @@ const SPRING = { type: "spring" as const, stiffness: 380, damping: 34 };
  * artwork there.
  */
 function Cover({ track, className }: { track: Track; className: string }) {
-  const cover = largestImage(track.album?.images);
+  const cover = coverImage(track.album?.images);
   if (!cover) {
     return <span className={`${className} bg-white/8`} aria-hidden />;
   }
@@ -48,14 +84,29 @@ function Cover({ track, className }: { track: Track; className: string }) {
  * not a queue you read while the music plays. 240px at the app's own 768px minimum
  * leaves the content 340px, which is narrow, and the close button is right there.
  *
- * Three sections, because the queue is a history as much as a plan: what is sounding,
- * what follows, and what already played. Their order is the only reason to read it
- * top to bottom.
+ * Two sections, because the queue is a history as much as a plan: what is
+ * sounding, and what follows. Their order is the only reason to read it top to
+ * bottom.
  *
- * "Recently played" is empty until the backend can report it. A filled-in history
- * that was invented would be worse than an honest blank.
+ * **The DJ's session has one of the two.** What follows is not decided yet when
+ * the DJ is choosing, so a station does not get a "next up" section —and a
+ * panel that shows it is telling the user what the DJ has not said.
+ *
+ * "Recently played" is not here yet. The backend cannot report it, and a
+ * heading over an empty list is a promise the app cannot keep: the space is
+ * better spent on something that is true.
  */
-export function QueuePanel({ t, playing, upNext, onPlay, onClose }: QueuePanelProps) {
+export function QueuePanel({
+  t,
+  playing,
+  upNext,
+  narration,
+  dj,
+  station,
+  barPresent,
+  onPlay,
+  onClose,
+}: QueuePanelProps) {
   const rowKeys = trackRowKeys(upNext);
 
   return (
@@ -63,10 +114,10 @@ export function QueuePanel({ t, playing, upNext, onPlay, onClose }: QueuePanelPr
       initial={{ opacity: 0, x: 18 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 18 }}
-      transition={SPRING}
+      transition={SPRING_SHEET}
       role="dialog"
       aria-label={t.queue}
-      className="glass-sheet pointer-events-auto absolute top-[104px] right-5 bottom-[144px] z-30 flex w-[240px] flex-col overflow-hidden rounded-card"
+      className={`glass-sheet pointer-events-auto absolute top-[104px] right-5 ${barPresent ? "bottom-[144px]" : "bottom-5"} z-30 flex w-[240px] flex-col overflow-hidden rounded-card transition-[bottom] duration-300 ease-[var(--ease-glass)]`}
     >
       <header className="flex shrink-0 items-center justify-between gap-2 px-4 pt-4 pb-3">
         <h2 className="truncate text-[15px] font-semibold tracking-tight">{t.queue}</h2>
@@ -74,7 +125,7 @@ export function QueuePanel({ t, playing, upNext, onPlay, onClose }: QueuePanelPr
           type="button"
           onClick={onClose}
           whileTap={{ scale: 0.9 }}
-          transition={SPRING}
+          transition={SPRING_SHEET}
           aria-label={t.close}
           title={t.close}
           className="grid size-8 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink"
@@ -83,24 +134,45 @@ export function QueuePanel({ t, playing, upNext, onPlay, onClose }: QueuePanelPr
         </motion.button>
       </header>
 
-      <div className="flex flex-col gap-5 overflow-y-auto px-2 pb-4">
-        <Section label={t.queueNowPlaying}>
-          {playing ? <NowPlaying track={playing} /> : <Empty t={t} />}
-        </Section>
+      {/* `pr-3` is the gap between the covers and the thumb; see the same note in
+          LibrarySidebar. The panel's own padding is on the header above. */}
+      <div className="flex flex-col gap-5 overflow-y-auto px-2 pr-3 pb-4">
+        {/*
+            The DJ's line lives in the "now playing" row while it talks, so the
+            block above —which belongs to a song— steps aside. Otherwise the
+            same sentence is on screen twice.
+        */}
+        {!dj && narration && <Narration narration={narration} />}
 
-        <Section label={t.queueNextUp}>
-          {upNext.length > 0 ? (
-            upNext.map((track, index) => (
-              <QueueRow key={rowKeys[index]} track={track} position={index + 1} onPlay={onPlay} />
-            ))
+        <Section label={t.queueNowPlaying}>
+          {dj ? (
+            <NowPlayingDj dj={dj} t={t} />
+          ) : playing ? (
+            <NowPlaying track={playing} />
           ) : (
             <Empty t={t} />
           )}
         </Section>
 
-        <Section label={t.queueRecentlyPlayed}>
-          <Empty t={t} />
-        </Section>
+        {/*
+            The list of what comes next, and the DJ's session does not have one.
+
+            **The spoiler is the list.** The greeting is meant to be a surprise,
+            and a panel that shows the songs of the set before they start is the
+            opposite of that. A station has no "next up": the DJ keeps choosing,
+            so what comes is not decided yet.
+        */}
+        {!station && (
+          <Section label={t.queueNextUp}>
+            {upNext.length > 0 ? (
+              upNext.map((track, index) => (
+                <QueueRow key={rowKeys[index]} track={track} position={index + 1} onPlay={onPlay} />
+              ))
+            ) : (
+              <Empty t={t} />
+            )}
+          </Section>
+        )}
       </div>
     </motion.aside>
   );
@@ -114,6 +186,67 @@ function Section({ label, children }: { label: string; children: React.ReactNode
       </h3>
       <ul className="flex flex-col gap-0.5">{children}</ul>
     </section>
+  );
+}
+
+/**
+ * What the DJ said.
+ *
+ * Above the queue and not inside it, because it is not one of the songs: it is
+ * the reason those songs are the ones that are playing. The speaker's name is
+ * in the small caps the section labels use, and the line below it is the DJ's
+ * own words — which is all that came back from the service, and all this
+ * shows.
+ */
+function Narration({ narration }: { narration: DjNarration }) {
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: -6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={SPRING}
+      aria-label={narration.speaker}
+    >
+      <h3 className="px-2 pb-1.5 text-[12px] font-semibold tracking-wide uppercase text-ink-faint">
+        {narration.speaker}
+      </h3>
+      <blockquote className="rounded-[14px] bg-white/6 px-3 py-2.5 text-[12.5px] leading-relaxed text-ink-muted">
+        {narration.line}
+      </blockquote>
+    </motion.section>
+  );
+}
+
+/**
+ * The DJ, in the row that says what is sounding.
+ *
+ * **The same slot the song has, and the same shape.** What is sounding right
+ * now is the DJ, so the row shows the DJ: its drawing where the cover goes,
+ * its name where the title goes, and the sentence it is saying where the
+ * artist goes.
+ */
+function NowPlayingDj({
+  dj,
+  t,
+}: {
+  dj: { speaker: string | null; line: string | null };
+  t: Record<StringKey, string>;
+}) {
+  return (
+    <li>
+      <div className="flex items-center gap-3 rounded-[14px] bg-white/6 px-2 py-2">
+        <span className="relative size-11 shrink-0 overflow-hidden rounded-[10px]">
+          <DjArtwork />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13.5px] font-semibold">
+            {dj.speaker ?? t.djSpeaker}
+          </span>
+          <span className="block truncate text-[12.5px] text-ink-muted">
+            {dj.line ?? t.djSpeaking}
+          </span>
+        </span>
+      </div>
+    </li>
   );
 }
 

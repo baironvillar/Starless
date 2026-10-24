@@ -181,6 +181,68 @@ pub fn start_connect(session: &Session, credentials: Credentials) {
     });
 }
 
+/// How long to wait for a session to come up before giving up on it.
+///
+/// Long enough for a handshake on a slow connection, short enough that a
+/// machine with no network does not leave the user looking at a spinner.
+const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// A session that is **up**, or the reason there is not one.
+///
+/// **`connect` is awaited, and that is the whole point.** `Session::connect`
+/// returns after the transport with Spotify's access point is established, so
+/// awaiting it is the difference between a session that exists and a session
+/// that can carry a track. [`start_connect`] throws the result away, which is
+/// right for a launch — nobody presses play in the first fifty milliseconds —
+/// and wrong for a reconnection, where the very next thing that happens is a
+/// track being loaded into it.
+///
+/// **The credential is the account; the session is not.** librespot invalidates
+/// the session for good when the connection drops, and there is no way back
+/// into it. The reusable credential Spotify handed out is the thing that
+/// survives, and it is what the next launch restores from — so a reconnection
+/// is the same door the app already walks through, taken a second time.
+///
+/// Blocking: it waits for the handshake. Call it from a blocking thread.
+pub fn connect_now(cache: &Cache) -> Result<Session, String> {
+    let credentials = cache
+        .credentials()
+        .ok_or_else(|| fail("not_signed_in", "no hay credenciales guardadas"))?;
+    let client_id = streaming_client_id();
+    let session = Session::new(session_config(&client_id), Some(cache.clone()));
+
+    // The handshake runs on the session's own runtime, so the wait happens on
+    // a channel and not on a task of ours: `Session::spawn` is the only way in
+    // and the future it takes has to be 'static. The error travels as a
+    // string so the channel carries nothing that needs to be `Send` for a
+    // reason nobody can see.
+    let (tx, rx) = std::sync::mpsc::channel();
+    let owned = session.clone();
+    session.spawn(async move {
+        let outcome = owned.connect(credentials, true).await.map_err(|e| e.to_string());
+        let _ = tx.send(outcome);
+    });
+
+    match rx.recv_timeout(CONNECT_TIMEOUT) {
+        Ok(Ok(())) => {
+            log::info!("sesión conectada como {}", session.username());
+            Ok(session)
+        }
+        Ok(Err(error)) => {
+            session.shutdown();
+            Err(fail("connection_failed", error))
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+            session.shutdown();
+            Err(fail("connection_timeout", "el handshake no terminó a tiempo"))
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            session.shutdown();
+            Err(fail("connection_failed", "la sesión se cayó durante el handshake"))
+        }
+    }
+}
+
 /// Build a session from whatever is already cached, if anything is.
 ///
 /// The cached credentials were minted for a particular client id, so that id has

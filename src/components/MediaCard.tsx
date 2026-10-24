@@ -1,14 +1,31 @@
 import { Loader2, Play } from "lucide-react";
 import { motion } from "motion/react";
-import { type Image, largestImage } from "../lib/spotify";
-
-const SPRING = { type: "spring" as const, stiffness: 420, damping: 32 };
+import { SPRING } from "../lib/motion";
+import { coverImage, type Image } from "../lib/spotify";
 
 type MediaCardProps = {
   title: string;
   /** Artist, owner, year — whatever this particular card is actually about. */
   subtitle?: string | null;
-  imageUrl: string | null;
+  /**
+   * The picture, when the card has one.
+   *
+   * Optional because the card can have a drawing instead —see `art`— and a card
+   * with neither is an empty frame, which is the honest answer for a cover the
+   * service did not send.
+   */
+  imageUrl?: string | null;
+  /**
+   * The card's own drawing, for the cards that have one instead of a photo.
+   *
+   * **The DJ is the case, and it is not a decoration.** Spotify draws the card
+   * for the DJ —its own blue and its jellyfish— and sends no cover for it, so a
+   * card that only knew how to show a picture drew an empty square where the DJ
+   * is. The drawing goes in the same place the picture would go: under the
+   * button, over the frame, and it never takes the click, which belongs to the
+   * card.
+   */
+  art?: React.ReactNode;
   /**
    * Round for people, square for everything else.
    *
@@ -20,6 +37,14 @@ type MediaCardProps = {
   /** Present only where playing is real. Absent means "this card opens something". */
   onPlay?: () => void;
   onOpen?: () => void;
+  /**
+   * What the card's own button does, for a screen reader.
+   *
+   * The title is the default because a card that opens something is named by
+   * what it opens. A card that *plays* is not: the name of a DJ is "DJ", and a
+   * button labelled "DJ" says nothing about what pressing it does.
+   */
+  openLabel?: string;
   /**
    * Called when the card is approached, to fetch what opening it would need.
    *
@@ -63,9 +88,11 @@ export function MediaCard({
   title,
   subtitle,
   imageUrl,
+  art,
   round = false,
   onPlay,
   onOpen,
+  openLabel,
   onPrefetch,
   busy = false,
   eyebrow,
@@ -100,12 +127,16 @@ export function MediaCard({
           <button
             type="button"
             onClick={onOpen}
-            aria-label={title}
+            aria-label={openLabel ?? title}
             className="absolute inset-0 size-full cursor-pointer rounded-[inherit] outline-offset-2"
           />
         )}
 
-        {imageUrl ? (
+        {art ? (
+          // The drawing is a layer, not a picture: it goes where the picture would
+          // go and it lets the click through to the card underneath.
+          <span className="pointer-events-none absolute inset-0">{art}</span>
+        ) : imageUrl ? (
           <img
             src={imageUrl}
             alt=""
@@ -130,7 +161,7 @@ export function MediaCard({
             // Hidden until the card is approached, but still reachable by keyboard.
             // A pending play stays visible: the click registered, and hiding the
             // only feedback the card has would read as a dead button.
-            className={`absolute right-2 bottom-2 z-10 grid size-10 place-items-center rounded-pill bg-accent text-ground shadow-[0_6px_16px_-4px_rgba(0,0,0,0.8)] transition-opacity duration-200 ${
+            className={`absolute right-2 bottom-2 z-10 grid size-10 place-items-center rounded-pill bg-accent text-on-accent shadow-[0_6px_16px_-4px_rgba(0,0,0,0.8)] transition-opacity duration-200 ${
               busy
                 ? "opacity-100"
                 : "opacity-0 group-hover/card:opacity-100 focus-visible:opacity-100"
@@ -168,5 +199,5 @@ export function MediaCard({
 
 /** The picture for a card, or nothing at all — never a stand-in. */
 export function cardImage(images: Image[] | null | undefined): string | null {
-  return largestImage(images)?.url ?? null;
+  return coverImage(images)?.url ?? null;
 }

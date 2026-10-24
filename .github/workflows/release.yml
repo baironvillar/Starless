@@ -85,6 +85,41 @@ jobs:
           }
           Write-Host "Publicando $tag"
 
+      # Las notas de la release son el changelog, y salen de ahí.
+      #
+      # Con `generateReleaseNotes` GitHub escribe el cuerpo de la release: una
+      # lista de commits y una sección de "nuevo contribuidor" —que en un repo
+      # de una sola persona es el dueño de la app, dicho como si fuera otra
+      # persona—. Las notas de una versión están escritas: están en CHANGELOG.md,
+      # y la 0.3.0 las tenía. Lo que se publica sale de ese archivo.
+      #
+      # La sección se busca por la versión del manifiesto, que es la del tag por
+      # el paso de arriba: un tag y un changelog que no hablan de lo mismo es un
+      # error, y sale con error en vez de publicar unas notas de otra versión.
+      - name: Las notas de la release son el changelog
+        id: notas
+        shell: pwsh
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          # `ReadAllText` con UTF-8 explícito: el changelog está lleno de rayas
+          # y comillas angulares, y leerlo con la codificación por omisión los
+          # convierte en basura antes de que nadie los vea.
+          $md = [System.IO.File]::ReadAllText("$PWD/CHANGELOG.md", [System.Text.Encoding]::UTF8)
+          $seccion = [regex]::Match($md, "(?ms)^## \[$([regex]::Escape($version))\][^\n]*\n.*?(?=^## \[|^---\s*$)")
+          if (-not $seccion.Success) {
+            Write-Host "::error::CHANGELOG.md no tiene una sección para $version"
+            exit 1
+          }
+          $body = $seccion.Value.Trim()
+          "body<<NOTAS_EOF" >> $env:GITHUB_OUTPUT
+          $body >> $env:GITHUB_OUTPUT
+          "NOTAS_EOF" >> $env:GITHUB_OUTPUT
+          # `${version}` y no `$version`: un dos puntos pegado a un nombre de
+          # variable lo convierte en un nombre calificado y el script entero deja
+          # de parsear. El runner se entera con un error de sintaxis, en el
+          # paso que publica la release.
+          Write-Host "Notas de ${version}: $($body.Length) caracteres"
+
       # Un tag no tiene por qué ser un commit sano. Son los mismos chequeos que el
       # repo pide antes de un PR, y cortan la publicación: una build que compila no
       # es una build para entregar a alguien.
@@ -121,9 +156,11 @@ jobs:
           if ($enMain) {
             Write-Host "El tag llegó a main: release normal."
             "prerelease=false" >> $env:GITHUB_OUTPUT
+            "desdeMain=true" >> $env:GITHUB_OUTPUT
           } else {
             Write-Host "El tag no llegó a main: release como prerelease, invisible para la app instalada."
             "prerelease=true" >> $env:GITHUB_OUTPUT
+            "desdeMain=false" >> $env:GITHUB_OUTPUT
           }
           # Este `exit 0` no es una formalidad. El shell `pwsh` de los runners
           # cierra cada paso con `exit $LASTEXITCODE`, y después del `merge-base`
@@ -160,9 +197,24 @@ jobs:
           # Lo decide el paso de arriba, no el archivo: una release salida de
           # `develop` se marca prerelease y la app instalada no la ve nunca.
           prerelease: ${{ steps.canal.outputs.prerelease }}
-          generateReleaseNotes: true
+          # Las notas las trae el paso de arriba, del changelog. La generación
+          # automática se apaga a propósito: `releaseBody` se **antepone** a lo
+          # que GitHub genera, así que dejarla prendida pondría las notas
+          # reales arriba y abajo el "nuevo contribuidor" que GitHub decide.
+          releaseBody: ${{ steps.notas.outputs.body }}
+          generateReleaseNotes: false
           # Se dice explícito para que el default del action no pueda cambiarnos
           # la URL del actualizador sin que lo notemos.
           uploadUpdaterJson: true
           uploadUpdaterSignatures: true
           tauriScript: bun tauri
+          # El ícono de `develop` vive en `src-tauri/tauri.dev.conf.json`, y
+          # `bun run app` lo pasa por `--config`. La build del runner no lo pasaba, así que
+          # toda release publicada llevaba el ícono de producción y una prerelease
+          # se veía exactamente igual que la app de verdad. Es el mismo archivo que
+          # ya usa la máquina de quien la desarrolla.
+          #
+          # La expresión pone la cadena vacía del lado del `||` a propósito: en
+          # `a && 'x' || ''` el `''` es falsy y el resultado termina siendo el
+          # otro lado igual. Así el orden es el correcto sin tener que pensarlo.
+          args: ${{ steps.canal.outputs.desdeMain == 'false' && '--config src-tauri/tauri.dev.conf.json' || '' }}

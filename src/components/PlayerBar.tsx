@@ -13,13 +13,13 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react";
-import { motion } from "motion/react";
-import { useCallback, useEffect, useRef } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { StringKey } from "../lib/i18n";
 import {
+  coverImage,
   explain,
   formatDuration,
-  largestImage,
   type PlaybackStatus,
   seekPlayback,
   setVolume,
@@ -27,6 +27,7 @@ import {
   togglePlayback,
   trackArtists,
 } from "../lib/spotify";
+import { DjArtwork, DjMark } from "./DjArtwork";
 
 /**
  * What "repeat" currently means.
@@ -41,6 +42,52 @@ type PlayerBarProps = {
   /** The track the backend is actually holding. Null before anything is played. */
   track: Track | null;
   status: PlaybackStatus | null;
+  /**
+   * The DJ, while it is talking.
+   *
+   * Null the rest of the time. When it is not null, **the DJ is what is making
+   * sound**, and it takes the place of the album cover on the left: the drawing
+   * goes where the artwork goes and the line goes where the artist goes.
+   */
+  dj?: { speaker: string | null; line: string | null } | null;
+  /**
+   * Whether the bar is on screen.
+   *
+   * **The bar arrives with the music, and not with the app.** It used to fade
+   * and rise the moment the window opened, into an empty bar: a glass
+   * rectangle with a dead play button, two zeros and nothing on the left. A
+   * bar that has nothing to say is not chrome, it is the shape of an absence —
+   * and it was on screen before there was any music to put in it.
+   *
+   * So it waits. When a song is asked for, when the DJ starts talking, or when
+   * the backend refuses something, the bar fades in and rises sixteen pixels
+   * into place — the same entrance it always had, moved to the moment it
+   * means something. Before that there is no bar at all, and the window is the
+   * library.
+   *
+   * **And the way out is the way in.** A bar that fades up and then blinks out
+   * is two different gestures, and the window — which is sliding down to give
+   * the bar its room back — ends up moving for a bar that is already gone. It
+   * fades down and sinks the sixteen pixels it came up, and the class that
+   * takes it out of the focus order waits for that to be over.
+   *
+   * **The answer is the app's, not the bar's:** the window has to give the bar
+   * its room at the same time, and two questions about the same thing have to
+   * have one answer.
+   */
+  present: boolean;
+  /**
+   * Ask the DJ for another turn, or undefined when there is nothing to ask.
+   *
+   * **It only exists while the DJ is on.** The bar is chrome and the chrome
+   * stays quiet: the button appears with the DJ's session and disappears with
+   * it. The shelf card is how a session starts; this is how the next one is
+   * asked for —the same path, so the backend follows its own cursor and the DJ
+   * moves on instead of starting over.
+   */
+  onPlayDj?: () => void;
+  /** The DJ is being asked for right now. */
+  djBusy?: boolean;
   t: Record<StringKey, string>;
   queueOpen: boolean;
   onToggleQueue: () => void;
@@ -54,7 +101,7 @@ type PlayerBarProps = {
   onCycleRepeat: () => void;
 };
 
-const SPRING = { type: "spring" as const, stiffness: 420, damping: 32 };
+import { SPRING } from "../lib/motion";
 
 /** librespot's own scale, not ours. The conversion happens once, here. */
 const MAX_VOLUME = 65535;
@@ -107,6 +154,10 @@ function fillStyle(percent: number): React.CSSProperties {
 export function PlayerBar({
   track,
   status,
+  dj,
+  present,
+  onPlayDj,
+  djBusy,
   t,
   queueOpen,
   onToggleQueue,
@@ -122,6 +173,33 @@ export function PlayerBar({
   const playing = status?.playing ?? false;
   const loading = status?.loading ?? false;
   const error = status?.error ?? null;
+
+  /**
+   * Whether the bar has finished leaving the screen.
+   *
+   * **The `invisible` class has to wait for the exit, or there is no exit.**
+   * `visibility: hidden` takes effect on the very frame it is applied, so a bar
+   * that is hidden and told to fade out in the same breath does not fade: it is
+   * simply gone — while the window is still sliding down to make room for a bar
+   * that is no longer there. The class goes on when the animation is over, and
+   * not one frame before.
+   *
+   * The entrance has the same rule on the other side: `invisible` comes off
+   * first, so the bar can be seen fading in instead of appearing already faded.
+   */
+  const [gone, setGone] = useState(!present);
+  /**
+   * The same question, read at the moment the animation ends.
+   *
+   * A ref and not the prop: the callback that closes the exit can fire after the
+   * bar has been asked to come back, and a stale `present` would hide a bar that
+   * is on its way in.
+   */
+  const presentRef = useRef(present);
+  presentRef.current = present;
+  useEffect(() => {
+    if (present) setGone(false);
+  }, [present]);
 
   const position = status?.positionMs ?? 0;
   const duration = status?.durationMs ?? track?.duration_ms ?? 0;
@@ -150,36 +228,101 @@ export function PlayerBar({
   }, [muted]);
 
   const busy = loading;
-  const idle = !track;
+  /**
+   * Whether there is nothing to control.
+   *
+   * **The DJ counts as something playing.** While the DJ is talking the bar is
+   * not idle: the music is on its way, and the volume is exactly the control
+   * that matters —the voice is the loudest thing in the room, and turning it
+   * down is what a person does when it is too loud. A locked slider during the
+   * DJ's ten seconds of talking is a control that exists and cannot be used.
+   *
+   * And the transport is not locked either, because "next" is the one thing
+   * that lets a person skip the voice and keep the song the DJ chose.
+   */
+  const idle = !track && !dj;
+  /** Whether there is a song to ask about. The DJ's voice is not a song. */
+  const noSong = !track;
+
+  /**
+   * What is sounding, as a key.
+   *
+   * **The key is what makes the song arrive.** When it changes, the block
+   * below is a new one and it enters from below: a song that starts playing
+   * comes up out of the bar instead of appearing in it.
+   */
+  const sounding = dj ? "dj" : (track?.id ?? "none");
 
   return (
     <motion.footer
       initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ ...SPRING, delay: 0.08 }}
-      className="glass pointer-events-auto absolute inset-x-5 bottom-5 z-20 grid h-[104px] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-x-5 rounded-card px-5"
+      animate={present ? { opacity: 1, y: 0 } : { opacity: 0, y: 16 }}
+      transition={SPRING}
+      onAnimationComplete={() => {
+        if (!presentRef.current) setGone(true);
+      }}
+      className={`glass absolute inset-x-5 bottom-5 z-20 grid h-[104px] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-x-5 rounded-card px-5 ${
+        present ? "pointer-events-auto" : "pointer-events-none"
+      } ${gone ? "invisible" : ""}`}
     >
-      {/* What is sounding — or what went wrong */}
-      <div className="flex min-w-0 items-center gap-3">
-        <Cover track={track} />
+      {/*
+          What is sounding — or what went wrong.
 
-        <div className="min-w-0">
-          {error ? (
-            <p className="flex items-center gap-1.5 truncate text-[13px] font-semibold text-warn">
-              <TriangleAlert className="size-[13px] shrink-0" strokeWidth={2} />
-              <span className="truncate">{t.playbackErrorTitle}</span>
-            </p>
-          ) : (
-            <>
-              <p className="truncate text-[13.5px] font-semibold">
-                {track ? track.name : t.nothingPlaying}
-              </p>
-              <p className="truncate text-[12.5px] text-ink-muted">
-                {track ? trackArtists(track) : t.nothingPlayingHint}
-              </p>
-            </>
+          **Nothing at all when nothing is playing.** The bar is chrome, and
+          chrome that says "nothing is playing" is a message about a state the
+          user can see for himself: the bar is empty, the queue is empty, the
+          content is empty. What was there was a caption for an absence, and
+          it took the space the cover of the song was going to take.
+
+          **And what does arrive comes from below.** The song does not appear in
+          the bar: it comes up out of it, the way a record comes off a turntable
+          into the light.
+      */}
+      <div className="flex min-w-0 items-center gap-3">
+        <AnimatePresence initial={false} mode="wait">
+          {(dj || track || error) && (
+            <motion.div
+              key={sounding}
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, transition: { duration: 0.12 } }}
+              transition={SPRING}
+              className="flex min-w-0 items-center gap-3"
+            >
+              {dj ? <DjAvatar /> : <Cover track={track} />}
+
+              <div className="min-w-0">
+                {error ? (
+                  <p className="flex items-center gap-1.5 truncate text-[13px] font-semibold text-warn">
+                    <TriangleAlert className="size-[13px] shrink-0" strokeWidth={2} />
+                    <span className="truncate">{t.playbackErrorTitle}</span>
+                  </p>
+                ) : dj ? (
+                  /*
+                      The DJ, in the same two lines as a song: who is speaking above,
+                      what they said below. The name comes from the service —it is the
+                      DJ's own name— and the line is the sentence, which the queue
+                      panel also shows in full. What the service does not send, the bar
+                      says: the generic name and "speaking".
+                  */
+                  <>
+                    <p className="truncate text-[13.5px] font-semibold">
+                      {dj.speaker ?? t.djSpeaker}
+                    </p>
+                    <p className="truncate text-[12.5px] text-ink-muted">
+                      {dj.line ?? t.djSpeaking}
+                    </p>
+                  </>
+                ) : track ? (
+                  <>
+                    <p className="truncate text-[13.5px] font-semibold">{track.name}</p>
+                    <p className="truncate text-[12.5px] text-ink-muted">{trackArtists(track)}</p>
+                  </>
+                ) : null}
+              </div>
+            </motion.div>
           )}
-        </div>
+        </AnimatePresence>
       </div>
 
       {/* Transport, with the seek bar beneath it on the same centre axis */}
@@ -213,11 +356,20 @@ export function PlayerBar({
 
           <motion.button
             type="button"
-            onClick={() => void togglePlayback().catch(() => {})}
+            onClick={() => {
+              // **Con el DJ hablando, "reproducir" es "empezá la música".**
+              //
+              // La frase es de la canción que viene, y la está introducing: la
+              // música no empezó porque el DJ habla primero. Apretar play es
+              // decir "no la quiero escuchar", y eso es lo mismo que apretar
+              // siguiente.
+              if (dj) onNext();
+              else void togglePlayback().catch(() => {});
+            }}
             disabled={idle || busy}
             whileTap={{ scale: 0.94 }}
             transition={SPRING}
-            aria-label={playing ? t.pause : t.play}
+            aria-label={dj ? t.djSkipVoice : playing ? t.pause : t.play}
             className="mx-1 grid size-11 place-items-center rounded-pill bg-ink text-ground transition-transform duration-150 hover:scale-105 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
           >
             {busy ? (
@@ -235,8 +387,8 @@ export function PlayerBar({
             disabled={idle}
             whileTap={{ scale: 0.9 }}
             transition={SPRING}
-            aria-label={t.next}
-            title={t.next}
+            aria-label={dj ? t.djSkipVoice : t.next}
+            title={dj ? t.djSkipVoice : t.next}
             className="grid size-9 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/8 hover:text-ink disabled:pointer-events-none disabled:opacity-35"
           >
             <SkipForward className="size-[17px] fill-current" strokeWidth={0} />
@@ -288,6 +440,28 @@ export function PlayerBar({
       {/* Secondary controls, mirroring the left column's width */}
       <div className="flex min-w-0 items-center justify-end gap-2">
         {/*
+            The DJ's own button, where the official client has one: the mark the
+            card on the shelf is drawn with, in the chrome's ink and not in the
+            card's blue. Clicking it asks the DJ for another turn — the backend
+            follows its own cursor, so the DJ moves on rather than starting
+            over.
+        */}
+        {onPlayDj && (
+          <motion.button
+            type="button"
+            onClick={onPlayDj}
+            disabled={djBusy}
+            whileTap={{ scale: 0.9 }}
+            transition={SPRING}
+            aria-label={t.djNext}
+            title={t.djNext}
+            className="grid size-8 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink disabled:pointer-events-none disabled:opacity-35"
+          >
+            <DjMark className="size-[17px]" />
+          </motion.button>
+        )}
+
+        {/*
             The queue button is on at every width, and the volume slider is the
             one that sheds. A control that appears at some sizes is a control that
             is missing from others: below `lg` the queue is a sheet over the
@@ -319,7 +493,7 @@ export function PlayerBar({
         <motion.button
           type="button"
           onClick={onToggleLyrics}
-          disabled={idle}
+          disabled={noSong}
           whileTap={{ scale: 0.9 }}
           transition={SPRING}
           aria-label={lyricsOpen ? t.closeLyrics : t.showLyrics}
@@ -435,16 +609,43 @@ function TransportToggle({
  * Never a generated gradient: a colour invented from nothing is a claim that
  * there is artwork there, and DESIGN.md's rule against fabricating evidence
  * applies here too. An empty square reads honestly as "no cover".
+ *
+ * The frame is `rounded-[10px]`, matching the queue, the rail and the shelf. It
+ * was `rounded-pill`, which on a 56px box is clamped to half the width and comes
+ * out a **circle** — so the one cover the eye never leaves was the only artwork
+ * in the app drawn differently from all the others, sitting in the same bar as
+ * three buttons that legitimately are pills. Nobody chose a hero shape here;
+ * `rounded-pill` got copied down from the controls above it.
  */
 function Cover({ track }: { track: Track | null }) {
-  const cover = largestImage(track?.album?.images);
+  const cover = coverImage(track?.album?.images);
 
   if (!cover) {
-    return <span className="size-14 shrink-0 rounded-pill bg-white/6" aria-hidden />;
+    return <span className="size-14 shrink-0 rounded-[10px] bg-white/6" aria-hidden />;
   }
   return (
-    <span className="size-14 shrink-0 overflow-hidden rounded-pill">
+    <span className="size-14 shrink-0 overflow-hidden rounded-[10px]">
       <img src={cover.url} alt="" className="size-full object-cover" />
+    </span>
+  );
+}
+
+/**
+ * The DJ, while it talks.
+ *
+ * **The same slot the album cover uses.** What the bar shows on the left is
+ * what is making sound, and while the DJ talks that is the DJ: its drawing
+ * takes the place of the cover, and the song's artwork comes back when the
+ * music starts.
+ *
+ * The drawing is the account's DJ card —the same one that is on the shelf—. The
+ * service sends no picture for the DJ, and inventing one would be a claim that
+ * there is artwork there.
+ */
+function DjAvatar() {
+  return (
+    <span className="relative size-14 shrink-0 overflow-hidden rounded-[10px]">
+      <DjArtwork />
     </span>
   );
 }

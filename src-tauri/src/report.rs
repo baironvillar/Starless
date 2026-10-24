@@ -182,12 +182,13 @@ pub fn previous_session_crashed() -> bool {
 // The panic hook
 // ---------------------------------------------------------------------------
 
-/// Install a hook that writes the panic down before the process aborts.
+/// Install a hook that writes the panic down before the process ends.
 ///
 /// Chains to whatever hook was already installed rather than replacing it, so
-/// `RUST_BACKTRACE` and any runtime-level reporting keep working. In release the
-/// profile sets `panic = "abort"`, which means this file is written and then the
-/// process dies immediately — so it has to be complete on the first pass.
+/// `RUST_BACKTRACE` and any runtime-level reporting keep working.
+///
+/// **Only a panic on the main thread is written down.** The others are logged
+/// and nothing more: see the note inside.
 pub fn install_panic_hook() {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -198,13 +199,27 @@ pub fn install_panic_hook() {
         let message = payload_text(info.payload());
         let text = format!("panic en {location}\n{message}\n");
 
-        // Best effort by definition: we are already in the failure path, and a
-        // failed write here must not replace the original panic with an abort.
-        if let Some(path) = panic_path()
-            && let Some(parent) = path.parent()
-        {
-            let _ = fs::create_dir_all(parent);
-            let _ = fs::write(&path, &text);
+        // **A worker thread that panics is not the app crashing.**
+        //
+        // The thread dies alone: the window stays, the rest of the app works,
+        // and the feature that thread was running stops. The audio thread is
+        // the one that matters here — it opens the output device with a bare
+        // `unwrap()` — and a device that is not there should cost the user
+        // the sound, not the app and a crash report waiting on the next
+        // launch.
+        //
+        // The main thread carries the event loop: a panic there ends the
+        // process, and that is what the crash file is for.
+        if std::thread::current().name() == Some("main") {
+            // Best effort by definition: we are already in the failure path,
+            // and a failed write here must not replace the original panic
+            // with something worse.
+            if let Some(path) = panic_path()
+                && let Some(parent) = path.parent()
+            {
+                let _ = fs::create_dir_all(parent);
+                let _ = fs::write(&path, &text);
+            }
         }
         log::error!("PANIC: {text}");
 
@@ -334,8 +349,14 @@ pub fn scrub_with(text: &str, account: Option<&str>) -> String {
     ];
 
     for (pattern, replacement) in patterns {
-        if let Ok(re) = Regex::new(pattern) {
-            out = re.replace_all(&out, replacement).into_owned();
+        match Regex::new(pattern) {
+            Ok(re) => out = re.replace_all(&out, replacement).into_owned(),
+            // A pattern that fails to compile is a redaction that is not
+            // happening, and the log looks scrubbed either way. Every pattern
+            // above is a literal so it cannot fire today, but "silently disabled"
+            // is exactly the failure this file exists to prevent — a silent one
+            // publishes exactly what the working one would have removed.
+            Err(e) => log::error!("report: no compiló un patrón de limpieza: {e}"),
         }
     }
     truncate(&out)
@@ -348,13 +369,31 @@ pub fn scrub(text: &str) -> String {
     scrub_with(text, None)
 }
 
+/// Cut to `BODY_LIMIT`, on a boundary a character cannot straddle.
+///
+/// `BODY_LIMIT` is a **byte** count and a byte count lands in the middle of a
+/// character about as often as the log carries an accent — and this app's own
+/// strings are full of them. `text[..BODY_LIMIT]` panics when it does, and
+/// that panic used to be the end of the process: the user clicked "send" on a
+/// session that had already broken and the app died again, holding their text.
+///
+/// Walking the boundaries is the fix. `char_indices` yields every index that is
+/// safe to cut at, so the last one under the limit is the answer — at most
+/// three bytes of the log are given up, and a few characters of Spanish are a
+/// fair price for the report not being the thing that crashes.
 fn truncate(text: &str) -> String {
     if text.len() <= BODY_LIMIT {
         return text.to_string();
     }
-    let mut cut = text[..BODY_LIMIT].to_string();
-    cut.push_str("\n\n*(log recortado)*\n");
-    cut
+    let cut = text
+        .char_indices()
+        .take_while(|(index, _)| *index <= BODY_LIMIT)
+        .map(|(index, _)| index)
+        .last()
+        .unwrap_or(0);
+    let mut head = text[..cut].to_string();
+    head.push_str("\n\n*(log recortado)*\n");
+    head
 }
 
 // ---------------------------------------------------------------------------
@@ -790,6 +829,39 @@ mod tests {
             "el cuerpo llegó a {} caracteres y GitHub lo rechaza a {BODY_LIMIT}",
             out.len()
         );
+    }
+
+    /// Cutting the body at a byte offset that is not a character boundary.
+    ///
+    /// The test above cannot see this: `"linea de relleno\n"` is pure ASCII, so
+    /// every byte is a character boundary and slicing at `BODY_LIMIT` always
+    /// lands cleanly. Accents are two bytes and `ñ` is not even the worst of it,
+    /// so the real log — which is full of Spanish, because that is what this app
+    /// says all day — reaches the limit mid-character within one character of
+    /// having reached it at all.
+    ///
+    /// That was a panic, and it was a hard kill: the user clicking "send" a
+    /// crash report took the process down with them, holding the text they had
+    /// typed.
+    #[test]
+    fn cutting_the_body_never_splits_a_character() {
+        // Sized so the 60 000-byte cut lands squarely inside an accented
+        // character rather than near one, which is the case that used to abort.
+        let accented = "reproducción del Reproductive í í á é ó ú ".repeat(20_000);
+        assert!(
+            accented.len() > BODY_LIMIT,
+            "el texto tiene que pasar el límite para que el corte importe"
+        );
+
+        let out = scrub(&accented);
+        assert!(
+            out.len() <= BODY_LIMIT + 64,
+            "el cuerpo llegó a {} caracteres",
+            out.len()
+        );
+        // The whole point: whatever survived is still valid UTF-8 text. A split
+        // character would not be, and `String` could not even hold it.
+        assert!(out.contains("*(log recortado)*"), "no se marcó el recorte");
     }
 
     /// The fallback URL has to be one GitHub will actually open.

@@ -1,0 +1,2750 @@
+//! La sonda: preguntas que sólo se responden escribiendo en el log.
+//!
+//! Estas funciones vivían dentro de `spclient.rs` y se movieron acá sin cambiar
+//! una línea de sus cuerpos. Se fueron porque son la mitad del archivo y la
+//! mitad no se compila en una release, y porque lo que cada bloque cuenta —por
+//! qué el rootlist no trae portadas, qué formatos existen, dónde estaba la
+//! puerta de escritura— ya está escrito en los comentarios que las anteceden.
+//! Mover el código es una mudanza de archivo; los comentarios son el registro de
+//! las horas que costó llegar a la respuesta, así que van con el código.
+//!
+//! Todo lo que usan del módulo padre es lectura: `call`, `ROOTLIST_PAGE` y las
+//! lecturas de la biblioteca. Nada sale de la cuenta salvo lo que el nombre de
+//! la función dice, y la puerta de desarrollo sigue siendo el `mod` de
+//! `spclient.rs`, cerrado por `#[cfg(debug_assertions)]`: en release este archivo
+//! ni siquiera existe.
+
+use librespot_core::version::{SPOTIFY_MOBILE_VERSION, SPOTIFY_SEMANTIC_VERSION};
+use librespot_core::{Session, SpotifyId, SpotifyUri};
+use librespot_metadata::{Metadata, Track as MetaTrack};
+use librespot_protocol::clienttoken_http::{
+    ClientTokenRequest, ClientTokenRequestType, ClientTokenResponse, ClientTokenResponseType,
+};
+use librespot_protocol::context::Context;
+use librespot_protocol::extended_metadata::{BatchedEntityRequest, EntityRequest, ExtensionQuery};
+use librespot_protocol::extension_kind::ExtensionKind;
+use librespot_protocol::playlist4_external::SelectedListContent;
+use protobuf::{Enum, EnumOrUnknown, Message};
+
+use super::{
+    ROOTLIST_PAGE, account, call, dj_mix, dj_page, liked_tracks, playlist_tracks, playlists,
+    search_tracks,
+};
+
+// ---------------------------------------------------------------------------
+// La sonda
+// ---------------------------------------------------------------------------
+
+/// `true` when the environment asks for the probe. Read once, at startup.
+///
+/// Separate from `STARLESS_DIAGNOSTIC` on purpose: that one plays a real track
+/// for twenty seconds, and a question about the library does not need a song
+/// playing on the developer's desk to be answered.
+#[cfg(debug_assertions)]
+pub fn requested() -> bool {
+    std::env::var("STARLESS_SP_PROBE")
+        .map(|value| value != "0" && !value.is_empty())
+        .unwrap_or(false)
+}
+
+/// A second, narrower question: which context URIs exist at all.
+#[cfg(debug_assertions)]
+pub fn shapes_requested() -> bool {
+    std::env::var("STARLESS_SP_SHAPES")
+        .map(|value| value != "0" && !value.is_empty())
+        .unwrap_or(false)
+}
+
+/// A third question, and the only one about an image: why do the account's own
+/// playlists come back with no cover at all.
+///
+/// `get_rootlist` asks for a fixed set of decorations —revision, attributes,
+/// length, owner, capabilities, status_code— and `picture` is not one of them.
+/// Spotify's own playlists come back with `picture_size` filled anyway, which is
+/// what made this look like a parsing bug for a while. A playlist without a cover
+/// the owner uploaded has no URL of its own: the service builds one out of the
+/// first four tracks, and that picture is exactly what the missing decoration
+/// would have asked for.
+#[cfg(debug_assertions)]
+pub fn pictures_requested() -> bool {
+    std::env::var("STARLESS_SP_PICTURE")
+        .map(|value| value != "0" && !value.is_empty())
+        .unwrap_or(false)
+}
+
+/// Corre el rootlist con decoraciones elegidas a mano y dice qué trae cada uno.
+///
+/// `SpClient::request` es público, así que la llamada se puede armar acá. No se
+/// reescribe a ciegas el `get_rootlist` de librespot por esto: primero se mide si
+/// la decoración devuelve URLs —que es lo que la pantalla necesita— o bytes
+/// crudos, que obligarían a pasar imágenes por base64 a través del webview.
+#[cfg(debug_assertions)]
+fn rootlist_with(session: &Session, decorate: &str) -> Result<SelectedListContent, String> {
+    // Two copies on purpose: one travels inside the future and one stays out here
+    // to name the call in the log if the answer comes back in a shape we cannot
+    // read. Moving the parameter itself would leave the outer error arm with
+    // nothing to print.
+    let tag = decorate.to_owned();
+    let inside = tag.clone();
+    let owned = session.clone();
+    let body = call(session, async move {
+        let user = owned.username().to_owned();
+        let endpoint = format!(
+            "/playlist/v2/user/{user}/rootlist?decorate={inside}&from=0&length={ROOTLIST_PAGE}"
+        );
+        owned
+            .spclient()
+            .request(&reqwest::Method::GET, &endpoint, None, None)
+            .await
+            .map_err(|e| {
+                log::error!("SP_PICTURE: la llamada con `{inside}` falló: {e}");
+                "network_failed".to_string()
+            })
+    })?;
+
+    SelectedListContent::parse_from_bytes(&body).map_err(|e| {
+        log::error!("SP_PICTURE: `{tag}` vino con otra forma: {e}");
+        "bad_response".to_string()
+    })
+}
+
+/// Una línea por playlist con las dos formas que puede traer una portada.
+///
+/// Se miden las dos porque contestan preguntas distintas: `bytes` dice si el
+/// servicio mandó la imagen, `urls` dice si nos dio una dirección para bajarla.
+/// Con las dos vacías, laplaylist no tiene ninguna de las dos y hay que buscar la
+/// imagen por otro lado —por ejemplo, en la portada del primer disco que hay
+/// adentro— en vez de inventar una.
+#[cfg(debug_assertions)]
+fn report_pictures(tag: &str, message: &SelectedListContent) {
+    let contents = message.contents.get_or_default();
+    log::info!(
+        "SP_PICTURE: [{tag}] {} playlists, {} items",
+        contents.meta_items.len(),
+        contents.items.len()
+    );
+
+    for meta in &contents.meta_items {
+        let attributes = meta.attributes.as_ref();
+        let name = attributes
+            .map(|a| a.name().to_owned())
+            .unwrap_or_else(|| "(sin nombre)".to_owned());
+        let bytes = attributes.map(|a| a.picture().len()).unwrap_or(0);
+        let urls: Vec<String> = attributes
+            .map(|a| {
+                a.picture_size
+                    .iter()
+                    .map(|size| {
+                        let url = size.url();
+                        // La URL entera identifica la imagen y va a la red con el
+                        // id de la cuenta abajo; con la firma dentro es una URL
+                        // temporal y única, y no sirve para comparar dos llamadas.
+                        let base = url.split('?').next().unwrap_or(url);
+                        format!("{}/{}", size.target_name(), base)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        log::info!(
+            "SP_PICTURE: [{tag}] {name:?} → picture={bytes} bytes, {} urls {:?}",
+            urls.len(),
+            urls
+        );
+    }
+}
+
+/// Lo que quedó después de que la decoración no siriera para nada.
+///
+/// `get_rootlist` pidió `picture` y volvió exactamente igual: 0 bytes, 0 URLs,
+/// las seis playlists idénticas. Así que la respuesta no es una lista sin el
+/// campo pedido, es una lista donde ese campo no existe para las playlists del
+/// usuario — Spotify construye su portada como mosaico de las primeras cuatro
+/// pistas y no lo manda en el rootlist. Quedan dos caminos y se prueban juntos:
+/// el endpoint de una playlist, que es otra respuesta, y la metadata extendida
+/// de la URI de la playlist, que es donde Spotify guarda los atributos v2.
+#[cfg(debug_assertions)]
+pub fn run_picture_probe(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(session) = crate::selftest::wait_for_session(&app) else {
+            log::error!("SP_PICTURE: la sesión no llegó a conectar");
+            return;
+        };
+
+        log::info!("=== DIAGNOSTIC: sonda de portadas ===");
+
+        match rootlist_with(&session, "revision,attributes,length,owner,capabilities,status_code") {
+            Ok(message) => report_pictures("sin picture", &message),
+            Err(e) => log::error!("SP_PICTURE: la línea base falló con {e}"),
+        }
+
+        match rootlist_with(&session, "revision,attributes,length,owner,capabilities,status_code,picture")
+        {
+            Ok(message) => report_pictures("con picture", &message),
+            Err(e) => log::error!("SP_PICTURE: la llamada con `picture` falló con {e}"),
+        }
+
+        let Ok(library) = playlists(&session) else {
+            log::error!("SP_PICTURE: no se pudo leer la biblioteca para seguir preguntando");
+            return;
+        };
+        // Dos y sobra: la pregunta es "¿esta forma trae la imagen?", no "¿cada
+        // playlist tiene imagen?".
+        for playlist in library.iter().take(2) {
+            probe_one_playlist(&session, &playlist.id, &playlist.name);
+        }
+    });
+}
+
+/// Un playlist por los dos caminos que quedan.
+///
+/// Los bytes se vuelcan como hexadecimal porque todavía no se sabe qué mensaje
+/// son: el tamaño dice si hay algo, y los primeros bytes dicen cuál es. Volcar
+/// un PNG o un JPEG entero al log sería una forma lenta de no volver a mirar.
+#[cfg(debug_assertions)]
+fn probe_one_playlist(session: &Session, playlist_id: &str, name: &str) {
+    // Camino 1: el context de la playlist. Es la llamada que ya sabemos que
+    // responde y que trae `image_url` para un álbum.
+    probe_playlist_context(session, playlist_id, name);
+
+    // Camino 2: metadata extendida, ahora con las extensiones que hablan de
+    // imágenes.
+    let request = BatchedEntityRequest {
+        entity_request: PICTURE_KINDS
+            .iter()
+            .map(|kind| EntityRequest {
+                entity_uri: format!("spotify:playlist:{playlist_id}"),
+                query: vec![ExtensionQuery {
+                    extension_kind: EnumOrUnknown::new(*kind),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            })
+            .collect(),
+        ..Default::default()
+    };
+
+    let owned = session.clone();
+    let outcome = call(session, async move {
+        owned
+            .spclient()
+            .get_extended_metadata(request)
+            .await
+            .map_err(|e| format!("ERROR: {e}"))
+    });
+
+    let Ok(response) = outcome else {
+        log::error!("SP_PICTURE: {name} → la metadata extendida falló");
+        return;
+    };
+
+    let mut seen = 0;
+    for array in response.extended_metadata {
+        // La clase del extension va en el array, no en cada entrada: una
+        // respuesta trae un array por clase pedida.
+        let kind = array.extension_kind.enum_value_or_default();
+        for entry in array.extension_data {
+            let Some(payload) = entry.extension_data.as_ref() else {
+                continue;
+            };
+            seen += 1;
+            log::info!(
+                "SP_PICTURE: {name} → extension {kind:?}, {} bytes, head={}",
+                payload.value.len(),
+                head_hex(&payload.value)
+            );
+        }
+    }
+    if seen == 0 {
+        log::error!("SP_PICTURE: {name} → la metadata extendida volvió vacía");
+    }
+}
+
+/// `get_playlist` con decoraciones elegidas a mano.
+///
+/// Las extensiones que tienen "imagen" en el nombre, y que no se habían probado.
+///
+/// El enum tiene 195 variantes y siete hablan de imágenes. Cuatro son de contenido
+/// —thumbnail de video, carta con imagen— y tres podrían ser justo lo que se
+/// busca: `COVER_IMAGE`, `ARTWORK_TRAIT` y `VISUAL_IDENTITY_TRAIT`, que es la que
+/// Spotify usa hoy para las portadas de playlists y álbumes. Se prueban todas
+/// juntas porque el costo es una sola llamada por playlist, y adivinar cuál es la
+/// correcta sería volver a dejar un supuesto escrito como un hecho.
+#[cfg(debug_assertions)]
+const PICTURE_KINDS: [ExtensionKind; 7] = [
+    ExtensionKind::COVER_IMAGE,
+    ExtensionKind::ARTWORK_TRAIT,
+    ExtensionKind::VISUAL_IDENTITY_TRAIT,
+    ExtensionKind::LINK_CARD_WITH_IMAGE_TRAIT,
+    ExtensionKind::IMAGE_CUE,
+    ExtensionKind::IMAGE_SPARKLES_HACK,
+    ExtensionKind::VIDEO_THUMBNAIL,
+];
+
+/// La pista más fuerte: el context de un álbum ya devolvió `image_url`.
+///
+/// `/context-resolve/v1/{uri}` es la misma llamada que sabemos que funciona —la
+/// que trae las pistas de una playlist y las del artista— y para un álbum contesta
+/// con un `image_url` en sus metadatos. Si para una playlist contesta lo mismo, la
+/// foto original está ahí y no hay que dibujarla: viene hecha.
+///
+/// Se vuelca **todas** las claves y no las primeras seis, porque en una lista
+/// truncada la que interesa puede ser la que quedó fuera, y volver a correr la
+/// sonda por eso sería la forma más lenta de no mirar.
+#[cfg(debug_assertions)]
+fn probe_playlist_context(session: &Session, playlist_id: &str, name: &str) {
+    let owned = session.clone();
+    let uri = format!("spotify:playlist:{playlist_id}");
+    let owned_uri = uri.clone();
+    let outcome = call(session, async move {
+        owned
+            .spclient()
+            .get_context(&owned_uri)
+            .await
+            .map(|context| context.metadata)
+            .map_err(|e| format!("ERROR: {e}"))
+    });
+
+    match outcome {
+        Ok(metadata) => {
+            log::info!(
+                "SP_PICTURE: context {name} → {} claves: {:?}",
+                metadata.len(),
+                metadata
+            );
+        }
+        Err(e) => log::error!("SP_PICTURE: context {name} → {e}"),
+    }
+}
+
+/// Los primeros bytes en hexadecimal, para reconocer un mensaje sin volcarlo.
+///
+/// Un PNG arranca con `89 50 4e 47` y un JPEG con `ff d8 ff`: si eso aparece, lo
+/// que volvió es una imagen y no un protobuf, y la decisión es otra.
+#[cfg(debug_assertions)]
+fn head_hex(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .take(24)
+        .map(|b| format!("{b:02x}"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Resumen de un context, para comparar candidatos sin volcar el contenido.
+#[cfg(debug_assertions)]
+fn describe(context: &Context) -> String {
+    let tracks: usize = context.pages.iter().map(|page| page.tracks.len()).sum();
+    let meta: Vec<String> = context
+        .metadata
+        .iter()
+        .take(6)
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect();
+    format!(
+        "{} páginas, {} pistas, uri={:?}, metadata=[{}]",
+        context.pages.len(),
+        tracks,
+        context.uri,
+        meta.join(", ")
+    )
+}
+
+/// Prueba una lista de URIs de context y dice qué devolvió cada una.
+///
+/// Lo que se busca acá no es una respuesta: es no dejar un uri sin probar escrito
+/// en un comentario como si fuera una suposición. Cada candidato que vuelve con
+/// páginas es un tipo que el servicio reconoce; cada uno que vuelve vacío es un
+/// tipo que no existe, y también es un dato.
+#[cfg(debug_assertions)]
+fn probe_contexts(session: &Session, tag: &str, candidates: &[String]) {
+    for candidate in candidates {
+        let owned = session.clone();
+        let uri = candidate.clone();
+        let outcome = call(session, async move {
+            owned
+                .spclient()
+                .get_context(&uri)
+                .await
+                .map(|context| describe(&context))
+                .map_err(|e| format!("ERROR: {e}"))
+        });
+
+        match outcome {
+            Ok(summary) => log::info!("{tag}: context {candidate} → {summary}"),
+            Err(e) => log::error!("{tag}: context {candidate} → {e}"),
+        }
+    }
+}
+
+/// What this session can answer without a client id of Starless's own.
+///
+/// Development only. The answer decides whether the library moves off the Web
+/// API, and it is worth one line in the log more than it is worth a screen.
+#[cfg(debug_assertions)]
+pub fn run_probe(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(session) = crate::selftest::wait_for_session(&app) else {
+            log::error!("SP_PROBE: la sesión no llegó a conectar");
+            return;
+        };
+        probe(&session);
+    });
+}
+
+#[cfg(debug_assertions)]
+fn probe(session: &Session) {
+    log::info!("=== DIAGNOSTIC: sonda de spclient ===");
+
+    match account(session) {
+        Ok(account) => log::info!(
+            "SP_PROBE: cuenta {:?} con {} imagen",
+            account.display_name,
+            account.images.len()
+        ),
+        Err(e) => log::error!("SP_PROBE: la cuenta falló con {e}"),
+    }
+
+    let playlists = match playlists(session) {
+        Ok(playlists) => {
+            for playlist in &playlists {
+                log::info!(
+                    "SP_PROBE: {} = {:?} ({} canciones, {} portadas, {:?})",
+                    playlist.id,
+                    playlist.name,
+                    playlist.tracks.as_ref().map(|t| t.total).unwrap_or(0),
+                    playlist.images.len(),
+                    playlist.owner.as_ref().and_then(|o| o.display_name.as_deref())
+                );
+            }
+            playlists
+        }
+        Err(e) => {
+            log::error!("SP_PROBE: la biblioteca falló con {e}");
+            Vec::new()
+        }
+    };
+
+    // The smallest playlist **that has songs**: an editorial playlist comes back
+    // with a count of zero, and "it returned nothing" would look like a broken
+    // decoder when what it really means is that there was nothing to decode.
+    if let Some(smallest) = playlists
+        .iter()
+        .filter(|p| p.tracks.as_ref().is_some_and(|t| t.total > 0))
+        .min_by_key(|p| p.tracks.as_ref().map(|t| t.total).unwrap_or(u32::MAX))
+    {
+        match playlist_tracks(session, &smallest.id) {
+            Ok(tracks) => {
+                log::info!("SP_PROBE: {:?} devolvió {} pistas", smallest.name, tracks.len());
+                for track in tracks.iter().take(3) {
+                    log::info!(
+                        "SP_PROBE:   {:?} — {:?} {:?} — álbum {:?} — portada {:?}",
+                        track.name,
+                        track.duration_ms,
+                        track.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>(),
+                        track.album.as_ref().map(|a| a.name.as_str()),
+                        track
+                            .album
+                            .as_ref()
+                            .and_then(|a| a.images.first())
+                            .map(|i| &i.url)
+                    );
+                }
+            }
+            Err(e) => log::error!("SP_PROBE: el contenido de {:?} falló con {e}", smallest.name),
+        }
+    }
+
+    match liked_tracks(session) {
+        Ok(tracks) => log::info!("SP_PROBE: {} canciones guardadas", tracks.len()),
+        Err(e) => log::error!("SP_PROBE: las guardadas fallaron con {e}"),
+    }
+
+    match search_tracks(session, "dua lipa") {
+        Ok(tracks) => {
+            log::info!("SP_PROBE: la búsqueda devolvió {} pistas", tracks.len());
+            for track in tracks.iter().take(2) {
+                log::info!("SP_PROBE:   {:?} por {:?}", track.name, track.artists);
+            }
+        }
+        Err(e) => log::error!("SP_PROBE: la búsqueda falló con {e}"),
+    }
+
+    log::info!("=== DIAGNOSTIC: fin de la sonda de spclient ===");
+}
+
+/// Los otros tres tipos de la pantalla de resultados, y la ficha de un artista.
+///
+/// La pantalla de resultados quiere canciones, álbumes, artistas y playlists.
+/// Las canciones salen de `spotify:search:`; qué URI contesta por cada uno de los
+/// otros tres no está escrito en ninguna parte, y aqui se mide en vez de
+/// suponerse. Los que vuelven con páginas son los que existen.
+#[cfg(debug_assertions)]
+pub fn run_shape_probe(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(session) = crate::selftest::wait_for_session(&app) else {
+            log::error!("SP_PROBE: la sesión no llegó a conectar");
+            return;
+        };
+
+        // Un artista y un álbum que existen, tomados de lo que la biblioteca ya
+        // trajo: un id inventado se vería igual que uno real hasta que no.
+        let mut artist_id = "4Fl8dEtJlmvFkYb4HZr8Fi".to_string();
+        let mut album_id = "0VjIjW4GlUZAMYd2vXMi3b".to_string();
+        if let Ok(playlists) = playlists(&session)
+            && let Some(track) = playlists
+                .iter()
+                .flat_map(|playlist| playlist_tracks(&session, &playlist.id).unwrap_or_default())
+                .next()
+        {
+            if let Some(first_artist) = track.artists.first() {
+                artist_id = first_artist.id.clone();
+            }
+            if let Some(album) = track.album.as_ref() {
+                album_id = album.id.clone();
+            }
+        }
+        log::info!("SP_PROBE: probando con artista {artist_id} y álbum {album_id}");
+
+        // Con `+` y no con espacios: el parser de URIs rechaza el espacio antes
+        // de llegar a mirar qué tipo se pidió, así que un candidato con espacios
+        // no dice si el tipo existe — dice que la frase está mal escrita.
+        probe_contexts(
+            &session,
+            "SP_SHAPES",
+            &[
+                format!("spotify:artist:{artist_id}"),
+                format!("spotify:artist:{artist_id}:albums"),
+                format!("spotify:search:dua+lipa:albums"),
+                format!("spotify:search:albums:dua+lipa"),
+                format!("spotify:search:dua+lipa:artists"),
+                format!("spotify:search:artists:dua+lipa"),
+                format!("spotify:search:dua+lipa:playlists"),
+                format!("spotify:search:playlists:dua+lipa"),
+                format!("spotify:search:album:dua+lipa"),
+                format!("spotify:search:artist:dua+lipa"),
+                format!("spotify:search:playlist:dua+lipa"),
+            ],
+        );
+
+        log::info!("=== DIAGNOSTIC: fin de la sonda de formas ===");
+    });
+}
+
+/// ¿Qué es, en realidad, la playlist que Spotify fabrica para la cuenta?
+///
+/// La del DJ —"DJ <nombre>"— es la única que hace preguntas nuevas: es la
+/// única cuyo dueño es el propio Spotify, y la única cuyo contenido no es una
+/// lista de canciones elegida por alguien sino una lista generada. Lo que se
+/// quiere saber es qué trae de verdad: cuántas filas tiene el servicio, qué
+/// clase de URI es cada una —una intro narrada no es una canción, y una fila
+/// que no es una canción no se puede hidratar— y cuántas sobreviven.
+///
+/// Se pregunta junto con la biblioteca entera, porque el nombre solo no dice
+/// nada: hace falta el dueño, el largo que dice el servicio y el largo que se
+/// cuenta.
+#[cfg(debug_assertions)]
+pub fn dj_requested() -> bool {
+    std::env::var("STARLESS_SP_DJ")
+        .map(|value| value != "0" && !value.is_empty())
+        .unwrap_or(false)
+}
+
+#[cfg(debug_assertions)]
+pub fn run_dj_probe(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(session) = crate::selftest::wait_for_session(&app) else {
+            log::error!("SP_DJ: la sesión no llegó a conectar");
+            return;
+        };
+
+        log::info!("=== DIAGNOSTIC: sonda de DJ ===");
+
+        let Ok(library) = playlists(&session) else {
+            log::error!("SP_DJ: no se pudo leer la biblioteca");
+            return;
+        };
+
+        for playlist in &library {
+            log::info!(
+                "SP_DJ: {:?} · id={} · dueño={:?} · largo={:?}",
+                playlist.name,
+                playlist.id,
+                playlist.owner.as_ref().and_then(|owner| owner.display_name.clone()),
+                playlist.tracks.as_ref().map(|total| total.total),
+            );
+        }
+
+        // La de Spotify: la única cuyo dueño no es la cuenta, y la que se
+        // llama como el DJ. Se buscan por las dos condiciones porque ninguna
+        // de las dos es una certeza: el dueño puede venir con otro nombre y
+        // el nombre puede venir con otra forma.
+        for playlist in library.iter().filter(|playlist| {
+            let owner = playlist
+                .owner
+                .as_ref()
+                .and_then(|owner| owner.display_name.as_deref());
+            owner == Some("spotify") || playlist.name.to_lowercase().starts_with("dj")
+        }) {
+            log::info!("SP_DJ: ---- {:?} ----", playlist.name);
+
+            match raw_playlist(&session, &playlist.id) {
+                Ok(message) => {
+                    let contents = message.contents.get_or_default();
+                    log::info!(
+                        "SP_DJ: el servicio dice {} items y {} meta_items",
+                        contents.items.len(),
+                        contents.meta_items.len()
+                    );
+                    for meta in &contents.meta_items {
+                        let attributes = meta.attributes.as_ref();
+                        log::info!(
+                            "SP_DJ: meta_item · nombre={:?} · dueño={:?} · largo={}",
+                            attributes.map(|a| a.name().to_owned()),
+                            meta.owner_username(),
+                            meta.length(),
+                        );
+                    }
+                    for item in contents.items.iter().take(25) {
+                        log::info!("SP_DJ:   item · {}", item.uri());
+                    }
+                }
+                Err(error) => {
+                    log::error!("SP_DJ: {:?} no se pudo pedir: {error}", playlist.name);
+                }
+            }
+
+            match playlist_tracks(&session, &playlist.id) {
+                Ok(tracks) => {
+                    log::info!("SP_DJ: {:?} hidrató {} pistas", playlist.name, tracks.len());
+                    for track in tracks.iter().take(5) {
+                        log::info!("SP_DJ:   pista · {} — {}", track.name, track.id);
+                    }
+                }
+                Err(error) => {
+                    log::error!("SP_DJ: {:?} no se pudo hidratar: {error}", playlist.name);
+                }
+            }
+        }
+
+        // Y la otra mitad de la pregunta: si el DJ no fuera una playlist sino
+        // un context —una forma que el servicio materializa al vuelo—, la
+        // biblioteca sólo tendría su nombre. Se prueban las formas que Spotify
+        // usa para las suyas y se anota cuáles contestan.
+        let Ok(cuenta) = account(&session) else {
+            log::error!("SP_DJ: sin cuenta no hay nada personalized que probar");
+            return;
+        };
+        let user = cuenta.id.clone();
+        let mut candidates = vec![
+            format!("spotify:user:{user}:dj"),
+            format!("spotify:dj:{user}"),
+            format!("spotify:user:{user}:personalized:1"),
+            format!("spotify:personalized:1"),
+            format!("spotify:user:{user}:ai-dj"),
+            format!("spotify:user:{user}:dj:1"),
+            format!("spotify:user:{user}:collection:dj"),
+        ];
+        // Y la propia playlist del DJ, leída como context: es la misma pregunta
+        // con otra puerta.
+        for playlist in library
+            .iter()
+            .filter(|playlist| playlist.owner.as_ref().and_then(|o| o.display_name.as_deref()) == Some("spotify"))
+        {
+            candidates.push(format!("spotify:playlist:{}", playlist.id));
+        }
+        probe_contexts(&session, "SP_DJ", &candidates);
+
+        // Y las dos preguntas que deciden si el DJ tiene contenido o no: qué
+        // dice la página del context (su `next_page_url` es por donde se
+        // sigue cuando la primera viene vacía) y qué contesta la puerta que la
+        // propia metadata señalando.
+        for playlist in library.iter().filter(|playlist| {
+            playlist
+                .owner
+                .as_ref()
+                .and_then(|owner| owner.display_name.as_deref())
+                == Some("spotify")
+        }) {
+            // La sonda de la voz sola, para no gastar media hora midiendo lo
+            // que ya está medido cuando lo que se busca es una puerta.
+            if std::env::var("STARLESS_SP_TTS")
+                .map(|value| value != "0" && !value.is_empty())
+                .unwrap_or(false)
+            {
+                probe_client_token_domains(&session);
+                probe_dj_tts(&session, &playlist.id);
+                return;
+            }
+
+            probe_dj_context(&session, &playlist.id);
+            probe_dj_session(&session, &playlist.id);
+            probe_dj_tracks(&session, &playlist.id);
+            probe_dj_next_page(&session, &playlist.id);
+            probe_dj_station(&session, &playlist.id);
+            probe_dj_freshness(&session, &playlist.id);
+            let Ok(cuenta) = account(&session) else {
+                log::error!("SP_DJ: sin cuenta no se puede probar otro contexto");
+                return;
+            };
+            probe_dj_contexts(&session, &playlist.id, &cuenta.id);
+            probe_dj_resume(&session, &playlist.id);
+            probe_client_token_domains(&session);
+            probe_dj_tts(&session, &playlist.id);
+        }
+
+        log::info!("=== DIAGNOSTIC: fin de la sonda de DJ ===");
+    });
+}
+
+/// ¿El primer pedido puede decir "seguí después de este segmento"?
+///
+/// **Lo que se midió antes:** el primer pedido siempre vuelve al principio de la
+/// misma línea de tiempo —la misma primera canción, y la lista crece porque la
+/// sesión crece— y el único camino a material nuevo es el cursor. Los otros
+/// contextos dan 500.
+///
+/// Falta una forma: el cursor del servicio es `/session/0000…?previousSegmentId=…`,
+/// con un id de segmento **concreto** y un `requestId`. La pregunta es si el
+/// *primer* pedido —sin cursor— puede llevar un segmento concreto y pedir "seguí
+/// después de este". Si puede, el DJ se puede reiniciar con songs nuevas; si no,
+/// sólo hay una forma: seguir la sesión.
+///
+/// Se comparan las primeras canciones de: el primer pedido de siempre, el
+/// primero con el segmento de la página que ya se oyó, y el primero con el
+/// segmento que el cursor-annunció.
+#[cfg(debug_assertions)]
+fn probe_dj_resume(session: &Session, playlist_id: &str) {
+    let context_uri = format!("spotify:playlist:{playlist_id}");
+    let first_path =
+        format!("/lexicon-session-provider/context-resolve/v2/session?contextUri={context_uri}");
+
+    // El primer pedido, para tener un segmento real y un cursor.
+    let Some(page) = dj_first_page(session, &first_path) else {
+        log::error!("SP_DJ: [resume] el primer pedido no vino");
+        return;
+    };
+    let segment = page.segment.clone();
+    log::info!(
+        "SP_DJ: [resume] la primera página: {} canciones · segmento={segment} · primeras={:?}",
+        page.count,
+        page.first
+    );
+    let cursor_segment = page.next_segment.clone();
+    log::info!("SP_DJ: [resume] el cursor apunta a {cursor_segment}");
+
+    let shapes: Vec<(&str, String)> = vec![
+        (
+            "el primero, con el segmento que ya se oyó",
+            format!(
+                "/lexicon-session-provider/context-resolve/v2/session/00000000000000000000000000000000?contextUri={context_uri}&previousSegmentId={segment}"
+            ),
+        ),
+        (
+            "el primero, con el segmento que sigue",
+            format!(
+                "/lexicon-session-provider/context-resolve/v2/session/00000000000000000000000000000000?contextUri={context_uri}&previousSegmentId={cursor_segment}"
+            ),
+        ),
+        (
+            "el primero, con el cursor entero",
+            format!("/lexicon-session-provider/context-resolve/v2/session/00000000000000000000000000000000?contextUri={context_uri}&previousSegmentId={segment}&requestId=cc11dd22ee33ff44005566778899aabb"),
+        ),
+        (
+            "con el comodín y el path de sesión",
+            format!("/lexicon-session-provider/context-resolve/v2/session/00000000000000000000000000000000?contextUri={context_uri}&previousSegmentId=XX-Segment-XXXXX"),
+        ),
+        (
+            "con el comodín y el path de sesión, con requestId",
+            format!("/lexicon-session-provider/context-resolve/v2/session/00000000000000000000000000000000?contextUri={context_uri}&previousSegmentId=XX-Segment-XXXXX&requestId=dd11ee22ff33aa4400556677889900bb"),
+        ),
+        (
+            "con el path de sesión y nada más",
+            format!("/lexicon-session-provider/context-resolve/v2/session/00000000000000000000000000000000?contextUri={context_uri}"),
+        ),
+    ];
+
+    for (label, path) in shapes {
+        let Some(page) = dj_first_page(session, &path) else {
+            log::error!("SP_DJ: [resume] {label} no vino");
+            continue;
+        };
+        log::info!(
+            "SP_DJ: [resume] {label} · {} canciones · segmento={} · primeras={:?} · el cursor apunta a {}",
+            page.count,
+            page.segment,
+            page.first,
+            page.next_segment
+        );
+        std::thread::sleep(std::time::Duration::from_secs(2));
+    }
+
+    // Y la pregunta que decide: ¿la forma con los ceros *avanza* entre pedidos,
+    // o devuelve siempre las mismas cinco? Si avanza, un click nuevo sobre el
+    // DJ trae canciones nuevas, que es lo que hace el cliente de Spotify.
+    for round in 0..2 {
+        for (label, path) in [
+            (
+                "la forma de la app",
+                format!("/lexicon-session-provider/context-resolve/v2/session?contextUri={context_uri}"),
+            ),
+            (
+                "la forma con los ceros",
+                format!("/lexicon-session-provider/context-resolve/v2/session/00000000000000000000000000000000?contextUri={context_uri}"),
+            ),
+        ] {
+            let Some(page) = dj_first_page(session, &path) else {
+                log::error!("SP_DJ: [avanza] {label} no vino");
+                continue;
+            };
+            log::info!(
+                "SP_DJ: [avanza] {label} · ronda {round} · {} canciones · primeras={:?}",
+                page.count,
+                page.first
+            );
+            std::thread::sleep(std::time::Duration::from_secs(4));
+        }
+    }
+}
+
+/// Lo que dice una respuesta del DJ: de qué segmento es, cuáles son sus
+/// primeras canciones, cuántas trae y por dónde sigue.
+struct DjPage {
+    segment: String,
+    first: Vec<String>,
+    count: usize,
+    next_segment: String,
+}
+
+/// El primer pedido de una forma, dicho de la manera más corta.
+#[cfg(debug_assertions)]
+fn dj_first_page(session: &Session, path: &str) -> Option<DjPage> {
+    let owned = session.clone();
+    let endpoint = path.to_owned();
+    let outcome = call(session, async move {
+        owned
+            .spclient()
+            .request(&reqwest::Method::GET, &endpoint, None, None)
+            .await
+            .map_err(|e| format!("ERROR: {e}"))
+    });
+    let body = match outcome {
+        Ok(body) => body,
+        Err(e) => {
+            log::error!("SP_DJ: {path} → {e}");
+            return None;
+        }
+    };
+    let Ok(json) = serde_json::from_slice::<serde_json::Value>(&body) else {
+        log::error!("SP_DJ: {path} no es JSON");
+        return None;
+    };
+
+    let mut rows: Vec<&serde_json::Value> = json
+        .get("tracks")
+        .and_then(|value| value.as_array())
+        .map(|list| list.iter().collect())
+        .unwrap_or_default();
+    if rows.is_empty() {
+        if let Some(pages) = json.get("pages").and_then(|value| value.as_array()) {
+            for page in pages {
+                if let Some(list) = page.get("tracks").and_then(|value| value.as_array()) {
+                    rows.extend(list.iter());
+                }
+            }
+        }
+    }
+
+    let first: Vec<String> = rows
+        .iter()
+        .take(3)
+        .map(|track| {
+            track
+                .get("uri")
+                .and_then(|value| value.as_str())
+                .unwrap_or("?")
+                .to_owned()
+        })
+        .collect();
+    let segment = rows
+        .first()
+        .and_then(|track| track.get("metadata"))
+        .and_then(|meta| meta.get("segment"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("?")
+        .to_owned();
+    let next = json
+        .get("pages")
+        .and_then(|value| value.as_array())
+        .and_then(|pages| pages.first())
+        .and_then(|page| page.get("next_page_url"))
+        .and_then(|value| value.as_str())
+        .or_else(|| json.get("next_page_url").and_then(|value| value.as_str()))
+        .unwrap_or("");
+    let next_segment = next
+        .split("previousSegmentId=")
+        .nth(1)
+        .and_then(|rest| rest.split('&').next())
+        .unwrap_or("?")
+        .to_owned();
+
+    Some(DjPage {
+        segment,
+        first,
+        count: rows.len(),
+        next_segment,
+    })
+}
+
+/// ¿Hay alguna puerta que dé un mix **distinto** al mismo DJ?
+///
+/// **Lo que se midió primero es que el mismo pedido da el mismo mix.** Cinco
+/// pedidos seguidos —la forma de la app, la forma de la app otra vez, con
+/// `requestId`, con `previousSegmentId`, y con los dos— devolvieron las mismas
+/// cuarenta canciones, el mismo segmento y los mismos cuatro primeros ids. El
+/// servicio no varyó: `salt` distinto, mismo set. Así que la pregunta no es
+/// "cómo variar el pedido" sino "hay otro pedido que sea otro DJ".
+///
+/// Se prueban las contextos que la propia metadata del DJ sugiere
+/// (`lexicon_set_type: your_dj`, `agentic_product_type: dj`) contra la misma
+/// puerta, y la página siguiente de la sesión, que es lo único que se sabe que
+/// avanza. Cada respuesta dice cuántas canciones trajo, de qué segmento son y
+/// cuáles son las dos primeras: si dos contextos dan sets distintos, la puerta
+/// del DJ es una de ellas y la otra es un DJ distinto.
+#[cfg(debug_assertions)]
+fn probe_dj_contexts(session: &Session, playlist_id: &str, user_id: &str) {
+    let candidates = vec![
+        format!("spotify:playlist:{playlist_id}"),
+        format!("spotify:user:{user_id}:dj"),
+        format!("spotify:dj:{user_id}"),
+        format!("spotify:user:{user_id}:ai-dj"),
+        format!("spotify:user:{user_id}:collection:dj"),
+        format!("spotify:playlist:{playlist_id}?nd=1"),
+    ];
+
+    for context in candidates {
+        let path = format!(
+            "/lexicon-session-provider/context-resolve/v2/session?contextUri={context}"
+        );
+        let owned = session.clone();
+        let endpoint = path.clone();
+        let outcome = call(session, async move {
+            owned
+                .spclient()
+                .request(&reqwest::Method::GET, &endpoint, None, None)
+                .await
+                .map_err(|e| format!("ERROR: {e}"))
+        });
+        let body = match outcome {
+            Ok(body) => body,
+            Err(e) => {
+                log::error!("SP_DJ: [ctx {context}] → {e}");
+                continue;
+            }
+        };
+        let Ok(json) = serde_json::from_slice::<serde_json::Value>(&body) else {
+            log::error!("SP_DJ: [ctx {context}] la respuesta no es JSON");
+            continue;
+        };
+
+        let mut rows: Vec<&serde_json::Value> = json
+            .get("tracks")
+            .and_then(|value| value.as_array())
+            .map(|list| list.iter().collect())
+            .unwrap_or_default();
+        if rows.is_empty() {
+            if let Some(pages) = json.get("pages").and_then(|value| value.as_array()) {
+                for page in pages {
+                    if let Some(list) = page.get("tracks").and_then(|value| value.as_array()) {
+                        rows.extend(list.iter());
+                    }
+                }
+            }
+        }
+        let first: Vec<String> = rows
+            .iter()
+            .take(2)
+            .map(|track| {
+                track
+                    .get("uri")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("?")
+                    .to_owned()
+            })
+            .collect();
+        let segment = rows
+            .first()
+            .and_then(|track| track.get("metadata"))
+            .and_then(|meta| meta.get("segment"))
+            .and_then(|value| value.as_str())
+            .unwrap_or("?")
+            .to_owned();
+        let set_type = json
+            .get("metadata")
+            .and_then(|meta| meta.get("lexicon_set_type"))
+            .and_then(|value| value.as_str())
+            .unwrap_or("?");
+        let next = json
+            .get("pages")
+            .and_then(|value| value.as_array())
+            .and_then(|pages| pages.first())
+            .and_then(|page| page.get("next_page_url"))
+            .and_then(|value| value.as_str())
+            .or_else(|| {
+                json.get("next_page_url")
+                    .and_then(|value| value.as_str())
+            })
+            .unwrap_or("?")
+            .to_owned();
+
+        log::info!(
+            "SP_DJ: [ctx {context}] {} canciones · set={set_type} · segmento={segment} · primeras={first:?}",
+            rows.len()
+        );
+        log::info!("SP_DJ: [ctx {context}] siguiente={next}");
+        std::thread::sleep(std::time::Duration::from_secs(2));
+    }
+}
+
+/// ¿El DJ da un mix distinto cada vez que se lo pide?
+///
+/// **La pregunta es del usuario, y la respuesta no puede ser una opinión.** En el
+/// cliente de Spotify, tocar el DJ otra vez suena otra cosa; en esta app, dos
+/// clicks seguidos tame la misma primera canción. Eso puede ser del servicio —que
+/// su set cambie por hora y no por pedido— o puede ser nuestro: que el pedido no
+/// lleve lo que lo hace único.
+///
+/// La diferencia entre las dos hipótesis se mide con los mismos ids. Se pide el
+/// mix varias veces con la forma que usa la app, y una vez por cada forma extra
+/// que el propio protocolo sugiere —el `requestId` que el servicio se devuelve a
+/// sí mismo, y el `previousSegmentId` de comodín— y se comparan las primeras
+/// canciones de cada respuesta y el segmento del que salen.
+///
+/// El segmento es el dato que decide: si dos respuestas traen el mismo segmento,
+/// el servicio está sirviendo la misma tanda; si traen distinto, el set avanza y
+/// lo que hay que arreglar es cómo se pide.
+#[cfg(debug_assertions)]
+fn probe_dj_freshness(session: &Session, playlist_id: &str) {
+    let context_uri = format!("spotify:playlist:{playlist_id}");
+    let base = format!("/lexicon-session-provider/context-resolve/v2/session?contextUri={context_uri}");
+
+    // Cada forma con un `requestId` distinto: si el servicio usa ese id para
+    // decidir qué sesión abrir, un id nuevo tiene que abrir otra.
+    let shapes: Vec<(&str, String)> = vec![
+        ("la app, primera vez", base.clone()),
+        ("la app, otra vez", base.clone()),
+        (
+            "con requestId",
+            format!("{base}&requestId=aa11bb22cc33dd44ee55ff6600778899"),
+        ),
+        (
+            "con previousSegmentId",
+            format!("{base}&previousSegmentId=XX-Segment-XXXXX"),
+        ),
+        (
+            "con los dos",
+            format!("{base}&requestId=bb11cc22dd33ee44ff550066778899aa&previousSegmentId=XX-Segment-XXXXX"),
+        ),
+    ];
+
+    for (label, path) in shapes {
+        let owned = session.clone();
+        let endpoint = path.clone();
+        let outcome = call(session, async move {
+            owned
+                .spclient()
+                .request(&reqwest::Method::GET, &endpoint, None, None)
+                .await
+                .map_err(|e| format!("ERROR: {e}"))
+        });
+        let body = match outcome {
+            Ok(body) => body,
+            Err(e) => {
+                log::error!("SP_DJ: [{label}] {path} → {e}");
+                continue;
+            }
+        };
+        let Ok(json) = serde_json::from_slice::<serde_json::Value>(&body) else {
+            log::error!("SP_DJ: [{label}] la respuesta no es JSON");
+            continue;
+        };
+
+        // Las canciones: en la raíz o dentro de una página. Las dos formas
+        // existen, y leer sólo una hace que la página parezca vacía.
+        let mut rows: Vec<&serde_json::Value> = json
+            .get("tracks")
+            .and_then(|value| value.as_array())
+            .map(|list| list.iter().collect())
+            .unwrap_or_default();
+        if rows.is_empty() {
+            if let Some(pages) = json.get("pages").and_then(|value| value.as_array()) {
+                for page in pages {
+                    if let Some(list) = page.get("tracks").and_then(|value| value.as_array()) {
+                        rows.extend(list.iter());
+                    }
+                }
+            }
+        }
+
+        let first: Vec<String> = rows
+            .iter()
+            .take(4)
+            .map(|track| {
+                track
+                    .get("uri")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("?")
+                    .to_owned()
+            })
+            .collect();
+        let segment = rows
+            .first()
+            .and_then(|track| track.get("metadata"))
+            .and_then(|meta| meta.get("segment"))
+            .and_then(|value| value.as_str())
+            .unwrap_or("?")
+            .to_owned();
+        let meta = json.get("metadata");
+        let current = meta
+            .and_then(|meta| meta.get("lexicon_current_time"))
+            .and_then(|value| value.as_str())
+            .unwrap_or("?");
+        let expiration = meta
+            .and_then(|meta| meta.get("lexicon_expiration_time"))
+            .and_then(|value| value.as_str())
+            .unwrap_or("?");
+        let next = json
+            .get("next_page_url")
+            .and_then(|value| value.as_str())
+            .unwrap_or("?");
+
+        log::info!(
+            "SP_DJ: [{label}] {} canciones · segmento={segment} · now={current} · vence={expiration}",
+            rows.len()
+        );
+        log::info!("SP_DJ: [{label}] primeras={first:?}");
+        log::info!("SP_DJ: [{label}] siguiente={next}");
+
+        // Entre pedidos: dos pedidos pegados son dos pedidos al mismo tiempo, y
+        // lo que se quiere medir es si el servicio varyó entre ellos.
+        std::thread::sleep(std::time::Duration::from_secs(3));
+    }
+}
+
+/// El context del DJ, con las tres cosas que el resumen no mostraba: la url
+/// del context, si está cargando, y la página con su `next_page_url`.
+///
+/// Una página vacía no es una página sin contenido: es una página que dice
+/// por dónde seguir. Por eso esto se pregunta antes de decir que no hay nada.
+#[cfg(debug_assertions)]
+fn probe_dj_context(session: &Session, playlist_id: &str) {
+    let owned = session.clone();
+    let uri = format!("spotify:playlist:{playlist_id}");
+    let label = uri.clone();
+    let outcome = call(session, async move {
+        owned
+            .spclient()
+            .get_context(&uri)
+            .await
+            .map(|context| {
+                let mut lines = vec![
+                    format!("url={:?}", context.url),
+                    format!("loading={:?}", context.loading),
+                ];
+                for (index, page) in context.pages.iter().enumerate() {
+                    lines.push(format!(
+                        "page {index}: page_url={:?} next_page_url={:?} loading={:?} \
+                         tracks={} metadata={:?}",
+                        page.page_url,
+                        page.next_page_url,
+                        page.loading,
+                        page.tracks.len(),
+                        page.metadata,
+                    ));
+                }
+                lines.join(" | ")
+            })
+            .map_err(|e| format!("ERROR: {e}"))
+    });
+
+    match outcome {
+        Ok(summary) => log::info!("SP_DJ: context {label} → {summary}"),
+        Err(e) => log::error!("SP_DJ: context {label} → {e}"),
+    }
+}
+
+/// La sesión del DJ, con sus pistas.
+///
+/// La respuesta es un Context en JSON —el mismo tipo que devuelve
+/// `/context-resolve/v1`, con más campos— y cada pista trae su uri y un mapa
+/// de metadata con el nombre, los artistas y el álbum.
+///
+/// Se lee a mano con `serde_json` y no con el tipo del protocolo porque lo que
+/// hace falta son dos cosas: cuántas pistas trae y qué uri tienen. Y porque
+/// una respuesta que no se puede leer no es una respuesta: si el JSON cambia
+/// de forma, el probe dice que no lo pudo leer en vez de mostrar una lista
+/// vacía que parece lo mismo que un DJ sin contenido.
+#[cfg(debug_assertions)]
+fn probe_dj_tracks(session: &Session, playlist_id: &str) {
+    let context_uri = format!("spotify:playlist:{playlist_id}");
+    let path = format!("/lexicon-session-provider/context-resolve/v2/session?contextUri={context_uri}");
+
+    let owned = session.clone();
+    let endpoint = path.clone();
+    let outcome = call(session, async move {
+        owned
+            .spclient()
+            .request(&reqwest::Method::GET, &endpoint, None, None)
+            .await
+            .map_err(|e| format!("ERROR: {e}"))
+    });
+
+    let body = match outcome {
+        Ok(body) => body,
+        Err(e) => {
+            log::error!("SP_DJ: {path} → {e}");
+            return;
+        }
+    };
+
+    let Ok(json) = serde_json::from_slice::<serde_json::Value>(&body) else {
+        log::error!(
+            "SP_DJ: la respuesta no es JSON ({} bytes): {}",
+            body.len(),
+            String::from_utf8_lossy(&body).chars().take(200).collect::<String>()
+        );
+        return;
+    };
+
+    if let Some(metadata) = json.get("metadata").and_then(|value| value.as_object()) {
+        for (key, value) in metadata {
+            log::info!("SP_DJ: meta {key} = {value}");
+        }
+    }
+
+    let pages = json
+        .get("pages")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    log::info!("SP_DJ: {} páginas", pages.len());
+
+    for (index, page) in pages.iter().enumerate() {
+        let tracks = page
+            .get("tracks")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
+        log::info!("SP_DJ: página {index}: {} pistas", tracks.len());
+        if let Some(next) = page.get("next_page_url").and_then(|value| value.as_str()) {
+            log::info!("SP_DJ: página {index}: next_page_url = {next}");
+        }
+        for (position, track) in tracks.iter().enumerate() {
+            let uri = track.get("uri").and_then(|value| value.as_str()).unwrap_or("?");
+            let metadata = track.get("metadata").and_then(|value| value.as_object());
+            // El mapa entero, las primeras: son las llaves las que dicen cómo
+            // se llama una pista acá, y adivinar el nombre de la llave es
+            // adivinar el dato.
+            if position < 3 {
+                log::info!("SP_DJ:   {uri} · {metadata:?}");
+            } else {
+                log::info!("SP_DJ:   {uri}");
+            }
+        }
+
+        // Y la pregunta que decide si el DJ **suena** o sólo se ve: ¿estas
+        // pistas resuelven como pistas?
+        //
+        // La lista se arma con una metadata y el player pide otra, y una
+        // pista que aparece en la lista pero no se puede pedir es la peor de
+        // las dos: la app la muestra, el usuario la elige, y el player
+        // contesta que no. La intro del DJ es el caso dudoso —es una pista
+        // generada, no una del catálogo— así que se pregunta antes de
+        // prometer nada.
+        for track in tracks.iter().take(3) {
+            let Some(uri) = track.get("uri").and_then(|value| value.as_str()) else {
+                continue;
+            };
+            let Ok(parsed) = SpotifyUri::from_uri(uri) else {
+                log::error!("SP_DJ: {uri} no es una uri que se entienda");
+                continue;
+            };
+            let owned = session.clone();
+            let outcome = call(session, async move {
+                MetaTrack::get(&owned, &parsed)
+                    .await
+                    .map(|track| {
+                        format!(
+                            "{} · {} ms · {} archivos · artistas={:?}",
+                            track.name,
+                            track.duration,
+                            track.files.len(),
+                            track.artists,
+                        )
+                    })
+                    .map_err(|e| format!("ERROR: {e}"))
+            });
+            match outcome {
+                Ok(summary) => log::info!("SP_DJ: metadata de {uri} → {summary}"),
+                Err(e) => log::error!("SP_DJ: metadata de {uri} → {e}"),
+            }
+        }
+    }
+}
+
+/// La puerta que la propia metadata del DJ señalaba.
+///
+/// `lexicon_context_url=hm://lexicon-session-provider/context-resolve/v2/session?contextUri=…`
+///
+/// El `hm://` es el nombre interno del servicio, no una URL que se pueda
+/// pedir. Lo que se prueba es si el mismo path —con la versión 2 y el
+/// `contextUri` como parámetro— contesta en el host de Spotify, que es donde
+/// se puede pedir algo sin inventarse un cliente.
+///
+/// Se prueban las tres formas del path porque la diferencia entre "no existe"
+/// y "no lo encontré" es justo lo que esta sonda existe para no confundir.
+#[cfg(debug_assertions)]
+fn probe_dj_session(session: &Session, playlist_id: &str) {
+    let context_uri = format!("spotify:playlist:{playlist_id}");
+    let paths = [
+        format!("/context-resolve/v2/session?contextUri={context_uri}"),
+        format!("/lexicon-session-provider/context-resolve/v2/session?contextUri={context_uri}"),
+        format!("/context-resolve/v2/session?contextUri={context_uri}&page=0"),
+    ];
+
+    for path in paths {
+        let owned = session.clone();
+        let endpoint = path.clone();
+        let outcome = call(session, async move {
+            owned
+                .spclient()
+                .request(&reqwest::Method::GET, &endpoint, None, None)
+                .await
+                .map(|body| {
+                    let text = String::from_utf8_lossy(&body);
+                    format!(
+                        "{} bytes · {}",
+                        body.len(),
+                        text.chars().take(400).collect::<String>()
+                    )
+                })
+                .map_err(|e| format!("ERROR: {e}"))
+        });
+
+        match outcome {
+            Ok(summary) => log::info!("SP_DJ: GET {path} → {summary}"),
+            Err(e) => log::error!("SP_DJ: GET {path} → {e}"),
+        }
+    }
+}
+
+/// La estación, probada con el código que la app usa.
+///
+/// **La sonda anterior leía el JSON a mano; esto llama a las mismas funciones
+/// que la app.** Es la diferencia entre saber que el servicio tiene más
+/// páginas y saber que la app las pide, las entiende y las sigue.
+///
+/// Cada ronda: la primera página, y la siguiente por el cursor que devolvió la
+/// anterior. Con eso se ve si la estación sigue y si las frases llegan.
+#[cfg(debug_assertions)]
+fn probe_dj_station(session: &Session, playlist_id: &str) {
+    let Ok(first) = dj_mix(session, playlist_id) else {
+        log::error!("SP_DJ: la estación no arrancó");
+        return;
+    };
+    log::info!(
+        "SP_DJ: estación · {} canciones · {} frases · sigue={:?}",
+        first.mix.tracks.len(),
+        first.mix.lines.len(),
+        first.next.as_deref().map(|path| &path[..path.len().min(90)])
+    );
+    for track in first.mix.tracks.iter().take(12) {
+        let line = first.mix.lines.get(&track.id);
+        log::info!(
+            "SP_DJ:   {} — {}{}",
+            track.name,
+            track_artists(track),
+            match line {
+                Some(narration) => format!(" · «{}»: {}", narration.speaker, narration.line),
+                None => String::new(),
+            }
+        );
+    }
+
+    // **¿Dos clicks dan dos mixes?** Esto es lo que el usuario preguntó, y la
+    // respuesta tiene que salir del código de producción y no de una opinión:
+    // se llama `dj_mix` dos veces y se comparan las primeras canciones.
+    let primeras: Vec<String> = first
+        .mix
+        .tracks
+        .iter()
+        .take(3)
+        .map(|track| track.id.clone())
+        .collect();
+    std::thread::sleep(std::time::Duration::from_secs(5));
+    match dj_mix(session, playlist_id) {
+        Ok(second) => {
+            let otras: Vec<String> = second
+                .mix
+                .tracks
+                .iter()
+                .take(3)
+                .map(|track| track.id.clone())
+                .collect();
+            log::info!(
+                "SP_DJ: dos mixes · primera vez={primeras:?} · segunda vez={otras:?} · {}",
+                if primeras == otras {
+                    "IGUALES: el DJ se repite"
+                } else {
+                    "distintos: el DJ no se repite"
+                }
+            );
+        }
+        Err(error) => log::error!("SP_DJ: el segundo mix no vino: {error}"),
+    }
+
+    let Some(next) = first.next.clone() else {
+        log::info!("SP_DJ: la estación no dice por dónde seguir");
+        return;
+    };
+
+    match dj_page(session, &next) {
+        Ok(second) => {
+            log::info!(
+                "SP_DJ: segunda página · {} canciones · {} frases · sigue={:?}",
+                second.mix.tracks.len(),
+                second.mix.lines.len(),
+                second.next.as_deref().map(|path| &path[..path.len().min(90)])
+            );
+            for track in second.mix.tracks.iter().take(12) {
+                let line = second.mix.lines.get(&track.id);
+                log::info!(
+                    "SP_DJ:   {} — {}{}",
+                    track.name,
+                    track_artists(track),
+                    match line {
+                        Some(narration) => format!(" · «{}»: {}", narration.speaker, narration.line),
+                        None => String::new(),
+                    }
+                );
+            }
+        }
+        Err(error) => log::error!("SP_DJ: la segunda página no se pudo pedir: {error}"),
+    }
+}
+
+/// Los artistas de una pista, como texto: la sonda cuenta, no juzga.
+#[cfg(debug_assertions)]
+fn track_artists(track: &crate::models::Track) -> String {
+    if track.artists.is_empty() {
+        return String::new();
+    }
+    let names: Vec<String> = track.artists.iter().map(|artist| artist.name.clone()).collect();
+    format!("({})", names.join(", "))
+}
+
+/// La pregunta que decide si el DJ es una lista o una estación: **¿sigue?**
+///
+/// La primera página trae cinco canciones y un `next_page_url` que es un
+/// `hm://`. Si ese `hm://` se puede traducir al path del host y el host
+/// contesta con más canciones, el DJ es una estación: no se acaba, y la app
+/// tiene que pedir la página siguiente cuando la cola se está por vaciar.
+///
+/// Si no se puede, el DJ es una lista de cinco y hay que decirlo con todas las
+/// letras. Por eso esto camina tres páginas: una dice poco.
+///
+/// El `hm://` es el nombre interno del servicio, no una URL. Lo que se pide es
+/// el path, en el host de Spotify: sin el prefijo `lexicon-session-provider`
+/// da 404, y con la página siguiente y su `requestId` en el query, que es
+/// donde el servicio espera encontrarlos.
+#[cfg(debug_assertions)]
+fn probe_dj_next_page(session: &Session, playlist_id: &str) {
+    let context_uri = format!("spotify:playlist:{playlist_id}");
+    let mut path = format!("/lexicon-session-provider/context-resolve/v2/session?contextUri={context_uri}");
+
+    for round in 0..3 {
+        let owned = session.clone();
+        let endpoint = path.clone();
+        let outcome = call(session, async move {
+            owned
+                .spclient()
+                .request(&reqwest::Method::GET, &endpoint, None, None)
+                .await
+                .map_err(|e| format!("ERROR: {e}"))
+        });
+
+        let body = match outcome {
+            Ok(body) => body,
+            Err(e) => {
+                log::error!("SP_DJ: [{round}] {path} → {e}");
+                return;
+            }
+        };
+
+        let Ok(json) = serde_json::from_slice::<serde_json::Value>(&body) else {
+            log::error!(
+                "SP_DJ: [{round}] la respuesta no es JSON ({} bytes)",
+                body.len()
+            );
+            return;
+        };
+
+        let pages = json
+            .get("pages")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
+        log::info!("SP_DJ: [{round}] {path} → {} bytes · {} páginas", body.len(), pages.len());
+
+        // Una respuesta con bytes y sin páginas es una respuesta con otra forma:
+        // sin esto, "0 páginas" parece lo mismo que "no hay nada".
+        if pages.is_empty() {
+            let claves: Vec<String> = json
+                .as_object()
+                .map(|object| object.keys().cloned().collect())
+                .unwrap_or_default();
+            log::info!("SP_DJ: [{round}] sin páginas · llaves={claves:?}");
+            let texto = String::from_utf8_lossy(&body);
+            log::info!(
+                "SP_DJ: [{round}] cuerpo (900) → {}",
+                texto.chars().take(900).collect::<String>()
+            );
+        }
+
+        // Lo que decide si esto es una estación: si la página trae canciones y
+        // por dónde seguir.
+        let mut next: Option<String> = None;
+        for (index, page) in pages.iter().enumerate() {
+            let tracks = page
+                .get("tracks")
+                .and_then(|value| value.as_array())
+                .cloned()
+                .unwrap_or_default();
+            log::info!("SP_DJ: [{round}] página {index}: {} pistas", tracks.len());
+            for track in tracks.iter().take(6) {
+                let uri = track.get("uri").and_then(|value| value.as_str()).unwrap_or("?");
+                let has_narration = track
+                    .get("metadata")
+                    .and_then(|value| value.as_object())
+                    .map(|meta| {
+                        meta.keys()
+                            .filter(|key| key.starts_with("narration"))
+                            .cloned()
+                            .collect::<Vec<String>>()
+                    })
+                    .unwrap_or_default();
+                log::info!("SP_DJ: [{round}]   {uri} · narración={has_narration:?}");
+            }
+            if let Some(url) = page.get("next_page_url").and_then(|value| value.as_str()) {
+                log::info!("SP_DJ: [{round}] página {index}: next_page_url = {url}");
+                if next.is_none() {
+                    next = Some(url.to_string());
+                }
+            }
+        }
+
+        // Lo que hace el DJ al terminar: seguir, o parar.
+        for key in ["end_of_context_action", "lexicon_expiration_time", "dj.interactivity_enabled"] {
+            if let Some(value) = json.get("metadata").and_then(|meta| meta.get(key)) {
+                log::info!("SP_DJ: [{round}] meta {key} = {value}");
+            }
+        }
+
+        let Some(next) = next else {
+            log::info!("SP_DJ: [{round}] la página no dice por dónde seguir: acá termina");
+            return;
+        };
+
+        // La traducción: `hm://lexicon-session-provider/...` es el nombre
+        // interno del servicio; en el host de Spotify se pide el path.
+        let translated = next
+            .strip_prefix("hm://")
+            .map(|rest| format!("/{rest}"))
+            .unwrap_or_else(|| next.clone());
+        log::info!("SP_DJ: [{round}] siguiente en el host: {translated}");
+        path = translated;
+    }
+}
+
+/// Una playlist por id, sin hidratar, para ver qué clase de URI trae.
+///
+/// La app nunca llama a `get_playlist` de esta forma —la hidrata y la muestra—
+/// pero acá la pregunta es qué trae el servicio, antes de que la app le haga
+/// nada: una URI que no sea una canción es la diferencia entre "está vacío" y
+/// "tiene cosas que la app no sabe mostrar".
+#[cfg(debug_assertions)]
+fn raw_playlist(session: &Session, playlist_id: &str) -> Result<SelectedListContent, String> {
+    let Ok(id) = SpotifyId::from_base62(playlist_id) else {
+        return Err("bad_id".to_string());
+    };
+
+    let owned = session.clone();
+    let body = call(session, async move {
+        owned
+            .spclient()
+            .get_playlist(&id)
+            .await
+            .map_err(|e| {
+                log::error!("SP_DJ: get_playlist falló: {e}");
+                "network_failed".to_string()
+            })
+    })?;
+
+    SelectedListContent::parse_from_bytes(&body).map_err(|e| {
+        log::error!("SP_DJ: la playlist vino con otra forma: {e}");
+        "bad_response".to_string()
+    })
+}
+
+/// ¿Qué contenido personalized alcanza la sesión?
+///
+/// La biblioteca ya trae una playlist que Spotify fabricó para la cuenta —DJ—,
+/// así que el servicio *sí* personalize por este canal. Lo que no se sabe es
+/// cuánto. "Daily Mix", "Discover Weekly", "Release Radar" y las estaciones
+/// distintas son del motor de recomendaciones, que vivía en la Web API; pero
+/// antes de aceptar que no existe hay que haberlo probado, que es la diferencia
+/// entre "no lo encontramos" y "no está".
+///
+/// Las candidatas usan las formas que Spotify usa para las suyas. Con `+` y sin
+/// espacios, por la razón que ya está escrita más arriba: un uri mal escrito
+/// contesta que la frase está mal, no que la cosa no exista.
+#[cfg(debug_assertions)]
+pub fn home_requested() -> bool {
+    std::env::var("STARLESS_SP_HOME")
+        .map(|value| value != "0" && !value.is_empty())
+        .unwrap_or(false)
+}
+
+#[cfg(debug_assertions)]
+pub fn run_home_probe(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(session) = crate::selftest::wait_for_session(&app) else {
+            log::error!("SP_HOME: la sesión no llegó a conectar");
+            return;
+        };
+
+        log::info!("=== DIAGNOSTIC: sonda de contenido personalized ===");
+
+        let Ok(account) = account(&session) else {
+            log::error!("SP_HOME: sin cuenta, no hay nada personalized que probar");
+            return;
+        };
+        let user = account.id.clone();
+
+        let mut artist_id = "4Fl8dEtJlmvFkYb4HZr8Fi".to_string();
+        if let Ok(playlists) = playlists(&session)
+            && let Some(track) = playlists
+                .iter()
+                .flat_map(|playlist| playlist_tracks(&session, &playlist.id).unwrap_or_default())
+                .next()
+            && let Some(first_artist) = track.artists.first()
+        {
+            artist_id = first_artist.id.clone();
+        }
+
+        probe_contexts(
+            &session,
+            "SP_HOME",
+            &[
+                // La línea de control: se sabe que responde. Si esta falla, el
+                // problema es la sonda y no la pregunta.
+                format!("spotify:user:{user}:collection"),
+                format!("spotify:user:{user}"),
+                format!("spotify:user:{user}:daylims"),
+                format!("spotify:user:{user}:daily"),
+                format!("spotify:user:{user}:discover-weekly"),
+                format!("spotify:user:{user}:discover"),
+                format!("spotify:user:{user}:release-radar"),
+                format!("spotify:user:{user}:stations"),
+                format!("spotify:user:{user}:made-for-{user}"),
+                format!("spotify:daily"),
+                format!("spotify:discover:weekly"),
+                format!("spotify:release-radar"),
+                // Una estación por artista es lo más parecido a "Recommended
+                // Stations" que se podría construir con lo propio.
+                format!("spotify:artist:{artist_id}:radio"),
+                format!("spotify:artist:{artist_id}:related"),
+                format!("spotify:artist:{artist_id}:station"),
+            ],
+        );
+
+        log::info!("=== DIAGNOSTIC: fin de la sonda de inicio ===");
+    });
+}
+
+/// Una quinta pregunta, y la primera que no es de lectura: ¿por esta sesión
+/// existe una puerta para **crear** una playlist?
+///
+/// Todo lo de arriba lee. `librespot` 0.8 no trae ni un POST sobre bibliotecas:
+/// los únicos que manda son el token de cliente, la metadata extendida, el
+/// autoplay y el estado de transferencia, y `playlist_update` de `spirc` es una
+/// **notificación** de Spotify, no una API. Eso no demuestra que la puerta no
+/// exista — sólo que la biblioteca no la usa — y la diferencia entre las dos
+/// cosas es exactamente la que justifica una sonda.
+///
+/// ## Lo que se midió
+///
+/// El 19 de octubre de 2026, con una cuenta real. Siete rutas por los dos verbos,
+/// porque el router distingue y esa distinción es lo único que separa "no hay
+/// ruta acá" de "hay ruta pero no podés escribir por acá" sin escribir nada:
+///
+/// | ruta | `GET` | `POST` |
+/// |---|---|---|
+/// | `/playlist/v2/user/<id>/rootlist` | `200` | `405` |
+/// | `/playlist/v2/user/<id>/playlist` | `404` | `404` |
+/// | `/playlist/v2/user/<id>/playlists` | `404` | `404` |
+/// | **`/playlist/v2/playlist`** | **`405`** | **`400`** |
+/// | `/user/<id>/playlist` | `404` | `404` |
+/// | `/playlist/v2/user/<id>/playlist/<id>/items` | `404` | `404` |
+/// | `/playlist/v2/user/<id>/playlist/<id>/description` | `404` | `404` |
+///
+/// **La puerta es `POST /playlist/v2/playlist`, sin el segmento del usuario**:
+/// el id va en el cuerpo. La tabla no es uniforme, y por eso el `404` de al lado
+/// se puede leer — un servicio que contestara `404` a todo se vería igual que
+/// uno al que no se le preguntó nada.
+///
+/// De regalón, `/user/<id>/playlist` da `404` en los dos verbos: este access
+/// point no sirve las rutas de la Web API. Es la regla 7 medida al revés.
+///
+/// ## Dónde está la puerta, en realidad
+///
+/// `POST /playlist/v2/playlist` **no es la puerta**, y esta sonda se equivocó de
+/// calle. Contesta `400` con **cero bytes** —se probó por los dos caminos: el
+/// cliente de librespot tira el cuerpo de toda respuesta que no sea 2xx
+/// (`http_client.rs:214`), y con `reqwest`, que sí lo devuelve, vino
+/// `400 · 0 bytes · ""`— y esa mudez era la pista: una ruta que no existe
+/// contestaría distinto.
+///
+/// La respuesta llegó de la única forma que no deja dudas, que es ver qué manda
+/// el cliente oficial. Spotify para Windows (`Spotify.dll`, `1.304.258.0`) embebe
+/// unos mil `.proto` **completos como texto plano**, con nombres de campo, tipos
+/// y números de campo: no hace falta ningún descompilador. Ahí está
+/// `spotify.playlist4.proto`, con sus `Delta`, `Diff`, `ListChanges` y `Op` — y
+/// con `CreateListReply`, pero **sin** ningún mensaje que se llame "crear".
+///
+/// ## Cómo se crea una playlist
+///
+/// Se crea **agregándola a la raíz**, que es un `ADD` sobre el rootlist. El id lo
+/// genera el cliente, no el servidor: el `GET` de permisos de la playlist
+/// devuelve `404` un instante antes del `POST`, porque todavía no existe y el id
+/// ya venía puesto en el pedido. Dos llamadas, en este orden:
+///
+/// 1. `POST /playlist/v2/user/<id>/rootlist/changes` con un `ListChanges` —el
+///    `base_revision` sale del `GET` del rootlist— y un único `Delta` cuyo `Op`
+///    lleva `kind = ADD` (`Op.Kind::ADD` es `2`) y un `Item` con
+///    `uri = "spotify:playlist:<id nuevo>"`. Esto crea la playlist.
+/// 2. `POST /playlist/v2/playlist/<id>/changes` con otro `ListChanges` y un `Op`
+///    con `kind = UPDATE_LIST_ATTRIBUTES` (`6`) para ponerle el nombre.
+///
+/// **No hace falta ningún proto nuevo.** `ListChanges`, `Delta`, `Op`, `Op.Kind`,
+/// `Add`, `Item`, `ChangeInfo`, `UpdateListAttributes` y
+/// `ListAttributesPartialState` están todos en `playlist4_external.proto`, que
+/// librespot ya compila. Es el mismo `playlist4` con el que se editan las
+/// playlists de siempre; la creación no es un caso especial, es un `ADD` más.
+///
+/// Esto **no** choca con la regla 7: es la misma sesión de siempre, el mismo
+/// `spclient`, la misma cabecera de autorización. No hay una segunda identidad ni
+/// la Web API de por medio —que además este access point no sirve, `/user/<id>/
+/// playlist` dio `404` en los dos verbos.
+///
+/// Lo que sí cambia es lo que se está decidiendo. Hasta acá Starless sólo leía.
+/// Escribir en la cuenta de quien la está usando, por un endpoint que Spotify no
+/// documenta, es una decisión de producto y no de ingeniería, y por eso la sonda
+/// queda como está: la respuesta vive acá y el botón es otra conversación.
+///
+/// ## Que la sonda no pueda crear nada
+///
+/// El cuerpo va deliberadamente **imborrable**: ni un `name`, ni un
+/// `description`, ni un id. Lo que se manda es un protobuf que no se puede
+/// parsear, así que la peor respuesta posible del servicio es "no entendí el
+/// cuerpo". Un `POST` vacío habría sido casi igual de inofensivo —una playlist
+/// sin nombre no es una playlist— pero "casi" no es una garantía, y una sonda
+/// que puede modificar la cuenta de quien la corre no es una sonda.
+#[cfg(debug_assertions)]
+pub fn create_requested() -> bool {
+    std::env::var("STARLESS_SP_CREATE")
+        .map(|value| value != "0" && !value.is_empty())
+        .unwrap_or(false)
+}
+
+/// Barre un conjunto de rutas con los dos verbos y dice qué status volvió con cada una.
+///
+/// La primera vez que se corrió esto probaba cuatro `POST` y el `404` de la
+/// puerta podía significar dos cosas: que la puerta no existe, o que la puerta
+/// existe pero se escribe de otra forma. Cambiar un verbo por `GET` no la
+/// hubiera desambiguado —un `404` en `GET` tampoco distingue una cosa de la otra—
+/// así que la pregunta correcta es por ruta: *¿qué verbsos reconoce el router
+/// acá?* Un `GET` que contesta `200` y un `POST` que contesta `405` juntos dicen
+/// "esta dirección existe y es de lectura", que es un dato, no una ausencia.
+#[cfg(debug_assertions)]
+pub fn run_create_probe(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(session) = crate::selftest::wait_for_session(&app) else {
+            log::error!("SP_CREATE: la sesión no llegó a conectar");
+            return;
+        };
+
+        log::info!("=== DIAGNOSTIC: sonda de escritura sobre bibliotecas ===");
+
+        let Ok(account) = account(&session) else {
+            log::error!("SP_CREATE: sin cuenta no hay a quién preguntarle");
+            return;
+        };
+        let user = &account.id;
+
+        // Ni un byte de esto es parseable como un `CreatePlaylist`: es el tag de
+        // un campo que declara una longitud y no la manda. El `GET` va sin
+        // cuerpo, que es lo único que un `GET` puede llevar.
+
+        // Cada ruta contesta una pregunta distinta. La primera es la línea de
+        // control: sabemos que existe y que se lee, así que si algún día esta
+        // contesta otra cosa, el resto de la tabla hay que leerlo con desconfianza.
+        let candidates = [
+            (
+                format!("/playlist/v2/user/{user}/rootlist"),
+                "control: existe y es de lectura",
+            ),
+            (
+                format!("/playlist/v2/user/{user}/playlist"),
+                "crear, en la forma obvia",
+            ),
+            (
+                format!("/playlist/v2/user/{user}/playlists"),
+                "la misma, en plural",
+            ),
+            (
+                "/playlist/v2/playlist".to_owned(),
+                "sin el segmento del usuario",
+            ),
+            (
+                format!("/user/{user}/playlist"),
+                "la forma de la Web API, en este host",
+            ),
+            (
+                format!("/playlist/v2/user/{user}/playlist/starless-sonda/items"),
+                "agregar canciones",
+            ),
+            (
+                format!("/playlist/v2/user/{user}/playlist/starless-sonda/description"),
+                "cambiar el nombre",
+            ),
+        ];
+
+        for (endpoint, what) in candidates {
+            probe_verbs(&session, &endpoint, what);
+        }
+
+        // Una sola vez más, y por otro cliente: leer **por qué** dijo que no. La
+        // ruta ya está y ya sabemos que contesta `400`; lo que falta es el motivo,
+        // y ése vive en un cuerpo que el cliente de librespot nunca entrega.
+        probe_refusal(&session, "/playlist/v2/playlist", "la puerta");
+
+        log::info!("=== DIAGNOSTIC: fin de la sonda de escritura ===");
+    });
+}
+
+/// Lee el cuerpo de un rechazo usando un cliente que no lo borre.
+///
+/// `HttpClient::request`, el de librespot, convierte **toda** respuesta que no sea
+/// 2xx en un `Err` que sólo lleva el status: el cuerpo se pierde en
+/// `http_client.rs:214`, un nivel más abajo que cualquier tipo que se pueda
+/// nombrar acá. Por eso leer el motivo obliga a *no usar* ese cliente en vez de
+/// agregarle dependencias al crate.
+///
+/// Y por eso esto va aparte de `probe_verbs`, que sigue apoyándose en librespot:
+/// la tabla de statuses salió de ahí y es la calibración de todo lo demás. Si el
+/// status que conteste `reqwest` fuera distinto, eso no sería una contradicción
+/// sino la medida de cuánto le importaba el cliente — y por eso las dos líneas
+/// se leen juntas y no una en lugar de la otra.
+///
+/// El cliente async, no el bloqueante: esto corre adentro de `call`, o sea sobre
+/// el runtime de librespot, donde un `reqwest::blocking` levanta el suyo y hace
+/// panic en el medio de un worker async.
+#[cfg(debug_assertions)]
+fn probe_refusal(session: &Session, path: &str, what: &str) {
+    let owned = session.clone();
+    let route = path.to_owned();
+    let outcome = call(session, async move {
+        let base = owned.spclient().base_url().await.map_err(|e| e.to_string())?;
+        let token = owned
+            .login5()
+            .auth_token()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        // Las mismas cabeceras que `spclient` pone en cada petición, y los mismos
+        // parámetros de métricas que le agrega por su cuenta. El `salt` es
+        //Cache-busting para GETs y va fijo: que sea el mismo número siempre no
+        // cambia lo que el servicio conteste.
+        let authorization = format!("{} {}", token.token_type, token.access_token);
+        let client_token = owned.spclient().client_token().await.unwrap_or_default();
+        let url = format!("{base}{route}?product=0&country={}&salt=1", owned.country());
+
+        let response = reqwest::Client::new()
+            .post(url)
+            .header(reqwest::header::AUTHORIZATION, authorization)
+            .header("client-token", client_token)
+            .body(UNREADABLE.to_vec())
+            .send()
+            .await
+            .map_err(|e| format!("la red: {e}"))?;
+
+        let status = response.status().as_u16();
+        let bytes = response.bytes().await.map_err(|e| format!("el cuerpo: {e}"))?;
+
+        Ok(format!("{status} · {}", describe_bytes(&bytes)))
+    });
+
+    match outcome {
+        Ok(summary) => log::info!("SP_CREATE: [{what}] por reqwest → {summary}"),
+        Err(e) => log::error!("SP_CREATE: [{what}] la sonda no llegó: {e}"),
+    }
+}
+
+/// Ni un byte de esto es parseable como un `CreatePlaylist`: es el tag de un campo
+/// que declara una longitud y no la manda.
+///
+/// Vacía de propósito en todo lo que una escritura necesita —ni `name`, ni
+/// `description`, ni un id— así que la peor respuesta posible del servicio es
+/// "no entendí el cuerpo". Un `POST` sin cuerpo habría sido casi igual de
+/// inofensivo, pero "casi" no es una garantía.
+#[cfg(debug_assertions)]
+const UNREADABLE: &[u8] = &[0x0A, 0x7F];
+
+/// Una ruta, los dos verbos, dos líneas.
+///
+/// El router es el que decide qué es un `404` y qué es un `405`, así que las dos
+/// preguntas tienen que salir de la misma dirección: preguntarle a `/rootlist`
+/// por `POST` y a `/playlist` por `GET` serían dos accesos que no se pueden
+/// comparar.
+#[cfg(debug_assertions)]
+fn probe_verbs(session: &Session, path: &str, what: &str) {
+    for (label, method, body) in [
+        ("GET", &reqwest::Method::GET, None),
+        ("POST", &reqwest::Method::POST, Some(UNREADABLE)),
+    ] {
+        let owned = session.clone();
+        let route = path.to_owned();
+        let outcome = call(session, async move {
+            owned
+                .spclient()
+                .request(method, &route, None, body)
+                .await
+                .map(|response| describe_bytes(&response))
+                .map_err(|e| format!("ERROR: {e}"))
+        });
+
+        match outcome {
+            Ok(summary) => log::info!("SP_CREATE: [{what}] {label} {path} → {summary}"),
+            Err(e) => log::info!("SP_CREATE: [{what}] {label} {path} → {e}"),
+        }
+    }
+}
+
+/// Los primeros bytes de una respuesta, como texto y cortados.
+///
+/// Si una respuesta llega vacía, eso mismo es el dato y no hay que disfrazarlo de
+/// error: un `200` con cero bytes es tan raro que vale la pena ver la longitud
+/// explícita al lado.
+#[cfg(debug_assertions)]
+fn describe_bytes(body: &[u8]) -> String {
+    const SHOWN: usize = 160;
+    let text = String::from_utf8_lossy(&body[..body.len().min(SHOWN)]);
+    let text: String = text.chars().map(|c| if c.is_control() { '·' } else { c }).collect();
+
+    if body.len() <= SHOWN {
+        format!("{} bytes · {text:?}", body.len())
+    } else {
+        format!("{} bytes · {text:?} …", body.len())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// La voz del DJ: ¿hay una puerta para el audio?
+// ---------------------------------------------------------------------------
+
+/// La voz del DJ, medida.
+///
+/// La deuda 7 daba la voz por inalcanzable porque a la fila del DJ sólo le
+/// llegaba el SSML: el texto y los parámetros de la mezcla, nunca el audio. Pero
+/// librespot 0.8 trae `spotify.narration.proto` —**sin compilar y sin usar por
+/// nadie**— con `ResolveRequest` (el SSML, la voz, el proveedor, el idioma, el
+/// formato) y `ResolveResponse` (una URL y su vencimiento). O sea que el
+/// servicio que da el audio de la frase **existe y está descrito**; lo que
+/// faltaba era la puerta por la que se le pregunta.
+///
+/// Esta sonda hace tres cosas, en orden, porque cada una acota la siguiente:
+///
+/// 1. Volca la metadata completa de las filas que traen narración. Si la URL
+///    del audio viene ya resuelta, no hay que buscar ninguna puerta.
+/// 2. Prueba los paths candidatos con `GET`. Un `404` es "no existe"; cualquier
+///    otra cosa es "existe" — y esa diferencia separa un path inventado de uno
+///    real.
+/// 3. A los que no responden `404` les manda un `POST` con el cuerpo del
+///    `ResolveRequest` y mira si vuelve una URL.
+#[cfg(debug_assertions)]
+fn probe_dj_tts(session: &Session, playlist_id: &str) {
+    let Some(params) = dj_narration_params(session, playlist_id) else {
+        log::error!("SP_TTS: no hay SSML para pedir");
+        return;
+    };
+    log::info!(
+        "SP_TTS: el ssml tiene {} caracteres · idioma {} · voz {} · proveedor {} · formato {} · {} Hz",
+        params.ssml.chars().count(),
+        params.language,
+        params.voice,
+        params.provider,
+        params.audio_format,
+        params.sample_rate
+    );
+
+    // La puerta que el router reconoce: el namespace `client-tts/v1` del
+    // spclient, que es donde vive el método `fulfill`.
+    probe_client_tts(session, &params);
+
+    // Y la otra puerta, la que no es el spclient.
+    probe_tts_hosts(session, &params);
+}
+
+/// La prueba de que la voz del DJ suena: pedir el audio, decodificarlo y
+/// ponerlo en el mixer, sin que nadie haga clic.
+///
+/// **Llama al comando de verdad**, no a sus piezas: lo que se prueba es el
+/// camino que hace el click del frontend, con la misma sesión y el mismo
+/// cursor.
+///
+/// Se espera en un hilo propio y no en el pool de la app porque el comando se
+/// espera con `block_on`, y eso no se puede hacer desde adentro de un runtime.
+#[cfg(debug_assertions)]
+pub fn run_voice_probe(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        if crate::selftest::wait_for_session(&app).is_none() {
+            log::error!("SP_VOICE: la sesión no llegó a conectar");
+            return;
+        }
+        log::info!("=== DIAGNOSTIC: sonda de voz ===");
+
+        let mix = tauri::async_runtime::block_on(crate::dj_mix(
+            tauri::Manager::state::<crate::SessionState>(&app),
+            tauri::Manager::state::<crate::DjState>(&app),
+            "37i9dQZF1EYkqdzj48dyYq".to_owned(),
+        ));
+
+        let first = match mix {
+            Ok(mix) => {
+                log::info!("SP_VOICE: el comando devolvió {} canciones", mix.tracks.len());
+                mix.tracks.first().map(|track| track.id.clone())
+            }
+            Err(error) => {
+                log::error!("SP_VOICE: el comando falló: {error}");
+                None
+            }
+        };
+
+        // **Y ahora la voz de esa canción**, que es como lo pide el frontend:
+        // la frase es de la canción, y se dice cuando la canción va a sonar.
+        if let Some(track_id) = first {
+            let said = tauri::async_runtime::block_on(crate::dj_speak(
+                app.clone(),
+                tauri::Manager::state::<crate::SessionState>(&app),
+                tauri::Manager::state::<crate::DjState>(&app),
+                track_id,
+            ));
+            match said {
+                Ok(Some(id)) => log::info!("SP_VOICE: el comando pidió la voz {id}"),
+                Ok(None) => log::error!("SP_VOICE: el DJ no tiene frase para esa canción"),
+                Err(error) => log::error!("SP_VOICE: el comando de la voz falló: {error}"),
+            }
+        }
+
+        if !crate::voice::wait_for_mixer(std::time::Duration::from_secs(10)) {
+            log::error!("SP_VOICE: no hay mixer de audio");
+            return;
+        }
+        log::info!("SP_VOICE: el comando ya puso la voz; el mixer está");
+    });
+}
+
+/// Si hay que probar la voz del DJ sin que nadie haga clic.
+#[cfg(debug_assertions)]
+pub fn voice_requested() -> bool {
+    std::env::var("STARLESS_SP_VOICE")
+        .map(|value| value != "0" && !value.is_empty())
+        .unwrap_or(false)
+}
+
+/// El `TtsRequest` en el formato de texto de protobuf.
+///
+/// Es lo que acepta el spclient de Spotify con `Content-Type:
+/// application/x-protobuf`. Los enums van por número porque el nombre del
+/// enum en texto es relativo al paquete y no se sabe de memoria.
+///
+/// **Lo que se midió con esto:** el servicio contesta `400` con este cuerpo y
+/// `200` con el binario. El texto no es una alternativa: es la prueba de que
+/// el cuerpo tiene que ir en binario.
+#[cfg(debug_assertions)]
+fn tts_request_text(params: &crate::voice::VoiceParams) -> Vec<u8> {
+    format!(
+        "audio_format: {}\nlanguage: \"{}\"\ntts_voice: {}\ntts_provider: {}\nsample_rate_hz: {}\nssml: \"{}\"\n",
+        params.audio_format,
+        params.language.replace('"', "\\\""),
+        params.voice,
+        params.provider,
+        params.sample_rate,
+        params.ssml.replace('\\', "\\\\").replace('"', "\\\""),
+    )
+    .into_bytes()
+}
+
+/// El mismo `TtsRequest` en protobuf binario.
+///
+/// El cuerpo que se manda en producción: lo arma `voice.rs`, que es donde vive
+/// la puerta.
+#[cfg(debug_assertions)]
+fn tts_request_binary(params: &crate::voice::VoiceParams) -> Vec<u8> {
+    params.request_body()
+}
+
+/// La URL de una respuesta: el campo 1 de `TtsResponse`.
+///
+/// Un lector mínimo, porque la respuesta puede ser un `TtsResponse` pelado o
+/// un error, y lo que importa es leer el campo 1 si está.
+#[cfg(debug_assertions)]
+fn pb_read_string(body: &[u8], field: u64) -> Option<String> {
+    let mut index = 0;
+    while index < body.len() {
+        let (tag, next) = pb_read_varint(body, index)?;
+        index = next;
+        let wire = tag & 0x7;
+        let number = tag >> 3;
+        match wire {
+            0 => {
+                let (_, next) = pb_read_varint(body, index)?;
+                index = next;
+            }
+            1 => index += 8,
+            2 => {
+                let (length, next) = pb_read_varint(body, index)?;
+                let start = next;
+                let end = start + length as usize;
+                if end > body.len() {
+                    return None;
+                }
+                if number == field {
+                    return Some(String::from_utf8_lossy(&body[start..end]).to_string());
+                }
+                index = end;
+            }
+            5 => index += 4,
+            _ => return None,
+        }
+    }
+    None
+}
+
+/// Los dominios de un client token: dónde vive la puerta del TTS.
+///
+/// El servicio del proto se llama `ClientTtsService`, y los servicios
+/// "client-\*" de Spotify se autentican con un **client token**, no con el
+/// token de la cuenta. El `GrantedTokenResponse` trae la lista de dominios
+/// para los que ese token sirve: si el TTS está entre ellos, ahí está el
+/// nombre del host, y con él la puerta.
+///
+/// Se pide el token con dos versiones de cliente —la de escritorio, de la que
+/// salen los protos, y la del cliente móvil— y se comparan los dominios que
+/// concede cada una.
+#[cfg(debug_assertions)]
+fn probe_client_token_domains(session: &Session) {
+    let versions = [
+        ("escritorio", SPOTIFY_SEMANTIC_VERSION),
+        ("movil", SPOTIFY_MOBILE_VERSION),
+    ];
+
+    for (name, version) in versions {
+        let mut request = ClientTokenRequest::new();
+        request.request_type = ClientTokenRequestType::REQUEST_CLIENT_DATA_REQUEST.into();
+
+        let client_data = request.mut_client_data();
+        client_data.client_version = version.to_owned();
+        client_data.client_id = session.client_id();
+        let connectivity = client_data.mut_connectivity_sdk_data();
+        connectivity.device_id = session.device_id().to_owned();
+
+        // La plataforma, que es lo que el service usa para decidir si le
+        // concede el token a un cliente de Windows o si le manda un challenge
+        // de hash-cash. Sin esto contesta `400` con el cuerpo vacío.
+        let platform = connectivity.platform_specific_data.mut_or_insert_default();
+        let windows = platform.mut_desktop_windows();
+        windows.os_version = 10;
+        windows.os_build = 21370;
+        windows.platform_id = 2;
+        windows.unknown_value_6 = 9;
+        windows.image_file_machine = 34404;
+        windows.pe_machine = 34404;
+        windows.unknown_value_10 = true;
+
+        let body = match request.write_to_bytes() {
+            Ok(body) => body,
+            Err(e) => {
+                log::error!("SP_TOKEN: [{name}] el request no se armó: {e}");
+                continue;
+            }
+        };
+
+        let outcome = call(session, async move {
+            reqwest::Client::new()
+                .post("https://clienttoken.spotify.com/v1/clienttoken")
+                .header("Accept", "application/x-protobuf")
+                .header("User-Agent", "Spotify/124200290 Windows/0 (librespot)")
+                .body(body)
+                .send()
+                .await
+                .map_err(|e| format!("ERROR: {e}"))?
+                .bytes()
+                .await
+                .map(|bytes| bytes.to_vec())
+                .map_err(|e| format!("ERROR: {e}"))
+        });
+        let bytes = match outcome {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                log::error!("SP_TOKEN: [{name}] {e}");
+                continue;
+            }
+        };
+
+        let message = match ClientTokenResponse::parse_from_bytes(&bytes) {
+            Ok(message) => message,
+            Err(e) => {
+                log::error!(
+                    "SP_TOKEN: [{name}] la respuesta no se entendió: {e} · {}",
+                    describe_bytes(&bytes)
+                );
+                continue;
+            }
+        };
+
+        match ClientTokenResponseType::from_i32(message.response_type.value()) {
+            Some(ClientTokenResponseType::RESPONSE_GRANTED_TOKEN_RESPONSE) => {
+                let granted = message.granted_token();
+                log::info!(
+                    "SP_TOKEN: [{name}] el token vale para {} dominios",
+                    granted.domains.len()
+                );
+                for domain in &granted.domains {
+                    log::info!("SP_TOKEN: [{name}] dominio {}", domain.domain);
+                }
+            }
+            Some(ClientTokenResponseType::RESPONSE_CHALLENGES_RESPONSE) => {
+                log::info!(
+                    "SP_TOKEN: [{name}] el servicio pide un challenge: {}",
+                    describe_bytes(&bytes)
+                );
+            }
+            _ => {
+                log::info!(
+                    "SP_TOKEN: [{name}] respuesta sin granted token: {}",
+                    describe_bytes(&bytes)
+                );
+            }
+        }
+    }
+}
+
+/// Un varint leído de un buffer.
+#[cfg(debug_assertions)]
+fn pb_read_varint(body: &[u8], from: usize) -> Option<(u64, usize)> {
+    let mut value = 0u64;
+    let mut shift = 0;
+    let mut index = from;
+    while index < body.len() {
+        let byte = body[index];
+        index += 1;
+        value |= u64::from(byte & 0x7f) << shift;
+        if byte & 0x80 == 0 {
+            return Some((value, index));
+        }
+        shift += 7;
+        if shift > 63 {
+            return None;
+        }
+    }
+    None
+}
+
+/// Los parámetros de la narración, tal como los manda el servicio.
+///
+/// El SSML, el idioma, la voz y el proveedor: exactamente lo que el
+/// `TtsRequest` del proto pide. Se leen de la metadata de la primera fila
+/// narrada, que es donde el DJ los deja.
+#[cfg(debug_assertions)]
+fn dj_narration_params(
+    session: &Session,
+    playlist_id: &str,
+) -> Option<crate::voice::VoiceParams> {
+    let context_uri = format!("spotify:playlist:{playlist_id}");
+    let path = format!(
+        "/lexicon-session-provider/context-resolve/v2/session/00000000000000000000000000000000\
+?contextUri={context_uri}&previousSegmentId=XX-Segment-XXXXX&requestId=probe-params"
+    );
+
+    let owned = session.clone();
+    let endpoint = path.clone();
+    let body = call(session, async move {
+        owned
+            .spclient()
+            .request(&reqwest::Method::GET, &endpoint, None, None)
+            .await
+            .map_err(|e| format!("ERROR: {e}"))
+    })
+    .ok()?;
+    let json = serde_json::from_slice::<serde_json::Value>(&body).ok()?;
+
+    let mut rows: Vec<&serde_json::Value> = json
+        .get("tracks")
+        .and_then(|value| value.as_array())
+        .map(|list| list.iter().collect())
+        .unwrap_or_default();
+    if rows.is_empty() {
+        if let Some(pages) = json.get("pages").and_then(|value| value.as_array()) {
+            for page in pages {
+                if let Some(list) = page.get("tracks").and_then(|value| value.as_array()) {
+                    rows.extend(list.iter());
+                }
+            }
+        }
+    }
+
+    let mut params = None;
+
+    for track in rows {
+        let Some(metadata) = track.get("metadata").and_then(|value| value.as_object()) else {
+            continue;
+        };
+        if params.is_some() {
+            break;
+        }
+        for kind in ["narration.intro.", "narration.outro."] {
+            if let Some(found) = crate::voice::VoiceParams::from_metadata(metadata, kind) {
+                params = Some(found);
+                break;
+            }
+        }
+    }
+
+    params
+}
+
+/// La puerta del TTS: todos los paths, con `POST`.
+///
+/// El router de Spotify contesta `404` a un `GET` sobre un path que sólo
+/// acepta `POST`, así que probar con `GET` esconde la mitad de los caminos:
+/// un `404` no dice "no existe" sino "no es por `GET`". Por eso la tanda
+/// entera va con `POST`.
+///
+/// En los dos sitios: el spclient de la sesión —que ya lleva el token de la
+/// cuenta y el client token en cada request— y `tts.spotify.com`, que existe
+/// en DNS (el de Spotify no es un wildcard: un nombre inventado no resuelve)
+/// y al que se le mandan las dos credenciales a mano.
+#[cfg(debug_assertions)]
+fn probe_tts_hosts(session: &Session, params: &crate::voice::VoiceParams) {
+    let bearer = match call(session, {
+        let owned = session.clone();
+        async move {
+            owned
+                .login5()
+                .auth_token()
+                .await
+                .map(|token| token.access_token)
+                .map_err(|e| format!("ERROR: {e}"))
+        }
+    }) {
+        Ok(token) => Some(token),
+        Err(e) => {
+            log::error!("SP_TTS: el token de la cuenta no salió: {e}");
+            None
+        }
+    };
+    let client = match call(session, {
+        let owned = session.clone();
+        async move {
+            owned
+                .spclient()
+                .client_token()
+                .await
+                .map_err(|e| format!("ERROR: {e}"))
+        }
+    }) {
+        Ok(token) => Some(token),
+        Err(e) => {
+            log::error!("SP_TTS: el client token no salió: {e}");
+            None
+        }
+    };
+    log::info!(
+        "SP_TTS: hay token de cuenta: {} · hay client token: {}",
+        bearer.is_some(),
+        client.is_some()
+    );
+
+    let paths = [
+        "/client-tts/v1/tts",
+        "/client-tts/v1/resolve",
+        "/client-tts/v1/url",
+        "/client-tts/v1/tts-url",
+        "/client-tts/v1/narration",
+        "/client-tts/v1/audio",
+        "/client-tts/v1/GetTtsUrl",
+        "/narrations/v1/tts",
+        "/narrations/v1/resolve",
+        "/narrations/v1/GetTtsUrl",
+        "/narrations/v1/narration",
+        "/narration/v1/tts",
+        "/narration/v1/resolve",
+        "/tts/v1/resolve",
+        "/tts/v1/tts",
+        "/tts/v1/url",
+        "/commentary/v1/tts",
+        "/commentary/v1/resolve",
+        "/commentaries/v1/resolve",
+        "/automix/v1/tts",
+        "/automix/v1/resolve",
+        "/dj/v1/tts",
+        "/voice/v1/tts",
+        "/v1/tts",
+        "/v1/resolve",
+        "/v1/GetTtsUrl",
+        "/GetTtsUrl",
+        "/resolve",
+        "/tts/resolve",
+        "/narrations/tts/v1",
+    ];
+
+    let texto = tts_request_text(params);
+    let binario = tts_request_binary(params);
+
+    for path in paths {
+        // El spclient de la sesión: ya lleva las dos credenciales.
+        for (label, body) in [("texto", texto.clone()), ("binario", binario.clone())] {
+            let owned = session.clone();
+            let route = path.to_owned();
+            let outcome = call(session, async move {
+                let mut headers = reqwest::header::HeaderMap::new();
+                headers.insert(
+                    reqwest::header::CONTENT_TYPE,
+                    reqwest::header::HeaderValue::from_static("application/x-protobuf"),
+                );
+                owned
+                    .spclient()
+                    .request(
+                        &reqwest::Method::POST,
+                        &route,
+                        Some(headers),
+                        Some(body.as_slice()),
+                    )
+                    .await
+                    .map(|response| {
+                        let url = pb_read_string(&response, 1);
+                        format!("{} · url={url:?}", describe_bytes(&response))
+                    })
+                    .map_err(|e| format!("ERROR: {e}"))
+            });
+            match outcome {
+                Ok(summary) => log::info!("SP_TTS: spclient POST {label} {path} → {summary}"),
+                Err(e) => log::info!("SP_TTS: spclient POST {label} {path} → {e}"),
+            }
+        }
+
+        // Y el host propio, con las dos credenciales a mano.
+        let url = format!("https://tts.spotify.com{path}");
+        for (label, body) in [("texto", texto.clone()), ("binario", binario.clone())] {
+            let (status, summary) = tts_request(
+                session,
+                reqwest::Method::POST,
+                &url,
+                Some(body),
+                bearer.clone(),
+                client.clone(),
+            );
+            log::info!("SP_TTS: host POST {label} {url} → {status} · {summary}");
+        }
+    }
+}
+
+/// La puerta del TTS: el namespace `client-tts/v1` del spclient.
+///
+/// El binario nativo del cliente de Spotify —`usr/share/spotify/spotify`, 59
+/// MB, el mismo core C++ que usa el de Windows— tiene **una sola** string de
+/// TTS con forma de path: `client-tts/v1/fulfill`. Encaja con la convención
+/// `servicio/vN/método` del resto del cliente (`storage-resolve/v2/files/audio/`,
+/// `image-resolve/v1/resolve/map`, `playlist/v2/user/`).
+///
+/// Y el router lo reconoce sin credenciales: en `spclient.wg.spotify.com`
+/// todo `/client-tts/v1/**` contesta `401`, mientras un path de control
+/// inventado y `/client-tts/v2/**` contestan `404`. El `401` prueba el
+/// namespace, no el método —con credenciales, un método inexistente contesta
+/// `404`—, así que el método sale del binario y el cuerpo se prueba con las
+/// tres combinaciones de credenciales.
+///
+/// **Lo que no se hace:** adivinar un host. `tts.spotify.com` existe en DNS
+/// pero contesta `404` a todo, `/client-tts/v1/fulfill` incluido: no es el host
+/// de este servicio.
+#[cfg(debug_assertions)]
+fn probe_client_tts(session: &Session, params: &crate::voice::VoiceParams) {
+    let (bearer, client) = tts_credentials(session);
+    log::info!(
+        "SP_TTS: credenciales · cuenta={} · client={}",
+        bearer.is_some(),
+        client.is_some()
+    );
+
+    let binario = tts_request_binary(params);
+    let texto = tts_request_text(params);
+
+    // `fulfill` es el método que trae el binario; los demás son vecinos, por si
+    // el nombre del método cambia entre versiones del cliente.
+    let paths = [
+        "/client-tts/v1/fulfill",
+        "/client-tts/v1/resolve",
+        "/client-tts/v1/tts",
+        "/client-tts/v1/tts-url",
+        "/client-tts/v1/url",
+        "/client-tts/v1/narration",
+        "/client-tts/v1/audio",
+        "/client-tts/v1/voices",
+        "/client-tts/v1/synthesize",
+        "/client-tts/v1/GetTtsUrl",
+    ];
+
+    for path in paths {
+        let url = format!("https://spclient.wg.spotify.com{path}");
+
+        // Las tres combinaciones: con la cuenta sola, con el client token solo
+        // y con los dos. Un `200` en una de las tres es la puerta.
+        for (label, cuenta, ctoken) in [
+            ("cuenta", bearer.clone(), None),
+            ("client", None, client.clone()),
+            ("ambas", bearer.clone(), client.clone()),
+        ] {
+            let (status, body) =
+                client_tts_request(session, &url, binario.clone(), cuenta, ctoken);
+            if status == 200 {
+                guardar_audio(path, &body);
+            }
+            log::info!(
+                "SP_TTS: POST {label} {path} → {status} · {}",
+                describe_bytes(&body)
+            );
+        }
+
+        // Y el spclient de librespot, que manda los headers que el servicio
+        // espera: si el reqwest crudo rebota y éste no, la diferencia está en
+        // un header y no en el path.
+        let owned = session.clone();
+        let route = path.to_owned();
+        let cuerpo = binario.clone();
+        let outcome = call(session, async move {
+            let mut headers = reqwest::header::HeaderMap::new();
+            headers.insert(
+                reqwest::header::CONTENT_TYPE,
+                reqwest::header::HeaderValue::from_static("application/x-protobuf"),
+            );
+            owned
+                .spclient()
+                .request(
+                    &reqwest::Method::POST,
+                    &route,
+                    Some(headers),
+                    Some(cuerpo.as_slice()),
+                )
+                .await
+                .map(|response| {
+                    let url = pb_read_string(&response, 1);
+                    format!("{} · url={url:?}", describe_bytes(&response))
+                })
+                .map_err(|e| format!("ERROR: {e}"))
+        });
+        match outcome {
+            Ok(summary) => log::info!("SP_TTS: spclient POST {path} → {summary}"),
+            Err(e) => log::info!("SP_TTS: spclient POST {path} → {e}"),
+        }
+
+        // Por último el cuerpo en texto: el spclient de Spotify también acepta
+        // protobuf en formato texto, y con el mismo path.
+        let (status, body) =
+            client_tts_request(session, &url, texto.clone(), bearer.clone(), client.clone());
+        log::info!(
+            "SP_TTS: POST ambas(texto) {path} → {status} · {}",
+            describe_bytes(&body)
+        );
+    }
+}
+
+/// Guardar el audio que devuelve la puerta, para ver qué es.
+///
+/// El cuerpo no es una URL —el campo 1 del proto no se puede leer como
+/// texto—, así que lo que vuelve es otra cosa: un archivo de audio, o un
+/// error con forma de audio. Guardarlo y mirarle la magic es la forma de
+/// saberlo sin adivinar.
+#[cfg(debug_assertions)]
+fn guardar_audio(path: &str, body: &[u8]) {
+    if body.is_empty() {
+        return;
+    }
+    let nombre = path.trim_start_matches('/').replace('/', "_");
+    let destino = std::env::temp_dir().join(format!("starless-{nombre}.bin"));
+    if std::fs::write(&destino, body).is_err() {
+        log::error!("SP_TTS: no se pudo guardar el audio en {destino:?}");
+        return;
+    }
+    let cabeza: Vec<String> = body
+        .iter()
+        .take(32)
+        .map(|byte| format!("{byte:02X}"))
+        .collect();
+    log::info!(
+        "SP_TTS: {path} → 200 · {} bytes · cabeza {} · guardado en {destino:?}",
+        body.len(),
+        cabeza.join(" ")
+    );
+}
+
+/// Las dos credenciales que pide el spclient: el token de la cuenta y el
+/// client token.
+///
+/// Se piden por separado porque no se sabe cuál acepta el servicio: el prefijo
+/// `client-` del nombre es la pista de que quiere el client token, pero eso
+/// es una inferencia y la respuesta decide.
+#[cfg(debug_assertions)]
+fn tts_credentials(session: &Session) -> (Option<String>, Option<String>) {
+    let bearer = match call(session, {
+        let owned = session.clone();
+        async move {
+            owned
+                .login5()
+                .auth_token()
+                .await
+                .map(|token| token.access_token)
+                .map_err(|e| format!("ERROR: {e}"))
+        }
+    }) {
+        Ok(token) => Some(token),
+        Err(e) => {
+            log::error!("SP_TTS: el token de la cuenta no salió: {e}");
+            None
+        }
+    };
+    let client = match call(session, {
+        let owned = session.clone();
+        async move {
+            owned
+                .spclient()
+                .client_token()
+                .await
+                .map_err(|e| format!("ERROR: {e}"))
+        }
+    }) {
+        Ok(token) => Some(token),
+        Err(e) => {
+            log::error!("SP_TTS: el client token no salió: {e}");
+            None
+        }
+    };
+    (bearer, client)
+}
+
+/// Un POST al spclient con la combinación de credenciales que se le pase.
+///
+/// Se prueban las tres a propósito: con la cuenta sola, con el client token
+/// solo y con los dos. Un `200` en una es la puerta; un `401` en las tres
+/// dice que la combinación está mal.
+///
+/// **Lo medido:** la puerta es `POST /client-tts/v1/fulfill` y pide el token de
+/// la **cuenta** —con el client token solo contesta `401`— y el cuerpo en
+/// protobuf **binario**: en texto contesta `400`. Y contesta con el audio, no
+/// con una URL.
+#[cfg(debug_assertions)]
+fn client_tts_request(
+    session: &Session,
+    url: &str,
+    body: Vec<u8>,
+    bearer: Option<String>,
+    client: Option<String>,
+) -> (u16, Vec<u8>) {
+    let method = reqwest::Method::POST;
+    let url = url.to_owned();
+    match call(session, async move {
+        let mut request = reqwest::Client::new()
+            .request(method, &url)
+            .header(
+                "User-Agent",
+                "Spotify/124200290 Windows/0 (librespot)",
+            )
+            .header("Content-Type", "application/x-protobuf")
+            .body(body);
+        if let Some(bearer) = bearer {
+            request = request.bearer_auth(bearer);
+        }
+        if let Some(client) = client {
+            request = request.header("client-token", client);
+        }
+
+        match request.send().await {
+            Ok(response) => {
+                let status = response.status().as_u16();
+                let bytes = response.bytes().await.unwrap_or_default();
+                Ok((status, bytes.to_vec()))
+            }
+            Err(e) => Ok((0, format!("ERROR: {e}").into_bytes())),
+        }
+    }) {
+        Ok(result) => result,
+        Err(e) => (0, format!("ERROR: {e}").into_bytes()),
+    }
+}
+
+/// Una request al host del TTS, con las dos credenciales a la vez.
+///
+/// Se mandan las dos porque no se sabe cuál pide: el token de la cuenta para
+/// los servicios del spclient, el client token para los "client-\*". Un `401`
+/// con una y un `200` con la otra es justo el dato que se busca.
+#[cfg(debug_assertions)]
+fn tts_request(
+    session: &Session,
+    method: reqwest::Method,
+    url: &str,
+    body: Option<Vec<u8>>,
+    bearer: Option<String>,
+    client: Option<String>,
+) -> (u16, String) {
+    let method = method.clone();
+    let url = url.to_owned();
+    match call(session, async move {
+        let mut request = reqwest::Client::new()
+            .request(method, &url)
+            .header("User-Agent", "Spotify/124200290 Windows/0 (librespot)");
+        if let Some(bearer) = bearer {
+            request = request.bearer_auth(bearer);
+        }
+        if let Some(client) = client {
+            request = request.header("client-token", client);
+        }
+        if let Some(body) = body {
+            request = request
+                .header("Content-Type", "application/x-protobuf")
+                .body(body);
+        }
+
+        match request.send().await {
+            Ok(response) => {
+                let status = response.status().as_u16();
+                let bytes = response.bytes().await.unwrap_or_default();
+                Ok((status, describe_bytes(&bytes)))
+            }
+            Err(e) => Ok((0, format!("ERROR: {e}"))),
+        }
+    }) {
+        Ok(result) => result,
+        Err(e) => (0, format!("ERROR: {e}")),
+    }
+}

@@ -1,15 +1,9 @@
 import { Play } from "lucide-react";
 import { motion } from "motion/react";
 import type { StringKey } from "../lib/i18n";
-import {
-  formatDuration,
-  largestImage,
-  type Track,
-  trackArtists,
-  trackRowKeys,
-} from "../lib/spotify";
-
-const SPRING = { type: "spring" as const, stiffness: 420, damping: 32 };
+import { SPRING } from "../lib/motion";
+import { type Artist, coverImage, formatDuration, type Track, trackRowKeys } from "../lib/spotify";
+import { ArtistLine } from "./ArtistLine";
 
 type NumberedTrackListProps = {
   tracks: Track[];
@@ -21,6 +15,10 @@ type NumberedTrackListProps = {
   loading?: boolean;
   error?: string | null;
   empty?: string | null;
+  /** The row's extras: the artist's name opens their page. */
+  onOpenArtist?: (artist: Artist) => void;
+  /** The row's extras: the three dots. Absent and the column is not drawn. */
+  trackMenu?: (track: Track) => React.ReactNode;
   /**
    * Off when every song comes from the same record.
    *
@@ -56,15 +54,19 @@ export function NumberedTrackList({
   error,
   empty,
   showAlbum = true,
+  onOpenArtist,
+  trackMenu,
 }: NumberedTrackListProps) {
   const columns = showAlbum ? "minmax(0,1.6fr) minmax(0,1fr) 64px" : "minmax(0,1fr) 64px";
   const rowKeys = trackRowKeys(tracks);
+  /** The dots take a column on the rows and on the header, or the header drifts. */
+  const grid = `40px ${columns}${trackMenu ? " 40px" : ""}`;
 
   return (
     <div className="overflow-hidden rounded-card border border-white/8 bg-white/4">
       <div
         className="grid items-center gap-4 border-b border-white/8 px-4 py-2.5"
-        style={{ gridTemplateColumns: `40px ${columns}` }}
+        style={{ gridTemplateColumns: grid }}
       >
         <span className="text-right text-[12px] font-semibold tracking-wide uppercase text-ink-faint">
           #
@@ -80,6 +82,7 @@ export function NumberedTrackList({
         <span className="text-right text-[12px] font-semibold tracking-wide uppercase text-ink-faint">
           {t.columnTime}
         </span>
+        {trackMenu && <span />}
       </div>
 
       {loading && <Note>{t.loading}</Note>}
@@ -91,7 +94,7 @@ export function NumberedTrackList({
           const isPlaying = track.id === nowPlayingId;
           const isLoading = track.id === loadingId;
           const isFailed = track.id === failedId;
-          const cover = largestImage(track.album?.images);
+          const cover = coverImage(track.album?.images);
 
           return (
             <motion.div
@@ -110,7 +113,7 @@ export function NumberedTrackList({
               className={`group grid cursor-pointer items-center gap-4 border-b border-white/8 px-4 py-2 text-left transition-colors duration-200 last:border-b-0 hover:bg-white/6 ${
                 isPlaying ? "bg-white/6" : ""
               }`}
-              style={{ gridTemplateColumns: `40px ${columns}` }}
+              style={{ gridTemplateColumns: grid }}
             >
               <span className="relative grid place-items-center text-right">
                 <span
@@ -166,7 +169,11 @@ export function NumberedTrackList({
                   >
                     {track.name}
                   </p>
-                  <p className="truncate text-[12.5px] text-ink-muted">{trackArtists(track)}</p>
+                  <ArtistLine
+                    track={track}
+                    onOpenArtist={onOpenArtist}
+                    className="truncate text-[12.5px] text-ink-muted"
+                  />
                 </div>
               </div>
 
@@ -179,6 +186,8 @@ export function NumberedTrackList({
               <span className="tabular text-right text-[12.5px] text-ink-muted">
                 {formatDuration(track.duration_ms)}
               </span>
+
+              {trackMenu?.(track)}
             </motion.div>
           );
         })}

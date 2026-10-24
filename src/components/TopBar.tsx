@@ -41,7 +41,7 @@ type TopBarProps = {
   updateVersion?: string | null;
 };
 
-const SPRING = { type: "spring" as const, stiffness: 420, damping: 32 };
+import { SPRING } from "../lib/motion";
 
 /**
  * The top bar: floating glass, carrying the whole chrome of the app.
@@ -187,9 +187,9 @@ export function TopBar({
             aria-label={t.navHome}
             aria-current={active === "navHome" ? "page" : undefined}
             data-tauri-drag-region={false}
-            className="grid size-10 shrink-0 place-items-center rounded-pill bg-accent text-ground transition-[filter] duration-200 hover:brightness-110"
+            className="grid size-10 shrink-0 place-items-center rounded-pill bg-accent text-on-accent transition-[filter] duration-200 hover:brightness-110"
           >
-            <House className="size-[18px] text-ground" strokeWidth={2.5} />
+            <House className="size-[18px] text-on-accent" strokeWidth={2.5} />
           </motion.button>
 
           <span className="h-6 w-px shrink-0 bg-white/10" />

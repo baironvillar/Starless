@@ -51,6 +51,27 @@ pub struct Settings {
     /// depth is their call, not the design system's.
     #[serde(default)]
     pub menu_opacity: Option<u8>,
+
+    /// The accent colour the user picked, as `#rrggbb`, or `None` for the one
+    /// DESIGN.md ships.
+    ///
+    /// A string rather than three bytes because this one is never read back in
+    /// Rust: the frontend applies it to a CSS variable, and the only thing Rust
+    /// does with it is refuse a value that is not a colour. See `save_accent`.
+    #[serde(default)]
+    pub accent: Option<String>,
+
+    /// How the library is ordered, as one of [`LIBRARY_SORTS`].
+    ///
+    /// A string rather than an enum because this file outlives any build: a value a
+    /// later version drops still has to deserialise. `saved_library_sort` is what
+    /// checks it.
+    #[serde(default)]
+    pub library_sort: Option<String>,
+
+    /// Grid or list, as one of [`LIBRARY_VIEWS`]. Same reasoning as `library_sort`.
+    #[serde(default)]
+    pub library_view: Option<String>,
 }
 
 /// Read-modify-write, so the day a third field appears this keeps working
@@ -142,6 +163,103 @@ pub fn save_menu_opacity(opacity: u8) {
     update(|settings| settings.menu_opacity = Some(opacity));
 }
 
+/// Remember the accent colour. Refuses anything that is not `#rrggbb`.
+///
+/// This is the one setting in the file whose value becomes a CSS custom
+/// property on `:root`, so it is the one that can put a string written por
+/// alguien en la página entera. The check lives here and not in the frontend
+/// because the frontend is the part that can be talked into skipping it.
+pub fn save_accent(color: &str) {
+    if !is_hex_color(color) {
+        log::warn!("color de acento ignorado, no es #rrggbb: {color}");
+        return;
+    }
+    let color = color.to_ascii_lowercase();
+    if load().accent.as_deref() == Some(color.as_str()) {
+        return;
+    }
+    update(|settings| settings.accent = Some(color));
+}
+
+/// The chosen accent, or `None` to leave the one from DESIGN.md in place.
+///
+/// Checked on the way out too, not only on the way in: a `settings.json` is a
+/// file on disk and a hand edit is as likely as a bad write. A colour that is
+/// not a colour falls back to the default instead of reaching the page.
+pub fn saved_accent() -> Option<String> {
+    let accent = load().accent?;
+    is_hex_color(&accent).then(|| accent.to_ascii_lowercase())
+}
+
+fn is_hex_color(value: &str) -> bool {
+    let Some(hex) = value.strip_prefix('#') else {
+        return false;
+    };
+    hex.len() == 6 && hex.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// How the library opens: by name, and which way round.
+pub const DEFAULT_LIBRARY_SORT: &str = "name-asc";
+
+/// The four orders the data can answer. Anything else in the file is ignored.
+pub const LIBRARY_SORTS: [&str; 4] = ["name-asc", "name-desc", "creator", "tracks"];
+
+/// Which way the shelf is drawn. The grid is the one that ships, because the card
+/// is what the artwork is for.
+pub const DEFAULT_LIBRARY_VIEW: &str = "grid";
+
+pub const LIBRARY_VIEWS: [&str; 2] = ["grid", "list"];
+
+/// Remember how the library is ordered.
+///
+/// Refuses anything outside [`LIBRARY_SORTS`] for the reason `save_accent` refuses
+/// anything that is not a colour: a `settings.json` is a file on disk, and a value
+/// that reaches the frontend as an order is a switch statement with a hole in it.
+pub fn save_library_sort(sort: &str) {
+    if !LIBRARY_SORTS.contains(&sort) {
+        log::warn!("orden de biblioteca ignorado, no es una orden conocida: {sort}");
+        return;
+    }
+    if load().library_sort.as_deref() == Some(sort) {
+        return;
+    }
+    update(|settings| settings.library_sort = Some(sort.to_string()));
+}
+
+/// Same gate on the way out as on the way in. See `saved_accent`.
+pub fn saved_library_sort() -> &'static str {
+    known_or_default(load().library_sort.as_deref(), &LIBRARY_SORTS, DEFAULT_LIBRARY_SORT)
+}
+
+pub fn save_library_view(view: &str) {
+    if !LIBRARY_VIEWS.contains(&view) {
+        log::warn!("vista de biblioteca ignorada, no es una vista conocida: {view}");
+        return;
+    }
+    if load().library_view.as_deref() == Some(view) {
+        return;
+    }
+    update(|settings| settings.library_view = Some(view.to_string()));
+}
+
+pub fn saved_library_view() -> &'static str {
+    known_or_default(load().library_view.as_deref(), &LIBRARY_VIEWS, DEFAULT_LIBRARY_VIEW)
+}
+
+/// The saved value when it is one this build knows, and the default when it is not.
+///
+/// A hand-edited file is as likely as a bad write, and an order this build does not
+/// know would reach the frontend and leave a switch with no case that matches.
+fn known_or_default<'a>(
+    saved: Option<&str>,
+    known: &[&'a str],
+    default: &'a str,
+) -> &'a str {
+    saved
+        .and_then(|value| known.iter().find(|option| **option == value).copied())
+        .unwrap_or(default)
+}
+
 /// The volume to open at, or `None` when the user has never chosen one.
 pub fn saved_volume() -> Option<u16> {
     load().volume
@@ -153,4 +271,64 @@ pub fn saved_menu_opacity() -> u8 {
         .menu_opacity
         .unwrap_or(DEFAULT_MENU_OPACITY)
         .clamp(MENU_OPACITY_MIN, MENU_OPACITY_MAX)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        is_hex_color, known_or_default, LIBRARY_SORTS, LIBRARY_VIEWS, DEFAULT_LIBRARY_SORT,
+    };
+
+    /// The accent is the one setting whose value is written onto `:root`, so the
+    /// gate that keeps it a colour is the test that matters. A `settings.json` is
+    /// a file on disk: a hand edit is as likely as a bad write, and whatever is in
+    /// it ends up in the page.
+    #[test]
+    fn only_six_hex_digits_count_as_a_colour() {
+        assert!(is_hex_color("#c9f73c"));
+        assert!(is_hex_color("#C9F73C"), "mayúsculas, se normalizan después");
+
+        assert!(!is_hex_color("c9f73c"), "sin el # no es un color CSS");
+        assert!(!is_hex_color("#c9f73"), "cinco dígitos");
+        assert!(!is_hex_color("#c9f73cff"), "ocho dígitos");
+        assert!(!is_hex_color("#c9f73g"), "g no es hexadecimal");
+        assert!(!is_hex_color("#-9f73c"), "guion donde va un dígito");
+        assert!(!is_hex_color(""), "vacío");
+    }
+
+    /// What the check is actually for: a value that would end the property and
+    /// start another one.
+    #[test]
+    fn a_value_that_would_escape_the_property_is_refused() {
+        assert!(!is_hex_color("#c9f73c; background: red"));
+        assert!(!is_hex_color("#c9f73c;} :root{--color-accent:red"));
+        assert!(!is_hex_color("url(javascript:alert(1))"));
+    }
+
+    /// The order and the view cross to the frontend as a string that a `switch` acts
+    /// on, so an unrecognised value is the same class of problem as a value that
+    /// would escape a custom property: the file on disk decides, and the file on
+    /// disk can be anything.
+    #[test]
+    fn only_the_orders_and_the_views_this_build_knows_are_kept() {
+        for sort in LIBRARY_SORTS {
+            assert_eq!(known_or_default(Some(sort), &LIBRARY_SORTS, DEFAULT_LIBRARY_SORT), sort);
+        }
+
+        // A hand edit, an older build, and a value that is not an order at all.
+        assert_eq!(
+            known_or_default(Some("recently-added"), &LIBRARY_SORTS, DEFAULT_LIBRARY_SORT),
+            DEFAULT_LIBRARY_SORT
+        );
+        assert_eq!(
+            known_or_default(Some(""), &LIBRARY_SORTS, DEFAULT_LIBRARY_SORT),
+            DEFAULT_LIBRARY_SORT
+        );
+        assert_eq!(known_or_default(None, &LIBRARY_SORTS, DEFAULT_LIBRARY_SORT), DEFAULT_LIBRARY_SORT);
+
+        // The same list, not the other one: "grid" is not an order and "tracks" is
+        // not a view, so neither may satisfy the other's gate.
+        assert!(!LIBRARY_VIEWS.contains(&"tracks"));
+        assert!(!LIBRARY_SORTS.contains(&"grid"));
+    }
 }

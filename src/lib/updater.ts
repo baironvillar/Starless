@@ -1,5 +1,6 @@
+import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
-import { check, type Update } from "@tauri-apps/plugin-updater";
+import { check, type Update as TauriUpdate, Update } from "@tauri-apps/plugin-updater";
 
 /**
  * Whether a newer Starless exists, and the job of installing it.
@@ -25,9 +26,9 @@ export type UpdateState =
   | { status: "idle" }
   | { status: "checking" }
   | { status: "current" }
-  | { status: "available"; update: Update }
+  | { status: "available"; update: TauriUpdate }
   | { status: "downloading"; received: number; total: number }
-  | { status: "ready"; update: Update }
+  | { status: "ready"; update: TauriUpdate }
   | { status: "error" }
   /**
    * A version that does not exist, announced by the dev panel.
@@ -137,7 +138,10 @@ export async function checkForUpdate(): Promise<void> {
  * `downloadAndInstall`, so nothing after this line runs — including the cleanup
  * that a caller might reasonably expect.
  */
-export async function installUpdate(update: Update): Promise<void> {
+export async function installUpdate(
+  update: TauriUpdate,
+  sink: (state: UpdateState) => void = publish,
+): Promise<void> {
   let received = 0;
   let total = 0;
 
@@ -153,20 +157,182 @@ export async function installUpdate(update: Update): Promise<void> {
       case "Started":
         total = event.data.contentLength ?? 0;
         received = 0;
-        publish({ status: "downloading", received, total });
+        sink({ status: "downloading", received, total });
         break;
       case "Progress":
         received += event.data.chunkLength;
-        publish({ status: "downloading", received, total });
+        sink({ status: "downloading", received, total });
         break;
       case "Finished":
-        publish({ status: "ready", update });
+        sink({ status: "ready", update });
         break;
     }
   });
 
-  publish({ status: "ready", update });
+  sink({ status: "ready", update });
   // Tauri exits the process once the installer takes over. This call exists only
   // so a running dev build does not sit there with a dead button.
   await update.close();
+}
+
+// ---------------------------------------------------------------------------
+// The prerelease channel
+// ---------------------------------------------------------------------------
+
+/**
+ * Where a prerelease is looked up, and why it is not `releases/latest`.
+ *
+ * GitHub does not redirect `releases/latest` to a prerelease. That is not an
+ * inconvenience here, it is the mechanism: it is what keeps a build of
+ * `develop` from ever being offered to somebody who only wanted the app. So the
+ * prerelease needs its own door, and this one is the releases API listing them
+ * newest first.
+ *
+ * No token, and no polling: a repository that is not private answers this
+ * without one, and it is a button somebody presses once, not a request the app
+ * makes on every launch.
+ */
+const RELEASES_API = "https://api.github.com/repos/baironvillar/Starless/releases?per_page=10";
+
+type GithubRelease = {
+  tag_name: string;
+  prerelease: boolean;
+  draft: boolean;
+  assets: { name: string; browser_download_url: string }[];
+};
+
+/**
+ * Its own state, separate from the release channel's.
+ *
+ * Not an extra case in `UpdateState` and not a second store wearing its
+ * clothes: the badge on the Settings button asks the release channel whether to
+ * nag, and a build of `develop` must never be the reason it nags. Sharing one
+ * store would put a `0.4.1-dev` in the badge of somebody who is happily on
+ * `0.4.0`, and the badge is the one thing in this app that is allowed to be
+ * unasked-for.
+ */
+export type PrereleaseState =
+  | { status: "idle" }
+  | { status: "checking" }
+  | { status: "none" }
+  /** The prerelease is exactly what is running. Nothing to install, nothing wrong. */
+  | { status: "same"; version: string }
+  | { status: "available"; update: TauriUpdate }
+  | { status: "downloading"; received: number; total: number }
+  | { status: "ready"; update: TauriUpdate }
+  | { status: "error" };
+
+let prerelease: PrereleaseState = { status: "idle" };
+const prereleaseListeners = new Set<(state: PrereleaseState) => void>();
+
+function publishPrerelease(state: PrereleaseState) {
+  prerelease = state;
+  for (const listener of prereleaseListeners) listener(state);
+}
+
+export function subscribePrerelease(listener: (state: PrereleaseState) => void): () => void {
+  prereleaseListeners.add(listener);
+  listener(prerelease);
+  return () => prereleaseListeners.delete(listener);
+}
+
+export function prereleaseState(): PrereleaseState {
+  return prerelease;
+}
+
+/** The prerelease's version, for the row's label. */
+export function prereleaseVersion(state: PrereleaseState): string | null {
+  return state.status === "available" || state.status === "ready"
+    ? state.update.version
+    : state.status === "same"
+      ? state.version
+      : null;
+}
+
+export function installablePrerelease(state: PrereleaseState): TauriUpdate | null {
+  return state.status === "available" || state.status === "ready" ? state.update : null;
+}
+
+/**
+ * Ask GitHub for the newest prerelease and turn it into an installable update.
+ *
+ * **The manifest is fetched by hand on purpose.** `check()` can only read the
+ * endpoint baked into `tauri.conf.json`, which is the public one on purpose.
+ * Reading a prerelease's `latest.json` directly and building an `Update` from it
+ * does not lower the bar by one notch: the signature is checked in Rust against
+ * the public key embedded in the binary, the version is inside what gets signed,
+ * and a manifest that carries its own `config.pubkey` is ignored — the plugin has
+ * a test for exactly that. What this cannot do is install anything that was not
+ * signed with the key that is already on this machine.
+ */
+export async function checkPrerelease(): Promise<void> {
+  if (prerelease.status === "checking") return;
+  publishPrerelease({ status: "checking" });
+
+  try {
+    const response = await fetch(RELEASES_API, {
+      headers: { Accept: "application/vnd.github+json" },
+    });
+    if (!response.ok) throw new Error(`GitHub respondió ${response.status}`);
+    const releases = (await response.json()) as GithubRelease[];
+
+    // Drafts are not there to download yet, and the newest published prerelease
+    // is the first one in a list that GitHub already sorted.
+    const found = releases.find((r) => r.prerelease && !r.draft);
+    const manifest = found?.assets.find((a) => a.name === "latest.json");
+    if (!found || !manifest) {
+      publishPrerelease({ status: "none" });
+      return;
+    }
+
+    const metadata = await (await fetch(manifest.browser_download_url)).json();
+    const current = await getVersion();
+
+    // Refusing to go backwards matters more than refusing to repeat: the whole
+    // point of this button is to get onto `develop`, and a prerelease older than
+    // what is installed would be the updater offering to make the app older.
+    if (!isNewerThan(metadata.version, current)) {
+      publishPrerelease(
+        metadata.version === current
+          ? { status: "same", version: metadata.version }
+          : { status: "none" },
+      );
+      return;
+    }
+
+    publishPrerelease({ status: "available", update: new Update(metadata) });
+  } catch (e) {
+    // The same reasoning as `checkForUpdate`: GitHub being unreachable is a fact
+    // about the network, not about the installation.
+    console.warn("Starless: no se pudo comprobar la prerelease", e);
+    publishPrerelease({ status: "error" });
+  }
+}
+
+/**
+ * Install a prerelease, reporting progress to the prerelease channel.
+ *
+ * The translation is here rather than in the component because the two channels
+ * share `installUpdate` and only differ in where the progress goes. A component
+ * that had to do this itself would be re-deriving the mapping every time.
+ */
+export async function installPrerelease(update: TauriUpdate): Promise<void> {
+  await installUpdate(update, (state) => {
+    if (state.status === "downloading") {
+      publishPrerelease({ status: "downloading", received: state.received, total: state.total });
+    } else if (state.status === "ready") {
+      publishPrerelease({ status: "ready", update: state.update });
+    }
+  });
+}
+
+/** `1.10.0` is newer than `1.9.0`, which a string comparison gets backwards. */
+function isNewerThan(candidate: string, current: string): boolean {
+  const a = candidate.split(".").map((n) => Number.parseInt(n, 10) || 0);
+  const b = current.split(".").map((n) => Number.parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const diff = (a[i] ?? 0) - (b[i] ?? 0);
+    if (diff !== 0) return diff > 0;
+  }
+  return false;
 }

@@ -10,7 +10,7 @@ type UpdateAlertProps = {
 /** Long enough to read two lines, short enough that it is not in the way. */
 const ALERT_MS = 7_000;
 
-const SPRING = { type: "spring" as const, stiffness: 420, damping: 32 };
+import { SPRING } from "../lib/motion";
 
 /**
  * "There is a newer version", said once.

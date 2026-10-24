@@ -3,6 +3,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { StringKey } from "../lib/i18n";
+import { SPRING } from "../lib/motion";
 
 /**
  * How long the confirmation is on screen before the panel gets out of the way.
@@ -115,7 +116,7 @@ export function FeedbackPanel({ t, onClose }: FeedbackPanelProps) {
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ type: "spring", stiffness: 420, damping: 32 }}
+        transition={SPRING}
         className="glass-overlay flex max-h-full w-full max-w-[560px] flex-col gap-5 overflow-auto rounded-card px-8 py-8"
       >
         <div>
@@ -145,7 +146,7 @@ export function FeedbackPanel({ t, onClose }: FeedbackPanelProps) {
               setAttachLog(e.target.checked);
               setPreview(null);
             }}
-            className="mt-0.5 size-4 shrink-0 accent-[var(--accent)]"
+            className="mt-0.5 size-4 shrink-0 accent-[var(--color-accent)]"
           />
           <span className="flex min-w-0 flex-col gap-1">
             <span className="text-[12.5px] font-semibold">{t.feedbackAttachLog}</span>
@@ -197,7 +198,7 @@ export function FeedbackPanel({ t, onClose }: FeedbackPanelProps) {
             type="button"
             onClick={() => void send()}
             disabled={busy || sent !== null}
-            className="flex-1 rounded-pill bg-accent px-5 py-3 text-[13.5px] font-semibold text-ground transition-opacity duration-200 hover:opacity-90 disabled:opacity-45"
+            className="flex-1 rounded-pill bg-accent px-5 py-3 text-[13.5px] font-semibold text-on-accent transition-opacity duration-200 hover:opacity-90 disabled:opacity-45"
           >
             {busy ? t.crashSending : t.feedbackSend}
           </button>
