@@ -40,6 +40,47 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.5.4",
+    date: "2026-10-24",
+    released: true,
+    sections: {
+      es: [
+        {
+          title: "Corregido",
+          items: [
+            "La app tardaba 5,5 segundos en mostrar la biblioteca. Los pedidos salían antes de que la sesión terminara de conectar, así que fallaban, y el frontend los reintentaba cuatro segundos después: la espera estaba en el reintento y no en la conexión. Ahora el backend espera a que la sesión esté lista y responde de una.",
+            "El DJ se quedaba mudo un par de segundos antes de la frase que cierra un tramo. El audio se pedía por adelantado, pero sólo para las páginas siguientes: la primera se pedía en el momento de hablarla. Ahora la primera página también lo pide, y la misma frase nunca se pide dos veces.",
+            "El log dice cuánto tarda cada lectura. «Cargar la biblioteca es lento» no es un error que nadie pueda arreglar; «la biblioteca tardó 1211 ms» sí.",
+          ],
+        },
+        {
+          title: "Textos",
+          items: [
+            "Los textos de la app ya no usan el voseo y son más cortos. «Prerelease de develop» no explica qué es develop: dice lo que hace.",
+            "Las notas de cada versión se reescribieron en español neutro y más corto, en la app y en GitHub.",
+          ],
+        },
+      ],
+      en: [
+        {
+          title: "Fixed",
+          items: [
+            "The app took 5.5 seconds to show the library. The requests went out before the session finished connecting, so they failed, and the frontend retried them four seconds later: the wait was in the retry, not in the connection. The backend now waits for the session to be ready and answers in one go.",
+            "The DJ stayed silent for a couple of seconds before the line that closes a stretch. The audio was asked for in advance, but only for the pages that follow: the first page asked for it at the moment it was spoken. The first page asks for it in advance too now, and the same line is never asked for twice.",
+            "The log says how long each read takes. 'Loading the library is slow' is not a bug anybody can fix; 'the library took 1211 ms' is.",
+          ],
+        },
+        {
+          title: "Copy",
+          items: [
+            "The app's copy no longer uses the voseo and is shorter. 'Develop prerelease' does not explain what develop is: it says what it does.",
+            "The notes of each version were rewritten in neutral Spanish and shorter, in the app and on GitHub.",
+          ],
+        },
+      ],
+    },
+  },
+  {
     version: "0.5.3",
     date: "2026-10-23",
     released: true,

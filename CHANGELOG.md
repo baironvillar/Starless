@@ -30,6 +30,21 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [0.5.4] — 2026-10-24 · prerelease
+
+### Fixed / Corregido
+
+- **La app tardaba 5,5 segundos en mostrar la biblioteca.** Los pedidos salían antes de que la sesión terminara de conectar, así que fallaban, y el frontend los reintentaba cuatro segundos después: la espera estaba en el reintento y no en la conexión. Ahora el backend espera a que la sesión esté lista y responde de una.
+- **El DJ se quedaba mudo un par de segundos antes de la frase que cierra un tramo.** El audio se pedía por adelantado, pero sólo para las páginas siguientes: la primera se pedía en el momento de hablarla. Ahora la primera página también lo pide, y la misma frase nunca se pide dos veces.
+- **El log dice cuánto tarda cada lectura.** «Cargar la biblioteca es lento» no es un error que nadie pueda arreglar; «la biblioteca tardó 1211 ms» sí.
+
+### Copy / Textos
+
+- **Los textos de la app ya no usan el voseo y son más cortos.** «Prerelease de develop» no explica qué es develop: dice lo que hace.
+- **Las notas de cada versión se reescribieron en español neutro y más corto**, en la app y en GitHub.
+
+---
+
 ## [0.5.3] — 2026-10-23 · prerelease
 
 ### Fixed / Corregido
