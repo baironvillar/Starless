@@ -96,29 +96,35 @@ jobs:
       # La sección se busca por la versión del manifiesto, que es la del tag por
       # el paso de arriba: un tag y un changelog que no hablan de lo mismo es un
       # error, y sale con error en vez de publicar unas notas de otra versión.
+      #
+      # La búsqueda está en `scripts/releases.ts`, que es el mismo archivo que
+      # arregla las releases ya publicadas: la regla de qué son las notas de una
+      # versión está escrita una sola vez, y no una acá y otra en el script.
       - name: Las notas de la release son el changelog
         id: notas
         shell: pwsh
         run: |
-          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
-          # `ReadAllText` con UTF-8 explícito: el changelog está lleno de rayas
-          # y comillas angulares, y leerlo con la codificación por omisión los
-          # convierte en basura antes de que nadie los vea.
-          $md = [System.IO.File]::ReadAllText("$PWD/CHANGELOG.md", [System.Text.Encoding]::UTF8)
-          $seccion = [regex]::Match($md, "(?ms)^## \[$([regex]::Escape($version))\][^\n]*\n.*?(?=^## \[|^---\s*$)")
-          if (-not $seccion.Success) {
-            Write-Host "::error::CHANGELOG.md no tiene una sección para $version"
-            exit 1
-          }
-          $body = $seccion.Value.Trim()
-          "body<<NOTAS_EOF" >> $env:GITHUB_OUTPUT
-          $body >> $env:GITHUB_OUTPUT
-          "NOTAS_EOF" >> $env:GITHUB_OUTPUT
+          $body = bun scripts/releases.ts notes
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # El heredoc se escribe a mano, con LF y sin BOM. La redirección de
+          # PowerShell escribe CRLF, y las notas tienen que ser el texto del
+          # changelog tal cual: el paso del final compara el cuerpo de la
+          # release y el `notes` del manifest contra el changelog, y con CRLF la
+          # comparación falla siempre —y ese paso es el que frena la publicación.
+          $notas = ($body -join "`n") + "`n"
+          $salida = "body<<NOTAS_EOF`n" + $notas + "NOTAS_EOF`n"
+          [System.IO.File]::AppendAllText(
+            $env:GITHUB_OUTPUT,
+            $salida,
+            [System.Text.UTF8Encoding]::new($false)
+          )
           # `${version}` y no `$version`: un dos puntos pegado a un nombre de
           # variable lo convierte en un nombre calificado y el script entero deja
           # de parsear. El runner se entera con un error de sintaxis, en el
           # paso que publica la release.
-          Write-Host "Notas de ${version}: $($body.Length) caracteres"
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $joined = $body -join "`n"
+          Write-Host "Notas de ${version}: $($joined.Length) caracteres"
 
       # Un tag no tiene por qué ser un commit sano. Son los mismos chequeos que el
       # repo pide antes de un PR, y cortan la publicación: una build que compila no
@@ -136,6 +142,35 @@ jobs:
           cargo test --lib
           if ($LASTEXITCODE -ne 0) { Pop-Location; exit $LASTEXITCODE }
           Pop-Location
+
+      # Las releases que ya están publicadas quedan en la misma forma que va a
+      # quedar esta: los mismos tres archivos, con el mismo nombre, y el cuerpo
+      # tomado del changelog.
+      #
+      # Va **antes** de publicar a propósito: si algo falla acá, la release
+      # nueva ni se crea, y un error después de crearla deja un borrador a
+      # medio hacer. Y el paso es idempotente: una release que ya está en forma
+      # no se toca, así que correrlo en cada release no gasta nada.
+      #
+      # El token es el de la CI, que ya tiene permiso de escritura sobre las
+      # releases: esto no necesita una sesión de `gh` en la máquina de nadie.
+      #
+      # **El paso no corta la publicación.** Arreglar las releases viejas es
+      # housekeeping, y hay dos cosas que pueden fallar sin que la release de
+      # hoy sea inválida: el `GITHUB_TOKEN` de la CI puede no tener permiso
+      # sobre los archivos que subió otra corrida, y la red puede caerse. Lo que
+      # se publica hoy lo valida el paso del final, que sí es bloqueante.
+      - name: Las releases viejas quedan en forma
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bun scripts/releases.ts sync
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::warning::No se pudieron dejar en forma todas las releases viejas."
+            Write-Host "::warning::Las de esta corrida no dependen de esto: el paso final las valida."
+          }
+          exit 0
 
       # Una release de `develop` es una build de prueba. La diferencia no está en
       # cómo se compila sino en cómo se publica: GitHub no redirige
@@ -213,6 +248,18 @@ jobs:
           uploadUpdaterJson: true
           uploadUpdaterSignatures: true
           tauriScript: bun tauri
+          # El nombre del archivo, sin el idioma.
+          #
+          # El bundler de Tauri localize el MSI, así que el archivo sale como
+          # `Starless_0.5.4_x64_en-US.msi` y ése es el nombre que aparece en la
+          # página de la release. El idioma no se puede sacar de la configuración
+          # —el nombre lo arma el bundler—, pero sí del archivo que se sube: el
+          # pattern de abajo le pone el nombre limpio al subirlo.
+          #
+          # Renombrar no rompe nada: el manifest apunta al asset **por id**, y
+          # renombrar un asset en GitHub no cambia su id. La firma tampoco: cubre
+          # el contenido del archivo, no su nombre.
+          releaseAssetNamePattern: "[name]_[version]_x64[ext]"
           # El ícono de `develop` vive en `src-tauri/tauri.dev.conf.json`, y
           # `bun run app` lo pasa por `--config`. La build del runner no lo pasaba, así que
           # toda release publicada llevaba el ícono de producción y una prerelease
@@ -223,3 +270,22 @@ jobs:
           # `a && 'x' || ''` el `''` es falsy y el resultado termina siendo el
           # otro lado igual. Así el orden es el correcto sin tener que pensarlo.
           args: ${{ steps.canal.outputs.desdeMain == 'false' && '--config src-tauri/tauri.dev.conf.json' || '' }}
+
+      # La release recién creada tiene que tener la forma que la app y el
+      # actualizador esperan: tres archivos, con el nombre que la gente busca, y
+      # un manifest que apunta al instalador y no a un archivo que ya no está.
+      #
+      # La release queda en borrador, así que este paso es el último que puede
+      # frenarla. Publicarla a mano es un acto de fe; esto es la prueba de que
+      # lo que se va a publicar sirve.
+      #
+      # La lista de archivos no está escrita acá: está en `scripts/releases.ts`,
+      # que es el mismo que usa el que arregla las releases viejas. Una regla
+      # escrita dos veces es una regla que sooner o later son dos.
+      - name: La release tiene la forma que corresponde
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bun scripts/releases.ts check ${{ github.ref_name }}
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

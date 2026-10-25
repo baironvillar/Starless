@@ -89,9 +89,94 @@ Cosas las hace él y hay que saber que están:
   una lista de commits con una sección de "nuevo contribuidor" —que en un repo de
   una sola persona es el dueño de la app, dicho como si fuera otra—. Las notas de
   una versión están escritas: están en el changelog, y la 0.3.0 las tenía.
+- **Le pone el nombre limpio al instalador.** El bundler de Tauri localize el
+  MSI, así que el archivo sale como `Starless_0.5.4_x64_en-US.msi`. El idioma no
+  se puede sacar de la configuración —el nombre lo arma el bundler—, pero sí del
+  archivo que se sube, y eso es lo que hace el `releaseAssetNamePattern` del
+  action.
+- **Comprueba que la release quedó con la forma que corresponde**, antes de que
+  nadie la publique: tres archivos, con el nombre que corresponde, y un manifest
+  que apunta al instalador. La release queda en borrador, así que ese paso es el
+  último que puede frenarla.
 
 Cuando termine, la release aparece como borrador en la pestaña *Releases*. Revisala
 y le das a **Publish release**. Recién ahí la app instalada la ve.
+
+## La forma de una release
+
+Una release son tres archivos y un párrafo:
+
+| Archivo | Qué es |
+| --- | --- |
+| `Starless_<version>_x64.msi` | el instalador |
+| `Starless_<version>_x64.msi.sig` | su firma |
+| `latest.json` | el manifest que lee la app instalada |
+
+y el cuerpo de la release —y las notas del manifest— son la sección del changelog
+de esa versión. La lista está escrita una sola vez, en
+[`scripts/releases.ts`](../scripts/releases.ts), y la usan el workflow y el script
+que arregla las releases viejas:
+
+```bash
+bun run releases:check          # qué no coincide; no cambia nada
+bun run releases:sync           # lo arregla
+bun run releases:sync v0.5.3    # sólo una
+```
+
+El script necesita un token: `GITHUB_TOKEN`, `GH_TOKEN`, o la sesión de `gh`.
+
+### Si un instalador se queda sin firma
+
+La firma la hace la clave privada, y la clave privada vive en un secreto de la CI: no
+hay copia en ninguna máquina, y su contraseña tampoco. Si un instalador queda en una
+release sin su firma, esa release no se puede arreglar desde la máquina.
+
+Para eso está `.github/workflows/sign.yml`: baja el instalador que ya está en la
+release, lo firma con la clave de la CI y sube la firma al lado. No compila y no
+publica nada —el instalador es el mismo que estaba—:
+
+```bash
+gh workflow run sign.yml --field tag=v0.5.3
+```
+
+Después de eso, `bun run releases:sync` vuelve a escribir el manifest de esa release.
+
+### Por qué un instalador y no dos
+
+Hasta la 0.5.3 la release llevaba los dos: el `.exe` de NSIS y el `.msi`. Eran
+dos formas de instalar lo mismo, y la página de la release tenía cinco archivos
+para descargar. Ahora hay un instalador, el `.msi`.
+
+El `.msi` es el que se queda porque es el que ya usaba el manifest: la clave
+`windows-x86_64` del manifest apunta al `.msi`, y el plugin busca primero la
+clave del tipo de instalador (`windows-x86_64-msi`) y después esa. Una copia
+instalada con el `.msi` se actualiza con el `.msi`; una instalada con el `.exe`
+—que es lo que hay entre la 0.3.0 y la 0.5.3— ya no encuentra la clave del
+`.exe` y cae en la genérica, que es el `.msi` también.
+
+**Si instalaste con el `.exe`, instalá el `.msi` una vez.** Quedan dos copias
+en la máquina hasta que desinstales la vieja; a partir de ahí, las
+actualizaciones son del `.msi`.
+
+**El `.msi` instala para toda la máquina; el `.exe`, para el usuario.** Es la
+diferencia entre el `InstallScope="perMachine"` de WiX y el modo `currentUser`
+del instalador de NSIS. Quiere decir que Windows pide permiso de administrador
+al instalar y al actualizar, y que hace falta uno para desinstalar. No es un
+cambio de una versión: es la diferencia entre las dos herramientas, y por eso
+la 0.5.4 lo dice en sus notas.
+
+### Por qué renombrar no rompe nada
+
+El manifest no apunta a los archivos por nombre: apunta al **id** del asset de
+GitHub (`https://api.github.com/repos/OWNER/REPO/releases/assets/1234`), y
+renombrar un asset no cambia su id. La firma tampoco se entera: cubre el
+contenido del archivo, no su nombre, y el plugin la verifica sin comparar el
+nombre del comentario con el del archivo.
+
+Y por eso el script arregla el manifest **antes** de borrar los archivos que
+sobran: al revés habría una ventana en la que el manifest apunta a un asset que
+ya no existe, y la app instalada vería un 404 —que el comprobador toma por "no
+hay nada nuevo"—.
 
 Qué número corresponde a cada tipo de release está escrito en
 [`ROADMAP.md`](../ROADMAP.md#cómo-se-numeran-las-versiones). En corto: los parches

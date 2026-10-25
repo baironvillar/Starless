@@ -43,6 +43,11 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - **Los textos de la app ya no usan el voseo y son más cortos.** «Prerelease de develop» no explica qué es develop: dice lo que hace.
 - **Las notas de cada versión se reescribieron en español neutro y más corto**, en la app y en GitHub.
 
+### Changed / Cambiado
+
+- **La release lleva un solo instalador, y es el `.msi`.** Hasta la 0.5.3 había dos —el `.exe` de NSIS y el `.msi`—, y la página tenía cinco archivos para descargar. Ahora son tres: el instalador, su firma y el manifest. El nombre del instalador tampoco lleva el idioma encima: `Starless_0.5.4_x64.msi` y no `Starless_0.5.4_x64_en-US.msi`.
+- **Si instalaste con el `.exe`, instalá el `.msi` una vez.** El `.msi` instala para toda la máquina y el `.exe` lo hacía sólo para el usuario: Windows pide permiso de administrador, y quedan dos copias en la máquina hasta que desinstales la vieja. A partir de ahí las actualizaciones son del `.msi`.
+
 ---
 
 ## [0.5.3] — 2026-10-23 · prerelease
@@ -220,7 +225,7 @@ La primera versión pública. / The first public release.
 
 ---
 
-## 0.2.0 — reconstruido / reconstructed
+## [0.2.0] — reconstruido / reconstructed
 
 Nunca se publicó. / Never published.
 
@@ -249,7 +254,7 @@ Nunca se publicó. / Never published.
 
 ---
 
-## 0.1.0 — reconstruido / reconstructed
+## [0.1.0] — reconstruido / reconstructed
 
 Nunca se publicó. / Never published.
 
@@ -262,8 +267,11 @@ Nunca se publicó. / Never published.
 
 ---
 
+[0.5.3]: https://github.com/baironvillar/Starless/releases/tag/v0.5.3
 [0.5.2]: https://github.com/baironvillar/Starless/releases/tag/v0.5.2
 [0.5.1]: https://github.com/baironvillar/Starless/releases/tag/v0.5.1
 [0.5.0]: https://github.com/baironvillar/Starless/releases/tag/v0.5.0
+[0.4.0]: https://github.com/baironvillar/Starless/releases/tag/v0.4.0
+[0.3.2]: https://github.com/baironvillar/Starless/releases/tag/v0.3.2
 [0.3.1]: https://github.com/baironvillar/Starless/releases/tag/v0.3.1
 [0.3.0]: https://github.com/baironvillar/Starless/releases/tag/v0.3.0

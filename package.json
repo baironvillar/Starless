@@ -24,7 +24,10 @@
     "version:set": "bun run scripts/version.ts set",
     "updater:key": "bun run scripts/updater.ts key",
     "updater:pubkey": "bun run scripts/updater.ts pubkey",
-    "updater:manifest": "bun run scripts/updater.ts manifest"
+    "updater:manifest": "bun run scripts/updater.ts manifest",
+    "releases:notes": "bun run scripts/releases.ts notes",
+    "releases:check": "bun run scripts/releases.ts check",
+    "releases:sync": "bun run scripts/releases.ts sync"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

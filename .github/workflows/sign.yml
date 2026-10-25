@@ -1,0 +1,103 @@
+name: sign
+
+# Firmar un instalador que ya está en una release.
+#
+# **Por qué existe.** La firma de un instalador la hace la clave privada, y la
+# clave privada no sale de la CI: está en un secreto y no hay copia en ninguna
+# máquina. Si un instalador queda en una release sin su firma, la app
+# instalada no lo puede instalar —el comprobador necesita la firma para saber
+# que el archivo es el que dice ser— y esa release no se puede arreglar desde
+# la máquina: la contraseña de la clave no está en ningún lado.
+#
+# **Qué hace.** No compila: baja el instalador que ya está en la release, lo
+# firma con la misma clave con la que se firmó el resto, y sube la firma al
+# lado. La release queda con los tres archivos y el manifest se puede volver a
+# escribir.
+#
+# **A mano, con el tag de la release:**
+#
+#   gh workflow run sign.yml --field tag=v0.5.3
+#
+# El workflow no publica nada: la release sigue siendo la de antes, con el
+# mismo instalador. Lo único que cambia es que ahora tiene su firma.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "El tag de la release, con la v: v0.5.3"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  sign:
+    name: Firmar el instalador
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Dependencias del frontend
+        run: bun install --frozen-lockfile
+
+      - name: El tag tiene que existir
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = $env:INPUT_TAG
+          if (-not $tag) { Write-Host "::error::Falta el tag."; exit 1 }
+          gh release view $tag --json tagName --jq .tagName
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # La versión va en la firma: el comprobador compara la versión del
+          # manifest con la del comentario firmado, y si no coinciden la
+          # actualización se rechaza.
+          $version = $tag -replace '^v', ''
+          "version=$version" >> $env:GITHUB_ENV
+
+      - name: Bajar el instalador
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          New-Item -ItemType Directory -Force -Path descarga | Out-Null
+          gh release download $env:INPUT_TAG --pattern "Starless_*_x64.msi" --dir descarga --clobber
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $msi = Get-ChildItem descarga -Filter *.msi | Select-Object -First 1
+          if (-not $msi) { Write-Host "::error::La release no tiene un instalador."; exit 1 }
+          Write-Host "Instalador: $($msi.Name) ($($msi.Length) bytes)"
+          "msi=$($msi.FullName)" >> $env:GITHUB_ENV
+
+      - name: Firmarlo
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          bunx tauri signer sign `
+            --private-key "$env:TAURI_SIGNING_PRIVATE_KEY" `
+            --password "$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD" `
+            --app-version $env:version `
+            $env:msi
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path "$env:msi.sig")) {
+            Write-Host "::error::No se creó la firma."
+            exit 1
+          }
+          "sig=$env:msi.sig" >> $env:GITHUB_ENV
+
+      - name: Subir la firma
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload $env:INPUT_TAG $env:sig --clobber
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host "Firma subida a $env:INPUT_TAG"

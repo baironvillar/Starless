@@ -60,6 +60,13 @@ export const CHANGELOG: ChangelogEntry[] = [
             "Las notas de cada versión se reescribieron en español neutro y más corto, en la app y en GitHub.",
           ],
         },
+        {
+          title: "Cambiado",
+          items: [
+            "La release lleva un solo instalador, y es el `.msi`. Hasta la 0.5.3 había dos —el `.exe` de NSIS y el `.msi`— y la página tenía cinco archivos para descargar. Ahora son tres: el instalador, su firma y el manifest. El nombre del instalador tampoco lleva el idioma encima: `Starless_0.5.4_x64.msi` y no `Starless_0.5.4_x64_en-US.msi`.",
+            "Si instalaste con el `.exe`, instala el `.msi` una vez. El `.msi` instala para toda la máquina y el `.exe` lo hacía sólo para el usuario: Windows pide permiso de administrador, y quedan dos copias en la máquina hasta que desinstales la vieja. A partir de ahí las actualizaciones son del `.msi`.",
+          ],
+        },
       ],
       en: [
         {
@@ -75,6 +82,13 @@ export const CHANGELOG: ChangelogEntry[] = [
           items: [
             "The app's copy no longer uses the voseo and is shorter. 'Develop prerelease' does not explain what develop is: it says what it does.",
             "The notes of each version were rewritten in neutral Spanish and shorter, in the app and on GitHub.",
+          ],
+        },
+        {
+          title: "Changed",
+          items: [
+            "The release ships one installer now, and it is the `.msi`. Up to 0.5.3 there were two —the NSIS `.exe` and the `.msi`— and the page had five files to download. There are three now: the installer, its signature and the manifest. The installer's name has no locale on it either: `Starless_0.5.4_x64.msi` and not `Starless_0.5.4_x64_en-US.msi`.",
+            "If you installed with the `.exe`, install the `.msi` once. The `.msi` installs for the whole machine and the `.exe` installed for the user only: Windows asks for administrator rights, and two copies stay on the machine until you uninstall the old one. After that, the updates are the `.msi`'s.",
           ],
         },
       ],
