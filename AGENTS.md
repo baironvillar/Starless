@@ -34,6 +34,16 @@ cargo test --lib     # sobre todo el limpiado del reporte de crash
 `bun run app:build` **falla a propósito** hasta que exista una `pubkey` de firma.
 No es un bug: ver [README](README.md#el-paso-que-casi-nadie-espera).
 
+**No se hace una build sin preguntar.** Una build —`bunx vite build`, `bun run
+app:build`, `cargo build`, o empujar un tag que dispara el workflow de release—
+tarda minutos y compila la máquina entera. Antes de correr una hay que
+preguntarle a quien está del otro lado, y hacerlo aunque parezca que el
+resultado va a ser el mismo. Los chequeos baratos (`bun run lint`, `bun run
+typecheck`, `bun run version`) no cuentan: corren en segundos y son la puerta de
+calidad de cada cambio. La `pubkey` que hace falta para `app:build` es la
+prueba de que esto se cumple: una build de release **no se puede** hacer sin esa
+clave, y esa clave hay que pedirla.
+
 **`bun run app` lleva `--config src-tauri/tauri.dev.conf.json`**, que sólo cambia
 `bundle.icon` para usar `icons-dev/`. El ícono de desarrollo es el mismo dibujo con
 los dos colores al revés —fondo lima, estrella oscura— y existe por una razón
