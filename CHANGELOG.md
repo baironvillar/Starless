@@ -47,7 +47,7 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Changed / Cambiado
 
 - **La release lleva un solo instalador, y es el `.msi`.** Hasta la 0.5.3 había dos —el `.exe` de NSIS y el `.msi`—, y la página tenía cinco archivos para descargar. Ahora son tres: el instalador, su firma y el manifest. El nombre del instalador tampoco lleva el idioma encima: `Starless_0.5.4_x64.msi` y no `Starless_0.5.4_x64_en-US.msi`.
-- **Si instalaste con el `.exe`, instalá el `.msi` una vez.** El `.msi` instala para toda la máquina y el `.exe` lo hacía sólo para el usuario: Windows pide permiso de administrador, y quedan dos copias en la máquina hasta que desinstales la vieja. A partir de ahí las actualizaciones son del `.msi`.
+- **Si instalaste con el `.exe`, instala el `.msi` una vez.** El `.msi` instala para toda la máquina y el `.exe` lo hacía sólo para el usuario: Windows pide permiso de administrador, y quedan dos copias en la máquina hasta que desinstales la vieja. A partir de ahí las actualizaciones son del `.msi`.
 
 ---
 

@@ -152,7 +152,7 @@ function token(): string {
   if (password) return password;
 
   throw new Error(
-    "no hay token: definí GITHUB_TOKEN o GH_TOKEN, o hacé `gh auth login` y volvé a correrlo.",
+    "no hay token: define GITHUB_TOKEN o GH_TOKEN, o haz `gh auth login` y vuelve a correrlo.",
   );
 }
 

@@ -154,7 +154,7 @@ instalada con el `.msi` se actualiza con el `.msi`; una instalada con el `.exe`
 —que es lo que hay entre la 0.3.0 y la 0.5.3— ya no encuentra la clave del
 `.exe` y cae en la genérica, que es el `.msi` también.
 
-**Si instalaste con el `.exe`, instalá el `.msi` una vez.** Quedan dos copias
+**Si instalaste con el `.exe`, instala el `.msi` una vez.** Quedan dos copias
 en la máquina hasta que desinstales la vieja; a partir de ahí, las
 actualizaciones son del `.msi`.
 
