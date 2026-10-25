@@ -18,6 +18,10 @@ name: sign
 #
 #   gh workflow run sign.yml --field tag=v0.5.3
 #
+# Y también con un tag, que es lo que funciona mientras el workflow no está
+# en `main`: empujar `firmar-v0.5.3` firma esa release. El tag se borra
+# después.
+#
 # El workflow no publica nada: la release sigue siendo la de antes, con el
 # mismo instalador. Lo único que cambia es que ahora tiene su firma.
 
@@ -29,6 +33,12 @@ on:
         required: true
         type: string
 
+  # Un tag `firmar-<tag>` firma esa release. El workflow sale del tag, así que
+  # el tag tiene que apuntar a un commit que ya lo tenga.
+  push:
+    tags:
+      - "firmar-*"
+
 permissions:
   contents: write
 
@@ -36,6 +46,9 @@ jobs:
   sign:
     name: Firmar el instalador
     runs-on: windows-latest
+    # Un tag que se borra no firma nada: el workflow dispara también con la
+    # baja del tag, y para entonces ya firmó.
+    if: ${{ github.event_name != 'push' || !github.event.deleted }}
 
     steps:
       - uses: actions/checkout@v4
@@ -47,19 +60,25 @@ jobs:
       - name: Dependencias del frontend
         run: bun install --frozen-lockfile
 
-      - name: El tag tiene que existir
+      - name: La release tiene que existir
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $tag = $env:INPUT_TAG
-          if (-not $tag) { Write-Host "::error::Falta el tag."; exit 1 }
-          gh release view $tag --json tagName --jq .tagName
+          # Un tag `firmar-v0.5.3` pide la release v0.5.3.
+          if ($env:GITHUB_EVENT_NAME -eq 'push') {
+            $release = $env:GITHUB_REF_NAME -replace '^firmar-', ''
+          } else {
+            $release = $env:INPUT_TAG
+          }
+          if (-not $release) { Write-Host "::error::Falta el tag."; exit 1 }
+          gh release view $release --json tagName --jq .tagName
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # La versión va en la firma: el comprobador compara la versión del
           # manifest con la del comentario firmado, y si no coinciden la
           # actualización se rechaza.
-          $version = $tag -replace '^v', ''
+          $version = $release -replace '^v', ''
+          "release=$release" >> $env:GITHUB_ENV
           "version=$version" >> $env:GITHUB_ENV
 
       - name: Bajar el instalador
@@ -68,7 +87,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           New-Item -ItemType Directory -Force -Path descarga | Out-Null
-          gh release download $env:INPUT_TAG --pattern "Starless_*_x64.msi" --dir descarga --clobber
+          gh release download $env:release --pattern "Starless_*_x64.msi" --dir descarga --clobber
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $msi = Get-ChildItem descarga -Filter *.msi | Select-Object -First 1
           if (-not $msi) { Write-Host "::error::La release no tiene un instalador."; exit 1 }
@@ -98,6 +117,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload $env:INPUT_TAG $env:sig --clobber
+          gh release upload $env:release $env:sig --clobber
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Write-Host "Firma subida a $env:INPUT_TAG"
+          Write-Host "Firma subida a $env:release"
