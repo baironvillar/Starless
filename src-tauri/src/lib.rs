@@ -394,6 +394,54 @@ async fn check_prerelease_manifest(app: AppHandle) -> Result<Option<serde_json::
     Ok(Some(metadata))
 }
 
+/// The public channel, resolved in Rust, with the comparison left to the
+/// webview.
+///
+/// **The same deal as the develop channel, and for the same reason.** The
+/// plugin's own check only answers when the version numbers differ, and the
+/// two numbers can be equal while the programs are not: the public 0.5.3 and
+/// the develop 0.5.3 are two different builds that carry the same number. A
+/// build of `develop` that has never seen the public one is told it is up to
+/// date, and the door back to the public line is closed for it.
+///
+/// The endpoint is not written here: the builder already carries the one from
+/// `tauri.conf.json`, and writing it a second time is a second thing to
+/// forget. The signature is still the one embedded in the app, because the
+/// builder brings it too.
+#[tauri::command]
+async fn check_public_manifest(app: AppHandle) -> Result<Option<serde_json::Value>, String> {
+    let updater = app
+        .updater_builder()
+        // The comparison is not this command's business: the webview says what
+        // is installed, and "you are already on it" is an answer.
+        .version_comparator(|_, _| true)
+        .build()
+        .map_err(|e| e.to_string())?;
+    let update = updater.check().await.map_err(|e| e.to_string())?;
+    let Some(update) = update else {
+        return Ok(None);
+    };
+
+    // The fields are read before the update is handed to the resource table:
+    // adding it moves it, and a moved value is not a value.
+    let current_version = update.current_version.clone();
+    let version = update.version.clone();
+    let body = update.body.clone();
+    let raw_json = update.raw_json.clone();
+    let rid = app.resources_table().add(update);
+
+    let mut metadata = serde_json::json!({
+        "rid": rid,
+        "currentVersion": current_version,
+        "version": version,
+        "rawJson": raw_json,
+    });
+    if let Some(body) = body {
+        metadata["body"] = serde_json::Value::String(body);
+    }
+    Ok(Some(metadata))
+}
+
 /// Development only: plant a crashed session on disk so the crash flow can be
 /// walked without crashing.
 ///
@@ -1440,6 +1488,7 @@ pub fn run() {
             previous_session_crashed,
             announce_clean_exit,
             check_prerelease_manifest,
+            check_public_manifest,
             simulate_crash,
             crash_report_preview,
             submit_crash_report,

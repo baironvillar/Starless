@@ -50,6 +50,7 @@ export const CHANGELOG: ChangelogEntry[] = [
           items: [
             "La app tardaba 5,5 segundos en mostrar la biblioteca. Los pedidos salían antes de que la sesión terminara de conectar, así que fallaban, y el frontend los reintentaba cuatro segundos después: la espera estaba en el reintento y no en la conexión. Ahora el backend espera a que la sesión esté lista y responde de una.",
             "El DJ se quedaba mudo un par de segundos antes de la frase que cierra un tramo. El audio se pedía por adelantado, pero sólo para las páginas siguientes: la primera se pedía en el momento de hablarla. Ahora la primera página también lo pide, y la misma frase nunca se pide dos veces.",
+            "La build de develop con el mismo número que la pública decía que estabas al día. El plugin sólo contesta cuando los números difieren, así que la puerta de vuelta a la línea pública quedaba cerrada para quien corría la 0.5.3 de develop. Ahora el manifest público se pide en Rust y la fila ofrece instalar la versión pública del mismo número.",
             "El log dice cuánto tarda cada lectura. «Cargar la biblioteca es lento» no es un error que nadie pueda arreglar; «la biblioteca tardó 1211 ms» sí.",
           ],
         },
@@ -74,6 +75,7 @@ export const CHANGELOG: ChangelogEntry[] = [
           items: [
             "The app took 5.5 seconds to show the library. The requests went out before the session finished connecting, so they failed, and the frontend retried them four seconds later: the wait was in the retry, not in the connection. The backend now waits for the session to be ready and answers in one go.",
             "The DJ stayed silent for a couple of seconds before the line that closes a stretch. The audio was asked for in advance, but only for the pages that follow: the first page asked for it at the moment it was spoken. The first page asks for it in advance too now, and the same line is never asked for twice.",
+            "The develop build with the same number as the public one said you were up to date. The plugin only answers when the numbers differ, so the door back to the public line was closed for whoever was running the develop 0.5.3. The public manifest is now asked for in Rust and the row offers installing the public version with the same number.",
             "The log says how long each read takes. 'Loading the library is slow' is not a bug anybody can fix; 'the library took 1211 ms' is.",
           ],
         },

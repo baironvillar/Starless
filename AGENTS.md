@@ -216,6 +216,18 @@ salen de una captura:
   la 0.5.1; con una sola, el botón promete una cosa y hace otra. Y ni la
   pastilla del botón de Ajustes ni la alerta del arranque lo anuncian: un
   «0.5.1» mientras corres 0.5.3 es una vuelta atrás, no una actualización.
+- **El mismo número no es la misma build, y el plugin no lo distingue.** La 0.5.3
+  pública y la 0.5.3 de `develop` son dos programas distintos con el mismo
+  número, y eso pasa cada vez que una versión sale de `develop` y después se
+  publica: el que quedó con la prerelease tiene el número de la pública y nunca
+  vio la pública. El plugin, con `allowDowngrades`, compara `update.version !=
+  current`: con los números iguales no contesta nada, y la app —que sólo sabe
+  comparar números— le dice a esa persona que está al día y le cierra la puerta
+  de vuelta a la línea pública. **La comparación la tiene que hacer el frontend,
+  que sí sabe en qué línea está**, y por eso el manifest público se pide
+  **entero en Rust** con la comparación apagada (`check_public_manifest`), igual
+  que el de `develop`. El botón se llama "Instalar la {versión} pública" y no
+  "Actualizar": no es una versión más nueva, es otra build.
 - **GitHub devuelve 422 si le pasás una etiqueta que el repositorio no tiene**, y
   eso perdería el reporte entero. `report.rs` reintenta sin etiqueta por eso.
 - **Dos copias abiertas a la vez se hacen ver como un crash.** El marcador es un

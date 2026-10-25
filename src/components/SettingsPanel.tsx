@@ -256,6 +256,12 @@ function Updates({ t }: { t: Record<StringKey, string> }) {
   // The public release is offered even when it is older: being on a prerelease
   // and wanting the public one is a door, not a mistake.
   const goingBack = update ? isGoingBack(update) : false;
+  // The public release and the build that is running can carry the same
+  // number —the public 0.5.3 and the develop 0.5.3— and they are two
+  // different programs. The row says which one it is offering.
+  const sameNumber = update ? update.version === update.currentVersion : false;
+  const backHint = sameNumber ? t.updateGoBackSame : t.updateGoBack;
+  const backLabel = sameNumber ? t.updateGoBackSameShort : t.updateGoBackShort;
 
   return (
     <div className="mt-5">
@@ -266,7 +272,7 @@ function Updates({ t }: { t: Record<StringKey, string> }) {
             state.status === "installFailed"
               ? t.updateInstallError
               : goingBack
-                ? t.updateGoBack.replace("{version}", version ?? "")
+                ? backHint.replace("{version}", version ?? "")
                 : version === null
                   ? t.updatesHint
                   : simulated
@@ -291,9 +297,7 @@ function Updates({ t }: { t: Record<StringKey, string> }) {
                 className="flex items-center gap-2 rounded-pill bg-live px-4 py-2.5 text-[13px] font-semibold text-ground transition-[filter] duration-200 hover:brightness-110"
               >
                 <Download className="size-4" strokeWidth={2} />
-                {goingBack
-                  ? t.updateGoBackShort.replace("{version}", version ?? "")
-                  : t.updateInstall}
+                {goingBack ? backLabel.replace("{version}", version ?? "") : t.updateInstall}
               </button>
             )}
 
