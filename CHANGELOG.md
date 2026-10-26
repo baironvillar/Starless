@@ -30,7 +30,14 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [0.5.4] — 2026-10-24 · prerelease
+## [0.5.4] — 2026-10-26 · prerelease
+
+### New / Nuevo
+
+- **La playlist tiene sus tres puntos, al lado del botón de reproducción.** Abren un menú con tres cosas: mandarla entera a la cola, editar sus detalles y copiar su enlace.
+- **Editar los detalles es una pantalla con la portada, el nombre y la descripción.** La portada se cambia pasando el mouse por encima: aparece un lápiz y un «Elegir una foto», y el archivo se recorta y se sube al guardar. También se puede devolver la portada que puso el dueño y volver a la que arma Spotify con las primeras canciones.
+- **La misma pantalla trae un interruptor: «Hacerla privada».** La playlist deja de aparecer en tu perfil público, y el encabezado lo dice.
+- **El menú tiene tres filas y no doce.** El cliente de escritorio ofrece también el jam, los colaboradores, la descarga, las carpetas y el borrado, y ninguno de esos tiene puerta en esta sesión. Editar los detalles sí: es el mismo mensaje que crea una playlist —un `UPDATE_LIST_ATTRIBUTES`— contra la revisión que la playlist tiene ahora, en vez de la `0,root` de una que todavía no existe.
 
 ### Fixed / Corregido
 
@@ -38,6 +45,7 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - **El DJ se quedaba mudo un par de segundos antes de la frase que cierra un tramo.** El audio se pedía por adelantado, pero sólo para las páginas siguientes: la primera se pedía en el momento de hablarla. Ahora la primera página también lo pide, y la misma frase nunca se pide dos veces.
 - **La build de develop con el mismo número que la pública decía que estabas al día.** El plugin sólo contesta cuando los números difieren, así que la puerta de vuelta a la línea pública quedaba cerrada para quien corría la 0.5.3 de develop. Ahora el manifest público se pide en Rust y la fila ofrece instalar la versión pública del mismo número.
 - **El log dice cuánto tarda cada lectura.** «Cargar la biblioteca es lento» no es un error que nadie pueda arreglar; «la biblioteca tardó 1211 ms» sí.
+- **La cola se paraba en vez de seguir.** Al cambiar de playlist mientras sonaba, la app perdía el lugar de la canción en la cola, y al terminar repetía la misma canción: en el segundo final se paraba y no pasaba a la siguiente. Ahora el lugar se resuelve en el momento del final, y un final más de la misma canción —que el DJ ofrece dos veces— también avanza.
 
 ### Copy / Textos
 

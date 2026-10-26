@@ -41,7 +41,7 @@ export type ChangelogEntry = {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     version: "0.5.4",
-    date: "2026-10-24",
+    date: "2026-10-26",
     released: true,
     sections: {
       es: [
@@ -61,6 +61,7 @@ export const CHANGELOG: ChangelogEntry[] = [
             "El DJ se quedaba mudo un par de segundos antes de la frase que cierra un tramo. El audio se pedía por adelantado, pero sólo para las páginas siguientes: la primera se pedía en el momento de hablarla. Ahora la primera página también lo pide, y la misma frase nunca se pide dos veces.",
             "La build de develop con el mismo número que la pública decía que estabas al día. El plugin sólo contesta cuando los números difieren, así que la puerta de vuelta a la línea pública quedaba cerrada para quien corría la 0.5.3 de develop. Ahora el manifest público se pide en Rust y la fila ofrece instalar la versión pública del mismo número.",
             "El log dice cuánto tarda cada lectura. «Cargar la biblioteca es lento» no es un error que nadie pueda arreglar; «la biblioteca tardó 1211 ms» sí.",
+            "La cola se paraba en vez de seguir. Al cambiar de playlist mientras sonaba, la app perdía el lugar de la canción en la cola, y al terminar repetía la misma canción: en el segundo final se paraba y no pasaba a la siguiente. Ahora el lugar se resuelve en el momento del final, y un final más de la misma canción —que el DJ ofrece dos veces— también avanza.",
           ],
         },
         {
@@ -95,6 +96,7 @@ export const CHANGELOG: ChangelogEntry[] = [
             "The DJ stayed silent for a couple of seconds before the line that closes a stretch. The audio was asked for in advance, but only for the pages that follow: the first page asked for it at the moment it was spoken. The first page asks for it in advance too now, and the same line is never asked for twice.",
             "The develop build with the same number as the public one said you were up to date. The plugin only answers when the numbers differ, so the door back to the public line was closed for whoever was running the develop 0.5.3. The public manifest is now asked for in Rust and the row offers installing the public version with the same number.",
             "The log says how long each read takes. 'Loading the library is slow' is not a bug anybody can fix; 'the library took 1211 ms' is.",
+            "The queue stopped instead of moving on. Changing playlist while a song was playing made the app lose the song's place in the queue, and when it ended the same song played again: on the second ending the app stopped and did not move to the next one. The place is now resolved at the moment of the ending, and a second ending of the same song —which the DJ offers twice— moves on too.",
           ],
         },
         {
