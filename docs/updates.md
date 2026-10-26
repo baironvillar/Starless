@@ -64,6 +64,29 @@ escrito al lado de la release. Si el merge a `main` no es fast-forward, el mismo
 asunto: `git merge --no-ff develop -m "0.3.1"`. El hook de `.githooks/` y el
 workflow lo cobran; ver [`CONTRIBUTING.md`](../CONTRIBUTING.md#los-mensajes-de-commit--commit-messages).
 
+**El tag queda donde se hizo, y `develop` sigue avanzando.** Eso es lo normal:
+el tag marca la versión, no la punta del trabajo. Pero significa que el tag
+puede quedar atrás por commits que ya están en `develop` cuando la release se
+publica. La build que sale del tag entonces no lleva ese trabajo, y la
+prerelease queda nueva sin serlo.
+
+A la 0.5.4 le pasó eso: el tag se hizo el 24 de octubre y el arreglo del
+actualizador —el que abre la puerta de vuelta a la línea pública— entró esa
+noche. La build del tag no lo tenía, y por eso una 0.5.3 de `develop` seguía
+sin puerta a la 0.5.3 pública.
+
+La salida es mover el tag hacia adelante y dejar que la CI rehaga la build:
+
+```bash
+git tag -f v0.3.1 && git push --force origin v0.3.1
+```
+
+Es seguro mientras la release sea un borrador: el tag es lo que dispara la
+corrida, la corrida deja la release en borrador otra vez con los archivos
+nuevos, y hasta que nadie la publica nadie Bajó la vieja. Cuando la release ya
+está publicada, mover el tag es otra historia: la app instalada ya tiene la
+versión y el manifest viejo sigue apuntando a los archivos que se borraron.
+
 Eso es todo. El workflow de `.github/workflows/release.yml` se dispara con el tag
 y hace el resto: corre `lint`, `typecheck`, `bun run version` y `cargo test
 --lib`; compila en un runner de Windows; firma los artefactos; genera
