@@ -957,40 +957,74 @@ export default function App() {
    * itself looks like a bug, and the list the user was scrolling by hand genuinely
    * ran out.
    */
-  const advance = useCallback(() => {
-    if (repeat === "one") {
-      // **La que está sonando es la del lugar**, no la primera con ese id: la
-      // cola puede tener la misma canción dos veces.
-      const current = visibleTracks[queueAtRef.current] ?? loadedTrack;
-      if (current) {
-        playDirect(current, queueAtRef.current);
-        return true;
-      }
-    }
+  /**
+   * Dónde está, en la lista a la vista, la canción que terminó.
+   *
+   * **El lugar recordado se queda viejo cuando la lista cambia.** El usuario
+   * abre otra playlist mientras la canción suena: la lista ahora es otra, y el
+   * número que decía dónde estaba la canción ya no dice nada de ella. La
+   * canción sigue siendo la misma, así que el lugar se busca otra vez — por id,
+   * y sólo cuando el lugar recordado no la tiene.
+   *
+   * **Una canción que no está en la lista no tiene lugar, y la cola vuelve a
+   * empezar.** La app no sabe qué debería seguir a una canción que no tiene
+   * enfrente, y la lista a la vista es la cola: vuelve a empezar por su
+   * primera canción.
+   */
+  const placeOf = useCallback(
+    (songId: string) => {
+      const remembered = queueAtRef.current;
+      if (remembered >= 0 && visibleTracks[remembered]?.id === songId) return remembered;
+      return visibleTracks.findIndex((item) => item.id === songId);
+    },
+    [visibleTracks],
+  );
 
-    // **El siguiente es el que sigue en la cola, por lugar y no por nombre.**
-    // La cola puede tener la misma canción dos veces —el DJ lo hace— y
-    // buscarla por su id encuentra la primera: la que ya sonó. Desde ahí, "el
-    // siguiente" es una canción del pasado, y la app salta para atrás.
-    const at = queueAtRef.current + 1;
-    const next = visibleTracks[at];
-    if (next) {
-      // **La estación pide la canción como la pide el DJ:** primero la frase,
-      // si la hay, y después la música. Una playlist no tiene frases.
-      if (queue?.station) {
-        void playStationTrack(next, at);
+  const advance = useCallback(
+    (ended?: string) => {
+      // **El lugar de la canción que terminó, y no el que quedó escrito hace un
+      // rato.** La lista puede haber cambiado mientras sonaba: el número
+      // guardado dice dónde estaba, no dónde está.
+      //
+      // Sin canción —nada sonando— se usa el lugar recordado: es lo que había
+      // antes de que el lugar se resolviera por canción.
+      const place = ended ? placeOf(ended) : queueAtRef.current;
+
+      if (repeat === "one") {
+        // **La que está sonando es la del lugar**, no la primera con ese id: la
+        // cola puede tener la misma canción dos veces.
+        const current = visibleTracks[place] ?? loadedTrack;
+        if (current) {
+          playDirect(current, place);
+          return true;
+        }
+      }
+
+      // **El siguiente es el que sigue en la cola, por lugar y no por nombre.**
+      // La cola puede tener la misma canción dos veces —el DJ lo hace— y
+      // buscarla por su id encuentra la primera: la que ya sonó. Desde ahí, "el
+      // siguiente" es una canción del pasado, y la app salta para atrás.
+      const at = place + 1;
+      const next = visibleTracks[at];
+      if (next) {
+        // **La estación pide la canción como la pide el DJ:** primero la frase,
+        // si la hay, y después la música. Una playlist no tiene frases.
+        if (queue?.station) {
+          void playStationTrack(next, at);
+          return true;
+        }
+        playDirect(next, at);
         return true;
       }
-      playDirect(next, at);
-      return true;
-    }
-    // Out of tracks. Only repeat-all brings the first one back.
-    if (repeat === "all" && visibleTracks[0]) {
-      playDirect(visibleTracks[0], 0);
-      return true;
-    }
-    return false;
-  }, [repeat, visibleTracks, loadedTrack, playDirect, queue?.station, playStationTrack]);
+      // Out of tracks. Only repeat-all brings the first one back.
+      if (repeat === "all" && visibleTracks[0]) {
+        playDirect(visibleTracks[0], 0);
+        return true;
+      }
+      return false;
+    },
+    [repeat, visibleTracks, loadedTrack, playDirect, queue?.station, playStationTrack, placeOf],
+  );
 
   useEffect(() => {
     if (!status?.finished) return;
@@ -1005,12 +1039,31 @@ export default function App() {
     if (advancedRef.current === ended) return;
 
     advancedRef.current = ended;
-    if (!advance()) {
+    if (!advance(ended)) {
       // Nothing to advance to. Drop the guard so a later track — picked by hand,
       // or arriving from a different list — can still take over cleanly.
       advancedRef.current = null;
     }
   }, [status?.finished, status?.trackId, advance]);
+
+  /**
+   * Una canción que vuelve a sonar es un final nuevo esperando.
+   *
+   * **El guard es de finales, no de canciones.** La misma canción puede estar
+   * dos veces en la cola —el DJ lo hace, y una cola armada a mano también—, y
+   * su segundo final es un segundo final: con el guard guardado por canción,
+   * la app lo toma por el primero y la música se para en medio de la cola.
+   *
+   * El guard se suelta cuando el backend dice que esa canción está sonando
+   * otra vez, que es el único momento que dice "es otra vuelta de la misma
+   * canción".
+   */
+  useEffect(() => {
+    if (!status?.playing) return;
+    if (advancedRef.current === null) return;
+    if (advancedRef.current !== status.trackId) return;
+    advancedRef.current = null;
+  }, [status?.playing, status?.trackId]);
 
   /**
    * Skip past a track that will not play.
@@ -1060,7 +1113,7 @@ export default function App() {
     }
 
     advancedRef.current = failed;
-    if (!advance()) advancedRef.current = null;
+    if (!advance(failed)) advancedRef.current = null;
   }, [status?.error, status?.trackId, advance]);
 
   const onNext = useCallback(() => {
@@ -1095,8 +1148,11 @@ export default function App() {
       if (next) playDirect(next, at);
       return;
     }
-    advance();
-  }, [advance, moveTo, repeat, visibleTracks, playDirect]);
+    // **"Siguiente" avanza desde la canción que está sonando**, y esa se
+    // resuelve por id: la lista pudo haber cambiado mientras sonaba, y el
+    // número guardado dice dónde estaba, no dónde está.
+    advance(status?.trackId ?? loadedTrack?.id);
+  }, [advance, moveTo, repeat, visibleTracks, playDirect, status?.trackId, loadedTrack]);
 
   const onPrevious = useCallback(() => {
     // The Spotify convention, and the one people already have in their fingers:

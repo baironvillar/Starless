@@ -240,12 +240,29 @@ veces pidió la estación se leen sin esperar a que suene nada.
 
 ## 10. El salto de la cola: el lugar, no la canción
 
-La cola se recorre por **número**, no por id. El DJ ofrece la misma canción dos
-veces —en su sesión una canción puede volver— y `findIndex` por id devuelve la
-**primera copia**, la que ya sonó: desde ahí, "el siguiente" es una canción del
-pasado y la app salta para atrás. En el log se veía la secuencia
+La cola se recorre por **número**, y a propósito. El DJ ofrece la misma canción
+dos veces —en su sesión una canción puede volver— y `findIndex` por id devuelve
+la **primera copia**, la que ya sonó: desde ahí, "el siguiente" es una canción
+del pasado y la app salta para atrás. En el log se veía la secuencia
 `1Hu8EMK → 3AuZYC → 1Hu8EMK → 2XuHpC` con cuatro clics: el `findIndex` iba a
 la primera copia de cada una.
+
+**Lo que se arregló (0.5.4).** El lugar de la canción que termina se resuelve
+**en el momento del final**: primero el número recordado, y sólo si ya no tiene
+esa canción, por id. Antes, cambiar de playlist mientras sonaba dejaba el
+número sin sentido —la lista a la vista *es* la cola, y al cambiar de lista la
+canción ya no estaba en ella—, y al terminar la app repetía la misma canción: en
+el segundo final se paraba y no pasaba a la siguiente.
+
+Y el guard del avance automático **no se guarda por id de canción**: se suelta
+cuando el backend dice que esa canción vuelve a sonar, que es el único momento
+que dice "es otra vuelta de la misma canción". Con el id como clave, un final
+más de la misma canción —el DJ la ofrece dos veces, y una cola armada a mano
+también— se tomaba por el primero y la música se paraba en medio de la cola.
+
+**Lo que sigue en pie.** `findIndex` por id sigue devolviendo la primera copia,
+así que los caminos que buscan por id en vez de recibir el número de la fila
+siguen con ese riesgo: `onPlay` lo hace cuando la fila no le pasa su índice.
 
 **Y cada pedido de reproducir lleva un número** (`intent` en `App.tsx`). El
 `dj_speak` es una promesa: la respuesta llega después, y para entonces el
