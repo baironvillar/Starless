@@ -95,6 +95,7 @@ export const strings = {
     // La playlist, dibujada como la dibuja el cliente de escritorio: el tipo de
     // lista arriba y el orden y el filtro al lado de las canciones.
     playlistCollaborative: "Playlist colaborativa",
+    playlistPrivate: "Playlist privada",
     playlistSearch: "Buscar en esta playlist",
     playlistNoMatches: "Ninguna canción de esta playlist coincide con la búsqueda.",
     playlistOrder: "Orden de la lista",
@@ -117,6 +118,26 @@ export const strings = {
     noPlaylistMatches: "Ninguna playlist coincide con la búsqueda.",
     copyLink: "Copiar enlace",
     copyFailed: "No se pudo copiar",
+    // El menú de los tres puntos de una playlist. Tres filas y las tres
+    // hacen algo: las que no podrían, se leen como averiadas.
+    playlistMenu: "Opciones de la playlist",
+    playlistMenuFor: "Opciones de «{name}»",
+    playlistQueued: "{count} canciones en la cola",
+    // El diálogo de los detalles: la portada, el nombre y la descripción.
+    playlistDetails: "Editar los detalles",
+    playlistDetailsName: "Nombre",
+    playlistDetailsDescription: "Agregá una descripción opcional",
+    playlistDetailsSave: "Guardar",
+    playlistDetailsCancel: "Cancelar",
+    playlistDetailsSaving: "Guardando…",
+    playlistDetailsFailed: "No se pudieron guardar los detalles.",
+    playlistDetailsTimeout: "El guardado no respondió a tiempo. Vuelve a intentarlo.",
+    playlistVisibilityFailed:
+      "Se guardaron los detalles, pero la playlist no cambió de visibilidad.",
+    playlistMakePrivate: "Hacerla privada",
+    playlistChoosePhoto: "Elegir una foto",
+    playlistRestoreCover: "Volver a la portada de Spotify",
+    playlistUploadFailed: "No se pudo subir la imagen.",
     playlistNotReadable:
       "Esta playlist la creó otra persona. Spotify solo deja leer las que te pertenecen o en las que colaboras.",
     librarySubtitle: "Tu música, tal cual la guardaste",
@@ -412,6 +433,7 @@ export const strings = {
     // The playlist, drawn the way the desktop client draws it: what kind of list
     // this is, then the order and the filter beside the songs.
     playlistCollaborative: "Collaborative playlist",
+    playlistPrivate: "Private playlist",
     playlistSearch: "Search in this playlist",
     playlistNoMatches: "No song in this playlist matches that search.",
     playlistOrder: "Playlist order",
@@ -434,6 +456,25 @@ export const strings = {
     noPlaylistMatches: "No playlist matches that search.",
     copyLink: "Copy link",
     copyFailed: "Couldn't copy",
+    // A playlist's three dots. Three rows, and all three do something: the ones
+    // that could not would read as broken.
+    playlistMenu: "Playlist options",
+    playlistMenuFor: "Options for “{name}”",
+    playlistQueued: "{count} songs in the queue",
+    // The details dialog: the cover, the name and the description.
+    playlistDetails: "Edit details",
+    playlistDetailsName: "Name",
+    playlistDetailsDescription: "Add an optional description",
+    playlistDetailsSave: "Save",
+    playlistDetailsCancel: "Cancel",
+    playlistDetailsSaving: "Saving…",
+    playlistDetailsFailed: "Couldn't save the details.",
+    playlistDetailsTimeout: "The save didn't answer in time. Try again.",
+    playlistVisibilityFailed: "The details were saved, but the playlist didn't change visibility.",
+    playlistMakePrivate: "Make private",
+    playlistChoosePhoto: "Choose photo",
+    playlistRestoreCover: "Restore Spotify's cover",
+    playlistUploadFailed: "Couldn't upload the image.",
     playlistNotReadable:
       "Someone else made this playlist. Spotify only lets an app read the contents of the ones you own or collaborate on.",
     librarySubtitle: "Your music, exactly as you saved it",

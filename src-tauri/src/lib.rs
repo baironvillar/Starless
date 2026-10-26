@@ -31,7 +31,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_updater::UpdaterExt;
 
 use playback::{PlaybackState, PlaybackStatus};
-use models::{Account, DjMix, DjVoiceEvent, Lyrics, Playlist, Track};
+use models::{Account, DjMix, DjVoiceEvent, Lyrics, Playlist, PlaylistDetails, Track};
 
 /// The version a report carries, read from the compiled-in crate metadata.
 ///
@@ -1147,6 +1147,61 @@ spclient_command!(
     track_id: String
 );
 
+/// Guarda los detalles de una playlist: el nombre, la descripción y la portada.
+///
+/// **La portada se sube antes de escribirse.** El JPEG va a
+/// `image-upload.spotify.com`, el token que contesta se registra contra la
+/// playlist, y lo que contesta el registro —el id de la imagen— es lo que
+/// viaja en los atributos. Todo eso pasa acá adentro, en un solo comando: el
+/// frontend manda la imagen y el nombre, y no queda un estado intermedio en el
+/// que la portada esté subida y la playlist sin guardar.
+///
+/// **Una sola escritura.** El nombre, la descripción y la portada van en el
+/// mismo cambio, contra la misma revisión leída: se guardan las tres o no se
+/// guarda ninguna.
+///
+/// **La red no toca el hilo principal.** El comando es `async` y el trabajo
+/// blocking va en `spawn_blocking`, como los demás.
+#[tauri::command]
+async fn update_playlist_details(
+    app: AppHandle,
+    playlist_id: String,
+    details: PlaylistDetails,
+    cover: Option<Vec<u8>>,
+) -> Result<(), String> {
+    let started = std::time::Instant::now();
+    // La entrada al comando queda anotada: si una vez se cuelga, el log dice
+    // si el comando llegó a arrancar o si lo que se colgó fue el puente.
+    log::info!("spclient: update_playlist_details arrancó para {playlist_id}");
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<SessionState>();
+        let session = state.ready()?;
+
+        // La imagen se sube y se registra primero: sin el id de la imagen no
+        // hay nada que escribir.
+        let picture = match cover {
+            Some(jpeg) => Some(spclient::upload_playlist_cover(&session, &playlist_id, &jpeg)?),
+            None => None,
+        };
+
+        spclient::update_playlist_details(&session, &playlist_id, &details, picture)
+    })
+    .await
+    .map_err(|e| {
+        // El panic del hilo blocking también va al log: `eprintln` en una app
+        // de ventana se pierde, y un comando que muere sin dejar rastro es un
+        // comando que parece colgado.
+        log::error!("spclient: update_playlist_details.command_failed: {e}");
+        eprintln!("Starless [command_failed]: {e}");
+        "command_failed".to_string()
+    })?;
+
+    log::info!(
+        "spclient: update_playlist_details tardó {} ms",
+        started.elapsed().as_millis()
+    );
+    Ok(result?)
+}
 // --- Playback --------------------------------------------------------------
 
 /// The player's live state. Polled by the UI rather than pushed for volume and
@@ -1440,6 +1495,12 @@ pub fn run() {
             if spclient::create_requested() {
                 spclient::run_create_probe(handle.clone());
             }
+            // La visibilidad de una playlist: pública o privada. La sonda
+            // escribe, así que sólo toca la playlist que el ambiente nombra.
+            #[cfg(debug_assertions)]
+            if spclient::private_requested() {
+                spclient::run_private_probe(handle.clone());
+            }
             // La playlist que Spotify fabrica para la cuenta —DJ— es la única
             // que hace preguntas nuevas, y es la que todavía no está
             // resuelta.
@@ -1465,6 +1526,7 @@ pub fn run() {
             my_playlists,
             create_playlist,
             add_to_playlist,
+            update_playlist_details,
             liked_tracks,
             playlist_tracks,
             search_tracks,

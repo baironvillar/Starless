@@ -1648,6 +1648,27 @@ export default function App() {
   }, []);
 
   /**
+   * La playlist entera a la cola, y no lo que el filtro dejó a la vista.
+   *
+   * **Es la misma puerta que la canción, con más canciones.** La cola es un
+   * arreglo y esta fila lo agranda con la lista entera: lo que ya está
+   * sonando conserva su lugar y lo que viene después se corre. Lo mismo que
+   * hace la canción, con treinta en vez de con una.
+   *
+   * **Y no se deduplica.** Una cola no es un conjunto: el que agrega dos veces
+   * la misma canción quiso oírla dos veces, y descartarla en silencio es la
+   * app contradiciendo una decisión que se tomó a propósito.
+   */
+  const onAddListToQueue = useCallback((tracks: Track[]) => {
+    if (tracks.length === 0) return;
+    setQueue((current) => ({
+      tracks: current ? [...current.tracks, ...tracks] : [...tracks],
+      lines: current?.lines ?? {},
+      station: current?.station ?? false,
+    }));
+  }, []);
+
+  /**
    * Open an artist or an album, and come back from one.
    *
    * **The queue is left alone.** Reading about a person or a record is not a
@@ -2015,6 +2036,9 @@ export default function App() {
               onOpenAlbum={openAlbum}
               onAddToQueue={onAddToQueue}
               onNewPlaylist={openNaming}
+              // Los tres puntos de la playlist: la lista entera va a la cola, y
+              // los detalles son un diálogo aparte.
+              onAddListToQueue={onAddListToQueue}
               // The two controls the playlist shares with the transport, handed the
               // transport's own state and handlers. Two shuffle buttons showing two
               // different answers is the thing this cannot be.

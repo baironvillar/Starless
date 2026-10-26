@@ -9,6 +9,7 @@ import {
   User,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { copyText } from "../lib/clipboard";
 import type { StringKey } from "../lib/i18n";
 import type { Album, Artist, Track } from "../lib/spotify";
 import { MenuItem, MenuPanel } from "./MenuPanel";
@@ -37,44 +38,6 @@ const COPIED_MS = 1600;
  * away means moving away.
  */
 const SUBMENU_CLOSE_MS = 260;
-
-/**
- * Copy to the clipboard, and say whether it worked.
- *
- * **The async path first, the old one as the fallback.** WebView2 refuses
- * `navigator.clipboard` outside a secure context, and the textarea dance is the
- * only thing left when it does. It is deprecated everywhere else and still the
- * thing that works here, which is a fact about this runtime rather than a
- * preference.
- *
- * Returns a boolean instead of throwing because the caller has to *show* the
- * difference: a copy that silently failed leaves the user pasting whatever was
- * on the clipboard before and wondering what happened.
- */
-async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    try {
-      const area = document.createElement("textarea");
-      area.value = text;
-      area.setAttribute("readonly", "");
-      // Off-screen rather than `display: none`: a hidden element cannot be
-      // selected, and nothing gets copied.
-      area.style.position = "fixed";
-      area.style.top = "-1000px";
-      area.style.opacity = "0";
-      document.body.appendChild(area);
-      area.select();
-      const done = document.execCommand("copy");
-      document.body.removeChild(area);
-      return done;
-    } catch {
-      return false;
-    }
-  }
-}
 
 /**
  * The three dots on a song.

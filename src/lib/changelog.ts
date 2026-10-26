@@ -46,6 +46,15 @@ export const CHANGELOG: ChangelogEntry[] = [
     sections: {
       es: [
         {
+          title: "Nuevo",
+          items: [
+            "La playlist tiene sus tres puntos, al lado del botón de reproducción. Abren un menú con tres cosas: mandarla entera a la cola, editar sus detalles y copiar su enlace.",
+            "Editar los detalles es una pantalla con la portada, el nombre y la descripción. La portada se cambia pasando el mouse por encima: aparece un lápiz y un «Elegir una foto», y el archivo se recorta y se sube al guardar. También se puede devolver la portada que puso el dueño y volver a la que arma Spotify con las primeras canciones.",
+            "La misma pantalla trae un interruptor: «Hacerla privada». La playlist deja de aparecer en tu perfil público, y el encabezado lo dice.",
+            "El menú tiene tres filas y no doce. El cliente de escritorio ofrece también el jam, los colaboradores, la descarga, las carpetas y el borrado, y ninguno de esos tiene puerta en esta sesión. Editar los detalles sí: es el mismo mensaje que crea una playlist —un `UPDATE_LIST_ATTRIBUTES`— contra la revisión que la playlist tiene ahora, en vez de la `0,root` de una que todavía no existe.",
+          ],
+        },
+        {
           title: "Corregido",
           items: [
             "La app tardaba 5,5 segundos en mostrar la biblioteca. Los pedidos salían antes de que la sesión terminara de conectar, así que fallaban, y el frontend los reintentaba cuatro segundos después: la espera estaba en el reintento y no en la conexión. Ahora el backend espera a que la sesión esté lista y responde de una.",
@@ -70,6 +79,15 @@ export const CHANGELOG: ChangelogEntry[] = [
         },
       ],
       en: [
+        {
+          title: "New",
+          items: [
+            "The playlist has its three dots now, next to the play button. They open a menu with three things: send the whole thing to the queue, edit its details and copy its link.",
+            "Edit details is a screen with the cover, the name and the description. The cover changes when the mouse goes over it: a pencil and a “Choose photo” appear, and the file is cropped and uploaded when you save. You can also take the owner's cover away and go back to the one Spotify builds out of the first songs.",
+            "That same screen has a switch: “Make private”. The playlist stops showing up on your public profile, and the playlist's header says so.",
+            "The menu has three rows and not twelve. The desktop client also offers the jam, the collaborators, the download, the folders and the delete, and none of those has a door in this session. Edit details does: it is the same message that creates a playlist —an `UPDATE_LIST_ATTRIBUTES`— against the revision the playlist has now, instead of the `0,root` of one that does not exist yet.",
+          ],
+        },
         {
           title: "Fixed",
           items: [

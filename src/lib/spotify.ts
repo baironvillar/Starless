@@ -45,6 +45,32 @@ export type Playlist = {
   owner: { display_name: string | null } | null;
   tracks: { total: number } | null;
   collaborative: boolean;
+  /**
+   * The description the owner wrote, if there is one.
+   *
+   * It comes in the same message as the name — the library's attributes — so
+   * reading it costs nothing extra. `null` is "the owner wrote nothing", which
+   * is not the same as an empty description.
+   */
+  description: string | null;
+  /**
+   * Whether the cover is one the owner uploaded.
+   *
+   * **The one you see does not say.** Spotify builds a cover out of the first
+   * four songs when the owner uploads none, and the two look the same in
+   * `images`. Only the attributes tell them apart, and without this the
+   * details dialog could not offer to take the uploaded one away.
+   */
+  custom_cover: boolean;
+  /**
+   * Whether the playlist is public.
+   *
+   * **It comes from the library, not from the playlist.** The playlist's own
+   * attributes carry no visibility at all —`collaborative` and nothing else—,
+   * and the flag that says whether this playlist shows up on the account's
+   * public profile travels on the library row that points at it.
+   */
+  is_public: boolean;
 };
 
 /**
@@ -657,26 +683,107 @@ export async function createPlaylist(name: string): Promise<string> {
 }
 
 /**
- * Mete una canción en una playlist que ya existe.
+ * Adds a song to a playlist that already exists.
  *
- * El error que llega es el código de Rust tal cual, y hay tres que no son el
- * mismo problema: `playlist_not_found` es una playlist que no está en la
- * biblioteca —o que no existe—, `add_failed` es un rechazo del servicio, y
- * `network_failed` es que no hubo red. La pantalla los muestra distinto porque
- * las tres cosas dejan la cuenta en un estado distinto: una se arregla
- * eligiendo otra lista, otra se reintenta y la tercera se espera.
+ * The error that arrives is the Rust code as it is, and there are three that
+ * are not the same problem: `playlist_not_found` is a playlist that is not in
+ * the library —or that does not exist—, `add_failed` is a refusal from the
+ * service, and `network_failed` is that there was no network. The screen shows
+ * them apart because the three leave the account in a different state: one is
+ * fixed by choosing another list, another is retried and the third is waited
+ * out.
  *
- * La revisión de la playlist la lee el backend en el momento de escribir, que
- * es lo único que garantiza que sea la última: el servicio contesta `409` a un
- * cambio cosido contra una revisión vieja.
+ * The playlist's revision is read by the backend at the moment of writing,
+ * which is the only thing that guarantees it is the latest one: the service
+ * answers `409` to a change stitched against an old revision.
  *
- * Sin backend no hay nada que agregar: el error es la verdad.
+ * Without a backend there is nothing to add: the error is the truth.
  */
 export async function addToPlaylist(playlistId: string, trackId: string): Promise<void> {
   if (!hasBackend()) {
     throw new Error("add_failed");
   }
   await invoke<void>("add_to_playlist", { playlistId, trackId });
+}
+
+/**
+ * How long the details write may take before the webview stops waiting.
+ *
+ * **It is longer than the backend can take, and that is the point.** The
+ * backend bounds every step it takes —the session, the token, the upload, the
+ * registration, the revision and the write— at twenty seconds each, so five
+ * of them plus the wait for the session is the worst case. A ceiling below
+ * that would show a failure while the backend was still working, and the
+ * user would press Save again on a write that was about to land.
+ */
+const DETAILS_DEADLINE = 150_000;
+
+/**
+ * A promise with a ceiling.
+ *
+ * **The timer is cleared either way.** A timer left running keeps the page
+ * awake for no reason, and all it would do afterwards is reject a promise
+ * nobody is waiting for anymore.
+ */
+async function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("timeout")), ms);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+/**
+ * Saves a playlist's details: the name, the description and the cover.
+ *
+ * **The cover goes as bytes, not as an id.** The id of the image is a thing of
+ * the service —the backend uploads the file, registers it and only then fills
+ * the id— so it is not something the webview gets to write. What the webview
+ * sends is the picture the user chose, and the backend takes it from there.
+ *
+ * The error that arrives is the Rust code as it is, and there are three that
+ * are not the same problem: `details_failed` is a refusal from the service,
+ * `upload_failed` is a picture that did not go up —or an image in a format
+ * the service does not take—, and `network_failed` is that there was no
+ * network. The dialog shows them apart because the first one leaves the
+ * playlist as it was and the second one never got that far.
+ *
+ * **The wait has a ceiling.** The backend bounds every step it takes —the
+ * session, the token, the upload, the registration, the revision and the
+ * write— so the command always answers; but the bridge between the two sides
+ * is not something this file can promise. A request that never comes back
+ * would leave the dialog saying "Saving…" for good, and a button that never
+ * comes back is worse than one that says it failed. The ceiling sits above
+ * what the backend can take —five calls of twenty seconds each, plus the
+ * wait for the session— so it never fires while the backend is still working.
+ */
+export async function savePlaylistDetails(
+  playlistId: string,
+  details: {
+    name?: string;
+    description?: string;
+    remove_picture?: boolean;
+    is_public?: boolean;
+  },
+  cover?: Uint8Array,
+): Promise<void> {
+  if (!hasBackend()) {
+    throw new Error("details_failed");
+  }
+  await withDeadline(
+    invoke<void>("update_playlist_details", {
+      playlistId,
+      details,
+      cover: cover ? Array.from(cover) : null,
+    }),
+    DETAILS_DEADLINE,
+  );
 }
 
 export const keys = {
@@ -985,6 +1092,16 @@ const API_ERRORS: Record<string, string> = {
   // three sends the user looking in the wrong place.
   playlist_not_found: "Esa playlist no está en tu biblioteca.",
   add_failed: "No se pudo agregar la canción a la playlist.",
+  // The details are one write with two failures of their own: the service
+  // refused the change, or the picture did not go up. "It failed" for the two
+  // is the same message for two problems that need two different answers.
+  details_failed: "No se pudieron guardar los detalles de la playlist.",
+  upload_failed: "No se pudo subir la imagen.",
+  // The visibility is a second write, against a different list: the name and the
+  // description may already be saved when this one fails, and saying "it failed"
+  // for both would hide which of the two it was.
+  visibility_failed: "Se guardaron los detalles, pero la playlist no cambió de visibilidad.",
+  empty_name: "La playlist necesita un nombre.",
   // These two were emitted by Rust and had no sentence here, so the user read
   // the raw code on screen. They are the two the playlist commands can answer.
   bad_id: "Ese identificador no es válido.",

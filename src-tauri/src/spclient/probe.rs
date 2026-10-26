@@ -23,8 +23,11 @@ use librespot_protocol::clienttoken_http::{
 use librespot_protocol::context::Context;
 use librespot_protocol::extended_metadata::{BatchedEntityRequest, EntityRequest, ExtensionQuery};
 use librespot_protocol::extension_kind::ExtensionKind;
-use librespot_protocol::playlist4_external::SelectedListContent;
-use protobuf::{Enum, EnumOrUnknown, Message};
+use librespot_protocol::playlist4_external::{
+    Item, ItemAttributes, ItemAttributesPartialState, ListChanges, Op, SelectedListContent,
+    UpdateItemAttributes, op,
+};
+use protobuf::{Enum, EnumOrUnknown, Message, MessageField};
 
 use super::{
     ROOTLIST_PAGE, account, call, dj_mix, dj_page, liked_tracks, playlist_tracks, playlists,
@@ -2742,6 +2745,298 @@ fn tts_request(
             }
             Err(e) => Ok((0, format!("ERROR: {e}"))),
         }
+    }) {
+        Ok(result) => result,
+        Err(e) => (0, format!("ERROR: {e}")),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// La visibilidad: ¿pública o privada?
+// ---------------------------------------------------------------------------
+
+/// `true` when the environment asks for the probe. Read once, at startup.
+///
+/// **Esta sonda modifica la cuenta, y por eso pide una playlist por su id.**
+/// Sin `STARLESS_SP_PRIVATE_ID` no escribe nada: sólo lee y dice qué trae
+/// cada ítem de la biblioteca. La sonda de creación —que sí escribe— se
+/// dejó inofensiva a propósito; acá no se puede, porque lo que se busca es
+/// justamente la puerta de escritura. El precio de medirla es que la
+/// playlist nombrada cambie de visibilidad, y por eso la sonda **la vuelve a
+/// dejar como la encontró**.
+#[cfg(debug_assertions)]
+pub fn private_requested() -> bool {
+    std::env::var("STARLESS_SP_PRIVATE")
+        .map(|value| value != "0" && !value.is_empty())
+        .unwrap_or(false)
+}
+
+/// La playlist que la sonda puede tocar, si el ambiente la nombró.
+#[cfg(debug_assertions)]
+fn private_target() -> Option<String> {
+    std::env::var("STARLESS_SP_PRIVATE_ID")
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+}
+
+/// Un ítem de la biblioteca: la uri, la visibilidad que trae y el resto.
+///
+/// **La visibilidad es un atributo del ítem, no de la playlist.** `public` es
+/// el campo 10 de `ItemAttributes`, el mismo que el cliente de escritorio
+/// manda en `true` cuando agrega la playlist a la biblioteca — y el que hay
+/// que poner en `false` para que sea privada. Que sea un atributo *del
+/// ítem* dice también dónde se escribe: en el rootlist, que es la lista de
+/// la biblioteca, y no en la playlist.
+#[cfg(debug_assertions)]
+struct RootItem {
+    uri: String,
+    public: Option<bool>,
+    timestamp: Option<i64>,
+    formats: Vec<String>,
+}
+
+/// La biblioteca, ítem por ítem.
+///
+/// La lectura es la misma que hace la pantalla —`get_rootlist` con las
+/// decoraciones de siempre— y por eso lo que sale acá es lo que la app
+/// tendría en la mano para dibujar un interruptor.
+#[cfg(debug_assertions)]
+fn rootlist_items(session: &Session) -> Vec<RootItem> {
+    let owned = session.clone();
+    let body = match call(session, async move {
+        owned
+            .spclient()
+            .get_rootlist(0, Some(ROOTLIST_PAGE))
+            .await
+            .map_err(|e| {
+                log::error!("SP_PRIVATE: no se pudo leer la biblioteca: {e}");
+                "network_failed".to_string()
+            })
+    }) {
+        Ok(body) => body,
+        Err(e) => {
+            log::error!("SP_PRIVATE: la biblioteca no vino: {e}");
+            return Vec::new();
+        }
+    };
+
+    let message = match SelectedListContent::parse_from_bytes(&body) {
+        Ok(message) => message,
+        Err(e) => {
+            log::error!("SP_PRIVATE: el rootlist vino con otra forma: {e}");
+            return Vec::new();
+        }
+    };
+
+    let contents = message.contents.get_or_default();
+    contents
+        .items
+        .iter()
+        .map(|item| {
+            let attributes = item.attributes.as_ref();
+            RootItem {
+                uri: item.uri().to_owned(),
+                public: attributes.and_then(|a| a.public),
+                timestamp: attributes.and_then(|a| a.timestamp),
+                formats: attributes
+                    .map(|a| {
+                        a.format_attributes
+                            .iter()
+                            .map(|format| format!("{}={}", format.key(), format.value()))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            }
+        })
+        .collect()
+}
+
+/// La visibilidad de una playlist, de punta a punta.
+///
+/// **Primero se lee, después se escribe, y al final se deja como estaba.**
+/// El orden importa: sin saber qué trae cada ítem no hay forma de decir que
+/// un `200` cambió algo, porque el servicio contesta `200` a un pedido que
+/// no entendió.
+#[cfg(debug_assertions)]
+pub fn run_private_probe(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(session) = crate::selftest::wait_for_session(&app) else {
+            log::error!("SP_PRIVATE: la sesión no llegó a conectar");
+            return;
+        };
+
+        log::info!("=== DIAGNOSTIC: sonda de visibilidad ===");
+
+        let items = rootlist_items(&session);
+        for (index, item) in items.iter().enumerate() {
+            log::info!(
+                "SP_PRIVATE: [{index}] {} · public={:?} · timestamp={:?} · formatos={:?}",
+                item.uri,
+                item.public,
+                item.timestamp,
+                item.formats
+            );
+        }
+
+        let Some(target) = private_target() else {
+            log::info!("SP_PRIVATE: sin STARLESS_SP_PRIVATE_ID no se escribe nada");
+            return;
+        };
+
+        let uri = format!("spotify:playlist:{target}");
+        let Some(index) = items.iter().position(|item| item.uri == uri) else {
+            log::error!("SP_PRIVATE: la playlist {target} no está en la biblioteca");
+            return;
+        };
+        let original = items[index].public;
+        log::info!(
+            "SP_PRIVATE: la playlist {target} está en el índice {index} y trae public={original:?}"
+        );
+
+        let account = session.username().to_owned();
+        let path = format!("/playlist/v2/user/{account}/rootlist/changes");
+
+        // Las tres formas en que un op puede decir a qué ítem se refiere. Se
+        // prueban todas porque el proto no dice cuál es: `index` y `item` son
+        // los dos opcionales, y el que el cliente de escritorio usa no está
+        // escrito en ninguna parte.
+        for shape in ["item", "index", "index+item"] {
+            let change = visibility_change(
+                &super::rootlist_revision(&session).unwrap_or_default(),
+                &account,
+                super::now_millis(),
+                &uri,
+                match shape {
+                    "item" => None,
+                    _ => Some(index as i32),
+                },
+                matches!(shape, "item" | "index+item"),
+                false,
+            );
+
+            let body = change.write_to_bytes().unwrap_or_default();
+            let (status, text) = post_rootlist(&session, &path, body);
+            log::info!("SP_PRIVATE: la forma `{shape}` → {status} · {text}");
+
+            // El `200` no dice nada: lo que dice es si el atributo cambió.
+            let after = rootlist_items(&session);
+            let now = after
+                .iter()
+                .find(|item| item.uri == uri)
+                .and_then(|item| item.public);
+            log::info!("SP_PRIVATE: después de la forma `{shape}`, public={now:?}");
+
+            if now != original {
+                log::info!("SP_PRIVATE: la forma `{shape}` FUNCIONÓ");
+                // Se deja la cuenta como la encontró.
+                let restore = visibility_change(
+                    &super::rootlist_revision(&session).unwrap_or_default(),
+                    &account,
+                    super::now_millis(),
+                    &uri,
+                    match shape {
+                        "item" => None,
+                        _ => Some(index as i32),
+                    },
+                    matches!(shape, "item" | "index+item"),
+                    original.unwrap_or(true),
+                );
+                let body = restore.write_to_bytes().unwrap_or_default();
+                let (status, text) = post_rootlist(&session, &path, body);
+                log::info!("SP_PRIVATE: se restauró → {status} · {text}");
+                break;
+            }
+        }
+
+        log::info!("=== DIAGNOSTIC: fin de la sonda de visibilidad ===");
+    });
+}
+
+/// El `ListChanges` que cambia la visibilidad de un ítem de la biblioteca.
+///
+/// **Es un op de atributos de ítem, no de lista.** La playlist es un ítem de
+/// la biblioteca —una fila del rootlist— y su `public` es un atributo de ese
+/// ítem: `ItemAttributes.public`, el mismo campo que el cliente de escritorio
+/// manda en `true` cuando la playlist entra en la biblioteca.
+#[cfg(debug_assertions)]
+fn visibility_change(
+    revision: &[u8],
+    account: &str,
+    timestamp: i64,
+    uri: &str,
+    index: Option<i32>,
+    with_item: bool,
+    public: bool,
+) -> ListChanges {
+    ListChanges {
+        base_revision: Some(revision.to_vec()),
+        deltas: vec![super::delta(
+            vec![Op {
+                kind: Some(EnumOrUnknown::new(op::Kind::UPDATE_ITEM_ATTRIBUTES)),
+                update_item_attributes: MessageField::some(UpdateItemAttributes {
+                    index,
+                    new_attributes: MessageField::some(ItemAttributesPartialState {
+                        values: MessageField::some(ItemAttributes {
+                            public: Some(public),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    }),
+                    item: if with_item {
+                        MessageField::some(Item {
+                            uri: Some(uri.to_owned()),
+                            ..Default::default()
+                        })
+                    } else {
+                        MessageField::none()
+                    },
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }],
+            account,
+            timestamp,
+        )],
+        want_resulting_revisions: Some(true),
+        want_sync_result: Some(true),
+        nonces: vec![1],
+        ..Default::default()
+    }
+}
+
+/// Un pedido al rootlist que **no tira el cuerpo de los rechazos**.
+///
+/// El cliente de librespot convierte toda respuesta que no sea 2xx en un
+/// error que sólo lleva el status, así que un rechazo sin explicación obliga
+/// a `reqwest`. Es la misma razón por la que existe `probe_refusal`.
+#[cfg(debug_assertions)]
+fn post_rootlist(session: &Session, path: &str, body: Vec<u8>) -> (u16, String) {
+    let owned = session.clone();
+    let route = path.to_owned();
+    match call(session, async move {
+        let base = owned.spclient().base_url().await.map_err(|e| e.to_string())?;
+        let token = owned.login5().auth_token().await.map_err(|e| e.to_string())?;
+        let authorization = format!("{} {}", token.token_type, token.access_token);
+        let client_token = owned.spclient().client_token().await.unwrap_or_default();
+        let url = format!("{base}{route}?product=0&country={}&salt=1", owned.country());
+
+        let response = reqwest::Client::new()
+            .post(url)
+            .header(reqwest::header::AUTHORIZATION, authorization)
+            .header("client-token", client_token)
+            .header(
+                reqwest::header::CONTENT_TYPE,
+                "application/x-www-form-urlencoded",
+            )
+            .body(body)
+            .send()
+            .await
+            .map_err(|e| format!("la red: {e}"))?;
+
+        let status = response.status().as_u16();
+        let bytes = response.bytes().await.map_err(|e| format!("el cuerpo: {e}"))?;
+        Ok((status, describe_bytes(&bytes)))
     }) {
         Ok(result) => result,
         Err(e) => (0, format!("ERROR: {e}")),
