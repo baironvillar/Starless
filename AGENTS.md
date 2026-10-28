@@ -672,6 +672,27 @@ salen de una captura:
     canciones" y "dj: la estación pidió la página siguiente y recibió M"—, así que
     no hace falta una sonda para saber cuántas trajo cada página ni cuántas veces
     pidió la estación.
+- **La puerta del DJ no es la puerta de la radio, y la de la radio estaba
+  escondida en la dependencia.** `/lexicon-session-provider/context-resolve/v2/session`
+  con `contextUri=spotify:track:…` contesta `500` — y también con un disco, con
+  un artista y con una playlist común. Medido: los cuatro contextos dieron `500`
+  y el control, la playlist del DJ con la misma forma, contestó bien: es el
+  servicio de las "jellyfish cards" y sólo entiende su propio contexto. La radio
+  tiene **otra** puerta, y no hubo que inventarla: **`POST /context-resolve/v1/
+  autoplay`**, con el cuerpo en protobuf y el proto `AutoplayContextRequest` —
+  `context_uri` y `recent_track_uri`—, que está extraído del cliente oficial de
+  Windows y ya viene compilado en librespot 0.8
+  (`librespot_protocol::autoplay_context_request`). **La metodología de Spotify
+  es esa**: el contexto que se escuchaba y las canciones recientes.
+  Lo que contesta: **cincuenta canciones parecidas** —no la playlist repetida— y
+  un cursor a `radio-apollo`, que es donde sigue la estación
+  (`hm://radio-apollo/v5/tracks/spotify:station:playlist:<id>?salt=…&autoplay=true&…`).
+  La segunda página trae las canciones **en la raíz** y el `next_page_url` al
+  lado, como las del DJ. Y **la semilla no vuelve en la respuesta**: ni la
+  canción que sembró la radio ni las recientes, así que no hay que filtrar nada.
+  La otra candidate, `/inspiredby-mix/v2/seed_to_playlist/spotify:track:<id>`,
+  devuelve una playlist editorial y no la radio: no sirve. La sonda es
+  `STARLESS_SP_RADIO=1`.
 - **La cola no existe hasta que el usuario la crea.** El panel de cola y la
   estación del DJ son dos preguntas distintas, y el panel las confundía: el "A
   continuación" caía a `visibleTracks` —lo que se ve en pantalla— cuando todavía

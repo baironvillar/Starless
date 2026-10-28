@@ -115,6 +115,36 @@ pub struct DjMix {
     pub lines: HashMap<String, DjNarration>,
 }
 
+/// De dónde viene la cola: qué se estaba escuchando.
+///
+/// **La radio se siembra con el contexto y no con una canción suelta.** Es lo que
+/// hace el autoplay de Spotify: el contexto —la playlist que se escuchaba, la
+/// canción que se eligió— y las canciones recientes. Por eso esto es un enum y
+/// no un id suelto: cada contexto se escribe de una manera, y esa manera la
+/// sabe el backend, no el webview.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "kind", content = "id", rename_all = "camelCase")]
+pub enum RadioContext {
+    /// Una playlist de la biblioteca.
+    Playlist(String),
+    /// Una sola canción: la radio de esa canción.
+    Track(String),
+}
+
+impl RadioContext {
+    /// La URI del contexto, como la entiende Spotify.
+    ///
+    /// **El prefijo lo pone acá y no el frontend.** Que la URI de una playlist
+    /// sea `spotify:playlist:` es cosa del servicio, y una cosa del servicio no
+    /// se escribe a mano del otro lado de la costura.
+    pub fn uri(&self) -> String {
+        match self {
+            RadioContext::Playlist(id) => format!("spotify:playlist:{id}"),
+            RadioContext::Track(id) => format!("spotify:track:{id}"),
+        }
+    }
+}
+
 /// Lo que hizo la voz del DJ.
 ///
 /// Va al frontend como evento, porque el frontend tiene que saber cuándo

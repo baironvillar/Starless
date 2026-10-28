@@ -578,6 +578,26 @@ struct DjSession {
     audio: HashMap<String, Vec<u8>>,
 }
 
+/// Where the radio is, and how it continues.
+///
+/// **The cursor lives in the backend on purpose**, like the DJ's: it is the
+/// service's own address for the next page —with its salt and the tracks it
+/// already played— and the webview is not the place that has to know how to
+/// follow it.
+///
+/// **And it is a separate state from the DJ's, on purpose.** Both are stations
+/// and both keep going, but each one follows its own cursor: if they shared it,
+/// the DJ would follow the radio's cursor and the service would answer with the
+/// radio's tracks as if they were the DJ's own mix.
+#[derive(Default)]
+pub struct RadioState(Mutex<RadioSession>);
+
+#[derive(Default)]
+struct RadioSession {
+    /// Where the station continues.
+    next: Option<String>,
+}
+
 /// Everything the login screen needs to decide what to show, and nothing else.
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -827,7 +847,7 @@ async fn dj_mix(
     // otra la voz, que va por su cuenta.
     let for_page = session.clone();
     let page = tauri::async_runtime::spawn_blocking(move || match cursor {
-        Some(path) => spclient::dj_page(&for_page, &path),
+        Some(path) => spclient::station_page(&for_page, &path),
         None => spclient::dj_mix(&for_page, &playlist_id),
     })
     .await
@@ -1098,7 +1118,7 @@ async fn dj_more(
     // La sesión se clona: una copia se la queda el pedido de la página y la
     // otra el audio que se pide por adelantado.
     let for_page = session.clone();
-    let page = tauri::async_runtime::spawn_blocking(move || spclient::dj_page(&for_page, &path))
+    let page = tauri::async_runtime::spawn_blocking(move || spclient::station_page(&for_page, &path))
         .await
         .map_err(|e| {
             eprintln!("Starless [command_failed]: {e}");
@@ -1122,6 +1142,97 @@ async fn dj_more(
 
     log::info!(
         "dj: la estación pidió la página siguiente y recibió {} canciones",
+        page.mix.tracks.len()
+    );
+
+    Ok(page.mix)
+}
+
+/// La radio: las canciones parecidas a las que se estaban escuchando.
+///
+/// **Es la puerta del autoplay de Spotify, con su protocolo entero**: el
+/// contexto que se escuchaba y las canciones recientes. Con una playlist como
+/// contexto, es lo que sigue cuando la lista se acaba; con una canción como
+/// contexto, es la radio de esa canción.
+///
+/// La primera página trae cincuenta canciones y un cursor; las siguientes salen
+/// del cursor, con `radio_more`.
+#[tauri::command]
+async fn radio_start(
+    app: AppHandle,
+    radio_state: State<'_, RadioState>,
+    context: crate::models::RadioContext,
+    recent_track_ids: Vec<String>,
+) -> Result<crate::models::DjMix, String> {
+    let session = ready_session(&app).await?;
+    let uri = context.uri();
+    let recent: Vec<String> = recent_track_ids
+        .iter()
+        .map(|id| format!("spotify:track:{id}"))
+        .collect();
+
+    let for_page = session.clone();
+    let for_uri = uri.clone();
+    let page = tauri::async_runtime::spawn_blocking(move || {
+        spclient::autoplay(&for_page, &for_uri, &recent)
+    })
+    .await
+    .map_err(|e| {
+        eprintln!("Starless [command_failed]: {e}");
+        "command_failed".to_string()
+    })??;
+
+    // El cursor es lo que sobrevive: la radio sigue.
+    if let Ok(mut guard) = radio_state.0.lock() {
+        guard.next = page.next;
+    }
+
+    log::info!(
+        "radio: arrancó con {} canciones para {uri}",
+        page.mix.tracks.len()
+    );
+
+    Ok(page.mix)
+}
+
+/// La radio sigue: la página siguiente de la estación.
+///
+/// **Sin cursor no hay página siguiente**, y no es un error: la estación se
+/// sembró y el servicio no dio más. Se contesta con una lista vacía para que el
+/// frontend no tenga que distinguir "no hay más" de "falló".
+#[tauri::command]
+async fn radio_more(
+    app: AppHandle,
+    radio_state: State<'_, RadioState>,
+) -> Result<crate::models::DjMix, String> {
+    let path = radio_state
+        .0
+        .lock()
+        .ok()
+        .and_then(|guard| guard.next.clone())
+        .unwrap_or_default();
+    if path.is_empty() {
+        return Ok(crate::models::DjMix {
+            tracks: Vec::new(),
+            lines: HashMap::new(),
+        });
+    }
+
+    let session = ready_session(&app).await?;
+    let for_page = session.clone();
+    let page = tauri::async_runtime::spawn_blocking(move || spclient::station_page(&for_page, &path))
+        .await
+        .map_err(|e| {
+            eprintln!("Starless [command_failed]: {e}");
+            "command_failed".to_string()
+        })??;
+
+    if let Ok(mut guard) = radio_state.0.lock() {
+        guard.next = page.next;
+    }
+
+    log::info!(
+        "radio: la estación pidió la página siguiente y recibió {} canciones",
         page.mix.tracks.len()
     );
 
@@ -1386,6 +1497,7 @@ pub fn run() {
         .manage(SessionState::default())
         .manage(PlaybackState::default())
         .manage(DjState::default())
+        .manage(RadioState::default())
         .setup(|app| {
             // librespot narrates every refusal through `log`, and Starless is a
             // windowed app with no console to narrate into. Both halves matter:
@@ -1513,6 +1625,12 @@ pub fn run() {
             if spclient::voice_requested() {
                 spclient::run_voice_probe(handle.clone());
             }
+            // La radio: la misma puerta del DJ, sembrada con una canción. La
+            // pregunta es si el servicio la acepta, y eso no se suppose.
+            #[cfg(debug_assertions)]
+            if spclient::radio_requested() {
+                spclient::run_radio_probe(handle.clone());
+            }
             if selftest::requested() {
                 selftest::run(handle);
             }
@@ -1534,6 +1652,8 @@ pub fn run() {
             dj_mix,
             dj_more,
             dj_speak,
+            radio_start,
+            radio_more,
             player_status,
             play_track,
             toggle_playback,

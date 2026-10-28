@@ -36,6 +36,7 @@ use std::time::Duration;
 use librespot_core::error::ErrorKind;
 use librespot_core::{FileId, Session, SpotifyId, SpotifyUri};
 use librespot_metadata::{Lyrics as MetaLyrics, Metadata, Track as MetaTrack};
+use librespot_protocol::autoplay_context_request::AutoplayContextRequest;
 use librespot_protocol::context::Context;
 use librespot_protocol::extended_metadata::{BatchedEntityRequest, EntityRequest, ExtensionQuery};
 use librespot_protocol::extension_kind::ExtensionKind;
@@ -463,6 +464,27 @@ fn hydrate(
         .collect())
 }
 
+/// Resuelve las filas de una estación a lo que la lista muestra.
+///
+/// **La metadata en lote es una sola llamada para todas**, como en las
+/// playlists. Si no resuelve ni una, queda la puerta del player: una llamada
+/// por pista, más lenta pero es la que sabe responder por estas.
+///
+/// Las estaciones —el DJ y la radio— comparten este camino porque las dos
+/// traen filas con la misma forma: una URI y nada más.
+fn hydrate_rows(session: &Session, rows: Vec<(String, Option<i64>)>) -> Result<Vec<Track>, String> {
+    let mut tracks = hydrate(session, rows.clone())?;
+    if tracks.is_empty() {
+        log::warn!("spclient: la metadata en lote no resolvió la estación; se pide pista por pista");
+        tracks = details_one_by_one(session, &rows)?;
+    }
+    if tracks.is_empty() {
+        log::error!("spclient: las pistas de la estación no resolvieron");
+        return Err("bad_response".to_string());
+    }
+    Ok(tracks)
+}
+
 /// Las pistas de un context por su URI especial.
 ///
 /// `spotify:user:<id>:collection` son las canciones guardadas y
@@ -784,7 +806,99 @@ pub fn dj_mix(session: &Session, playlist_id: &str) -> Result<DjPage, String> {
 ?contextUri={context_uri}&previousSegmentId=XX-Segment-XXXXX&requestId={}",
         request_id()
     );
-    dj_page(session, &path)
+    station_page(session, &path)
+}
+
+/// La radio: las canciones parecidas a las que se estaban escuchando.
+///
+/// **Esta es la puerta del autoplay de Spotify, no una imitación.** El
+/// protocolo es `AutoplayContextRequest` —el contexto que se escuchaba y las
+/// canciones recientes— y el cliente oficial de Windows lo manda exactamente
+/// así: `POST /context-resolve/v1/autoplay`, con el cuerpo en protobuf.
+///
+/// **Lo que se midió, y por qué importa:**
+///
+/// - Con el contexto de una **playlist** trae cincuenta canciones parecidas —
+///   no la playlist repetida— y un cursor a `radio-apollo`, que es donde sigue
+///   la estación. La página siguiente trae las siguientes cincuenta.
+/// - Con el contexto de una **canción** trae lo mismo: las parecidas a esa
+///   canción. Es la radio de esa canción, y es la puerta que usa el autoplay.
+///
+/// **La semilla no aparece en la respuesta.** Ni la canción que sembró la
+/// radio ni las que van en `recent_track_uri`: el servicio ya sabe cuáles
+/// son y no las repite. Por eso el caller no tiene que filtrar nada.
+///
+/// **La puerta del DJ no sirve para esto.** `/lexicon-session-provider/
+/// context-resolve/v2/session` con `contextUri=spotify:track:…` contesta `500`,
+/// y también con un disco, con un artista y con una playlist común: es el
+/// servicio de las "jellyfish cards" del DJ, y sólo entiende su propio
+/// contexto.
+pub fn autoplay(
+    session: &Session,
+    context_uri: &str,
+    recent: &[String],
+) -> Result<DjPage, String> {
+    let owned = session.clone();
+    let uri = context_uri.to_owned();
+    let recent = recent.to_vec();
+    let context = call(session, async move {
+        let request = AutoplayContextRequest {
+            context_uri: Some(uri),
+            recent_track_uri: recent,
+            is_video: Some(false),
+            special_fields: Default::default(),
+        };
+        owned
+            .spclient()
+            .get_autoplay_context(&request)
+            .await
+            .map_err(|e| {
+                log::error!("spclient: el autoplay falló: {e}");
+                net_code(&e)
+            })
+    })?;
+
+    // Las páginas del Context: sus pistas y el cursor por donde sigue. La
+    // primera página trae las cincuenta; el cursor es la dirección de la
+    // siguiente.
+    let mut rows: Vec<(String, Option<i64>)> = Vec::new();
+    let mut next: Option<String> = None;
+    for page in &context.pages {
+        for track in &page.tracks {
+            let Some(uri) = track.uri.as_deref() else {
+                continue;
+            };
+            let id = bare_id(uri);
+            if id.is_empty() {
+                continue;
+            }
+            rows.push((id, None));
+        }
+        if next.is_none() {
+            next = page.next_page_url.as_deref().map(host_path);
+        }
+    }
+    if rows.is_empty() {
+        log::error!("spclient: el autoplay vino sin pistas");
+        return Err("bad_response".to_string());
+    }
+
+    let tracks = hydrate_rows(session, rows)?;
+
+    log::info!(
+        "spclient: el autoplay de {context_uri} trajo {} canciones; {}",
+        tracks.len(),
+        if next.is_some() { "sigue" } else { "es la última" }
+    );
+
+    Ok(DjPage {
+        mix: DjMix {
+            tracks,
+            lines: HashMap::new(),
+        },
+        next,
+        voices: HashMap::new(),
+    })
 }
 
 /// Un `requestId` nuevo para cada pedido.
@@ -870,11 +984,16 @@ pub fn dj_voice(session: &Session, params: &VoiceParams) -> Result<Vec<u8>, Stri
     })
 }
 
-/// La página siguiente de la sesión del DJ.
+/// La página siguiente de una estación.
+///
+/// **La misma página sirve para el DJ y para la radio**, y por eso se llama
+/// así: los dos son estaciones que el servicio va llenando, y los dos contestan
+/// con la misma forma —las canciones en `tracks` y el cursor en
+/// `next_page_url`—, aunque la radio venga de otro servicio.
 ///
 /// El path es el que el servicio dio, ya traducido: el `hm://` es el nombre
 /// interno del servicio y en el host de Spotify se pide el path.
-pub fn dj_page(session: &Session, path: &str) -> Result<DjPage, String> {
+pub fn station_page(session: &Session, path: &str) -> Result<DjPage, String> {
     let owned = session.clone();
     let endpoint = path.to_owned();
     let body = call(session, async move {
@@ -883,34 +1002,23 @@ pub fn dj_page(session: &Session, path: &str) -> Result<DjPage, String> {
             .request(&reqwest::Method::GET, &endpoint, None, None)
             .await
             .map_err(|e| {
-                log::error!("spclient: la página del DJ falló: {e}");
+                log::error!("spclient: la página de la estación falló: {e}");
                 net_code(&e)
             })
     })?;
 
     let json: serde_json::Value = serde_json::from_slice(&body).map_err(|e| {
-        log::error!("spclient: la sesión del DJ vino con otra forma: {e}");
+        log::error!("spclient: la estación vino con otra forma: {e}");
         "bad_response".to_string()
     })?;
 
-    let (rows, lines, next, voices) = dj_rows(&json);
+    let (rows, lines, next, voices) = station_rows(&json);
     if rows.is_empty() {
-        log::error!("spclient: la página del DJ vino sin pistas");
+        log::error!("spclient: la página de la estación vino sin pistas");
         return Err("bad_response".to_string());
     }
 
-    // La metadata en lote es una sola llamada para todas, como en las
-    // playlists. Si no resuelve ni una, queda la puerta del player: una
-    // llamada por pista, más lenta pero es la que sabe responder por estas.
-    let mut tracks = hydrate(session, rows.clone())?;
-    if tracks.is_empty() {
-        log::warn!("spclient: la metadata en lote no resolvió el DJ; se pide pista por pista");
-        tracks = details_one_by_one(session, &rows)?;
-    }
-    if tracks.is_empty() {
-        log::error!("spclient: las pistas del DJ no resolvieron");
-        return Err("bad_response".to_string());
-    }
+    let tracks = hydrate_rows(session, rows)?;
 
     // Cuántas trayó la página y si por dónde sigue: sin esto no se puede
     // distinguir "el DJ terminó" de "esta página vino corta", y las dos se
@@ -936,7 +1044,7 @@ pub fn dj_page(session: &Session, path: &str) -> Result<DjPage, String> {
     })
 }
 
-/// Las pistas de una página del DJ, sus frases, y por dónde sigue.
+/// Las pistas de una página de estación, sus frases, y por dónde sigue.
 ///
 /// **La primera página y las siguientes no tienen la misma forma.** La primera
 /// viene como `pages[].tracks`, con su `next_page_url` adentro de la página;
@@ -946,7 +1054,7 @@ pub fn dj_page(session: &Session, path: &str) -> Result<DjPage, String> {
 ///
 /// Por eso esto mira en los dos lados y junta lo que encuentre, en el orden en
 /// que lo encuentra.
-fn dj_rows(
+fn station_rows(
     json: &serde_json::Value,
 ) -> (
     Vec<(String, Option<i64>)>,
@@ -2128,8 +2236,9 @@ mod probe;
 #[cfg(debug_assertions)]
 pub use probe::{
     create_requested, dj_requested, home_requested, pictures_requested, private_requested,
-    requested, run_create_probe, run_dj_probe, run_home_probe, run_picture_probe, run_private_probe,
-    run_probe, run_shape_probe, run_voice_probe, shapes_requested, voice_requested,
+    radio_requested, requested, run_create_probe, run_dj_probe, run_home_probe, run_picture_probe,
+    run_private_probe, run_probe, run_radio_probe, run_shape_probe, run_voice_probe,
+    shapes_requested, voice_requested,
 };
 
 #[cfg(test)]
