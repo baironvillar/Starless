@@ -64,6 +64,21 @@ git push -u origin release/0.3.1
 gh pr create --base develop --title "0.3.1"
 ```
 
+**El bump pregunta antes de escribir.** Es el comando que decide qué baja
+alguien que tiene la app instalada, así que se niega a correr si el repositorio
+no está en orden, y después pregunta:
+
+- los tres manifiestos coinciden y no tienen cambios sin commitear;
+- la rama es `release/<versión>` —la versión que va a ser—;
+- el tag `v<versión>` todavía no existe;
+- `CHANGELOG.md` tiene la sección `## [<versión>]` y `src/lib/changelog.ts` tiene
+  la entrada, en los dos idiomas.
+
+Las **notas se escriben antes** del bump, no después: el workflow corta sin
+ellas, y corta después de que el tag ya se empujó. Sin nivel, el script
+pregunta cuál es —patch, minor o major— y explica qué significa cada uno; el
+número nunca lo decide el diff, lo decide qué cambió.
+
 Al mergear (*Squash and merge*), GitHub le agrega el número del PR al título
 —`0.3.1 (#42)`— y hay que borrarlo en el diálogo antes de confirmar: el asunto es
 la versión y nada más. Con el PR mergeado, el tag va sobre el commit que llegó a
