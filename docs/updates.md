@@ -51,17 +51,36 @@ máquina en vez de en la de GitHub.
 
 ## En cada release
 
+Nadie commitea directo en `develop` ni en `main` (ver
+[`CONTRIBUTING.md`](../CONTRIBUTING.md#branches-and-pull-requests)), y la versión
+tampoco: sale de una rama `release/<versión>` y llega a `develop` por un PR.
+
 ```bash
+git switch develop && git pull origin develop
+git switch -c release/0.3.1
 bun run version:bump patch          # 0.3.0 -> 0.3.1 en los tres manifiestos
 git commit -am "0.3.1"              # el asunto es la versión y nada más
-git tag v0.3.1 && git push --follow-tags
+git push -u origin release/0.3.1
+gh pr create --base develop --title "0.3.1"
 ```
+
+Al mergear (*Squash and merge*), GitHub le agrega el número del PR al título
+—`0.3.1 (#42)`— y hay que borrarlo en el diálogo antes de confirmar: el asunto es
+la versión y nada más. Con el PR mergeado, el tag va sobre el commit que llegó a
+`develop`, y empujar el tag es lo que dispara el workflow:
+
+```bash
+git switch develop && git pull origin develop
+git tag v0.3.1 && git push origin v0.3.1
+```
+
+Para hacerla pública, un PR de `develop` a `main` titulado `0.3.1`, mergeado con
+*Create a merge commit* y con el título del merge commit cambiado a `0.3.1`.
 
 El asunto del commit que lleva el tag es **la versión y nada más**. No es
 estética: GitHub titula la corrida de un tag con el asunto del commit etiquetado
 y no con el nombre del workflow, así que ese texto es el nombre que queda
-escrito al lado de la release. Si el merge a `main` no es fast-forward, el mismo
-asunto: `git merge --no-ff develop -m "0.3.1"`. El hook de `.githooks/` y el
+escrito al lado de la release. El merge a `main` lleva el mismo asunto. El hook de `.githooks/` y el
 workflow lo cobran; ver [`CONTRIBUTING.md`](../CONTRIBUTING.md#los-mensajes-de-commit--commit-messages).
 
 **El tag queda donde se hizo, y `develop` sigue avanzando.** Eso es lo normal:

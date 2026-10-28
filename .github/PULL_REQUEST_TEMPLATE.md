@@ -1,3 +1,16 @@
+<!--
+  Everything in this PR is written in English: the title, this description and
+  the review comments. The title follows the commit convention, e.g.
+  `fix(settings): keep the button enabled after saving`, because with
+  Squash and merge it becomes the commit on develop.
+-->
+
+## Checklist
+
+- [ ] The branch was cut from `develop` and is named `type/short-description`
+- [ ] This PR targets `develop` (or it is `develop` → `main` for a release)
+- [ ] The title, the commits and this description are in English
+
 ## Qué cambia / What
 
 <!-- Una frase. Si el PR hace dos cosas, son dos PRs. -->

@@ -2,10 +2,11 @@ name: CI
 
 on:
   push:
-    # `develop` está acá porque es donde vive el trabajo todos los días, y un
-    # push directo a esa rama es la forma normal de publicar aquí. Dejar el CI
-    # sólo para `main` y pull requests hacía que la mitad de los checks de este
-    # archivo nunca se ejecutaran.
+    # `develop` está acá porque es donde vive el trabajo todos los días: cada
+    # PR que se mergea ahí es un push a esa rama. Dejar el CI sólo para `main` y
+    # pull requests hacía que la mitad de los checks de este archivo nunca se
+    # ejecutaran. Nadie empuja directo a `develop` ni a `main`; ver
+    # CONTRIBUTING.md#branches-and-pull-requests.
     branches: [main, develop]
   pull_request:
   workflow_dispatch:
@@ -131,6 +132,38 @@ jobs:
             sh .githooks/commit-msg --commit "$sha" || exit 1
           done
           echo "Checked $(printf '%s\n' $shas | wc -l) commit(s)."
+
+  branch:
+    name: Branch name
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The pre-push hook stops a badly named branch before it leaves the
+      # machine, but like the commit-message hook it lives in the clone: this
+      # job runs the same file, so `--no-verify` skips it locally and not here.
+      # The names travel through `env` and not `${{ }}` inside the script,
+      # because a branch name is text the author of the PR chose.
+      - name: The branch follows the convention and targets the right base
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "$BASE_REF" = "main" ]; then
+            if [ "$HEAD_REF" != "develop" ]; then
+              echo "::error::main only receives develop; open this PR against develop"
+              exit 1
+            fi
+            echo "develop -> main"
+            exit 0
+          fi
+          if [ "$BASE_REF" != "develop" ]; then
+            echo "::error::pull requests target develop, not $BASE_REF"
+            exit 1
+          fi
+          sh .githooks/pre-push --branch "$HEAD_REF"
+          echo "$HEAD_REF -> develop"
 
   secrets:
     name: No private keys committed
