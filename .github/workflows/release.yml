@@ -53,6 +53,7 @@ jobs:
       # descarga. Es el mismo archivo que usa el hook local y el job de CI: la
       # regla está escrita una sola vez.
       - name: El commit etiquetado sigue la convención de mensajes
+        id: commit
         shell: pwsh
         run: |
           # El runner es Windows y `sh` no siempre está en el PATH, así que se
@@ -67,6 +68,10 @@ jobs:
           # ser el objeto del tag y no el commit que etiqueta.
           $sha = (git rev-list -n 1 $env:GITHUB_SHA).Trim()
           Write-Host "Commit etiquetado: $sha — $(git log -1 --format=%s $sha)"
+          # El commit viaja a la build: es lo que le dice a la app si la release
+          # pública es la misma build que está corriendo. Ver `BUILD_COMMIT` en
+          # `src-tauri/src/lib.rs`.
+          "sha=$sha" >> $env:GITHUB_OUTPUT
           & $bash '.githooks/commit-msg' '--commit' $sha
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -225,6 +230,12 @@ jobs:
           # Ajustes, para que "esta es una pre-release" se lea y no se deduzca
           # del ícono invertido.
           STARLESS_CHANNEL: ${{ steps.canal.outputs.desdeMain == 'false' && 'develop' || 'release' }}
+          # El commit de esta build, para que la app sepa si la release pública
+          # es la misma build que está corriendo: una release pública con una
+          # build de `develop` adentro hace que la app se ofrezca a sí misma,
+          # y ese bucle no termina. Ver `BUILD_COMMIT` en
+          # `src-tauri/src/lib.rs`.
+          STARLESS_COMMIT: ${{ steps.commit.outputs.sha }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Starless ${{ github.ref_name }}'

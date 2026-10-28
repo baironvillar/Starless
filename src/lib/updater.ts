@@ -1,7 +1,24 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { check, type Update as TauriUpdate, Update } from "@tauri-apps/plugin-updater";
-import { isPrerelease } from "./version";
+import { isPrerelease, markPublicBuild } from "./version";
+
+/**
+ * The public channel, as the backend resolved it.
+ *
+ * **`sameBuild` is the answer to a question the version numbers cannot
+ * answer.** The public release and the develop build can carry the same
+ * version and be different programs — and they can also be the *same* program,
+ * which is what happens when a release built from `develop` is published as a
+ * public one. The backend compares the two commits, because the commits are
+ * the only thing that tells two builds apart.
+ */
+type PublicChannel = {
+  /** The public release, when there is one to install. */
+  update: UpdateMetadata | null;
+  /** Whether the public release is this very build. */
+  sameBuild: boolean;
+};
 
 /**
  * Whether a newer Starless exists, and the job of installing it.
@@ -197,9 +214,19 @@ export async function checkForUpdate(): Promise<void> {
     // update with a handle to install it. On a build of the public line this
     // is not asked at all: there, the same number really is the same build.
     if (isPrerelease()) {
-      const metadata = await invoke<UpdateMetadata | null>("check_public_manifest");
-      if (metadata) {
-        publish({ status: "available", update: new Update(metadata) });
+      const channel = await invoke<PublicChannel>("check_public_manifest");
+      // **The public release is this build.** Installing it would install what
+      // is already installed: the button would promise a change and deliver
+      // the same program, over and over, and that is the loop the public
+      // 0.5.4 walked. So there is nothing to offer —and the badge in Settings
+      // stops calling the public build a prerelease.
+      if (channel.sameBuild) {
+        markPublicBuild();
+        publish({ status: "current" });
+        return;
+      }
+      if (channel.update) {
+        publish({ status: "available", update: new Update(channel.update) });
         return;
       }
     }

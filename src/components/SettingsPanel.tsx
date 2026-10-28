@@ -45,7 +45,7 @@ import {
   subscribeUpdate,
   updateState,
 } from "../lib/updater";
-import { appVersion, isPrerelease } from "../lib/version";
+import { appVersion, isPrerelease, isPublicBuild, subscribePublicBuild } from "../lib/version";
 import { DevPanel } from "./DevPanel";
 
 type SettingsPanelProps = {
@@ -103,6 +103,16 @@ export function SettingsPanel({
    * wait for and nothing that can arrive late.
    */
   const prerelease = isPrerelease();
+  /**
+   * Whether this build is the one published as the public release.
+   *
+   * **It is not a constant, and that is the point.** The badge says which
+   * line this is, and a build that was compiled from `develop` but published
+   * as the public one is on the public line even though the binary says
+   * otherwise. The backend compares the commits and the answer arrives after
+   * the panel may already be open.
+   */
+  const publicBuild = useSyncExternalStore(subscribePublicBuild, isPublicBuild, isPublicBuild);
 
   useEffect(() => {
     void appVersion().then(setVersion);
@@ -150,12 +160,14 @@ export function SettingsPanel({
               the same otherwise, and "which one am I running" is the question
               that comes up exactly when something is wrong. A prerelease says
               so here; a release says nothing, because there is nothing to say.
+              And a build that was compiled from `develop` but published as the
+              public one says "public", because that is the line it is on.
           */}
           <p className="tabular mt-0.5 flex items-center gap-1.5 text-[12px] text-ink-faint">
             <span>v{version}</span>
             {prerelease && (
               <span className="rounded-pill bg-accent/15 px-1.5 py-px text-[10.5px] font-semibold tracking-wide uppercase text-accent">
-                {t.prereleaseBadge}
+                {publicBuild ? t.publicBadge : t.prereleaseBadge}
               </span>
             )}
           </p>
