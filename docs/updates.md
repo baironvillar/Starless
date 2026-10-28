@@ -241,6 +241,29 @@ cualquier otro lado caiga en prerelease y no en una release pública por descuid
 El flujo diario es el mismo en las dos ramas; lo único que cambia es de dónde sale
 el tag.
 
+### Publicar una prerelease como si fuera una release
+
+La release queda en borrador y se publica a mano. Si se publica **tal como la
+dejó la CI** —con la marca de prerelease—, la build de `develop` queda del lado
+de la línea de desarrollo y todo anda como corresponde: la app instalada no la
+ve nunca en "hay una versión nueva", y la puerta hacia la línea pública la
+ofrece sólo cuando la línea pública tiene otra build.
+
+Si se publica **sacándole la marca**, la build sigue siendo la de `develop`: el
+canal va compilado dentro del binario y no se cambia por cambiar la marca de
+GitHub. Esa build, instalada, se cree en la línea de desarrollo, busca la
+puerta de vuelta a la línea pública y **se encuentra a sí misma**: el botón
+ofrece "instalar la 0.5.4 pública" y el instalador es el mismo binario. El
+bucle no termina nunca.
+
+Por eso `scripts/releases.ts` lo dice: una release pública cuyo tag no llegó a
+`main` lleva dentro una build de `develop`, y `bun run releases:check` lo
+reporta.
+
+La salida es publicar desde `main`: se mergea `develop` a `main` y el tag se
+hace ahí. La build es de la línea pública, la app no tiene ninguna puerta que
+ofrecer y el número que ves es el de la línea que estás usando.
+
 ### Para probarlo antes de que exista una release
 
 El endpoint devuelve 404 hasta que haya una release, así que el comprobador

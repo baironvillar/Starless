@@ -600,6 +600,20 @@ salen de una captura:
     una lista vacía es una promesa que la app no puede cumplir: peor que no
     ofrecerlo. El espacio queda libre para lo que sí se puede contar. Cuando
     el backend sepa lo que se escuchó, vuelve —y si vuelve, vuelve con datos.
+  - **Una release pública puede llevar dentro una build de `develop`, y la app
+    entonces se ofrece a sí misma.** El canal va compilado dentro del binario:
+    `STARLESS_CHANNEL` lo decide el workflow según si el commit del tag llegó a
+    `main`, y **cambiar la marca de prerelease en GitHub no lo cambia**. La
+    release queda en borrador y se publica a mano, así que esa mano puede
+    sacarle la marca: la build sigue siendo de `develop` y ahora está en el
+    lugar de la línea pública. La app instalada se cree en la línea de
+    desarrollo, busca la puerta de vuelta a la línea pública y **se encuentra a
+    sí misma**: el botón ofrece "instalar la 0.5.4 pública" y el instalador es
+    el mismo binario. El bucle no termina nunca. Medido el 28/10 con la 0.5.4:
+    su tag (`3a66d42`) no llegó a `main`, y su binario dice "prerelease" con la
+    release marcada como pública. `bun run releases:check` lo dice, porque la
+    pregunta "¿el tag llegó a `main`?" es la del paso `canal` del workflow.
+    La salida es publicar desde `main`.
   - **La frase del DJ es una sorpresa, y la lista es el spoiler.**
     Con el DJ sonando, el panel de cola **no muestra "A continuación"**: la
     lista de lo que viene es justamente lo que spoils la sorpresa, y la frase
