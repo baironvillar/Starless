@@ -52,6 +52,13 @@ pub struct Settings {
     #[serde(default)]
     pub menu_opacity: Option<u8>,
 
+    /// How many seconds two songs overlap when one ends on its own; 0 is off.
+    ///
+    /// It describes how the person likes to listen on this machine, like the
+    /// volume, so it lives here and survives a sign-out.
+    #[serde(default)]
+    pub crossfade_seconds: Option<u8>,
+
     /// The accent colour the user picked, as `#rrggbb`, or `None` for the one
     /// DESIGN.md ships.
     ///
@@ -163,6 +170,16 @@ pub fn save_menu_opacity(opacity: u8) {
     update(|settings| settings.menu_opacity = Some(opacity));
 }
 
+/// Remember the crossfade. Clamped on the way in, like the opacity: a slider
+/// is only a suggestion, and the audio thread reads this number.
+pub fn save_crossfade_seconds(seconds: u8) {
+    let seconds = seconds.min(crate::crossfade::MAX_SECONDS as u8);
+    if load().crossfade_seconds == Some(seconds) {
+        return;
+    }
+    update(|settings| settings.crossfade_seconds = Some(seconds));
+}
+
 /// Remember the accent colour. Refuses anything that is not `#rrggbb`.
 ///
 /// This is the one setting in the file whose value becomes a CSS custom
@@ -271,6 +288,14 @@ pub fn saved_menu_opacity() -> u8 {
         .menu_opacity
         .unwrap_or(DEFAULT_MENU_OPACITY)
         .clamp(MENU_OPACITY_MIN, MENU_OPACITY_MAX)
+}
+
+/// The chosen crossfade in seconds, or 0 — off — when it was never chosen.
+pub fn saved_crossfade_seconds() -> u8 {
+    load()
+        .crossfade_seconds
+        .unwrap_or(0)
+        .min(crate::crossfade::MAX_SECONDS as u8)
 }
 
 #[cfg(test)]

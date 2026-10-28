@@ -474,6 +474,25 @@ export async function setMenuOpacity(opacity: number): Promise<void> {
   return invoke<void>("set_menu_opacity", { opacity: value });
 }
 
+/**
+ * How many seconds two songs overlap when one ends on its own; 0 is off.
+ *
+ * Mirrors `crossfade::MAX_SECONDS`. Unlike the opacity there is no
+ * `localStorage` fallback: without the backend there is no audio to fade.
+ */
+export const CROSSFADE_MAX = 12;
+
+export async function crossfadeSeconds(): Promise<number> {
+  if (!hasBackend()) return 0;
+  return invoke<number>("crossfade_seconds");
+}
+
+export async function setCrossfadeSeconds(seconds: number): Promise<void> {
+  if (!hasBackend()) return;
+  const value = Math.min(CROSSFADE_MAX, Math.max(0, Math.round(seconds)));
+  return invoke<void>("set_crossfade_seconds", { seconds: value });
+}
+
 /** Drive the CSS variable every overlay reads. No-op before the first paint matters. */
 export function applyMenuOpacity(opacity: number): void {
   document.documentElement.style.setProperty("--menu-alpha", String(clampOpacity(opacity) / 100));

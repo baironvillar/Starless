@@ -6,6 +6,7 @@
 // needs the frontend to read a token, that is the bug, not the design.
 
 mod auth;
+mod crossfade;
 // Named `selftest`, never `diagnostic`: the `diagnostic` crate provides the
 // `#[diagnostic::on_unimplemented]` attribute that `#[tauri::command]` expands
 // to, and a local module of the same name shadows it at the crate root — which
@@ -1535,6 +1536,19 @@ fn set_menu_opacity(opacity: u8) {
     settings::save_menu_opacity(opacity);
 }
 
+/// How many seconds two songs overlap when one ends on its own; 0 is off.
+#[tauri::command]
+fn crossfade_seconds() -> u8 {
+    settings::saved_crossfade_seconds()
+}
+
+/// Remember it, and hand it to the audio thread: it applies from the next song.
+#[tauri::command]
+fn set_crossfade_seconds(seconds: u8) {
+    settings::save_crossfade_seconds(seconds);
+    crossfade::set_seconds(u32::from(settings::saved_crossfade_seconds()));
+}
+
 /// The accent colour the user picked, or `None` for the one DESIGN.md ships.
 ///
 /// It crosses to the webview as a plain string and nothing else: no token, no
@@ -1774,6 +1788,8 @@ pub fn run() {
             set_volume,
             menu_opacity,
             set_menu_opacity,
+            crossfade_seconds,
+            set_crossfade_seconds,
             accent,
             set_accent,
             library_sort,
