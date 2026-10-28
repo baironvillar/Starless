@@ -30,11 +30,12 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [0.5.5] — sin publicar / unpublished
+## [0.5.5] — 2026-10-28 · prerelease
 
 ### New / Nuevo
 
 - **Elegir una canción de la búsqueda entra directo a la radio de esa canción.** Las otras que salieron de la búsqueda ya no suenan: el usuario eligió una, y el resto de los resultados no es una lista que nadie pidió. La radio es la de Spotify —la misma puerta que usa el autoplay del cliente oficial— y la canción suena ya, con las parecidas detrás.
+- **Las canciones se encadenan solas.** Cuando una termina por sí sola, la siguiente empieza esos segundos antes y las dos se mezclan: no hay un silencio en el medio. El ajuste vive en Ajustes → Audio y va de apagado a doce segundos, y se recuerda en esta máquina. Un clic en otra canción nunca funde: esa suena ya.
 
 ### Fixed / Corregido
 
