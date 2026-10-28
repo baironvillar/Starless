@@ -58,7 +58,8 @@ versión está en [`CHANGELOG.md`](CHANGELOG.md).
 - **0.5.4 — Editar una playlist.** Portada, nombre, descripción y «Hacerla
   privada». La biblioteca carga en vez de esperar 5,5 segundos.
 - **0.5.5 — La música no se corta.** Al terminar una lista sigue la radio, y
-  elegir una canción de la búsqueda arranca su radio.
+  elegir una canción de la búsqueda arranca su radio. Las canciones se encadenan
+  solas cuando una termina, con la transición a tu medida.
 
 **Lo que estaba prometido para la 0.5.0 y no salió:** la firma de código, macOS
 y Linux. No se cayeron del plan: se movieron a la 0.8.0, porque antes de llevar

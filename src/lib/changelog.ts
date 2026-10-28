@@ -41,14 +41,15 @@ export type ChangelogEntry = {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     version: "0.5.5",
-    date: null,
-    released: false,
+    date: "2026-10-28",
+    released: true,
     sections: {
       es: [
         {
           title: "Nuevo",
           items: [
             "Elegir una canción de la búsqueda entra directo a la radio de esa canción. Las otras que salieron de la búsqueda ya no suenan: el usuario eligió una, y el resto de los resultados no es una lista que nadie pidió. La radio es la de Spotify —la misma puerta que usa el autoplay del cliente oficial— y la canción suena ya, con las parecidas detrás.",
+            "Las canciones se encadenan solas. Cuando una termina por sí sola, la siguiente empieza esos segundos antes y las dos se mezclan: no hay un silencio en el medio. El ajuste vive en Ajustes → Audio y va de apagado a doce segundos, y se recuerda en esta máquina. Un clic en otra canción nunca funde: esa suena ya.",
           ],
         },
         {
@@ -65,6 +66,7 @@ export const CHANGELOG: ChangelogEntry[] = [
           title: "New",
           items: [
             "Picking a song from the search goes straight into that song's radio. The other results do not play any more: the user picked one, and the rest of the answers are not a list anybody asked for. The radio is Spotify's —the same door the autoplay of the desktop client uses— and the song sounds right away, with the similar ones behind it.",
+            "The songs run into each other. When one ends on its own, the next one starts that many seconds early and the two blend: there is no silence in the middle. The setting lives in Settings → Audio and goes from off to twelve seconds, and it is remembered on this machine. A click on another song never fades: that one plays right away.",
           ],
         },
         {
