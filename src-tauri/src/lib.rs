@@ -162,6 +162,19 @@ fn announce_clean_exit() {
     report::mark_session_end();
 }
 
+/// What the webview could not do, written where the log keeps it.
+///
+/// **A failure in the webview used to live only in the console.** The console
+/// is a window nobody opens, and the log —the one thing the app can show and
+/// the report can carry— said nothing about it. An update that does not install
+/// is the failure a person is most likely to report, and it was the one that
+/// left no trace: the button said "the download failed" and nobody could say
+/// why.
+#[tauri::command]
+fn log_frontend_error(message: String) {
+    log::error!("webview: {message}");
+}
+
 /// The develop channel's manifest, turned into something that can be installed.
 ///
 /// **The same updater, pointed at another door.** The plugin's own `check`
@@ -405,13 +418,15 @@ async fn find_prerelease_manifest(
 /// update whatever the versions say, because "you are already running it" is
 /// an answer too, and only the frontend knows what is installed.
 #[tauri::command]
-async fn check_prerelease_manifest(app: AppHandle) -> Result<Option<serde_json::Value>, String> {
+async fn check_prerelease_manifest(
+    webview: tauri::Webview,
+) -> Result<Option<serde_json::Value>, String> {
     let client = github_client()?;
     let Some(endpoint) = find_prerelease_manifest(&client).await? else {
         return Ok(None);
     };
 
-    let updater = app
+    let updater = webview
         .updater_builder()
         .endpoints(vec![endpoint])
         .map_err(|e| e.to_string())?
@@ -431,7 +446,14 @@ async fn check_prerelease_manifest(app: AppHandle) -> Result<Option<serde_json::
     let version = update.version.clone();
     let body = update.body.clone();
     let raw_json = update.raw_json.clone();
-    let rid = app.resources_table().add(update);
+    // **The webview's table, and not the app's.** They are two different
+    // tables: Tauri gives every webview its own, and the plugin's
+    // `download_and_install` looks the update up in the one belonging to the
+    // webview that asked for it. An update registered in the app's table is a
+    // handle to nothing —and that is exactly what the prerelease channel was
+    // doing since 0.5.0: the button appeared, the download never started, and
+    // the only thing the person was told was "the download failed".
+    let rid = webview.resources_table().add(update);
 
     // The body is left out when there is none: the plugin's `Update` takes an
     // optional string, and a `null` where it expects "absent" is a type error
@@ -477,7 +499,7 @@ struct PublicChannel {
 }
 
 #[tauri::command]
-async fn check_public_manifest(app: AppHandle) -> Result<PublicChannel, String> {
+async fn check_public_manifest(webview: tauri::Webview) -> Result<PublicChannel, String> {
     let client = github_client()?;
 
     // **The comparison is the commit, and the commit is the only thing that
@@ -491,7 +513,7 @@ async fn check_public_manifest(app: AppHandle) -> Result<PublicChannel, String> 
         _ => false,
     };
 
-    let updater = app
+    let updater = webview
         .updater_builder()
         // The comparison is not this command's business: the webview says what
         // is installed, and "you are already on it" is an answer.
@@ -512,7 +534,11 @@ async fn check_public_manifest(app: AppHandle) -> Result<PublicChannel, String> 
     let version = update.version.clone();
     let body = update.body.clone();
     let raw_json = update.raw_json.clone();
-    let rid = app.resources_table().add(update);
+    // **The webview's table, for the same reason as the prerelease one.** The
+    // door back to the public line is installed by the same plugin, and the
+    // plugin looks the update up where the webview that asked for it keeps
+    // its resources.
+    let rid = webview.resources_table().add(update);
 
     let mut metadata = serde_json::json!({
         "rid": rid,
@@ -1756,6 +1782,7 @@ pub fn run() {
             set_library_view,
             previous_session_crashed,
             announce_clean_exit,
+            log_frontend_error,
             check_prerelease_manifest,
             check_public_manifest,
             simulate_crash,
@@ -1897,5 +1924,40 @@ mod tests {
             tauri::Url::parse("https://github.com/alguien/otro/releases/download/v1/latest.json")
                 .unwrap();
         assert!(!is_our_manifest(&other_repo));
+    }
+
+    /// The update has to be registered where the plugin looks for it.
+    ///
+    /// **The check is over the source because the real one needs a webview,
+    /// and the Tauri feature that builds one breaks the test binary on
+    /// Windows.** What it guards is the mistake this app made for five
+    /// versions: the update was registered in the *app's* resource table, and
+    /// the plugin looks in the *webview's* —two different tables, so the
+    /// handle pointed at nothing, the install failed without saying why, and
+    /// the prerelease channel never worked.
+    ///
+    /// The plugin's own commands are the reference: its `check` registers the
+    /// update in the webview's table and its `download_and_install` reads it
+    /// back from there.
+    #[test]
+    fn the_update_is_registered_in_the_webviews_table() {
+        let source = include_str!("lib.rs");
+        // The strings are built here and not written out: a test that says
+        // the forbidden thing is itself the forbidden thing.
+        let app_table = format!("app.{}()", "resources_table");
+        let registration = format!("let rid = webview.{}.add(update);", "resources_table()");
+
+        assert!(
+            !source.contains(&app_table),
+            "the update has to be registered in the webview's resource table, \
+             like the plugin's own commands do. The app's table is a different \
+             one, and a handle into it points at nothing.",
+        );
+        assert_eq!(
+            source.matches(&registration).count(),
+            2,
+            "both channels —the prerelease and the door back to the public \
+             line— register the update the same way",
+        );
     }
 }

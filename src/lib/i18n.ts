@@ -275,7 +275,7 @@ export const strings = {
     updateGoBackSame: "La {version} pública es otra build: no la de develop que tienes instalada.",
     updateGoBackSameShort: "Instalar la {version} pública",
     updateInstallError:
-      "La descarga falló. La copia que tienes instalada no cambió, y puedes intentarlo otra vez.",
+      "La instalación falló. La copia que tienes instalada no cambió, y puedes intentarlo otra vez.",
     prereleaseTitle: "Prerelease de develop",
     prereleaseHint: "Se instala encima de la que tienes y la reemplaza.",
     prereleaseCheck: "Buscar prerelease",
@@ -289,7 +289,7 @@ export const strings = {
     prereleaseRateLimited:
       "GitHub limitó las consultas desde esta máquina. El presupuesto vuelve en una hora: prueba otra vez después.",
     prereleaseInstallError:
-      "La descarga de la prerelease falló. La copia que tienes instalada no cambió, y puedes intentarlo otra vez.",
+      "La instalación de la prerelease falló. La copia que tienes instalada no cambió, y puedes intentarlo otra vez.",
     updateAlertTitle: "Hay una versión nueva",
     updateAlertBody: "v{version} está lista. Se instala desde Ajustes, cuando tú lo decidas.",
     updateSimulated: "v{version} (simulada). No hay nada que instalar: es un estado de prueba.",
@@ -617,7 +617,7 @@ export const strings = {
       "The public {version} is a different build: not the develop one you have installed.",
     updateGoBackSameShort: "Install the public {version}",
     updateInstallError:
-      "The download failed. The copy you have installed did not change, and you can try again.",
+      "The install failed. The copy you have installed did not change, and you can try again.",
     prereleaseTitle: "Develop prerelease",
     prereleaseHint: "It installs over what you are running and replaces it.",
     prereleaseCheck: "Check prerelease",
@@ -632,7 +632,7 @@ export const strings = {
     prereleaseRateLimited:
       "GitHub limited the queries from this machine. The budget comes back in an hour: try again later.",
     prereleaseInstallError:
-      "The prerelease download failed. The copy you have installed did not change, and you can try again.",
+      "The prerelease install failed. The copy you have installed did not change, and you can try again.",
     updateAlertTitle: "There is a newer version",
     updateAlertBody: "v{version} is ready. It installs from Settings, when you decide.",
     updateSimulated: "v{version} (simulated). There is nothing to install: this is a test state.",
