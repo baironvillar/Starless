@@ -176,6 +176,27 @@ git push -u origin release/0.5.5
 gh pr create --base develop --title "0.5.5"
 ```
 
+**The bump asks before it writes.** `bun run version:bump` is the command that
+decides what a person with the app installed downloads, so it refuses to run
+unless the repository is in order, and then asks before it moves the number:
+
+- the three manifests agree, and have no uncommitted changes;
+- the branch is `release/<version>` — the version it is about to become;
+- the tag `v<version>` does not exist yet;
+- `CHANGELOG.md` has the section `## [<version>]`, and `src/lib/changelog.ts`
+  has the entry for it, in both languages.
+
+Each of those is a way the release goes out wrong, and each is cheaper to catch
+here than in the app installed on somebody's machine. The notes are written
+**before** the bump, not after: the release workflow stops without them, and it
+stops after the tag is already pushed.
+
+Without a level, the script asks which one it is —patch, minor or major— and
+explains what each one means. The number is never decided by the diff: it is a
+statement about the product (see [ROADMAP.md](ROADMAP.md#cómo-se-numeran-las-versiones)).
+There is a terminal to ask on, so the answer is the one that gets written;
+`--yes` is the way to say "I already checked" where there is none.
+
 GitHub adds the PR number to a squash commit title (`0.5.5 (#42)`). For a
 `fix(...)` subject that is harmless, but the version commit has to say the
 version and nothing else, so delete the ` (#42)` in the merge dialog before
@@ -348,3 +369,16 @@ del skill espera.
   leyendo el diff.
 - El CI corre lint, typecheck, build, el chequeo de versión, los mensajes de
   commit y el nombre de la rama. Todos tienen que pasar.
+
+**Las plantillas están en `.github/`.** GitHub ofrece una por tipo de PR, así
+que al crear uno se elige la que corresponde:
+
+| Plantilla | Para qué |
+| --- | --- |
+| `.github/PULL_REQUEST_TEMPLATE.md` | un cambio: un fix, una feature, un doc |
+| `.github/PULL_REQUEST_TEMPLATE/release.md` | el PR de la versión: `release/<versión>` → `develop` |
+| `.github/PULL_REQUEST_TEMPLATE/public.md` | el PR de la línea pública: `develop` → `main` |
+
+La primera trae la lista de tipos y alcances válidos, para el título: es lo que
+se pregunta siempre. Las otras dos son las que se llenan con el número de la
+versión y con las notas de `CHANGELOG.md`.

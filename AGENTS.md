@@ -108,6 +108,12 @@ salen de una captura:
    para que ambos lean natural y no como traducción.
 6. **La versión vive en `src-tauri/tauri.conf.json`.** `scripts/version.ts` la
    propaga a los otros dos manifiestos y falla si discrepan. No la edites a mano.
+   **Y el bump no se corre a ciegas:** `bun run version:bump` comprueba que los
+   tres manifiestos coincidan, que la rama sea `release/<versión>`, que el tag
+   esté libre y que las notas estén escritas —en `CHANGELOG.md` y en
+   `src/lib/changelog.ts`— y después pregunta. Si tocás el versionado, tocá esas
+   dos cosas de las notas: la release de GitHub y la que la app muestra en
+   Diagnóstico son el mismo texto escrito dos veces.
 7. **La biblioteca se lee por la sesión, no por la Web API.** Spotify no publica
    protocolo para la Web API, y desde febrero de 2026 una app registrada que la
    use queda limitada a **cinco personas en una lista**: las demás reciben `403`
