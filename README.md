@@ -186,8 +186,8 @@ reciente, así que no hay servidor propio que mantener.
 El detalle completo, incluida la firma y por qué no es opcional, está en
 [`docs/updates.md`](docs/updates.md).
 
-Publicar es `bun run version:bump patch`, un commit, y `git push --follow-tags`
-con el tag. La CI compila en Windows, firma, arma el `latest.json` y deja la
+Publicar es `bun run version:bump patch` en una rama `release/<versión>`, un PR
+a `develop`, y empujar el tag sobre el commit mergeado. La CI compila en Windows, firma, arma el `latest.json` y deja la
 release en borrador; sólo falta darle a *Publish release*.
 
 ### Advertencias honestas
@@ -210,7 +210,7 @@ release en borrador; sólo falta darle a *Publish release*.
 - [`DESIGN.md`](DESIGN.md) — el sistema visual y su presupuesto de rendimiento
 - [`docs/updates.md`](docs/updates.md) — publicación y actualizaciones
 - [`CHANGELOG.md`](CHANGELOG.md) — qué cambió en cada versión
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — cómo contribuir
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — cómo contribuir, y el flujo de ramas
 - [`SECURITY.md`](SECURITY.md) — cómo reportar un problema de seguridad
 
 ### Licencia
@@ -385,8 +385,8 @@ so there is no server of our own to maintain.
 The full detail, including the signature and why it is not optional, is in
 [`docs/updates.md`](docs/updates.md).
 
-Publishing is `bun run version:bump patch`, a commit, and `git push
---follow-tags` with the tag. CI builds on Windows, signs, writes `latest.json` and
+Publishing is `bun run version:bump patch` on a `release/<version>` branch, a
+PR into `develop`, and pushing the tag on the merged commit. CI builds on Windows, signs, writes `latest.json` and
 leaves the release as a draft; all that is left is clicking *Publish release*.
 
 ### Honest warnings
@@ -410,7 +410,7 @@ leaves the release as a draft; all that is left is clicking *Publish release*.
 - [`DESIGN.md`](DESIGN.md) — the visual system and its performance budget
 - [`docs/updates.md`](docs/updates.md) — releases and updates
 - [`CHANGELOG.md`](CHANGELOG.md) — what changed in each version
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to contribute
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to contribute, and the branch workflow
 - [`SECURITY.md`](SECURITY.md) — how to report a security problem
 
 ### License

@@ -123,12 +123,23 @@ salen de una captura:
    playlist`, y `0.4.0` a secas para el commit que sube la versión y para el
    merge a `main`. Los tipos y el alcance están en
    [`CONTRIBUTING.md`](CONTRIBUTING.md#los-mensajes-de-commit--commit-messages); el
-   cuerpo es libre y es donde va el porqué, como en el resto del repo.
+   cuerpo es libre y es donde va el porqué, y también va en inglés.
    La regla vive en `.githooks/commit-msg`, la instala `bun run hooks:install` y
    el CI la cobra igual: `--no-verify` la esquiva en esta máquina y no después.
    **El motivo no es la estética:** GitHub titula la corrida de un tag con el
    asunto del commit etiquetado y no con el nombre del workflow, así que un
    asunto de tres líneas es el nombre que queda al lado de cada release.
+9. **Never commit or push to `develop` or `main`. Every change comes from its own
+   branch, cut from `develop`, and goes back to `develop` through a pull
+   request.** The branch is `type/short-description` in English, lowercase and
+   kebab-case — `fix/configuration-button`, `feat/playlist-cover-upload` — or
+   `release/<version>` for a version bump. `main` only receives `develop`.
+   Before the first edit, check the branch with `git branch --show-current`: if
+   it is `develop` or `main`, create the branch first. Branch names, commit
+   messages, PR titles and descriptions are all written in English; only
+   user-facing text lives in two languages, in `lib/i18n.ts`. The full workflow
+   is in [`CONTRIBUTING.md`](CONTRIBUTING.md#branches-and-pull-requests);
+   `.githooks/pre-push` and the `Branch name` CI job enforce it.
 
 ## Convenciones
 
