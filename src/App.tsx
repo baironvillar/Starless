@@ -18,7 +18,6 @@ import { SearchScreen } from "./components/SearchScreen";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { TopBar } from "./components/TopBar";
 import { TrackList } from "./components/TrackList";
-import { TrackMenu } from "./components/TrackMenu";
 import { UpdateAlert } from "./components/UpdateAlert";
 import { type Lang, type StringKey, strings } from "./lib/i18n";
 import { SPRING } from "./lib/motion";
@@ -1865,6 +1864,8 @@ export default function App() {
    */
   const playlistView = !lyricsOpen && !showResults && !isHome && !isLiked && !detail;
   const playlistScreen = playlistView && selected !== undefined;
+  // Liked Songs is drawn by the same screen, so it shares the big button too.
+  const likedScreen = !lyricsOpen && !showResults && !isHome && isLiked && !detail;
 
   /**
    * Is the playlist on screen the one that is sounding? It is what turns the big
@@ -1880,7 +1881,7 @@ export default function App() {
    */
   const soundingFrom = status?.trackId ?? null;
   const inPlaylist =
-    playlistScreen &&
+    (playlistScreen || likedScreen) &&
     soundingFrom !== null &&
     libraryTracks.some((track) => track.id === soundingFrom);
   const playlistPlaying = inPlaylist && Boolean(status?.playing || status?.loading);
@@ -2179,7 +2180,7 @@ export default function App() {
             underneath in the panel, and between them a subtitle counting the songs
             of a playlist nobody could see.
           */}
-          {!lyricsOpen && !playlistScreen && !detail && (
+          {!lyricsOpen && !playlistScreen && !likedScreen && !detail && (
             <motion.header
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
@@ -2284,29 +2285,37 @@ export default function App() {
               />
             )
           ) : isLiked ? (
-            <TrackList
-              tracks={libraryTracks}
+            /*
+              Liked Songs on the playlist's screen, with `playlist={null}`.
+
+              It used to always play shuffled, whatever the shuffle button said.
+              Now it follows the one shuffle mode like every playlist does, and
+              `playlistContext` is `null` here on purpose: the saved songs are not
+              a playlist, so the radio seeds from the last song that played.
+            */
+            <PlaylistScreen
               t={t}
+              lang={lang}
+              playlist={null}
+              account={account.data ?? null}
+              tracks={libraryTracks}
               nowPlayingId={nowPlayingId}
               loadingId={loadingId}
               failedId={failedId}
-              // The home screen gets a fresh order every time, and the callback
-              // takes the list so it can decide one. Playlists below pass `onPlay`
-              // and keep the order they were made in.
-              onPlay={(track) => playShuffled(libraryTracks, track)}
+              onPlay={(list, track) => playFrom(list, track, playlistContext)}
+              onShuffle={(list, track) => playShuffled(list, track, playlistContext)}
               onOpenArtist={openArtist}
-              trackMenu={(track) => (
-                <TrackMenu
-                  t={t}
-                  track={track}
-                  onOpenArtist={openArtist}
-                  onOpenAlbum={openAlbum}
-                  onAddToQueue={onAddToQueue}
-                  onNewPlaylist={openNaming}
-                />
-              )}
+              onOpenAlbum={openAlbum}
+              onAddToQueue={onAddToQueue}
+              onNewPlaylist={openNaming}
+              onAddListToQueue={onAddListToQueue}
+              shuffle={shuffle}
+              onToggleShuffle={onToggleShuffle}
+              playing={playlistPlaying}
+              onPlayPause={onPlaylistPlayPause}
               loading={liked.isLoading}
               error={liked.error ? explain(liked.error) : null}
+              empty={!liked.isLoading ? t.likedEmpty : null}
             />
           ) : playlistScreen && selected ? (
             /*

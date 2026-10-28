@@ -1,4 +1,16 @@
-import { Check, Pause, Play, Search, Shuffle, X } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Check,
+  Heart,
+  List,
+  Menu,
+  Pause,
+  Play,
+  Search,
+  Shuffle,
+  X,
+} from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { StringKey } from "../lib/i18n";
@@ -16,13 +28,23 @@ import {
 import { MenuPanel } from "./MenuPanel";
 import { PlaylistDetailsDialog } from "./PlaylistDetailsDialog";
 import { PlaylistMenu } from "./PlaylistMenu";
-import { PlaylistTrackList } from "./PlaylistTrackList";
+import { PlaylistTrackList, type TrackListView } from "./PlaylistTrackList";
 import { TrackMenu } from "./TrackMenu";
 
 type PlaylistScreenProps = {
   t: Record<StringKey, string>;
   lang: string;
-  playlist: Playlist;
+  /**
+   * `null` is Liked Songs, the same sentinel `usePlaylistTracks` takes.
+   *
+   * **Same screen, because it is the same list.** Liked Songs used to be the
+   * bare `TrackList`, with a row twice as tall as a playlist's and none of the
+   * album, the date or the runtime — the one list every account has was the one
+   * drawn worst. What it does not have is what a playlist is and it is not: a
+   * visibility, a name to edit, a link to copy. So the header keeps the owner,
+   * the count and the runtime, and the label and the three dots stay out.
+   */
+  playlist: Playlist | null;
   account: Account | null;
   tracks: Track[];
   loading: boolean;
@@ -89,15 +111,42 @@ type PlaylistScreenProps = {
   onAddListToQueue: (tracks: Track[]) => void;
 };
 
-type PlaylistOrder = "custom" | "title" | "artist" | "album";
+type PlaylistOrder = "custom" | "title" | "added" | "artist" | "album";
 
-const ORDERS: PlaylistOrder[] = ["custom", "title", "artist", "album"];
+const ORDERS: PlaylistOrder[] = ["custom", "title", "added", "artist", "album"];
 
 const ORDER_LABEL: Record<PlaylistOrder, StringKey> = {
   custom: "orderCustom",
   title: "orderTitle",
+  added: "orderAdded",
   artist: "orderArtist",
   album: "orderAlbum",
+};
+
+/**
+ * Which way an order starts when it is picked.
+ *
+ * "Recently added" means newest first, and an A→Z that started at Z would read
+ * as a bug. Picking the same order again is what flips it.
+ */
+const STARTS_DESCENDING: Record<PlaylistOrder, boolean> = {
+  custom: false,
+  title: false,
+  added: true,
+  artist: false,
+  album: false,
+};
+
+const VIEWS: TrackListView[] = ["compact", "list"];
+
+const VIEW_LABEL: Record<TrackListView, StringKey> = {
+  compact: "viewCompact",
+  list: "viewList",
+};
+
+const VIEW_ICON: Record<TrackListView, typeof List> = {
+  compact: Menu,
+  list: List,
 };
 
 /** Same collator as the library rail, for the same reason: accents and numbers. */
@@ -157,6 +206,18 @@ export function PlaylistScreen({
 }: PlaylistScreenProps) {
   const [query, setQuery] = useState("");
   const [order, setOrder] = useState<PlaylistOrder>("custom");
+  const [descending, setDescending] = useState(false);
+  const [view, setView] = useState<TrackListView>("list");
+
+  // The same order again flips it; a new one starts the way it reads naturally.
+  const pickOrder = (next: PlaylistOrder) => {
+    if (next === order) {
+      setDescending((value) => !value);
+    } else {
+      setOrder(next);
+      setDescending(STARTS_DESCENDING[next]);
+    }
+  };
   // El diálogo de los detalles vive acá y no en el menú: el menú se cierra al
   // abrirlo, y un diálogo que se cierra con el menú que lo abrió no se abre
   // nunca.
@@ -181,11 +242,22 @@ export function PlaylistScreen({
         )
       : tracks;
 
-    if (order === "custom") return matched;
+    if (order === "custom") return descending ? [...matched].reverse() : matched;
 
     // Copies rather than rearranging: `tracks` is React Query's cached value, and
     // sorting it in place reorders it under every other screen that reads it.
     const sorted = [...matched];
+    if (order === "added") {
+      // A row with no date goes last in both directions: "—" is not the oldest
+      // song in the list, it is a song whose date we do not know.
+      sorted.sort((a, b) => {
+        if (a.added_at === null || b.added_at === null) {
+          return (a.added_at === null ? 1 : 0) - (b.added_at === null ? 1 : 0);
+        }
+        return descending ? b.added_at - a.added_at : a.added_at - b.added_at;
+      });
+      return sorted;
+    }
     if (order === "title") {
       sorted.sort((a, b) => byName.compare(a.name, b.name));
     } else if (order === "artist") {
@@ -200,10 +272,11 @@ export function PlaylistScreen({
           byName.compare(a.name, b.name),
       );
     }
-    return sorted;
-  }, [tracks, query, order]);
+    return descending ? sorted.reverse() : sorted;
+  }, [tracks, query, order, descending]);
 
-  const owner = playlist.owner?.display_name ?? null;
+  // Liked Songs has no owner field and is always the account's own.
+  const owner = playlist ? (playlist.owner?.display_name ?? null) : (account?.id ?? null);
 
   /**
    * Is this playlist one of yours, and what should its header say?
@@ -255,7 +328,7 @@ export function PlaylistScreen({
         transition={SPRING}
         className="flex flex-col gap-6 pb-6 sm:flex-row sm:items-end sm:gap-7"
       >
-        <PlaylistArtwork playlist={playlist} tracks={tracks} />
+        {playlist ? <PlaylistArtwork playlist={playlist} tracks={tracks} /> : <LikedArtwork />}
 
         <div className="min-w-0 flex-1">
           {/*
@@ -272,14 +345,14 @@ export function PlaylistScreen({
             con `public` en `false` porque no es una playlist de nadie, y
             llamarle "privada" sería mentira.
           */}
-          {(playlist.collaborative || (mine && !playlist.is_public)) && (
+          {playlist && (playlist.collaborative || (mine && !playlist.is_public)) && (
             <p className="mb-2 text-[13px] font-medium text-ink-muted">
               {playlist.collaborative ? t.playlistCollaborative : t.playlistPrivate}
             </p>
           )}
 
           <h1 className="line-clamp-2 text-[30px] leading-[1.12] font-semibold tracking-tight sm:text-[38px] lg:text-[44px]">
-            {playlist.name}
+            {playlist?.name ?? t.likedSongs}
           </h1>
 
           <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-ink-muted">
@@ -398,23 +471,33 @@ export function PlaylistScreen({
           tiene, y una fila de botones que no hacen nada es peor que una fila
           de tres que sí.
         */}
-        <PlaylistMenu
-          t={t}
-          playlist={playlist}
-          tracks={tracks}
-          mine={mine}
-          onAddToQueue={onAddListToQueue}
-          onEditDetails={() => setDetailsOpen(true)}
-        />
+        {playlist && (
+          <PlaylistMenu
+            t={t}
+            playlist={playlist}
+            tracks={tracks}
+            mine={mine}
+            onAddToQueue={onAddListToQueue}
+            onEditDetails={() => setDetailsOpen(true)}
+          />
+        )}
 
         <div className="ml-auto flex items-center gap-2">
           <SearchField t={t} value={query} onChange={setQuery} onClose={() => setQuery("")} />
-          <OrderMenu t={t} order={order} onOrderChange={setOrder} />
+          <OrderMenu
+            t={t}
+            order={order}
+            descending={descending}
+            onOrderChange={pickOrder}
+            view={view}
+            onViewChange={setView}
+          />
         </div>
       </div>
 
       <PlaylistTrackList
         tracks={visible}
+        view={view}
         t={t}
         lang={lang}
         nowPlayingId={nowPlayingId}
@@ -451,14 +534,31 @@ export function PlaylistScreen({
         menú se va con él. Vive en un portal, así que el `fixed` del fondo es
         el de la ventana y no el de una columna de 240 píxeles.
       */}
-      <PlaylistDetailsDialog
-        t={t}
-        open={detailsOpen}
-        playlist={playlist}
-        mine={mine}
-        onClose={() => setDetailsOpen(false)}
-      />
+      {playlist && (
+        <PlaylistDetailsDialog
+          t={t}
+          open={detailsOpen}
+          playlist={playlist}
+          mine={mine}
+          onClose={() => setDetailsOpen(false)}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * Liked Songs' face: the accent square with the heart, at the playlist's size.
+ *
+ * The same square the rail already draws for it. Spotify sends no cover for
+ * Liked Songs, and a mosaic of its first four songs would make it look like one
+ * more playlist — which is the one thing the rail took care that it is not.
+ */
+function LikedArtwork() {
+  return (
+    <span className="grid size-[180px] shrink-0 place-items-center rounded-[14px] bg-accent text-on-accent shadow-lg lg:size-[232px]">
+      <Heart className="size-16 fill-current lg:size-20" strokeWidth={2} />
+    </span>
   );
 }
 
@@ -590,27 +690,34 @@ function SearchField({ t, value, onChange, onClose }: SearchFieldProps) {
 type OrderMenuProps = {
   t: Record<StringKey, string>;
   order: PlaylistOrder;
+  descending: boolean;
   onOrderChange: (order: PlaylistOrder) => void;
+  view: TrackListView;
+  onViewChange: (view: TrackListView) => void;
 };
 
 /**
- * Which order the list on screen is in.
+ * Which order the list on screen is in, which way, and how tall its rows are.
  *
  * **It reorders the screen and nothing else.** The client this mirrors rewrites
  * the playlist, and that is a write against a revision Starless does not hold —
  * so this sorts what is in front of the user and says so, and the order on screen
- * is the order that plays. Nothing is saved, which is also why the label is a
- * question with a check rather than a heading.
+ * is the order that plays. Nothing is saved.
+ *
+ * **The arrow is the direction, and it only sits on the order in use.** Picking
+ * the same order again flips it, which is why the menu stays open on a click:
+ * flipping and then choosing the view are two clicks in one visit, and a menu
+ * that closed after each one would have to be opened three times.
  *
  * The floating part is [`MenuPanel`](../components/MenuPanel), shared with the
  * song menu: two menus that each own their own copy of "where do I draw myself and
  * how do I close" is how two menus end up disagreeing about Escape.
  */
-function OrderMenu({ t, order, onOrderChange }: OrderMenuProps) {
+function OrderMenu({ t, order, descending, onOrderChange, view, onViewChange }: OrderMenuProps) {
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLButtonElement>(null);
-
-  const close = () => setOpen(false);
+  const ViewIcon = VIEW_ICON[view];
+  const Direction = descending ? ArrowDown : ArrowUp;
 
   return (
     <>
@@ -624,39 +731,78 @@ function OrderMenu({ t, order, onOrderChange }: OrderMenuProps) {
         className="flex h-8 shrink-0 items-center gap-2 rounded-pill px-3 text-[12.5px] font-medium text-ink-muted transition-colors duration-200 hover:bg-white/8 hover:text-ink"
       >
         <span className="max-w-[160px] truncate">{t[ORDER_LABEL[order]]}</span>
+        <ViewIcon className="size-4 shrink-0" strokeWidth={2} aria-hidden />
       </button>
 
       <MenuPanel
         open={open}
-        onClose={close}
+        onClose={() => setOpen(false)}
         anchor={anchor}
         label={t.playlistOrder}
         width={MENU_PX}
       >
-        {ORDERS.map((option) => (
-          <button
-            key={option}
-            type="button"
-            role="option"
-            aria-selected={option === order}
-            onClick={() => {
-              onOrderChange(option);
-              close();
-            }}
-            className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] transition-colors duration-150 ${
-              option === order ? "bg-white/10" : "hover:bg-white/6"
-            }`}
-          >
-            <span className="min-w-0 flex-1">{t[ORDER_LABEL[option]]}</span>
-            <Check
-              className={`size-3.5 shrink-0 transition-opacity duration-150 ${
-                option === order ? "text-accent opacity-100" : "opacity-0"
+        <MenuHeading>{t.sortBy}</MenuHeading>
+        {ORDERS.map((option) => {
+          const current = option === order;
+          return (
+            <button
+              key={option}
+              type="button"
+              role="option"
+              aria-selected={current}
+              aria-label={
+                current
+                  ? `${t[ORDER_LABEL[option]]}, ${descending ? t.sortDescending : t.sortAscending}`
+                  : undefined
+              }
+              onClick={() => onOrderChange(option)}
+              className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] transition-colors duration-150 ${
+                current ? "font-medium text-accent" : "hover:bg-white/6"
               }`}
-              strokeWidth={2.5}
-            />
-          </button>
-        ))}
+            >
+              <span className="min-w-0 flex-1">{t[ORDER_LABEL[option]]}</span>
+              {current && <Direction className="size-3.5 shrink-0" strokeWidth={2.5} />}
+            </button>
+          );
+        })}
+
+        <div className="my-1 border-t border-white/8" />
+
+        <MenuHeading>{t.viewAs}</MenuHeading>
+        {VIEWS.map((option) => {
+          const current = option === view;
+          const Icon = VIEW_ICON[option];
+          return (
+            <button
+              key={option}
+              type="button"
+              role="option"
+              aria-selected={current}
+              onClick={() => onViewChange(option)}
+              className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] transition-colors duration-150 ${
+                current ? "font-medium text-accent" : "hover:bg-white/6"
+              }`}
+            >
+              <Icon className="size-4 shrink-0" strokeWidth={2} aria-hidden />
+              <span className="min-w-0 flex-1">{t[VIEW_LABEL[option]]}</span>
+              <Check
+                className={`size-3.5 shrink-0 transition-opacity duration-150 ${
+                  current ? "opacity-100" : "opacity-0"
+                }`}
+                strokeWidth={2.5}
+              />
+            </button>
+          );
+        })}
       </MenuPanel>
     </>
+  );
+}
+
+function MenuHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="px-3 pt-2 pb-1 text-[11px] font-semibold tracking-wide text-ink-faint uppercase">
+      {children}
+    </p>
   );
 }
