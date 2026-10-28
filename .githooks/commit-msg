@@ -29,7 +29,16 @@ alcance='[a-z0-9._/-]+'
 # el auto-squash ponen su texto antes de que exista un hook que pueda mirar, y
 # para frenarlos habría que usar `--no-verify`, que es exactamente el hábito que
 # después desactiva todo lo demás. Se dejan pasar y ya está.
-permitidos='Revert "|fixup! |squash! |amend! '
+#
+# **Lo mismo pasa con los merge commits que escribió GitHub.** Cuando el repo
+# usaba "Create a merge commit" para los pull requests, GitHub ponía su propio
+# asunto —"Merge pull request #11 from ..."— y ese commit se quedó en la
+# historia de `develop`. Ese texto no lo escribió una persona y no se puede
+# corregir sin reescribir la historia de todos los commits que vienen después,
+# con lo que eso implica para las ramas de otra gente. Lo que se perdona es la
+# forma, no el criterio: el merge a `main` de una versión sigue llevando la
+# versión sola como asunto, y ese es el que se mira.
+permitidos='Revert "|fixup! |squash! |amend! |Merge pull request |Merge branch |Merge remote-tracking branch '
 
 fallar() {
 	cat >&2 <<FINAL
@@ -84,7 +93,17 @@ asunto=$(printf '%s' "$mensaje" | head -n 1 | tr -d '\r\357\273\277')
 
 [ -z "$asunto" ] && fallar
 
-largo=$(printf '%s' "$asunto" | wc -c | tr -d ' ')
+# **La longitud se mide sobre el asunto que escribió una persona.** GitHub le
+# agrega el número del pull request al squash —"… (#42)"— y ese número no lo
+# escribió nadie: lo puso la máquina. Medirlo es medir un número, y hace que un
+# asunto de 68 caracteres caiga en un límite de 72 sin que el autor haya
+# escrito un caracter de más. Lo que se mide es lo que se escribió; el número
+# se queda en la historia, que es donde sirve.
+#
+# El sufijo sólo se saca si es un número de pull request: " (#42)" y no cualquier
+# paréntesis al final.
+escrito=$(printf '%s' "$asunto" | sed -E 's/ \(#[0-9]+\)$//')
+largo=$(printf '%s' "$escrito" | wc -c | tr -d ' ')
 
 # `case` hace patrones de glob, no expresiones regulares: los corchetes de
 # permitidos se comparan literales. Por eso lo único que se decide con `case`

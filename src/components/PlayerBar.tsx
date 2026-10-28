@@ -28,6 +28,7 @@ import {
   trackArtists,
 } from "../lib/spotify";
 import { DjArtwork, DjMark } from "./DjArtwork";
+import { SmoothSlider } from "./SmoothSlider";
 
 /**
  * What "repeat" currently means.
@@ -534,17 +535,21 @@ export function PlayerBar({
               <Volume2 className="size-[17px]" strokeWidth={2} />
             )}
           </button>
-          <input
-            type="range"
-            className="slider w-20"
-            min={0}
+          {/*
+            The same slider as the crossfade in Settings, in ink: the bar is
+            chrome. The spring also covers the round trip — the value comes
+            back from the backend a moment after the drag, and it glides there
+            instead of snapping.
+          */}
+          <SmoothSlider
+            className="w-20"
+            tone="ink"
             max={MAX_VOLUME}
             step={128}
             value={status?.volume ?? 0}
             disabled={idle}
-            onChange={(e) => void setVolume(Number(e.target.value)).catch(() => {})}
-            style={fillStyle(volume * 100)}
-            aria-label={t.volume}
+            onChange={(value) => void setVolume(value).catch(() => {})}
+            label={t.volume}
           />
         </div>
       </div>

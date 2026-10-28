@@ -13,8 +13,16 @@ import {
 } from "../lib/spotify";
 import { ArtistLine } from "./ArtistLine";
 
+/**
+ * How tall a row is. `list` carries the cover and puts the artist under the
+ * title; `compact` drops the cover and puts both on one line, so a long playlist
+ * fits about twice the songs on screen.
+ */
+export type TrackListView = "list" | "compact";
+
 type PlaylistTrackListProps = {
   tracks: Track[];
+  view?: TrackListView;
   t: Record<StringKey, string>;
   /** Decides the shape of the date column — see `formatAddedAt`. */
   lang: string;
@@ -69,6 +77,7 @@ const STAGGER_CAP = 12;
  */
 export function PlaylistTrackList({
   tracks,
+  view = "list",
   t,
   lang,
   nowPlayingId,
@@ -84,6 +93,7 @@ export function PlaylistTrackList({
   trackMenu,
 }: PlaylistTrackListProps) {
   const rowKeys = trackRowKeys(tracks);
+  const compact = view === "compact";
   /**
    * Header and rows share one template string, always. They did not once: the
    * rows gained the album and date columns in one change and the header was left
@@ -150,7 +160,9 @@ export function PlaylistTrackList({
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ ...SPRING, delay: Math.min(index, STAGGER_CAP) * STAGGER_STEP }}
-              className={`group grid cursor-pointer items-center gap-4 border-b border-white/8 px-4 py-2 text-left transition-colors duration-200 last:border-b-0 hover:bg-white/6 ${
+              className={`group grid cursor-pointer items-center gap-4 border-b border-white/8 px-4 ${
+                compact ? "py-1" : "py-2"
+              } text-left transition-colors duration-200 last:border-b-0 hover:bg-white/6 ${
                 isPlaying ? "bg-white/6" : ""
               }`}
               style={{ gridTemplateColumns: columns }}
@@ -202,14 +214,14 @@ export function PlaylistTrackList({
               </span>
 
               <div className="flex min-w-0 items-center gap-3">
-                {cover ? (
+                {compact ? null : cover ? (
                   <span className="size-9 shrink-0 overflow-hidden rounded-[8px]">
                     <img src={cover.url} alt="" loading="lazy" className="size-full object-cover" />
                   </span>
                 ) : (
                   <span className="size-9 shrink-0 rounded-[8px] bg-white/8" aria-hidden />
                 )}
-                <div className="min-w-0">
+                <div className={compact ? "flex min-w-0 items-baseline gap-2" : "min-w-0"}>
                   <p
                     className={`truncate text-[13.5px] font-semibold ${isPlaying ? "text-accent" : ""}`}
                   >

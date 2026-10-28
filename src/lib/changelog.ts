@@ -40,6 +40,47 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.5.5",
+    date: "2026-10-28",
+    released: true,
+    sections: {
+      es: [
+        {
+          title: "Nuevo",
+          items: [
+            "Elegir una canción de la búsqueda entra directo a la radio de esa canción. Las otras que salieron de la búsqueda ya no suenan: el usuario eligió una, y el resto de los resultados no es una lista que nadie pidió. La radio es la de Spotify —la misma puerta que usa el autoplay del cliente oficial— y la canción suena ya, con las parecidas detrás.",
+            "Las canciones se encadenan solas. Cuando una termina por sí sola, la siguiente empieza esos segundos antes y las dos se mezclan: no hay un silencio en el medio. El ajuste vive en Ajustes → Audio y va de apagado a doce segundos, y se recuerda en esta máquina. Un clic en otra canción nunca funde: esa suena ya.",
+          ],
+        },
+        {
+          title: "Corregido",
+          items: [
+            "La música se cortaba cuando una lista se acababa. Ahora, al terminar la cola, Starless le pregunta a Spotify qué sigue con lo parecido a lo que se estaba escuchando y sigue con canciones parecidas, como hace el autoplay. Con la repetición en «todo» la lista vuelve a empezar, como antes.",
+            "La app se ofrecía a sí misma como actualización. Una release pública puede llevar dentro una build de develop, y esa build se cree en la línea de desarrollo: busca la puerta de vuelta a la línea pública y se encuentra a sí misma, así que el botón ofrece instalar lo que ya está instalado —y el instalador es el mismo binario, así que el bucle no termina nunca. Ahora la app compara el commit de la build que está corriendo con el de la release pública, y cuando son el mismo no hay nada que instalar: dice que estás al día y la pastilla dice «pública» en vez de «pre-release».",
+            "La pre-release no se instalaba. El botón de instalar la pre-release fallaba siempre, desde la 0.5: la app guardaba la actualización en la tabla de recursos de la aplicación, y el instalador de Tauri la busca en la de la ventana —dos tablas distintas—, así que el fallo pasaba antes de descargar un solo byte. Ahora la actualización se registra donde el instalador la va a buscar, así que la pre-release se descarga y se instala. Lo mismo arregla la puerta de vuelta a la línea pública. Y el motivo de un fallo de actualización ahora queda en el log, que antes sólo vivía en una consola que nadie abre.",
+          ],
+        },
+      ],
+      en: [
+        {
+          title: "New",
+          items: [
+            "Picking a song from the search goes straight into that song's radio. The other results do not play any more: the user picked one, and the rest of the answers are not a list anybody asked for. The radio is Spotify's —the same door the autoplay of the desktop client uses— and the song sounds right away, with the similar ones behind it.",
+            "The songs run into each other. When one ends on its own, the next one starts that many seconds early and the two blend: there is no silence in the middle. The setting lives in Settings → Audio and goes from off to twelve seconds, and it is remembered on this machine. A click on another song never fades: that one plays right away.",
+          ],
+        },
+        {
+          title: "Fixed",
+          items: [
+            "The music stopped when a playlist ran out. Now, when the queue ends, Starless asks Spotify what comes next with what is similar to what was playing, and keeps going with similar songs, the way autoplay does. With repeat on 'all' the playlist starts over, as before.",
+            "The app offered itself as an update. A public release can hold a build from develop, and that build believes it is on the develop line: it looks for the door back to the public line and finds itself, so the button offers to install what is already installed —and the installer is the same binary, so the loop never ends. Now the app compares the commit of the build it is running with the one of the public release, and when they are the same there is nothing to install: it says you are up to date and the badge says 'public' instead of 'pre-release'.",
+            "The prerelease would not install. The button to install the prerelease always failed, since 0.5: the app stored the update in the application's resource table, and Tauri's installer looks for it in the window's —two different tables—, so the failure happened before a single byte was downloaded. Now the update is registered where the installer goes looking for it, so the prerelease downloads and installs. The same fixes the door back to the public line. And the reason an update fails is now in the log, which used to live only in a console nobody opens.",
+          ],
+        },
+      ],
+    },
+  },
+  {
     version: "0.5.4",
     date: "2026-10-26",
     released: true,

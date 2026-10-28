@@ -10,8 +10,14 @@ type SearchScreenProps = {
   nowPlayingId: string | null;
   loadingId: string | null;
   failedId: string | null;
-  /** Plays one song and makes these songs the queue that follows. */
-  onPlay: (tracks: Track[], track: Track) => void;
+  /**
+   * Plays one song and starts its radio.
+   *
+   * **The other results do not become the queue.** The user chose one song, and
+   * a song from the search starts the radio of that song —the rest of the
+   * answers are not a list the user asked to hear.
+   */
+  onPlay: (track: Track) => void;
   /** The row's extras, forwarded to the list. See `TrackMenu`. */
   onOpenArtist?: (artist: Artist) => void;
   onAddToQueue: (track: Track) => void;
@@ -53,15 +59,15 @@ export function SearchScreen({
   );
 
   return (
-    // The queue is this list and not the raw answer: what plays next has to be
-    // what the user is looking at, and the only list on screen is this one.
+    // The radio is the queue: what plays next is what the service says is
+    // similar, and it is not this list of answers.
     <NumberedTrackList
       tracks={songs}
       t={t}
       nowPlayingId={nowPlayingId}
       loadingId={loadingId}
       failedId={failedId}
-      onPlay={(track) => onPlay(songs, track)}
+      onPlay={onPlay}
       onOpenArtist={onOpenArtist}
       trackMenu={(track) => (
         <TrackMenu

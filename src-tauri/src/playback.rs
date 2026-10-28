@@ -251,6 +251,7 @@ fn build_player(app: &AppHandle, state: &PlaybackState, session: &Session) {
     // es el volumen de la voz. Sin esto, mutear la app callaba la música y
     // dejaba al DJ hablando.
     crate::voice::publish_attenuation(state.attenuation.clone());
+    crate::crossfade::set_seconds(u32::from(crate::settings::saved_crossfade_seconds()));
 
     let player = Player::new(
         config,
@@ -645,7 +646,15 @@ fn forward_events(app: AppHandle, player: Arc<Player>, generation: u32) {
                         s.playing = false;
                     })
                 }
-                PlayerEvent::Playing { position_ms, .. } => {
+                PlayerEvent::PlayRequestIdChanged { play_request_id } => {
+                    crate::crossfade::request_changed(*play_request_id);
+                }
+                PlayerEvent::Playing {
+                    position_ms,
+                    play_request_id,
+                    ..
+                } => {
+                    crate::crossfade::position(*play_request_id, *position_ms);
                     // Audio is flowing, so whatever outage came before this one
                     // is over. The reconnect counter starts from zero again:
                     // what it bounds is a loop inside one outage, not the
@@ -694,9 +703,22 @@ fn forward_events(app: AppHandle, player: Arc<Player>, generation: u32) {
                         s.finished = true;
                     })
                 }
-                PlayerEvent::PositionChanged { position_ms, .. }
-                | PlayerEvent::Seeked { position_ms, .. }
-                | PlayerEvent::PositionCorrection { position_ms, .. } => {
+                PlayerEvent::PositionChanged {
+                    position_ms,
+                    play_request_id,
+                    ..
+                }
+                | PlayerEvent::Seeked {
+                    position_ms,
+                    play_request_id,
+                    ..
+                }
+                | PlayerEvent::PositionCorrection {
+                    position_ms,
+                    play_request_id,
+                    ..
+                } => {
+                    crate::crossfade::position(*play_request_id, *position_ms);
                     state.mutate(|s| s.position_ms = *position_ms)
                 }
                 PlayerEvent::VolumeChanged { volume } => state.mutate(|s| s.volume = *volume),
@@ -783,6 +805,14 @@ pub fn play(
         *guard = Some(started);
     }
 
+    // The previous track ending on its own is the one case that crossfades:
+    // the frontend asks for the next track while the status still says
+    // `finished`. A click, a pick from search or a reconnection does not —
+    // what the user asked for plays now. In a crossfade the next track comes
+    // in a little way in, so the position may move.
+    let position_ms =
+        crate::crossfade::before_load(state.status().finished, duration_ms, position_ms);
+
     // Set before `load`, not from the event: the event carries a URI, converting
     // it back to the id the UI already had is work with no purpose.
     state.mutate(|s| {
@@ -820,6 +850,9 @@ pub fn stop(app: &AppHandle) -> Result<(), String> {
         return Err("no_player".to_string());
     };
     let player = state.live_player()?;
+    // With the crossfade on, the end of the song may already be queued. The DJ
+    // speaks after it, so it plays out whole instead of being cut to make room.
+    crate::crossfade::release_tail();
     player.stop();
     // The player is left holding no track, and `Player::play` does nothing on
     // one: it only resumes from `Paused` or `Loading`. So this is also the
@@ -885,6 +918,8 @@ pub fn toggle(state: &PlaybackState) -> Result<(), String> {
 
 pub fn seek(state: &PlaybackState, position_ms: u32) -> Result<(), String> {
     let player = state.live_player()?;
+    // A seek into the last seconds' buffered end would play that end first.
+    crate::crossfade::cut(position_ms);
     player.seek(position_ms);
     state.mutate(|s| s.position_ms = position_ms);
     Ok(())

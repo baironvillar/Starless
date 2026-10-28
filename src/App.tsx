@@ -18,7 +18,6 @@ import { SearchScreen } from "./components/SearchScreen";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { TopBar } from "./components/TopBar";
 import { TrackList } from "./components/TrackList";
-import { TrackMenu } from "./components/TrackMenu";
 import { UpdateAlert } from "./components/UpdateAlert";
 import { type Lang, type StringKey, strings } from "./lib/i18n";
 import { SPRING } from "./lib/motion";
@@ -50,6 +49,9 @@ import {
   type Playlist,
   playerStatus,
   playTrack,
+  type RadioContext,
+  radioMore,
+  radioStart,
   SESSION_ERRORS,
   setLibrarySort,
   setLibraryView,
@@ -78,16 +80,36 @@ const MAX_CONSECUTIVE_FAILURES = 5;
 /**
  * What the app is playing, and what came with it.
  *
- * **The DJ is the only queue here that is a session.** A playlist is a list and
- * ends where it ends; the DJ keeps choosing, so its queue has to be able to
- * grow while it plays. `station` says "this one is still being fed", and the
- * lines are the DJ's phrases — one per song, because the DJ opens a stretch
- * with one and closes it with another.
+ * **The DJ is not the only session here.** A playlist is a list and ends where it
+ * ends; the DJ keeps choosing, so its queue has to be able to grow while it
+ * plays; and the radio does the same, but without a DJ: it is music that keeps
+ * coming because it is similar to what was playing. `source` says which of the
+ * three this is, and the lines are the DJ's phrases — one per song, because the
+ * DJ opens a stretch with one and closes it with another.
  */
 type Queue = {
   tracks: Track[];
   lines: Record<string, DjNarration>;
-  station: boolean;
+  /**
+   * What this queue is.
+   *
+   * - "list": a list, and it ends where it ends.
+   * - "dj": the DJ, which talks and keeps choosing.
+   * - "radio": the radio, which keeps playing similar songs and never talks.
+   *
+   * **The last two are stations**: the queue grows while it plays, and the
+   * service is the one that fills it.
+   */
+  source: "list" | "dj" | "radio";
+  /**
+   * What the radio was seeded with.
+   *
+   * **The context, and not the songs.** The radio asks the service what is
+   * similar to what was being listened to, and "what was being listened to" is
+   * a playlist or a song —not the fifty songs the queue holds. Without this the
+   * radio could not be seeded at all.
+   */
+  context: RadioContext | null;
 };
 
 /**
@@ -100,6 +122,19 @@ type Queue = {
  * queue does not grow forever.
  */
 const DJ_TOP_UP = 2;
+
+/**
+ * Cuántas canciones recientes se le cuentan al servicio cuando arranca la radio.
+ *
+ * **El autoplay pregunta dos cosas:** qué se escuchaba y qué sonó hace poco. Las
+ * recientes son eso segundo: las últimas canciones que sonaron, para que las
+ * parecidas se parezcan a lo que está sonando y no a lo que sonó hace media
+ * hora.
+ *
+ * **Cinco, y no más.** Es lo que el servicio usa para arrancar la estación, y
+ * una lista larga lo hace repetir lo que ya sonó.
+ */
+const RECENT_FOR_RADIO = 5;
 
 /**
  * The fade that dissolves the edges of the content area, as a mask.
@@ -397,6 +432,21 @@ export default function App() {
   const selected = playlists.data?.find((p) => p.id === activeItem);
   const isLiked = activeItem === "liked";
   /**
+   * El contexto de la playlist que está a la vista.
+   *
+   * **La radio que sigue a una lista se siembra con la lista.** El servicio
+   * necesita saber *qué se escuchaba* para elegir las parecidas, y eso no se
+   * deduce de las canciones: la cola puede ser la lista de la pantalla, las
+   * canciones guardadas o una mezcla, y cada una quiere su propia radio.
+   *
+   * **Y es `null` cuando no hay playlist a la vista.** Las canciones guardadas
+   * no son una playlist y la radio se siembra con la última canción que sonó.
+   */
+  const playlistContext = useMemo<RadioContext | null>(
+    () => (selected ? { kind: "playlist", id: selected.id } : null),
+    [selected],
+  );
+  /**
    * The shelf you land on, which is not the saved songs.
    *
    * `active` was already the state the top bar moved; nothing read it. The main
@@ -494,13 +544,13 @@ export default function App() {
    * with a queue go with it. The DJ is the one that brings lines.
    */
   const setQueueOverride = useCallback(
-    (tracks: Track[] | null) => {
+    (tracks: Track[] | null, context: RadioContext | null = null) => {
       djLines.current = {};
       // **La cola cambió: el lugar en ella también.** El índice que guardamos
       // era de la cola anterior, y seguir usándolo haría saltar la app a una
       // canción que ya no está donde estaba.
       moveTo(-1);
-      setQueue(tracks ? { tracks, lines: {}, station: false } : null);
+      setQueue(tracks ? { tracks, lines: {}, source: "list", context } : null);
     },
     [moveTo],
   );
@@ -780,10 +830,10 @@ export default function App() {
    * randomness behind it.
    */
   const playShuffled = useCallback(
-    (tracks: Track[], track: Track) => {
+    (tracks: Track[], track: Track, context: RadioContext | null = null) => {
       advancedRef.current = null;
       setLoadedTrack(track);
-      setQueueOverride(shuffleFrom(tracks, track.id));
+      setQueueOverride(shuffleFrom(tracks, track.id), context);
       // **La canción que empieza queda adelante.** El orden nuevo la pone
       // primero, y el lugar en la cola tiene que decir lo mismo.
       asked.current = track.id;
@@ -845,10 +895,10 @@ export default function App() {
    * for. Asking the panel would make the station fetch a page too early.
    */
   const stationLeft = useMemo(() => {
-    if (!queue?.station) return 0;
+    if (!queue || queue.source === "list") return 0;
     const total = queue.tracks.length;
     return Math.max(0, total - (queueAt + 1));
-  }, [queue?.station, queue?.tracks, queueAt]);
+  }, [queue, queueAt]);
 
   /**
    * Advance when a track runs out.
@@ -958,6 +1008,149 @@ export default function App() {
    * ran out.
    */
   /**
+   * La lista se acabó y la música sigue con lo que se parece.
+   *
+   * **La radio se siembra con el contexto de lo que se escuchaba** —la playlist
+   * que se terminó— y con las últimas canciones que sonaron. Es el protocolo
+   * del autoplay de Spotify, entero: el contexto dice qué se escuchaba, y las
+   * recientes dicen dónde quedó la conversación.
+   *
+   * **Las parecidas van detrás de la lista, y la lista no se reescribe.** El
+   * orden de lo que ya sonó es el orden en que se escuchó, y la radio es lo que
+   * viene después.
+   *
+   * **Y la primera de las parecidas suena apenas llega.** La lista terminó y
+   * la música quedó en el aire: si la radio se escuchara más adelante, el
+   * silencio entre las dos sería el hueco que esta función vino a tapar. Por
+   * eso la pone ella y no la cola: nadie más va a arrancar la estación.
+   */
+  const continueWithRadio = useCallback(
+    (seed: Track, place: number) => {
+      // **El contexto primero.** Lo que se escuchaba es lo que el servicio usa
+      // para elegir las parecidas; sin contexto, la radio se sembraría con la
+      // última canción y no con la lista.
+      const context = queue?.context ?? { kind: "track", id: seed.id };
+      const recent = visibleTracks
+        .slice(Math.max(0, place - RECENT_FOR_RADIO + 1), place + 1)
+        .map((track) => track.id);
+      // **Este pedido tiene un número**, como todos los que llegan tarde: si el
+      // usuario puso otra cosa mientras se pedía la radio, esta página no se
+      // aplica — pondría canciones de una radio que nadie está escuchando.
+      //
+      // **Y no se incrementa el número:** acá no suena nada, y el número es el
+      // de "lo que tiene que sonar". Subirlo dejaría esperando para siempre a
+      // una frase del DJ que ya no va a sonar.
+      const mine = intent.current;
+      radioStart(context, recent)
+        .then((mix) => {
+          if (mine !== intent.current) return;
+          const first = mix.tracks[0];
+          if (!first) {
+            // **La radio no trajo nada.** No hay estación y no hay a dónde ir:
+            // la lista se acabó de verdad.
+            console.error("Starless: la radio no trajo canciones");
+            return;
+          }
+          setQueue((current) => {
+            if (!current) return current;
+            return {
+              ...current,
+              tracks: [...current.tracks, ...mix.tracks],
+              source: "radio",
+              context,
+            };
+          });
+          // **La primera parecida arranca en el lugar siguiente al de la
+          // lista.** Es lo mismo que haría `advance` si las tuviera delante.
+          playDirect(first, place + 1);
+        })
+        .catch((e) => {
+          // **La radio que no arranca no corta la música:** la lista ya terminó
+          // y no hay a dónde volver, pero el fallo se dice en la consola y la
+          // app sigue como estaba.
+          console.error("Starless: la radio no siguió a la lista", explain(e));
+        });
+    },
+    [queue?.context, visibleTracks, playDirect],
+  );
+
+  /**
+   * La radio está siendo pedida.
+   *
+   * **La estación no puede pedir más antes de tener la primera página.** La cola
+   * de una radio recién arrancada tiene una canción —la que eligió el
+   * usuario— y el relleno se dispararía enseguida: el backend todavía no tiene
+   * cursor, contesta vacío, y la estación se muere antes de empezar.
+   */
+  const radioStarting = useRef(false);
+
+  /**
+   * Una canción elegida en la búsqueda entra directo a su radio.
+   *
+   * **Las otras que salieron de la búsqueda no suenan.** El usuario eligió una
+   * canción, no una lista: en Spotify, elegir una canción de la búsqueda
+   * arranca la radio de esa canción y el resto de los resultados no forma parte
+   * de nada. La cola es la canción y nada más.
+   *
+   * **La canción suena ya y las parecidas llegan detrás.** Pedir la radio antes
+   * de sonar haría esperar la música por una llamada de red, y lo que el
+   * usuario pidió fue la canción.
+   */
+  const playRadio = useCallback(
+    (track: Track) => {
+      advancedRef.current = null;
+      // **Poner una canción calla al DJ**, como en cualquier otra decisión de
+      // reproducir: la frase que estaba diciendo era para otra canción.
+      djPending.current = null;
+      setDjVoice(null);
+      asked.current = track.id;
+      intent.current += 1;
+      setLoadedTrack(track);
+      // **La cola es la canción elegida y nada más.** Y es una estación desde el
+      // primer momento, porque la radio la va a seguir llenando.
+      setQueue({
+        tracks: [track],
+        lines: {},
+        source: "radio",
+        context: { kind: "track", id: track.id },
+      });
+      moveTo(0);
+      playTrack(track).catch((e) => {
+        console.error("Starless: no se pudo reproducir", explain(e));
+      });
+      // **La radio se pide después, no antes.**
+      const mine = intent.current;
+      radioStarting.current = true;
+      radioStart({ kind: "track", id: track.id }, [track.id])
+        .then((mix) => {
+          if (mine !== intent.current) return;
+          setQueue((current) =>
+            current?.source === "radio"
+              ? {
+                  ...current,
+                  // **La semilla no se repite.** El servicio no la devuelve, pero
+                  // filtrarla es más barato que confiar en eso.
+                  tracks: [track, ...mix.tracks.filter((item) => item.id !== track.id)],
+                }
+              : current,
+          );
+        })
+        .catch((e) => {
+          console.error("Starless: la radio no arrancó", explain(e));
+          // **La radio que no arranca no es una falla visible:** la canción
+          // sigue sonando y la cola vuelve a ser una lista.
+          setQueue((current) =>
+            current?.source === "radio" ? { ...current, source: "list" } : current,
+          );
+        })
+        .finally(() => {
+          radioStarting.current = false;
+        });
+    },
+    [moveTo],
+  );
+
+  /**
    * Dónde está, en la lista a la vista, la canción que terminó.
    *
    * **El lugar recordado se queda viejo cuando la lista cambia.** El usuario
@@ -1008,8 +1201,9 @@ export default function App() {
       const next = visibleTracks[at];
       if (next) {
         // **La estación pide la canción como la pide el DJ:** primero la frase,
-        // si la hay, y después la música. Una playlist no tiene frases.
-        if (queue?.station) {
+        // si la hay, y después la música. Una lista no tiene frases, y la radio
+        // tampoco —la radio es música y nada más—.
+        if (queue?.source === "dj") {
           void playStationTrack(next, at);
           return true;
         }
@@ -1021,9 +1215,32 @@ export default function App() {
         playDirect(visibleTracks[0], 0);
         return true;
       }
+      // **La lista se acabó y la música no se corta.** Spotify sigue con música
+      // parecida: la radio se siembra con lo que se estaba escuchando y con las
+      // últimas canciones, que es el protocolo del autoplay.
+      //
+      // **Una radio que se acaba no se vuelve a sembrar.** Si la cola ya era una
+      // radio, la estación llegó al final de lo que el servicio tiene y no hay a
+      // dónde ir: seguir sembrando sería una radio de la radio, sin fin.
+      if (queue?.source !== "radio") {
+        const seed = visibleTracks[place] ?? loadedTrack;
+        if (seed) {
+          continueWithRadio(seed, place);
+          return true;
+        }
+      }
       return false;
     },
-    [repeat, visibleTracks, loadedTrack, playDirect, queue?.station, playStationTrack, placeOf],
+    [
+      repeat,
+      visibleTracks,
+      loadedTrack,
+      playDirect,
+      queue?.source,
+      playStationTrack,
+      placeOf,
+      continueWithRadio,
+    ],
   );
 
   useEffect(() => {
@@ -1303,10 +1520,15 @@ export default function App() {
    *
    * The click and the queue are one decision, never two: a play button that
    * starts a track nobody chose to follow is how a player loses the user.
+   *
+   * **The context travels with the queue.** The radio that will follow when
+   * this list ends is seeded with *what was being listened to* —the playlist—
+   * and not with the songs on the screen. Without it, the radio would have to
+   * guess, and the only thing it could guess is the last song.
    */
   const playFrom = useCallback(
-    (tracks: Track[], track: Track) => {
-      setQueueOverride(tracks);
+    (tracks: Track[], track: Track, context: RadioContext | null = null) => {
+      setQueueOverride(tracks, context);
       // **El lugar se busca en la lista nueva.** La cola que se acaba de poner
       // es la que va a mandar, y el índice de la canción en ella es lo que
       // después decide qué sigue.
@@ -1348,7 +1570,12 @@ export default function App() {
           setDjUnavailable(true);
           return;
         }
-        setQueue({ tracks: mix.tracks, lines: mix.lines, station: true });
+        setQueue({
+          tracks: mix.tracks,
+          lines: mix.lines,
+          source: "dj",
+          context: null,
+        });
         djLines.current = mix.lines;
         advancedRef.current = null;
 
@@ -1402,31 +1629,43 @@ export default function App() {
    * vacía la música se corta, y eso es justo lo que una estación no puede
    * hacer.
    *
+   * **La radio sigue igual, y por la misma puerta.** Las dos son estaciones y
+   * las dos se llenan antes de vaciarse; lo que cambia es de qué servicio se
+   * pide la página: el DJ pide la suya y la radio pide la suya, con su cursor.
+   *
    * La bandera de "ya estoy pidiendo" está en una referencia y no en un
    * estado: el efecto se vuelve a correr con cada canción, y un estado sería
    * un render de más por cada uno.
    */
-  const djFetching = useRef(false);
+  const stationFetching = useRef(false);
   useEffect(() => {
-    if (!queue?.station) return;
+    if (!queue || queue.source === "list") return;
     // **La cuenta es de la estación, no del panel.** El panel no tiene "a
     // continuación" mientras no suena nada, y la estación sí tiene que saber
     // cuánto le queda de su página.
     if (stationLeft > DJ_TOP_UP) return;
-    if (djFetching.current) return;
+    if (stationFetching.current) return;
+    // **Una estación que todavía no tiene su primera página no pide una
+    // segunda.** Todavía no hay cursor, y una pregunta sin cursor es una
+    // estación que se declara terminada.
+    if (radioStarting.current) return;
 
-    djFetching.current = true;
-    djMore()
+    stationFetching.current = true;
+    const source = queue.source;
+    const more = source === "dj" ? djMore : radioMore;
+    more()
       .then((mix) => {
         if (mix.tracks.length === 0) {
-          // El DJ dijo que se terminó. La estación deja de pedir y la cola
-          // sigue con lo que tiene.
-          setQueue((current) => (current?.station ? { ...current, station: false } : current));
+          // La estación dijo que se terminó. Deja de pedir y la cola sigue con
+          // lo que tiene.
+          setQueue((current) =>
+            current && current.source !== "list" ? { ...current, source: "list" } : current,
+          );
           return;
         }
-        djLines.current = { ...djLines.current, ...mix.lines };
+        if (source === "dj") djLines.current = { ...djLines.current, ...mix.lines };
         setQueue((current) =>
-          current?.station
+          current && current.source !== "list"
             ? {
                 ...current,
                 tracks: [...current.tracks, ...mix.tracks],
@@ -1438,13 +1677,15 @@ export default function App() {
       .catch((e) => {
         // Una falla aquí no es una canción rota: la estación se queda con lo
         // que ya tiene y sigue sonando.
-        console.error("Starless: el DJ no pudo seguir", explain(e));
-        setQueue((current) => (current?.station ? { ...current, station: false } : current));
+        console.error("Starless: la estación no pudo seguir", explain(e));
+        setQueue((current) =>
+          current && current.source !== "list" ? { ...current, source: "list" } : current,
+        );
       })
       .finally(() => {
-        djFetching.current = false;
+        stationFetching.current = false;
       });
-  }, [queue?.station, stationLeft]);
+  }, [queue, stationLeft]);
 
   /**
    * The playlist's big button, in its playing half.
@@ -1466,21 +1707,20 @@ export default function App() {
     (list: Track[]) => {
       if (list.length === 0) return;
       if (!shuffle) {
-        playFrom(list, list[0]);
+        playFrom(list, list[0], playlistContext);
         return;
       }
-      playShuffled(list, list[Math.floor(Math.random() * list.length)]);
+      playShuffled(list, list[Math.floor(Math.random() * list.length)], playlistContext);
     },
-    [shuffle, playFrom, playShuffled],
+    [shuffle, playFrom, playShuffled, playlistContext],
   );
 
   /**
    * Everything about the search field, the dropdown and the results screen.
    *
    * Declared here rather than above because picking a song out of the menu has
-   * to make the queue, and that is `playFrom`. It used to be interleaved with
-   * the transport above and the scroll reset below, with nothing marking where
-   * one concern ended.
+   * to make the queue, and that is `playRadio`: a song out of the search starts
+   * its own radio and the other answers do not come along.
    */
   const {
     draft,
@@ -1497,7 +1737,7 @@ export default function App() {
     resultsLoading,
     screenError,
     leaveResults,
-  } = useSearch(playFrom);
+  } = useSearch(playRadio);
 
   /**
    * The area starts at the top of whatever it is now showing.
@@ -1624,6 +1864,8 @@ export default function App() {
    */
   const playlistView = !lyricsOpen && !showResults && !isHome && !isLiked && !detail;
   const playlistScreen = playlistView && selected !== undefined;
+  // Liked Songs is drawn by the same screen, so it shares the big button too.
+  const likedScreen = !lyricsOpen && !showResults && !isHome && isLiked && !detail;
 
   /**
    * Is the playlist on screen the one that is sounding? It is what turns the big
@@ -1639,7 +1881,7 @@ export default function App() {
    */
   const soundingFrom = status?.trackId ?? null;
   const inPlaylist =
-    playlistScreen &&
+    (playlistScreen || likedScreen) &&
     soundingFrom !== null &&
     libraryTracks.some((track) => track.id === soundingFrom);
   const playlistPlaying = inPlaylist && Boolean(status?.playing || status?.loading);
@@ -1699,7 +1941,8 @@ export default function App() {
     setQueue((current) => ({
       tracks: current ? [...current.tracks, track] : [track],
       lines: current?.lines ?? {},
-      station: current?.station ?? false,
+      source: current?.source ?? "list",
+      context: current?.context ?? null,
     }));
   }, []);
 
@@ -1720,7 +1963,8 @@ export default function App() {
     setQueue((current) => ({
       tracks: current ? [...current.tracks, ...tracks] : [...tracks],
       lines: current?.lines ?? {},
-      station: current?.station ?? false,
+      source: current?.source ?? "list",
+      context: current?.context ?? null,
     }));
   }, []);
 
@@ -1879,7 +2123,7 @@ export default function App() {
               upNext={upNext}
               narration={narration}
               dj={djVoice}
-              station={queue?.station === true}
+              station={queue?.source === "dj"}
               barPresent={barPresent}
               onPlay={onPlay}
               onClose={() => setQueueOpen(false)}
@@ -1936,7 +2180,7 @@ export default function App() {
             underneath in the panel, and between them a subtitle counting the songs
             of a playlist nobody could see.
           */}
-          {!lyricsOpen && !playlistScreen && !detail && (
+          {!lyricsOpen && !playlistScreen && !likedScreen && !detail && (
             <motion.header
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
@@ -1977,7 +2221,7 @@ export default function App() {
                 nowPlayingId={nowPlayingId}
                 loadingId={loadingId}
                 failedId={failedId}
-                onPlay={playFrom}
+                onPlay={playRadio}
                 onOpenArtist={openArtist}
                 onAddToQueue={onAddToQueue}
                 onNewPlaylist={openNaming}
@@ -2041,29 +2285,37 @@ export default function App() {
               />
             )
           ) : isLiked ? (
-            <TrackList
-              tracks={libraryTracks}
+            /*
+              Liked Songs on the playlist's screen, with `playlist={null}`.
+
+              It used to always play shuffled, whatever the shuffle button said.
+              Now it follows the one shuffle mode like every playlist does, and
+              `playlistContext` is `null` here on purpose: the saved songs are not
+              a playlist, so the radio seeds from the last song that played.
+            */
+            <PlaylistScreen
               t={t}
+              lang={lang}
+              playlist={null}
+              account={account.data ?? null}
+              tracks={libraryTracks}
               nowPlayingId={nowPlayingId}
               loadingId={loadingId}
               failedId={failedId}
-              // The home screen gets a fresh order every time, and the callback
-              // takes the list so it can decide one. Playlists below pass `onPlay`
-              // and keep the order they were made in.
-              onPlay={(track) => playShuffled(libraryTracks, track)}
+              onPlay={(list, track) => playFrom(list, track, playlistContext)}
+              onShuffle={(list, track) => playShuffled(list, track, playlistContext)}
               onOpenArtist={openArtist}
-              trackMenu={(track) => (
-                <TrackMenu
-                  t={t}
-                  track={track}
-                  onOpenArtist={openArtist}
-                  onOpenAlbum={openAlbum}
-                  onAddToQueue={onAddToQueue}
-                  onNewPlaylist={openNaming}
-                />
-              )}
+              onOpenAlbum={openAlbum}
+              onAddToQueue={onAddToQueue}
+              onNewPlaylist={openNaming}
+              onAddListToQueue={onAddListToQueue}
+              shuffle={shuffle}
+              onToggleShuffle={onToggleShuffle}
+              playing={playlistPlaying}
+              onPlayPause={onPlaylistPlayPause}
               loading={liked.isLoading}
               error={liked.error ? explain(liked.error) : null}
+              empty={!liked.isLoading ? t.likedEmpty : null}
             />
           ) : playlistScreen && selected ? (
             /*
@@ -2086,8 +2338,8 @@ export default function App() {
               nowPlayingId={nowPlayingId}
               loadingId={loadingId}
               failedId={failedId}
-              onPlay={playFrom}
-              onShuffle={playShuffled}
+              onPlay={(list, track) => playFrom(list, track, playlistContext)}
+              onShuffle={(list, track) => playShuffled(list, track, playlistContext)}
               onOpenArtist={openArtist}
               onOpenAlbum={openAlbum}
               onAddToQueue={onAddToQueue}
@@ -2124,7 +2376,7 @@ export default function App() {
               // screen used to leave the previous queue standing — open a shuffled
               // run from Home, click a song in "LoL", and the songs after it came
               // from the old list. The drift the queue design exists to prevent.
-              onPlay={(track) => playFrom(libraryTracks, track)}
+              onPlay={(track) => playFrom(libraryTracks, track, playlistContext)}
               loading={playlistTracks.isLoading}
               error={playlistError}
               empty={!playlistTracks.isLoading ? t.playlistEmpty : null}
@@ -2141,7 +2393,7 @@ export default function App() {
           status={status}
           dj={djVoice}
           present={barPresent}
-          onPlayDj={queue?.station && djCard ? onPlayDjAgain : undefined}
+          onPlayDj={queue?.source === "dj" && djCard ? onPlayDjAgain : undefined}
           djBusy={djBusy}
           t={t}
           queueOpen={queueOpen}

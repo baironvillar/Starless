@@ -30,6 +30,21 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [0.5.5] — 2026-10-28 · prerelease
+
+### New / Nuevo
+
+- **Elegir una canción de la búsqueda entra directo a la radio de esa canción.** Las otras que salieron de la búsqueda ya no suenan: el usuario eligió una, y el resto de los resultados no es una lista que nadie pidió. La radio es la de Spotify —la misma puerta que usa el autoplay del cliente oficial— y la canción suena ya, con las parecidas detrás.
+- **Las canciones se encadenan solas.** Cuando una termina por sí sola, la siguiente empieza esos segundos antes y las dos se mezclan: no hay un silencio en el medio. El ajuste vive en Ajustes → Audio y va de apagado a doce segundos, y se recuerda en esta máquina. Un clic en otra canción nunca funde: esa suena ya.
+
+### Fixed / Corregido
+
+- **La música se cortaba cuando una lista se acababa.** Ahora, al terminar la cola, Starless le pregunta a Spotify qué sigue con lo parecido a lo que se estaba escuchando y sigue con canciones parecidas, como hace el autoplay. Con la repetición en «todo» la lista vuelve a empezar, como antes.
+- **La app se ofrecía a sí misma como actualización.** Una release pública puede llevar dentro una build de `develop`, y esa build se cree en la línea de desarrollo: busca la puerta de vuelta a la línea pública y se encuentra a sí misma, así que el botón ofrece instalar lo que ya está instalado —y el instalador es el mismo binario, así que el bucle no termina nunca. Ahora la app compara el commit de la build que está corriendo con el de la release pública, y cuando son el mismo no hay nada que instalar: dice que estás al día y la pastilla dice «pública» en vez de «pre-release».
+- **La pre-release no se instalaba.** El botón de instalar la pre-release fallaba siempre, desde la 0.5: la app guardaba la actualización en la tabla de recursos de la aplicación, y el instalador de Tauri la busca en la de la ventana —dos tablas distintas—, así que el fallo pasaba antes de descargar un solo byte. Ahora la actualización se registra donde el instalador la va a buscar, así que la pre-release se descarga y se instala. Lo mismo arregla la puerta de vuelta a la línea pública. Y el motivo de un fallo de actualización ahora queda en el log, que antes sólo vivía en una consola que nadie abre.
+
+---
+
 ## [0.5.4] — 2026-10-26 · prerelease
 
 ### New / Nuevo

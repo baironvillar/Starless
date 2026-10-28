@@ -108,6 +108,12 @@ salen de una captura:
    para que ambos lean natural y no como traducción.
 6. **La versión vive en `src-tauri/tauri.conf.json`.** `scripts/version.ts` la
    propaga a los otros dos manifiestos y falla si discrepan. No la edites a mano.
+   **Y el bump no se corre a ciegas:** `bun run version:bump` comprueba que los
+   tres manifiestos coincidan, que la rama sea `release/<versión>`, que el tag
+   esté libre y que las notas estén escritas —en `CHANGELOG.md` y en
+   `src/lib/changelog.ts`— y después pregunta. Si tocás el versionado, tocá esas
+   dos cosas de las notas: la release de GitHub y la que la app muestra en
+   Diagnóstico son el mismo texto escrito dos veces.
 7. **La biblioteca se lee por la sesión, no por la Web API.** Spotify no publica
    protocolo para la Web API, y desde febrero de 2026 una app registrada que la
    use queda limitada a **cinco personas en una lista**: las demás reciben `403`
@@ -123,12 +129,23 @@ salen de una captura:
    playlist`, y `0.4.0` a secas para el commit que sube la versión y para el
    merge a `main`. Los tipos y el alcance están en
    [`CONTRIBUTING.md`](CONTRIBUTING.md#los-mensajes-de-commit--commit-messages); el
-   cuerpo es libre y es donde va el porqué, como en el resto del repo.
+   cuerpo es libre y es donde va el porqué, y también va en inglés.
    La regla vive en `.githooks/commit-msg`, la instala `bun run hooks:install` y
    el CI la cobra igual: `--no-verify` la esquiva en esta máquina y no después.
    **El motivo no es la estética:** GitHub titula la corrida de un tag con el
    asunto del commit etiquetado y no con el nombre del workflow, así que un
    asunto de tres líneas es el nombre que queda al lado de cada release.
+9. **Never commit or push to `develop` or `main`. Every change comes from its own
+   branch, cut from `develop`, and goes back to `develop` through a pull
+   request.** The branch is `type/short-description` in English, lowercase and
+   kebab-case — `fix/configuration-button`, `feat/playlist-cover-upload` — or
+   `release/<version>` for a version bump. `main` only receives `develop`.
+   Before the first edit, check the branch with `git branch --show-current`: if
+   it is `develop` or `main`, create the branch first. Branch names, commit
+   messages, PR titles and descriptions are all written in English; only
+   user-facing text lives in two languages, in `lib/i18n.ts`. The full workflow
+   is in [`CONTRIBUTING.md`](CONTRIBUTING.md#branches-and-pull-requests);
+   `.githooks/pre-push` and the `Branch name` CI job enforce it.
 
 ## Convenciones
 
@@ -194,6 +211,21 @@ salen de una captura:
   la llave embebida— pero deja un botón de instalar que no instala. Por eso el
   manifest de la prerelease lo apunta `check_prerelease_manifest` en Rust: el
   mismo updater, la misma llave, y lo que vuelve ya es instalable.
+- **El `rid` se registra en la tabla del webview, no en la del app.** Son **dos
+  tablas distintas**: Tauri le da a cada webview la suya (`resources_table:
+  Default::default()`) y la del app manager es otra. El plugin registra el
+  `Update` en la del webview —`webview.resources_table().add(update)`— y lo
+  vuelve a buscar ahí: `download_and_install` recibe el `Webview` que pidió la
+  instalación. Registrarlo en la del app (`app.resources_table().add(update)`)
+  deja un `rid` que no existe, y la instalación falla al instante, sin
+  descargar un byte y sin decir por qué.
+  **Esto fue un bug de la 0.5.0 a la 0.5.5**: el botón de la prerelease
+  funcionaba, la descarga no empezaba nunca, y el único mensaje era "la
+  descarga falló" —que además mentía, porque lo que fallaba era el registro.
+  Lo que lo escondió: el error vive en la consola del webview, y el log no
+  decía nada. `log_frontend_error` existe por eso.
+  **Si tocás el updater, registrá el `Update` donde el plugin lo va a
+  buscar.** El test `the_update_is_registered_in_the_webviews_table` lo fija.
 - **El manifest de la release no se puede bajar desde el webview, y la API de
   GitHub rechaza la petición si no lleva `User-Agent`.** Son dos motivos
   distintos y los dos dicen lo mismo: la app no encuentra la prerelease y culpa
@@ -589,6 +621,20 @@ salen de una captura:
     una lista vacía es una promesa que la app no puede cumplir: peor que no
     ofrecerlo. El espacio queda libre para lo que sí se puede contar. Cuando
     el backend sepa lo que se escuchó, vuelve —y si vuelve, vuelve con datos.
+  - **Una release pública puede llevar dentro una build de `develop`, y la app
+    entonces se ofrece a sí misma.** El canal va compilado dentro del binario:
+    `STARLESS_CHANNEL` lo decide el workflow según si el commit del tag llegó a
+    `main`, y **cambiar la marca de prerelease en GitHub no lo cambia**. La
+    release queda en borrador y se publica a mano, así que esa mano puede
+    sacarle la marca: la build sigue siendo de `develop` y ahora está en el
+    lugar de la línea pública. La app instalada se cree en la línea de
+    desarrollo, busca la puerta de vuelta a la línea pública y **se encuentra a
+    sí misma**: el botón ofrece "instalar la 0.5.4 pública" y el instalador es
+    el mismo binario. El bucle no termina nunca. Medido el 28/10 con la 0.5.4:
+    su tag (`3a66d42`) no llegó a `main`, y su binario dice "prerelease" con la
+    release marcada como pública. `bun run releases:check` lo dice, porque la
+    pregunta "¿el tag llegó a `main`?" es la del paso `canal` del workflow.
+    La salida es publicar desde `main`.
   - **La frase del DJ es una sorpresa, y la lista es el spoiler.**
     Con el DJ sonando, el panel de cola **no muestra "A continuación"**: la
     lista de lo que viene es justamente lo que spoils la sorpresa, y la frase
@@ -661,6 +707,27 @@ salen de una captura:
     canciones" y "dj: la estación pidió la página siguiente y recibió M"—, así que
     no hace falta una sonda para saber cuántas trajo cada página ni cuántas veces
     pidió la estación.
+- **La puerta del DJ no es la puerta de la radio, y la de la radio estaba
+  escondida en la dependencia.** `/lexicon-session-provider/context-resolve/v2/session`
+  con `contextUri=spotify:track:…` contesta `500` — y también con un disco, con
+  un artista y con una playlist común. Medido: los cuatro contextos dieron `500`
+  y el control, la playlist del DJ con la misma forma, contestó bien: es el
+  servicio de las "jellyfish cards" y sólo entiende su propio contexto. La radio
+  tiene **otra** puerta, y no hubo que inventarla: **`POST /context-resolve/v1/
+  autoplay`**, con el cuerpo en protobuf y el proto `AutoplayContextRequest` —
+  `context_uri` y `recent_track_uri`—, que está extraído del cliente oficial de
+  Windows y ya viene compilado en librespot 0.8
+  (`librespot_protocol::autoplay_context_request`). **La metodología de Spotify
+  es esa**: el contexto que se escuchaba y las canciones recientes.
+  Lo que contesta: **cincuenta canciones parecidas** —no la playlist repetida— y
+  un cursor a `radio-apollo`, que es donde sigue la estación
+  (`hm://radio-apollo/v5/tracks/spotify:station:playlist:<id>?salt=…&autoplay=true&…`).
+  La segunda página trae las canciones **en la raíz** y el `next_page_url` al
+  lado, como las del DJ. Y **la semilla no vuelve en la respuesta**: ni la
+  canción que sembró la radio ni las recientes, así que no hay que filtrar nada.
+  La otra candidate, `/inspiredby-mix/v2/seed_to_playlist/spotify:track:<id>`,
+  devuelve una playlist editorial y no la radio: no sirve. La sonda es
+  `STARLESS_SP_RADIO=1`.
 - **La cola no existe hasta que el usuario la crea.** El panel de cola y la
   estación del DJ son dos preguntas distintas, y el panel las confundía: el "A
   continuación" caía a `visibleTracks` —lo que se ve en pantalla— cuando todavía

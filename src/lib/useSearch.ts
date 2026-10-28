@@ -50,7 +50,7 @@ type Answer = { query: string; tracks: Track[] };
  * a cache nobody benefits from, and a request per keypress is a request per
  * keypress. So the state lives here and the calls sit behind a debounce.
  */
-export function useSearch(playFrom: (tracks: Track[], track: Track) => void) {
+export function useSearch(playRadio: (track: Track) => void) {
   const [draft, setDraft] = useState("");
   const [committed, setCommitted] = useState("");
   const [suggested, setSuggested] = useState<Answer | null>(null);
@@ -164,26 +164,27 @@ export function useSearch(playFrom: (tracks: Track[], track: Track) => void) {
   }, []);
 
   /**
-   * A song chosen from the dropdown owes the user a queue too.
+   * A song chosen from the dropdown starts its own radio.
    *
-   * This called `onPlay` on its own, which starts the track and leaves the queue
-   * on whatever was open before. So searching for a song, clicking it in the menu
-   * and waiting put the *liked songs* on afterwards — the click said "this song"
-   * and the queue said "a different list you are no longer looking at".
+   * **The other results do not come along, and that is the point.** The user
+   * chose one song: in Spotify, picking a song from the search starts the radio
+   * of that song, and the rest of the answers are not a queue. Putting them
+   * behind was the bug — nineteen songs the user never chose, queued to play
+   * after the one they did.
    *
    * It also commits the query, so the results screen is what is on screen while
-   * that list plays. That is the rule the rest of the app follows — what plays
+   * that radio plays. That is the rule the rest of the app follows — what plays
    * next is something the user can see — and keeping the user on the shelf while a
-   * search queue runs would break it.
+   * search radio runs would break it.
    */
   const onPickSuggestion = useCallback(
     (track: Track) => {
       const query = freshDraft?.query ?? draft.trim();
-      playFrom(freshDraft?.tracks ?? [track], track);
+      playRadio(track);
       if (query.length >= MIN_QUERY_LENGTH) setCommitted(query);
       setDraft(query);
     },
-    [freshDraft, draft, playFrom],
+    [freshDraft, draft, playRadio],
   );
 
   return {

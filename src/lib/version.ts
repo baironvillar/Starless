@@ -34,3 +34,39 @@ export async function appVersion(): Promise<string> {
 export function isPrerelease(): boolean {
   return typeof __STARLESS_CHANNEL__ !== "undefined" && __STARLESS_CHANNEL__ === "develop";
 }
+
+/**
+ * Whether this build is the one published as the public release.
+ *
+ * **A fact the app can learn, and a fact worth learning.** A public release
+ * built from `develop` ships the same binary the person is running: the app
+ * would call itself a prerelease forever while being the public version. The
+ * backend compares the two commits and says so, and the badge in Settings
+ * stops saying "pre-release" about the public build.
+ *
+ * **It starts false and stays false when nobody can tell.** The comparison
+ * needs the network, and without it the badge says what the build knows about
+ * itself: that it came from `develop`.
+ */
+let publicBuild = false;
+const publicBuildListeners = new Set<() => void>();
+
+/** Say that this build is the public one. */
+export function markPublicBuild(): void {
+  if (publicBuild) return;
+  publicBuild = true;
+  for (const listener of publicBuildListeners) listener();
+}
+
+/** Whether this build is the public one. */
+export function isPublicBuild(): boolean {
+  return publicBuild;
+}
+
+/** Listen for the moment the app finds out. */
+export function subscribePublicBuild(listener: () => void): () => void {
+  publicBuildListeners.add(listener);
+  return () => {
+    publicBuildListeners.delete(listener);
+  };
+}

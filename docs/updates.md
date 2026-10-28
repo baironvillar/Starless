@@ -51,17 +51,51 @@ máquina en vez de en la de GitHub.
 
 ## En cada release
 
+Nadie commitea directo en `develop` ni en `main` (ver
+[`CONTRIBUTING.md`](../CONTRIBUTING.md#branches-and-pull-requests)), y la versión
+tampoco: sale de una rama `release/<versión>` y llega a `develop` por un PR.
+
 ```bash
+git switch develop && git pull origin develop
+git switch -c release/0.3.1
 bun run version:bump patch          # 0.3.0 -> 0.3.1 en los tres manifiestos
 git commit -am "0.3.1"              # el asunto es la versión y nada más
-git tag v0.3.1 && git push --follow-tags
+git push -u origin release/0.3.1
+gh pr create --base develop --title "0.3.1"
 ```
+
+**El bump pregunta antes de escribir.** Es el comando que decide qué baja
+alguien que tiene la app instalada, así que se niega a correr si el repositorio
+no está en orden, y después pregunta:
+
+- los tres manifiestos coinciden y no tienen cambios sin commitear;
+- la rama es `release/<versión>` —la versión que va a ser—;
+- el tag `v<versión>` todavía no existe;
+- `CHANGELOG.md` tiene la sección `## [<versión>]` y `src/lib/changelog.ts` tiene
+  la entrada, en los dos idiomas.
+
+Las **notas se escriben antes** del bump, no después: el workflow corta sin
+ellas, y corta después de que el tag ya se empujó. Sin nivel, el script
+pregunta cuál es —patch, minor o major— y explica qué significa cada uno; el
+número nunca lo decide el diff, lo decide qué cambió.
+
+Al mergear (*Squash and merge*), GitHub le agrega el número del PR al título
+—`0.3.1 (#42)`— y hay que borrarlo en el diálogo antes de confirmar: el asunto es
+la versión y nada más. Con el PR mergeado, el tag va sobre el commit que llegó a
+`develop`, y empujar el tag es lo que dispara el workflow:
+
+```bash
+git switch develop && git pull origin develop
+git tag v0.3.1 && git push origin v0.3.1
+```
+
+Para hacerla pública, un PR de `develop` a `main` titulado `0.3.1`, mergeado con
+*Create a merge commit* y con el título del merge commit cambiado a `0.3.1`.
 
 El asunto del commit que lleva el tag es **la versión y nada más**. No es
 estética: GitHub titula la corrida de un tag con el asunto del commit etiquetado
 y no con el nombre del workflow, así que ese texto es el nombre que queda
-escrito al lado de la release. Si el merge a `main` no es fast-forward, el mismo
-asunto: `git merge --no-ff develop -m "0.3.1"`. El hook de `.githooks/` y el
+escrito al lado de la release. El merge a `main` lleva el mismo asunto. El hook de `.githooks/` y el
 workflow lo cobran; ver [`CONTRIBUTING.md`](../CONTRIBUTING.md#los-mensajes-de-commit--commit-messages).
 
 **El tag queda donde se hizo, y `develop` sigue avanzando.** Eso es lo normal:
@@ -86,6 +120,19 @@ corrida, la corrida deja la release en borrador otra vez con los archivos
 nuevos, y hasta que nadie la publica nadie Bajó la vieja. Cuando la release ya
 está publicada, mover el tag es otra historia: la app instalada ya tiene la
 versión y el manifest viejo sigue apuntando a los archivos que se borraron.
+
+**La excepción es una pre-release publicada que no se podía instalar.** A la
+0.5.5 le pasó: el botón de instalar la pre-release fallaba siempre, y el
+motivo estaba en el backend, así que la release estaba publicada y era
+ininstalable. Ahí nadie podía tener esa versión —la app no pasaba de 0.5.4
+porque el instalador moría antes de descargar un byte—, así que mover el tag
+no le rompe nada a nadie: la corrida deja la release en borrador otra vez con
+los archivos nuevos, y publicarla de nuevo es el mismo paso de siempre, con
+la marca de prerelease puesta a mano. Lo que hay que mirar es el manifest:
+mientras se borra el archivo viejo y se sube el nuevo hay un instante en que
+`latest.json` apunta a un asset que no existe, y el comprobador de la app lo
+toma por «no hay nada nuevo». Por eso la publicación se hace cuando la
+corrida terminó, y no en medio.
 
 Eso es todo. El workflow de `.github/workflows/release.yml` se dispara con el tag
 y hace el resto: corre `lint`, `typecheck`, `bun run version` y `cargo test
@@ -221,6 +268,38 @@ cualquier otro lado caiga en prerelease y no en una release pública por descuid
 
 El flujo diario es el mismo en las dos ramas; lo único que cambia es de dónde sale
 el tag.
+
+### Publicar una prerelease como si fuera una release
+
+La release queda en borrador y se publica a mano. Si se publica **tal como la
+dejó la CI** —con la marca de prerelease—, la build de `develop` queda del lado
+de la línea de desarrollo y todo anda como corresponde: la app instalada no la
+ve nunca en "hay una versión nueva", y la puerta hacia la línea pública la
+ofrece sólo cuando la línea pública tiene otra build.
+
+**Y para que la prerelease se instale de verdad, el `Update` tiene que quedar
+registrado donde el plugin lo va a buscar.** El canal de `develop` no lo
+resuelve el plugin: lo resuelve el backend (`check_prerelease_manifest`), que
+devuelve un `rid`. Ese `rid` es un puntero a un recurso que vive en Rust, y
+**el webview tiene su propia tabla de recursos** —la del app manager es otra—.
+El plugin busca el `Update` en la del webview; registrarlo en la del app deja
+un puntero a la nada, y la instalación falla al instante, sin descargar un
+byte y sin decir por qué.
+
+Si se publica **sacándole la marca**, la build sigue siendo la de `develop`: el
+canal va compilado dentro del binario y no se cambia por cambiar la marca de
+GitHub. Esa build, instalada, se cree en la línea de desarrollo, busca la
+puerta de vuelta a la línea pública y **se encuentra a sí misma**: el botón
+ofrece "instalar la 0.5.4 pública" y el instalador es el mismo binario. El
+bucle no termina nunca.
+
+Por eso `scripts/releases.ts` lo dice: una release pública cuyo tag no llegó a
+`main` lleva dentro una build de `develop`, y `bun run releases:check` lo
+reporta.
+
+La salida es publicar desde `main`: se mergea `develop` a `main` y el tag se
+hace ahí. La build es de la línea pública, la app no tiene ninguna puerta que
+ofrecer y el número que ves es el de la línea que estás usando.
 
 ### Para probarlo antes de que exista una release
 

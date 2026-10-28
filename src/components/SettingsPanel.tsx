@@ -11,8 +11,8 @@ import {
   User,
   X,
 } from "lucide-react";
-import { motion } from "motion/react";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { CHANGELOG, PREVIOUS_NOTE } from "../lib/changelog";
 import type { Lang, StringKey } from "../lib/i18n";
 import { SPRING, SPRING_SHEET } from "../lib/motion";
@@ -21,11 +21,14 @@ import {
   accentColor,
   applyAccentColor,
   applyMenuOpacity,
+  CROSSFADE_MAX,
+  crossfadeSeconds,
   MENU_OPACITY_DEFAULT,
   MENU_OPACITY_MAX,
   MENU_OPACITY_MIN,
   menuOpacity,
   setAccentColor,
+  setCrossfadeSeconds,
   setMenuOpacity,
   signOut,
   type Account as UserAccount,
@@ -45,8 +48,9 @@ import {
   subscribeUpdate,
   updateState,
 } from "../lib/updater";
-import { appVersion, isPrerelease } from "../lib/version";
+import { appVersion, isPrerelease, isPublicBuild, subscribePublicBuild } from "../lib/version";
 import { DevPanel } from "./DevPanel";
+import { SmoothSlider } from "./SmoothSlider";
 
 type SettingsPanelProps = {
   lang: Lang;
@@ -103,6 +107,16 @@ export function SettingsPanel({
    * wait for and nothing that can arrive late.
    */
   const prerelease = isPrerelease();
+  /**
+   * Whether this build is the one published as the public release.
+   *
+   * **It is not a constant, and that is the point.** The badge says which
+   * line this is, and a build that was compiled from `develop` but published
+   * as the public one is on the public line even though the binary says
+   * otherwise. The backend compares the commits and the answer arrives after
+   * the panel may already be open.
+   */
+  const publicBuild = useSyncExternalStore(subscribePublicBuild, isPublicBuild, isPublicBuild);
 
   useEffect(() => {
     void appVersion().then(setVersion);
@@ -150,12 +164,14 @@ export function SettingsPanel({
               the same otherwise, and "which one am I running" is the question
               that comes up exactly when something is wrong. A prerelease says
               so here; a release says nothing, because there is nothing to say.
+              And a build that was compiled from `develop` but published as the
+              public one says "public", because that is the line it is on.
           */}
           <p className="tabular mt-0.5 flex items-center gap-1.5 text-[12px] text-ink-faint">
             <span>v{version}</span>
             {prerelease && (
               <span className="rounded-pill bg-accent/15 px-1.5 py-px text-[10.5px] font-semibold tracking-wide uppercase text-accent">
-                {t.prereleaseBadge}
+                {publicBuild ? t.publicBadge : t.prereleaseBadge}
               </span>
             )}
           </p>
@@ -333,6 +349,29 @@ function Updates({ t }: { t: Record<StringKey, string> }) {
 }
 
 function Audio({ t }: { t: Record<StringKey, string> }) {
+  const [crossfade, setCrossfade] = useState<number | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void crossfadeSeconds()
+      .then((value) => {
+        if (alive) setCrossfade(value);
+      })
+      // Same reason as the opacity: a failed read must not leave the slider
+      // stuck on "…". Off is the honest default.
+      .catch(() => {
+        if (alive) setCrossfade(0);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const changeCrossfade = (value: number) => {
+    setCrossfade(value);
+    void setCrossfadeSeconds(value).catch(() => {});
+  };
+
   return (
     <div className="max-w-[620px]">
       <Group>
@@ -349,11 +388,73 @@ function Audio({ t }: { t: Record<StringKey, string> }) {
         <Row label={t.normalisation} hint={t.normalisationHint}>
           <Toggle />
         </Row>
+        {/*
+          A slider and not a switch: 0 is off, so one control says both whether
+          it is on and how long. It applies from the next song that ends on its
+          own — a click on another song never fades, it plays now.
+        */}
         <Row label={t.crossfade} hint={t.crossfadeHint}>
-          <Toggle />
+          <span className="flex items-center gap-3">
+            <SliderValue
+              value={crossfade}
+              text={
+                crossfade === null
+                  ? "…"
+                  : crossfade === 0
+                    ? t.crossfadeOff
+                    : t.crossfadeSeconds.replace("{n}", String(crossfade))
+              }
+            />
+            <SmoothSlider
+              value={crossfade ?? 0}
+              max={CROSSFADE_MAX}
+              disabled={crossfade === null}
+              label={t.crossfade}
+              onChange={changeCrossfade}
+            />
+          </span>
         </Row>
       </Group>
     </div>
+  );
+}
+
+/**
+ * The number next to the crossfade slider, sliding the way the value moved.
+ *
+ * Up when it grows and down when it shrinks: the label changes with every step
+ * of the drag, and a number that swaps in place reads as flicker, while one
+ * that rolls reads as the same number counting.
+ */
+function SliderValue({ value, text }: { value: number | null; text: string }) {
+  const previous = useRef(value);
+  const direction =
+    value !== null && previous.current !== null && value < previous.current ? -1 : 1;
+  useEffect(() => {
+    previous.current = value;
+  }, [value]);
+
+  return (
+    <span className="relative grid h-5 min-w-[74px] overflow-hidden text-right text-[12px] text-ink-faint tabular">
+      <AnimatePresence initial={false} custom={direction} mode="popLayout">
+        <motion.span
+          key={text}
+          custom={direction}
+          variants={{
+            enter: (d: number) => ({ y: 10 * d, opacity: 0 }),
+            center: { y: 0, opacity: 1 },
+            exit: (d: number) => ({ y: -10 * d, opacity: 0 }),
+          }}
+          initial="enter"
+          animate="center"
+          exit="exit"
+          transition={SPRING}
+          className="col-start-1 row-start-1 leading-5"
+        >
+          {text}
+        </motion.span>
+      </AnimatePresence>
+    </span>
   );
 }
 

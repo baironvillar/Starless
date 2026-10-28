@@ -92,6 +92,7 @@ export const strings = {
     loading: "Cargando…",
     emptyList: "Nada por aquí todavía",
     playlistEmpty: "Esta playlist todavía no tiene canciones.",
+    likedEmpty: "Las canciones que marques con el corazón aparecen aquí.",
     // La playlist, dibujada como la dibuja el cliente de escritorio: el tipo de
     // lista arriba y el orden y el filtro al lado de las canciones.
     playlistCollaborative: "Playlist colaborativa",
@@ -101,8 +102,14 @@ export const strings = {
     playlistOrder: "Orden de la lista",
     orderCustom: "Orden personalizado",
     orderTitle: "Título",
+    orderAdded: "Agregado recientemente",
     orderArtist: "Artista",
     orderAlbum: "Álbum",
+    sortBy: "Ordenar por",
+    sortAscending: "ascendente",
+    sortDescending: "descendente",
+    viewAs: "Ver como",
+    viewCompact: "Compacta",
     playAll: "Reproducir todo",
     // El menú de los tres puntos de una canción. Tres filas y las tres hacen
     // algo: las que no podrían, se leen como averiadas.
@@ -236,8 +243,11 @@ export const strings = {
 
     normalisation: "Normalizar volumen",
     normalisationHint: "Iguala el volumen entre canciones para que no te sorprendan los picos.",
-    crossfade: "Transición suave",
-    crossfadeHint: "Encadena las canciones con un fundido corto en lugar de cortarse.",
+    crossfade: "Transición entre canciones",
+    crossfadeHint:
+      "Cuando una canción termina sola, la siguiente empieza esos segundos antes y las dos se mezclan.",
+    crossfadeOff: "Apagado",
+    crossfadeSeconds: "{n} s",
 
     startWithWindows: "Iniciar con Windows",
     startWithWindowsHint: "Starless se abre minimizado a la bandeja al arrancar el sistema.",
@@ -252,6 +262,7 @@ export const strings = {
     changelogUnreleased: "En desarrollo",
     changelogReconstructed: "Reconstruido",
     prereleaseBadge: "pre-release",
+    publicBadge: "pública",
 
     // Updates
     updatesTitle: "Actualizaciones",
@@ -267,7 +278,7 @@ export const strings = {
     updateGoBackSame: "La {version} pública es otra build: no la de develop que tienes instalada.",
     updateGoBackSameShort: "Instalar la {version} pública",
     updateInstallError:
-      "La descarga falló. La copia que tienes instalada no cambió, y puedes intentarlo otra vez.",
+      "La instalación falló. La copia que tienes instalada no cambió, y puedes intentarlo otra vez.",
     prereleaseTitle: "Prerelease de develop",
     prereleaseHint: "Se instala encima de la que tienes y la reemplaza.",
     prereleaseCheck: "Buscar prerelease",
@@ -281,7 +292,7 @@ export const strings = {
     prereleaseRateLimited:
       "GitHub limitó las consultas desde esta máquina. El presupuesto vuelve en una hora: prueba otra vez después.",
     prereleaseInstallError:
-      "La descarga de la prerelease falló. La copia que tienes instalada no cambió, y puedes intentarlo otra vez.",
+      "La instalación de la prerelease falló. La copia que tienes instalada no cambió, y puedes intentarlo otra vez.",
     updateAlertTitle: "Hay una versión nueva",
     updateAlertBody: "v{version} está lista. Se instala desde Ajustes, cuando tú lo decidas.",
     updateSimulated: "v{version} (simulada). No hay nada que instalar: es un estado de prueba.",
@@ -430,6 +441,7 @@ export const strings = {
     loading: "Loading…",
     emptyList: "Nothing here yet",
     playlistEmpty: "This playlist has no songs yet.",
+    likedEmpty: "Songs you like with the heart show up here.",
     // The playlist, drawn the way the desktop client draws it: what kind of list
     // this is, then the order and the filter beside the songs.
     playlistCollaborative: "Collaborative playlist",
@@ -439,8 +451,14 @@ export const strings = {
     playlistOrder: "Playlist order",
     orderCustom: "Custom order",
     orderTitle: "Title",
+    orderAdded: "Recently added",
     orderArtist: "Artist",
     orderAlbum: "Album",
+    sortBy: "Sort by",
+    sortAscending: "ascending",
+    sortDescending: "descending",
+    viewAs: "View as",
+    viewCompact: "Compact",
     playAll: "Play all",
     // A song's three dots. Three rows, and all three do something: the ones that
     // could not would read as broken.
@@ -571,7 +589,10 @@ export const strings = {
     normalisation: "Normalise volume",
     normalisationHint: "Levels the volume across songs so no track jumps out at you.",
     crossfade: "Crossfade",
-    crossfadeHint: "Blends tracks together instead of cutting between them.",
+    crossfadeHint:
+      "When a song ends on its own, the next one starts that many seconds early and the two blend.",
+    crossfadeOff: "Off",
+    crossfadeSeconds: "{n} s",
 
     startWithWindows: "Start with Windows",
     startWithWindowsHint: "Starless opens minimised to the tray when the system starts.",
@@ -586,6 +607,7 @@ export const strings = {
     changelogUnreleased: "In development",
     changelogReconstructed: "Reconstructed",
     prereleaseBadge: "pre-release",
+    publicBadge: "public",
 
     updatesTitle: "Updates",
     updatesHint: "Starless checks on its own when it opens. Nothing downloads until you ask.",
@@ -601,7 +623,7 @@ export const strings = {
       "The public {version} is a different build: not the develop one you have installed.",
     updateGoBackSameShort: "Install the public {version}",
     updateInstallError:
-      "The download failed. The copy you have installed did not change, and you can try again.",
+      "The install failed. The copy you have installed did not change, and you can try again.",
     prereleaseTitle: "Develop prerelease",
     prereleaseHint: "It installs over what you are running and replaces it.",
     prereleaseCheck: "Check prerelease",
@@ -616,7 +638,7 @@ export const strings = {
     prereleaseRateLimited:
       "GitHub limited the queries from this machine. The budget comes back in an hour: try again later.",
     prereleaseInstallError:
-      "The prerelease download failed. The copy you have installed did not change, and you can try again.",
+      "The prerelease install failed. The copy you have installed did not change, and you can try again.",
     updateAlertTitle: "There is a newer version",
     updateAlertBody: "v{version} is ready. It installs from Settings, when you decide.",
     updateSimulated: "v{version} (simulated). There is nothing to install: this is a test state.",

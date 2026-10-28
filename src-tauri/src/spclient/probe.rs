@@ -17,6 +17,7 @@
 use librespot_core::version::{SPOTIFY_MOBILE_VERSION, SPOTIFY_SEMANTIC_VERSION};
 use librespot_core::{Session, SpotifyId, SpotifyUri};
 use librespot_metadata::{Metadata, Track as MetaTrack};
+use librespot_protocol::autoplay_context_request::AutoplayContextRequest;
 use librespot_protocol::clienttoken_http::{
     ClientTokenRequest, ClientTokenRequestType, ClientTokenResponse, ClientTokenResponseType,
 };
@@ -30,8 +31,8 @@ use librespot_protocol::playlist4_external::{
 use protobuf::{Enum, EnumOrUnknown, Message, MessageField};
 
 use super::{
-    ROOTLIST_PAGE, account, call, dj_mix, dj_page, liked_tracks, playlist_tracks, playlists,
-    search_tracks,
+    ROOTLIST_PAGE, account, call, dj_mix, host_path, liked_tracks, playlist_tracks, playlists,
+    search_tracks, station_page,
 };
 
 // ---------------------------------------------------------------------------
@@ -697,6 +698,254 @@ pub fn run_dj_probe(app: tauri::AppHandle) {
         }
 
         log::info!("=== DIAGNOSTIC: fin de la sonda de DJ ===");
+    });
+}
+
+/// ¿La puerta de la radio?
+///
+/// **Lo que se midió primero y no era la puerta:** sembrar la sesión del DJ con
+/// una canción (`context-resolve/v2/session` con `contextUri=spotify:track:…`)
+/// contesta `500` — y también con un disco, con un artista y con una playlist
+/// común. La puerta del DJ sólo sirve para el DJ: es el servicio de las
+/// "jellyfish cards", no el de las radios.
+///
+/// **Las radios tienen otras dos puertas, y las dos son de Spotify:**
+///
+/// - `POST /context-resolve/v1/autoplay` — el autoplay: el contexto que se
+///   estaba escuchando y las canciones recientes. El proto dice
+///   `context_uri` + `recent_track_uri`, y está extraído del cliente oficial.
+/// - `GET /inspiredby-mix/v2/seed_to_playlist/spotify:track:<id>` — la radio de
+///   una canción: "inspirada en" esa canción.
+///
+/// Se miden las dos, con la forma exacta que usaría la app, y se anota lo que
+/// importa: cuántas canciones traen, si la semilla está entre ellas —si está,
+/// la radio repite la canción que la sembró— y si hay cursor para seguir.
+#[cfg(debug_assertions)]
+pub fn radio_requested() -> bool {
+    std::env::var("STARLESS_SP_RADIO")
+        .map(|value| value != "0" && !value.is_empty())
+        .unwrap_or(false)
+}
+
+/// El autoplay: la puerta con el contexto y las canciones recientes.
+#[cfg(debug_assertions)]
+fn probe_autoplay(session: &Session, context_uri: &str, recent: &[String]) {
+    let request = AutoplayContextRequest {
+        context_uri: Some(context_uri.to_owned()),
+        recent_track_uri: recent.to_vec(),
+        is_video: Some(false),
+        special_fields: Default::default(),
+    };
+    let owned = session.clone();
+    let outcome = call(session, async move {
+        owned
+            .spclient()
+            .get_autoplay_context(&request)
+            .await
+            .map_err(|e| format!("ERROR: {e}"))
+    });
+
+    match outcome {
+        Ok(context) => {
+            let mut total = 0usize;
+            for page in &context.pages {
+                log::info!(
+                    "SP_RADIO: autoplay de {context_uri} → página con {} canciones · cursor={:?}",
+                    page.tracks.len(),
+                    page.next_page_url.as_deref().map(|url| &url[..url.len().min(100)])
+                );
+                for track in page.tracks.iter().take(12) {
+                    total += 1;
+                    log::info!("SP_RADIO:   autoplay · {:?}", track.uri);
+                }
+                // **La página siguiente es lo que distingue una estación de una
+                // lista de cincuenta.** Sin esto, la música se corta a los fifty.
+                if let Some(next) = page.next_page_url.as_deref() {
+                    probe_station_next(session, next);
+                }
+            }
+            log::info!("SP_RADIO: el autoplay trajo {total} canciones");
+        }
+        Err(error) => log::error!("SP_RADIO: autoplay de {context_uri} → {error}"),
+    }
+}
+
+/// La página siguiente de la estación: el cursor que devolvió el autoplay.
+///
+/// **El cursor es un `hm://`**: es el nombre interno del servicio, y en el host
+/// de Spotify lo que existe es el path. Es la misma traducción que hace el DJ.
+#[cfg(debug_assertions)]
+fn probe_station_next(session: &Session, next: &str) {
+    let path = host_path(next);
+    log::info!("SP_RADIO: la página siguiente → {path}");
+    let owned = session.clone();
+    let endpoint = path.clone();
+    let outcome = call(session, async move {
+        owned
+            .spclient()
+            .request(&reqwest::Method::GET, &endpoint, None, None)
+            .await
+            .map(|body| {
+                let text = String::from_utf8_lossy(&body).to_string();
+                (body.len(), text)
+            })
+            .map_err(|e| format!("ERROR: {e}"))
+    });
+
+    match outcome {
+        Ok((len, text)) => {
+            log::info!("SP_RADIO: la página siguiente vino en {len} bytes");
+            log::info!(
+                "SP_RADIO:   forma → {}",
+                text.chars().take(700).collect::<String>()
+            );
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
+                log::info!(
+                    "SP_RADIO:   claves → {:?}",
+                    json.as_object()
+                        .map(|map| map.keys().cloned().collect::<Vec<String>>())
+                );
+            }
+        }
+        Err(error) => log::error!("SP_RADIO: la página siguiente no vino: {error}"),
+    }
+}
+
+/// La radio de una canción: la puerta "inspirada en".
+#[cfg(debug_assertions)]
+fn probe_song_radio(session: &Session, track_id: &str) {
+    let uri = format!("spotify:track:{track_id}");
+    let Ok(parsed) = SpotifyUri::from_uri(&uri) else {
+        log::error!("SP_RADIO: la uri {uri} no se pudo leer");
+        return;
+    };
+    let owned = session.clone();
+    let outcome = call(session, async move {
+        owned
+            .spclient()
+            .get_radio_for_track(&parsed)
+            .await
+            .map(|body| {
+                let text = String::from_utf8_lossy(&body).to_string();
+                (body.len(), text)
+            })
+            .map_err(|e| format!("ERROR: {e}"))
+    });
+
+    match outcome {
+        Ok((len, text)) => {
+            log::info!("SP_RADIO: radio de {uri} → {len} bytes");
+            log::info!(
+                "SP_RADIO:   forma → {}",
+                text.chars().take(900).collect::<String>()
+            );
+            // Si viene como JSON, las canciones están en un lugar reconocible: se
+            // buscan por nombre de campo en vez de suponer la forma.
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
+                log::info!(
+                    "SP_RADIO:   claves → {:?}",
+                    json.as_object()
+                        .map(|map| map.keys().cloned().collect::<Vec<String>>())
+                );
+                for key in ["tracks", "items", "page", "pages"] {
+                    let Some(list) = json.get(key) else {
+                        continue;
+                    };
+                    let Some(list) = list.as_array() else {
+                        continue;
+                    };
+                    log::info!("SP_RADIO:   '{key}' trae {} filas", list.len());
+                    for row in list.iter().take(12) {
+                        let uri = row
+                            .get("uri")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("(sin uri)");
+                        log::info!("SP_RADIO:   {key} · {uri}");
+                    }
+                }
+            }
+        }
+        Err(error) => log::error!("SP_RADIO: radio de {uri} → {error}"),
+    }
+}
+
+/// La radio medida, de punta a punta.
+#[cfg(debug_assertions)]
+pub fn run_radio_probe(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(session) = crate::selftest::wait_for_session(&app) else {
+            log::error!("SP_RADIO: la sesión no llegó a conectar");
+            return;
+        };
+        log::info!("=== DIAGNOSTIC: sonda de radio ===");
+
+        let Ok(library) = playlists(&session) else {
+            log::error!("SP_RADIO: no se pudo leer la biblioteca");
+            return;
+        };
+
+        // Una playlist que no sea del DJ: su primera canción sirve de semilla, y
+        // la playlist misma es el contexto del autoplay.
+        let mut seed: Option<crate::models::Track> = None;
+        let mut playlist_id: Option<String> = None;
+        let mut dj_id: Option<String> = None;
+        for playlist in &library {
+            let owner = playlist
+                .owner
+                .as_ref()
+                .and_then(|owner| owner.display_name.as_deref());
+            if owner == Some("spotify") {
+                dj_id.get_or_insert(playlist.id.clone());
+                continue;
+            }
+            if seed.is_some() {
+                continue;
+            }
+            let Ok(tracks) = playlist_tracks(&session, &playlist.id) else {
+                continue;
+            };
+            if let Some(first) = tracks.first() {
+                log::info!(
+                    "SP_RADIO: semilla {:?} ({}) de la playlist {:?}",
+                    first.name, first.id, playlist.name
+                );
+                seed = Some(first.clone());
+                playlist_id = Some(playlist.id.clone());
+            }
+        }
+
+        let Some(seed) = seed else {
+            log::error!("SP_RADIO: no hay ninguna canción con la que sembrar");
+            return;
+        };
+        let seed_uri = format!("spotify:track:{}", seed.id);
+
+        // **El control:** la puerta del DJ, con la playlist del DJ. Si esto
+        // tampoco contesta, el problema no es el contexto sino la puerta.
+        if let Some(id) = dj_id.clone() {
+            match dj_mix(&session, &id) {
+                Ok(page) => log::info!(
+                    "SP_RADIO: control · el DJ contesta con {} canciones",
+                    page.mix.tracks.len()
+                ),
+                Err(error) => log::error!("SP_RADIO: control · el DJ no contestó: {error}"),
+            }
+        } else {
+            log::info!("SP_RADIO: control · la cuenta no tiene DJ");
+        }
+
+        // Las dos puertas de la radio.
+        if let Some(id) = playlist_id.clone() {
+            probe_autoplay(
+                &session,
+                &format!("spotify:playlist:{id}"),
+                std::slice::from_ref(&seed_uri),
+            );
+        }
+        probe_autoplay(&session, &seed_uri, std::slice::from_ref(&seed_uri));
+        probe_song_radio(&session, &seed.id);
+
+        log::info!("=== DIAGNOSTIC: fin de la sonda de radio ===");
     });
 }
 
@@ -1411,7 +1660,7 @@ fn probe_dj_station(session: &Session, playlist_id: &str) {
         return;
     };
 
-    match dj_page(session, &next) {
+    match station_page(session, &next) {
         Ok(second) => {
             log::info!(
                 "SP_DJ: segunda página · {} canciones · {} frases · sigue={:?}",

@@ -96,6 +96,62 @@ export function changelogSection(markdown: string, version: string): string | nu
 }
 
 /**
+ * Si el binario de una release se compiló en `develop`.
+ *
+ * **El canal se compila dentro del binario.** Una build de `develop` dice
+ * "prerelease" aunque la release que la contiene se publique como pública, y
+ * esa build instalada cree que está en la línea de desarrollo: busca la puerta
+ * de vuelta a la línea pública y se encuentra a sí misma. El botón ofrece
+ * "instalar la 0.5.4 pública" y el instalador es el mismo binario: el bucle no
+ * termina nunca.
+ *
+ * **La pregunta es la misma que hace el paso `canal` del workflow:** ¿el commit
+ * del tag llegó a `main`? Un tag que llegó es una build de `main`, y una build
+ * de `main` es de la línea pública por definición.
+ *
+ * **El remoto primero, y `main` después.** En la CI el checkout trae todas las
+ * ramas, y `origin/main` es la que está al día; en una máquina, `main` puede
+ * estar más atrás que el remoto —y un remoto atrasado sólo puede hacer que
+ * esta función no vea una contradicción, nunca que invente una.
+ */
+export function builtFromDevelop(tag: string): boolean {
+  const commit = spawnSync("git", ["rev-list", "-n", "1", tag], {
+    cwd: ROOT,
+    encoding: "utf8",
+  });
+  if (commit.status !== 0) return false;
+  const sha = (commit.stdout ?? "").trim();
+  if (!sha) return false;
+
+  for (const base of ["origin/main", "main"]) {
+    const inBase = spawnSync("git", ["merge-base", "--is-ancestor", sha, base], { cwd: ROOT });
+    // `status` 0 es "sí es antepasado": el tag llegó a la línea pública.
+    if (inBase.status === 0) return false;
+    if (inBase.stderr?.length) break; // la referencia no existe: se prueba la otra
+  }
+  return true;
+}
+
+/**
+ * Si una release pública lleva dentro una build de `develop`.
+ *
+ * **Las dos cosas no pueden ser verdad a la vez, y cuando no lo son la app se
+ * queda ofreciendo instalar la que ya tiene.** Se devuelve el motivo en texto,
+ * o `null` si no hay contradicción.
+ */
+export function publicButBuiltAsPrerelease(
+  release: { prerelease: boolean; draft: boolean },
+  tag: string,
+): string | null {
+  if (release.draft || release.prerelease) return null;
+  if (!builtFromDevelop(tag)) return null;
+  return (
+    "la release es pública pero su binario se compiló en develop: la app se cree en la línea " +
+    "de desarrollo y va a ofrecer instalar la línea pública, que es el mismo binario"
+  );
+}
+
+/**
  * Los finales de línea, iguales para todos.
  *
  * El changelog es de LF, pero una release guardada por la API puede tener CRLF
@@ -306,6 +362,12 @@ function planFor(release: Release, markdown: string): Plan {
     );
   }
 
+  // **Una release pública con un binario de `develop` adentro.** No se puede
+  // arreglar desde acá —el binario ya está compilado—, pero se puede decir, y
+  // decirlo es la diferencia entre un bucle que se entiende y uno que no.
+  const contradiccion = publicButBuiltAsPrerelease(release, release.tag_name);
+  if (contradiccion) notes.push(contradiccion);
+
   const renames: { asset: Asset; name: string }[] = [];
   const removals: Asset[] = [];
   let installer: Asset | null = null;
@@ -420,6 +482,12 @@ async function checkRelease(
   const names = release.assets.map((a) => a.name);
   const installer = release.assets.find((a) => a.name === installerName(version));
   const manifestAsset = release.assets.find((a) => a.name === MANIFEST_NAME);
+
+  // **Una release pública con un binario de `develop` adentro.** No se puede
+  // arreglar desde acá, pero se puede decir, y decirlo es la diferencia entre
+  // un bucle que se entiende y uno que no.
+  const contradiccion = publicButBuiltAsPrerelease(release, release.tag_name);
+  if (contradiccion) problems.push(contradiccion);
 
   // La firma es lo que decide si la release tiene manifest: sin firma no hay
   // manifest que valga, y una release sin firma no fue actualizable nunca.

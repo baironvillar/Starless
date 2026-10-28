@@ -6,6 +6,7 @@
 // needs the frontend to read a token, that is the bug, not the design.
 
 mod auth;
+mod crossfade;
 // Named `selftest`, never `diagnostic`: the `diagnostic` crate provides the
 // `#[diagnostic::on_unimplemented]` attribute that `#[tauri::command]` expands
 // to, and a local module of the same name shadows it at the crate root — which
@@ -162,6 +163,19 @@ fn announce_clean_exit() {
     report::mark_session_end();
 }
 
+/// What the webview could not do, written where the log keeps it.
+///
+/// **A failure in the webview used to live only in the console.** The console
+/// is a window nobody opens, and the log —the one thing the app can show and
+/// the report can carry— said nothing about it. An update that does not install
+/// is the failure a person is most likely to report, and it was the one that
+/// left no trace: the button said "the download failed" and nobody could say
+/// why.
+#[tauri::command]
+fn log_frontend_error(message: String) {
+    log::error!("webview: {message}");
+}
+
 /// The develop channel's manifest, turned into something that can be installed.
 ///
 /// **The same updater, pointed at another door.** The plugin's own `check`
@@ -221,6 +235,60 @@ fn github_client() -> Result<reqwest::Client, String> {
         .user_agent(concat!("starless/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|e| e.to_string())
+}
+
+/// The commit this build was compiled from.
+///
+/// **It is compiled in, and that is the whole point.** The question "is the
+/// public release me?" cannot be answered by asking around: the answer is
+/// needed exactly when GitHub is not answering, and an updater that guesses is
+/// an updater that offers to install the build somebody is already running —
+/// which is what the public 0.5.4 did, forever.
+///
+/// It is `None` in a build made without a checkout and without the variable
+/// set. That is not a failure: it means the app cannot tell the two apart, and
+/// it keeps the door open — which is what it did before this existed.
+const BUILD_COMMIT: Option<&str> = option_env!("STARLESS_COMMIT");
+
+/// The commit of the newest public release.
+///
+/// **The release record carries it.** GitHub keeps `target_commitish` on every
+/// release: the commit it was cut from. That commit is the build inside the
+/// release, so it is the one thing that can say whether the public release is
+/// *this* build or another one that happens to carry the same version number.
+///
+/// **A branch is not a commit.** The field can hold a branch name, and a branch
+/// is not a build: comparing it with a sha would say "different" for every
+/// release, and the loop would come back every time.
+async fn public_release_commit(client: &reqwest::Client) -> Result<Option<String>, String> {
+    const REPO: &str = "baironvillar/Starless";
+
+    let response = client
+        .get(format!("https://api.github.com/repos/{REPO}/releases/latest"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if is_rate_limited(&response) {
+        return Err("rate_limited".to_string());
+    }
+    if !response.status().is_success() {
+        return Ok(None);
+    }
+    let release: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
+    Ok(release
+        .get("target_commitish")
+        .and_then(|value| value.as_str())
+        .map(|value| value.trim().to_string())
+        .filter(|value| is_commit_sha(value)))
+}
+
+/// Whether a string is a commit sha.
+///
+/// **Forty hex characters: that is what a commit is.** Anything else is not
+/// compared, because a wrong answer here is worse than no answer: it would
+/// hide the door back to the public line from the people who need it.
+fn is_commit_sha(value: &str) -> bool {
+    value.len() == 40 && value.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 /// Whether GitHub refused because the hourly budget is spent.
@@ -351,13 +419,15 @@ async fn find_prerelease_manifest(
 /// update whatever the versions say, because "you are already running it" is
 /// an answer too, and only the frontend knows what is installed.
 #[tauri::command]
-async fn check_prerelease_manifest(app: AppHandle) -> Result<Option<serde_json::Value>, String> {
+async fn check_prerelease_manifest(
+    webview: tauri::Webview,
+) -> Result<Option<serde_json::Value>, String> {
     let client = github_client()?;
     let Some(endpoint) = find_prerelease_manifest(&client).await? else {
         return Ok(None);
     };
 
-    let updater = app
+    let updater = webview
         .updater_builder()
         .endpoints(vec![endpoint])
         .map_err(|e| e.to_string())?
@@ -377,7 +447,14 @@ async fn check_prerelease_manifest(app: AppHandle) -> Result<Option<serde_json::
     let version = update.version.clone();
     let body = update.body.clone();
     let raw_json = update.raw_json.clone();
-    let rid = app.resources_table().add(update);
+    // **The webview's table, and not the app's.** They are two different
+    // tables: Tauri gives every webview its own, and the plugin's
+    // `download_and_install` looks the update up in the one belonging to the
+    // webview that asked for it. An update registered in the app's table is a
+    // handle to nothing —and that is exactly what the prerelease channel was
+    // doing since 0.5.0: the button appeared, the download never started, and
+    // the only thing the person was told was "the download failed".
+    let rid = webview.resources_table().add(update);
 
     // The body is left out when there is none: the plugin's `Update` takes an
     // optional string, and a `null` where it expects "absent" is a type error
@@ -408,9 +485,36 @@ async fn check_prerelease_manifest(app: AppHandle) -> Result<Option<serde_json::
 /// `tauri.conf.json`, and writing it a second time is a second thing to
 /// forget. The signature is still the one embedded in the app, because the
 /// builder brings it too.
+///
+/// **And the answer says whether the public release is this very build.** That
+/// is what ends the loop: a public release built from `develop` ships the same
+/// binary the person is running, and offering to install it is offering to
+/// install what is already there —forever, because installing it changes
+/// nothing. The two commits are compared, not the two version numbers.
+#[derive(Serialize)]
+struct PublicChannel {
+    /// The public release, when there is one to install.
+    update: Option<serde_json::Value>,
+    /// Whether the public release is this build.
+    same_build: bool,
+}
+
 #[tauri::command]
-async fn check_public_manifest(app: AppHandle) -> Result<Option<serde_json::Value>, String> {
-    let updater = app
+async fn check_public_manifest(webview: tauri::Webview) -> Result<PublicChannel, String> {
+    let client = github_client()?;
+
+    // **The comparison is the commit, and the commit is the only thing that
+    // tells two builds apart.** The version numbers can be equal while the
+    // programs are different; the commits cannot.
+    let same_build = match public_release_commit(&client).await {
+        Ok(Some(public)) => BUILD_COMMIT == Some(public.as_str()),
+        // Without both commits there is nothing to compare, and the door stays
+        // open. The door is a feature: the only thing worse than offering it
+        // wrongly is not offering it at all.
+        _ => false,
+    };
+
+    let updater = webview
         .updater_builder()
         // The comparison is not this command's business: the webview says what
         // is installed, and "you are already on it" is an answer.
@@ -419,7 +523,10 @@ async fn check_public_manifest(app: AppHandle) -> Result<Option<serde_json::Valu
         .map_err(|e| e.to_string())?;
     let update = updater.check().await.map_err(|e| e.to_string())?;
     let Some(update) = update else {
-        return Ok(None);
+        return Ok(PublicChannel {
+            update: None,
+            same_build,
+        });
     };
 
     // The fields are read before the update is handed to the resource table:
@@ -428,7 +535,11 @@ async fn check_public_manifest(app: AppHandle) -> Result<Option<serde_json::Valu
     let version = update.version.clone();
     let body = update.body.clone();
     let raw_json = update.raw_json.clone();
-    let rid = app.resources_table().add(update);
+    // **The webview's table, for the same reason as the prerelease one.** The
+    // door back to the public line is installed by the same plugin, and the
+    // plugin looks the update up where the webview that asked for it keeps
+    // its resources.
+    let rid = webview.resources_table().add(update);
 
     let mut metadata = serde_json::json!({
         "rid": rid,
@@ -439,7 +550,10 @@ async fn check_public_manifest(app: AppHandle) -> Result<Option<serde_json::Valu
     if let Some(body) = body {
         metadata["body"] = serde_json::Value::String(body);
     }
-    Ok(Some(metadata))
+    Ok(PublicChannel {
+        update: Some(metadata),
+        same_build,
+    })
 }
 
 /// Development only: plant a crashed session on disk so the crash flow can be
@@ -576,6 +690,26 @@ struct DjSession {
     /// for the moment the song starts: the DJ takes the turn without a hole in
     /// the middle.
     audio: HashMap<String, Vec<u8>>,
+}
+
+/// Where the radio is, and how it continues.
+///
+/// **The cursor lives in the backend on purpose**, like the DJ's: it is the
+/// service's own address for the next page —with its salt and the tracks it
+/// already played— and the webview is not the place that has to know how to
+/// follow it.
+///
+/// **And it is a separate state from the DJ's, on purpose.** Both are stations
+/// and both keep going, but each one follows its own cursor: if they shared it,
+/// the DJ would follow the radio's cursor and the service would answer with the
+/// radio's tracks as if they were the DJ's own mix.
+#[derive(Default)]
+pub struct RadioState(Mutex<RadioSession>);
+
+#[derive(Default)]
+struct RadioSession {
+    /// Where the station continues.
+    next: Option<String>,
 }
 
 /// Everything the login screen needs to decide what to show, and nothing else.
@@ -827,7 +961,7 @@ async fn dj_mix(
     // otra la voz, que va por su cuenta.
     let for_page = session.clone();
     let page = tauri::async_runtime::spawn_blocking(move || match cursor {
-        Some(path) => spclient::dj_page(&for_page, &path),
+        Some(path) => spclient::station_page(&for_page, &path),
         None => spclient::dj_mix(&for_page, &playlist_id),
     })
     .await
@@ -1098,7 +1232,7 @@ async fn dj_more(
     // La sesión se clona: una copia se la queda el pedido de la página y la
     // otra el audio que se pide por adelantado.
     let for_page = session.clone();
-    let page = tauri::async_runtime::spawn_blocking(move || spclient::dj_page(&for_page, &path))
+    let page = tauri::async_runtime::spawn_blocking(move || spclient::station_page(&for_page, &path))
         .await
         .map_err(|e| {
             eprintln!("Starless [command_failed]: {e}");
@@ -1122,6 +1256,97 @@ async fn dj_more(
 
     log::info!(
         "dj: la estación pidió la página siguiente y recibió {} canciones",
+        page.mix.tracks.len()
+    );
+
+    Ok(page.mix)
+}
+
+/// La radio: las canciones parecidas a las que se estaban escuchando.
+///
+/// **Es la puerta del autoplay de Spotify, con su protocolo entero**: el
+/// contexto que se escuchaba y las canciones recientes. Con una playlist como
+/// contexto, es lo que sigue cuando la lista se acaba; con una canción como
+/// contexto, es la radio de esa canción.
+///
+/// La primera página trae cincuenta canciones y un cursor; las siguientes salen
+/// del cursor, con `radio_more`.
+#[tauri::command]
+async fn radio_start(
+    app: AppHandle,
+    radio_state: State<'_, RadioState>,
+    context: crate::models::RadioContext,
+    recent_track_ids: Vec<String>,
+) -> Result<crate::models::DjMix, String> {
+    let session = ready_session(&app).await?;
+    let uri = context.uri();
+    let recent: Vec<String> = recent_track_ids
+        .iter()
+        .map(|id| format!("spotify:track:{id}"))
+        .collect();
+
+    let for_page = session.clone();
+    let for_uri = uri.clone();
+    let page = tauri::async_runtime::spawn_blocking(move || {
+        spclient::autoplay(&for_page, &for_uri, &recent)
+    })
+    .await
+    .map_err(|e| {
+        eprintln!("Starless [command_failed]: {e}");
+        "command_failed".to_string()
+    })??;
+
+    // El cursor es lo que sobrevive: la radio sigue.
+    if let Ok(mut guard) = radio_state.0.lock() {
+        guard.next = page.next;
+    }
+
+    log::info!(
+        "radio: arrancó con {} canciones para {uri}",
+        page.mix.tracks.len()
+    );
+
+    Ok(page.mix)
+}
+
+/// La radio sigue: la página siguiente de la estación.
+///
+/// **Sin cursor no hay página siguiente**, y no es un error: la estación se
+/// sembró y el servicio no dio más. Se contesta con una lista vacía para que el
+/// frontend no tenga que distinguir "no hay más" de "falló".
+#[tauri::command]
+async fn radio_more(
+    app: AppHandle,
+    radio_state: State<'_, RadioState>,
+) -> Result<crate::models::DjMix, String> {
+    let path = radio_state
+        .0
+        .lock()
+        .ok()
+        .and_then(|guard| guard.next.clone())
+        .unwrap_or_default();
+    if path.is_empty() {
+        return Ok(crate::models::DjMix {
+            tracks: Vec::new(),
+            lines: HashMap::new(),
+        });
+    }
+
+    let session = ready_session(&app).await?;
+    let for_page = session.clone();
+    let page = tauri::async_runtime::spawn_blocking(move || spclient::station_page(&for_page, &path))
+        .await
+        .map_err(|e| {
+            eprintln!("Starless [command_failed]: {e}");
+            "command_failed".to_string()
+        })??;
+
+    if let Ok(mut guard) = radio_state.0.lock() {
+        guard.next = page.next;
+    }
+
+    log::info!(
+        "radio: la estación pidió la página siguiente y recibió {} canciones",
         page.mix.tracks.len()
     );
 
@@ -1311,6 +1536,19 @@ fn set_menu_opacity(opacity: u8) {
     settings::save_menu_opacity(opacity);
 }
 
+/// How many seconds two songs overlap when one ends on its own; 0 is off.
+#[tauri::command]
+fn crossfade_seconds() -> u8 {
+    settings::saved_crossfade_seconds()
+}
+
+/// Remember it, and hand it to the audio thread: it applies from the next song.
+#[tauri::command]
+fn set_crossfade_seconds(seconds: u8) {
+    settings::save_crossfade_seconds(seconds);
+    crossfade::set_seconds(u32::from(settings::saved_crossfade_seconds()));
+}
+
 /// The accent colour the user picked, or `None` for the one DESIGN.md ships.
 ///
 /// It crosses to the webview as a plain string and nothing else: no token, no
@@ -1386,6 +1624,7 @@ pub fn run() {
         .manage(SessionState::default())
         .manage(PlaybackState::default())
         .manage(DjState::default())
+        .manage(RadioState::default())
         .setup(|app| {
             // librespot narrates every refusal through `log`, and Starless is a
             // windowed app with no console to narrate into. Both halves matter:
@@ -1513,6 +1752,12 @@ pub fn run() {
             if spclient::voice_requested() {
                 spclient::run_voice_probe(handle.clone());
             }
+            // La radio: la misma puerta del DJ, sembrada con una canción. La
+            // pregunta es si el servicio la acepta, y eso no se suppose.
+            #[cfg(debug_assertions)]
+            if spclient::radio_requested() {
+                spclient::run_radio_probe(handle.clone());
+            }
             if selftest::requested() {
                 selftest::run(handle);
             }
@@ -1534,6 +1779,8 @@ pub fn run() {
             dj_mix,
             dj_more,
             dj_speak,
+            radio_start,
+            radio_more,
             player_status,
             play_track,
             toggle_playback,
@@ -1541,6 +1788,8 @@ pub fn run() {
             set_volume,
             menu_opacity,
             set_menu_opacity,
+            crossfade_seconds,
+            set_crossfade_seconds,
             accent,
             set_accent,
             library_sort,
@@ -1549,6 +1798,7 @@ pub fn run() {
             set_library_view,
             previous_session_crashed,
             announce_clean_exit,
+            log_frontend_error,
             check_prerelease_manifest,
             check_public_manifest,
             simulate_crash,
@@ -1690,5 +1940,40 @@ mod tests {
             tauri::Url::parse("https://github.com/alguien/otro/releases/download/v1/latest.json")
                 .unwrap();
         assert!(!is_our_manifest(&other_repo));
+    }
+
+    /// The update has to be registered where the plugin looks for it.
+    ///
+    /// **The check is over the source because the real one needs a webview,
+    /// and the Tauri feature that builds one breaks the test binary on
+    /// Windows.** What it guards is the mistake this app made for five
+    /// versions: the update was registered in the *app's* resource table, and
+    /// the plugin looks in the *webview's* —two different tables, so the
+    /// handle pointed at nothing, the install failed without saying why, and
+    /// the prerelease channel never worked.
+    ///
+    /// The plugin's own commands are the reference: its `check` registers the
+    /// update in the webview's table and its `download_and_install` reads it
+    /// back from there.
+    #[test]
+    fn the_update_is_registered_in_the_webviews_table() {
+        let source = include_str!("lib.rs");
+        // The strings are built here and not written out: a test that says
+        // the forbidden thing is itself the forbidden thing.
+        let app_table = format!("app.{}()", "resources_table");
+        let registration = format!("let rid = webview.{}.add(update);", "resources_table()");
+
+        assert!(
+            !source.contains(&app_table),
+            "the update has to be registered in the webview's resource table, \
+             like the plugin's own commands do. The app's table is a different \
+             one, and a handle into it points at nothing.",
+        );
+        assert_eq!(
+            source.matches(&registration).count(),
+            2,
+            "both channels —the prerelease and the door back to the public \
+             line— register the update the same way",
+        );
     }
 }
