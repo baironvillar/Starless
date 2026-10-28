@@ -264,6 +264,15 @@ de la línea de desarrollo y todo anda como corresponde: la app instalada no la
 ve nunca en "hay una versión nueva", y la puerta hacia la línea pública la
 ofrece sólo cuando la línea pública tiene otra build.
 
+**Y para que la prerelease se instale de verdad, el `Update` tiene que quedar
+registrado donde el plugin lo va a buscar.** El canal de `develop` no lo
+resuelve el plugin: lo resuelve el backend (`check_prerelease_manifest`), que
+devuelve un `rid`. Ese `rid` es un puntero a un recurso que vive en Rust, y
+**el webview tiene su propia tabla de recursos** —la del app manager es otra—.
+El plugin busca el `Update` en la del webview; registrarlo en la del app deja
+un puntero a la nada, y la instalación falla al instante, sin descargar un
+byte y sin decir por qué.
+
 Si se publica **sacándole la marca**, la build sigue siendo la de `develop`: el
 canal va compilado dentro del binario y no se cambia por cambiar la marca de
 GitHub. Esa build, instalada, se cree en la línea de desarrollo, busca la

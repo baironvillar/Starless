@@ -211,6 +211,21 @@ salen de una captura:
   la llave embebida— pero deja un botón de instalar que no instala. Por eso el
   manifest de la prerelease lo apunta `check_prerelease_manifest` en Rust: el
   mismo updater, la misma llave, y lo que vuelve ya es instalable.
+- **El `rid` se registra en la tabla del webview, no en la del app.** Son **dos
+  tablas distintas**: Tauri le da a cada webview la suya (`resources_table:
+  Default::default()`) y la del app manager es otra. El plugin registra el
+  `Update` en la del webview —`webview.resources_table().add(update)`— y lo
+  vuelve a buscar ahí: `download_and_install` recibe el `Webview` que pidió la
+  instalación. Registrarlo en la del app (`app.resources_table().add(update)`)
+  deja un `rid` que no existe, y la instalación falla al instante, sin
+  descargar un byte y sin decir por qué.
+  **Esto fue un bug de la 0.5.0 a la 0.5.5**: el botón de la prerelease
+  funcionaba, la descarga no empezaba nunca, y el único mensaje era "la
+  descarga falló" —que además mentía, porque lo que fallaba era el registro.
+  Lo que lo escondió: el error vive en la consola del webview, y el log no
+  decía nada. `log_frontend_error` existe por eso.
+  **Si tocás el updater, registrá el `Update` donde el plugin lo va a
+  buscar.** El test `the_update_is_registered_in_the_webviews_table` lo fija.
 - **El manifest de la release no se puede bajar desde el webview, y la API de
   GitHub rechaza la petición si no lleva `User-Agent`.** Son dos motivos
   distintos y los dos dicen lo mismo: la app no encuentra la prerelease y culpa

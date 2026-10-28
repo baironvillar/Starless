@@ -286,7 +286,14 @@ export async function installUpdate(
     // A download that fails is not a crash and not an update: it is a failed
     // download. Saying so is the difference between a row the user can retry
     // and a button that looks like it did something.
+    //
+    // **The reason goes to the log too.** The console is a window nobody
+    // opens, and an update that does not install is the failure a person is
+    // most likely to report —so the one thing that could tell us why was
+    // exactly the thing nobody could see.
     console.warn("Starless: no se pudo instalar la actualización", e);
+    const reason = e instanceof Error ? e.message : String(e);
+    invoke("log_frontend_error", { message: reason }).catch(() => {});
     sink({ status: "installFailed", update });
   }
 }
