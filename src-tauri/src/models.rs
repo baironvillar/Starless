@@ -210,6 +210,80 @@ pub struct Playlist {
     pub tracks: Option<TrackTotal>,
     #[serde(default)]
     pub collaborative: bool,
+    /// La descripción que escribió el dueño, si hay alguna.
+    ///
+    /// **Viene en los atributos del rootlist**, en el mismo mensaje que el
+    /// nombre: no es una lectura extra ni una pantalla nueva. Una descripción
+    /// vacía es una descripción vacía, no una descripción ausente — de ahí el
+    /// `Option` con filtro en vez de un `String` vacío que no distingue
+    /// "no escribió nada" de "escribió un espacio".
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Si la portada es una que subió el dueño.
+    ///
+    /// **La que se ve no lo dice.** Spotify arma una portada con las primeras
+    /// canciones cuando el dueño no sube ninguna, y las dos se ven igual en
+    /// `images`. Lo que las distingue está en los atributos: el id de la imagen
+    /// propia viaja ahí, y sin él no hay portada propia. Sin este campo, el
+    /// diálogo de detalles no puede ofrecer quitar la que el dueño puso — y
+    /// offercerlo a ciegas sería prometer algo que a veces no hay.
+    #[serde(default)]
+    pub custom_cover: bool,
+    /// Si la playlist es pública.
+    ///
+    /// **No está en los atributos de la playlist, sino en el ítem de la
+    /// biblioteca.** `public` es el campo 10 de `ItemAttributes` —el mismo que el
+    /// cliente de escritorio manda en `true` cuando la playlist entra en la
+    /// biblioteca— y dice si aparece en el perfil público de la cuenta. Es lo
+    /// único que "Make private" pone en `false`.
+    ///
+    /// Un ítem sin ese atributo es una playlist **pública**, que es el estado por
+    /// defecto de Spotify: declararla privada sin saberlo sería mentira.
+    #[serde(default = "public_by_default")]
+    pub is_public: bool,
+}
+
+/// Lo público es lo que Spotify hace por omisión.
+fn public_by_default() -> bool {
+    true
+}
+
+/// Lo que cambió en los detalles de una playlist.
+///
+/// **Cada campo es opcional, y `None` significa "no lo toques".** Los atributos
+/// de una playlist se escriben como un estado parcial: `values` lleva lo que se
+/// pone y `no_value` lo que se vacía, y lo que no está en ninguno de los dos se
+/// queda como estaba. Por eso un `None` acá no es "vaciarlo" sino "no
+/// escribirlo" — y por eso el renombrado no tocó la descripción de las
+/// playlists que ya la traían.
+///
+/// **La portada no viaja por acá.** El frontend manda la imagen —los bytes del
+/// JPEG— y el backend la sube, la registra y recién entonces llena el id que
+/// va en los atributos. El id de la imagen no lo pone nadie desde el webview:
+/// es una cosa del servicio, y una cosa del servicio no se escribe a mano.
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct PlaylistDetails {
+    /// El nombre nuevo.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// La descripción nueva. Una vacía es una descripción vacía.
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Quitar la portada propia y volver a la que arma Spotify.
+    #[serde(default)]
+    pub remove_picture: bool,
+    /// La visibilidad nueva: `false` es privada.
+    ///
+    /// **Viaja aparte de los atributos, porque es otro mensaje.** La visibilidad
+    /// es un atributo del ítem de la biblioteca —una fila del rootlist— y no de
+    /// la playlist: se escribe contra la revisión de la biblioteca y en otro
+    /// endpoint. Por eso va en su propio campo y no dentro de `ListAttributes`,
+    /// que no tiene dónde ponerlo.
+    ///
+    /// `None` es "no la toques", como en los otros campos: el diálogo sólo lo
+    /// manda cuando la persona movió el interruptor.
+    #[serde(default)]
+    pub is_public: Option<bool>,
 }
 
 /// La cuenta, tal como la ve el frontend.

@@ -14,6 +14,8 @@ import {
   trackArtists,
 } from "../lib/spotify";
 import { MenuPanel } from "./MenuPanel";
+import { PlaylistDetailsDialog } from "./PlaylistDetailsDialog";
+import { PlaylistMenu } from "./PlaylistMenu";
 import { PlaylistTrackList } from "./PlaylistTrackList";
 import { TrackMenu } from "./TrackMenu";
 
@@ -76,6 +78,15 @@ type PlaylistScreenProps = {
   onAddToQueue: (track: Track) => void;
   /** The row's extras: open the new-playlist dialog with this song pending. */
   onNewPlaylist: (track: Track) => void;
+  /**
+   * The playlist's own three dots: the whole list goes into the queue.
+   *
+   * **Not the same thing as `onAddToQueue`.** That one adds a song; this one
+   * adds the playlist, and the playlist is the whole list and not what the
+   * filter left on screen. The filter is a way of reading the playlist, not
+   * another playlist.
+   */
+  onAddListToQueue: (tracks: Track[]) => void;
 };
 
 type PlaylistOrder = "custom" | "title" | "artist" | "album";
@@ -111,13 +122,14 @@ const MENU_PX = 220;
  * covers separately — and a playlist of 99 songs has 99 real covers sitting right
  * there in the rows below.
  *
- * **The toolbar carries two controls and not six.** Play and shuffle are the two
- * that have something real behind them here. The rest of the row in the client
- * this mirrors — download, invite collaborators, add songs, rename, mix — are
- * either writes against a revision this app does not hold, or audio, and audio
- * does not cross into the webview under any circumstances. A greyed-out row of
- * buttons that do nothing is worse than a row of two that do, so the two it is
- * gets, and the rest is a separate piece of work rather than a row of decoration.
+ * **The toolbar carries three controls and not six.** Play and shuffle are two
+ * of them, and the third is the playlist's own three dots. The rest of the row
+ * in the client this mirrors — download, invite collaborators, add songs, mix —
+ * are either writes against a revision this app does not hold, or audio, and
+ * audio does not cross into the webview under any circumstances. A greyed-out
+ * row of buttons that do nothing is worse than a row of three that do, so the
+ * row gets those three and the rest stays a separate piece of work instead of
+ * turning into decoration.
  */
 export function PlaylistScreen({
   t,
@@ -141,9 +153,14 @@ export function PlaylistScreen({
   onOpenAlbum,
   onAddToQueue,
   onNewPlaylist,
+  onAddListToQueue,
 }: PlaylistScreenProps) {
   const [query, setQuery] = useState("");
   const [order, setOrder] = useState<PlaylistOrder>("custom");
+  // El diálogo de los detalles vive acá y no en el menú: el menú se cierra al
+  // abrirlo, y un diálogo que se cierra con el menú que lo abrió no se abre
+  // nunca.
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   /**
    * What is on screen, and what playing from here will play.
@@ -242,13 +259,23 @@ export function PlaylistScreen({
 
         <div className="min-w-0 flex-1">
           {/*
-            Shown only when the data says so. The client draws "Public Playlist" or
-            "Private Playlist" here, and neither is readable through this session —
-            what `get_playlist` returns carries `collaborative` and no visibility at
-            all. One honest label beats two invented ones.
+            Shown only when the data says so.
+
+            **La visibilidad sí se puede leer, y no desde la playlist.** La
+            playlist en sí no la trae: ni `get_playlist` ni los atributos del
+            rootlist llevan ese dato —llevan `collaborative` y nada más—. Lo
+            que lo trae es la fila que la biblioteca tiene para ella, que es el
+            mismo `public` que "Hacerla privada" pone en `false`. Por eso la
+            etiqueta sale de `is_public` y no de un nombre inventado.
+
+            Y sólo se muestra para las playlists de la cuenta: la del DJ viene
+            con `public` en `false` porque no es una playlist de nadie, y
+            llamarle "privada" sería mentira.
           */}
-          {playlist.collaborative && (
-            <p className="mb-2 text-[13px] font-medium text-ink-muted">{t.playlistCollaborative}</p>
+          {(playlist.collaborative || (mine && !playlist.is_public)) && (
+            <p className="mb-2 text-[13px] font-medium text-ink-muted">
+              {playlist.collaborative ? t.playlistCollaborative : t.playlistPrivate}
+            </p>
           )}
 
           <h1 className="line-clamp-2 text-[30px] leading-[1.12] font-semibold tracking-tight sm:text-[38px] lg:text-[44px]">
@@ -359,6 +386,27 @@ export function PlaylistScreen({
           <Shuffle className="size-5" strokeWidth={2} />
         </motion.button>
 
+        {/*
+          The three dots of the playlist, right after the other two controls.
+
+          **Es un control más, no un botón más en la fila.** Lo que hace —mandar
+          la lista a la cola, copiarla a otra playlist, renombrarla, copiar el
+          enlace— es cosa de la playlist entera, y por eso vive en un menú y no
+          en cuatro iconos sueltos al lado del botón grande. Lo que el cliente
+          de escritorio pone en esa fila y no cabe acá —descargar, invitar
+          colaboradores, las carpetas— son escrituras que esta sesión no
+          tiene, y una fila de botones que no hacen nada es peor que una fila
+          de tres que sí.
+        */}
+        <PlaylistMenu
+          t={t}
+          playlist={playlist}
+          tracks={tracks}
+          mine={mine}
+          onAddToQueue={onAddListToQueue}
+          onEditDetails={() => setDetailsOpen(true)}
+        />
+
         <div className="ml-auto flex items-center gap-2">
           <SearchField t={t} value={query} onChange={setQuery} onClose={() => setQuery("")} />
           <OrderMenu t={t} order={order} onOrderChange={setOrder} />
@@ -393,6 +441,22 @@ export function PlaylistScreen({
         error={error}
         empty={empty}
         noMatches={query.trim() ? t.playlistNoMatches : null}
+      />
+
+      {/*
+        El diálogo de los detalles, que el menú de los tres puntos abre.
+
+        **Está acá y no adentro del menú.** El menú se cierra al abrirlo —el
+        clic que lo abre es el que lo cierra— y un diálogo que vive dentro del
+        menú se va con él. Vive en un portal, así que el `fixed` del fondo es
+        el de la ventana y no el de una columna de 240 píxeles.
+      */}
+      <PlaylistDetailsDialog
+        t={t}
+        open={detailsOpen}
+        playlist={playlist}
+        mine={mine}
+        onClose={() => setDetailsOpen(false)}
       />
     </div>
   );

@@ -18,6 +18,7 @@ const ADDED_MS = 1800;
 
 type PlaylistPickerProps = {
   t: Record<StringKey, string>;
+  /** The song that goes in. */
   track: Track;
   /** The whole menu closes when the pick is done. */
   onDone: () => void;
@@ -54,6 +55,15 @@ export function PlaylistPicker({ t, track, onDone, onNewPlaylist }: PlaylistPick
   const account = useAccount();
   const queryClient = useQueryClient();
 
+  /**
+   * Only the account's own playlists.
+   *
+   * A playlist somebody else made is not one this app can write to, and
+   * offering it would be offering a row that fails. The owner arrives as the
+   * login and the account answers with the login and the name, so the
+   * comparison is against the two — the same pair the playlist header uses to
+   * decide whose photograph to show.
+   */
   const mine = useMemo(() => {
     const id = account.data?.id;
     const name = account.data?.display_name;
@@ -109,6 +119,12 @@ export function PlaylistPicker({ t, track, onDone, onNewPlaylist }: PlaylistPick
         />
       </div>
 
+      {/*
+        La fila de "Nueva playlist" abre el diálogo con esta canción esperando.
+
+        **El diálogo lleva una canción, no una lista.** Por eso esta fila vive
+        acá y no hay una versión de ella para "las canciones de una playlist".
+      */}
       <button
         type="button"
         onClick={() => onNewPlaylist(track)}

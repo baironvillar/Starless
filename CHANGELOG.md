@@ -30,13 +30,42 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [0.5.4] — 2026-10-26 · prerelease
+
+### New / Nuevo
+
+- **La playlist tiene sus tres puntos, al lado del botón de reproducción.** Abren un menú con tres cosas: mandarla entera a la cola, editar sus detalles y copiar su enlace.
+- **Editar los detalles es una pantalla con la portada, el nombre y la descripción.** La portada se cambia pasando el mouse por encima: aparece un lápiz y un «Elegir una foto», y el archivo se recorta y se sube al guardar. También se puede devolver la portada que puso el dueño y volver a la que arma Spotify con las primeras canciones.
+- **La misma pantalla trae un interruptor: «Hacerla privada».** La playlist deja de aparecer en tu perfil público, y el encabezado lo dice.
+- **El menú tiene tres filas y no doce.** El cliente de escritorio ofrece también el jam, los colaboradores, la descarga, las carpetas y el borrado, y ninguno de esos tiene puerta en esta sesión. Editar los detalles sí: es el mismo mensaje que crea una playlist —un `UPDATE_LIST_ATTRIBUTES`— contra la revisión que la playlist tiene ahora, en vez de la `0,root` de una que todavía no existe.
+
+### Fixed / Corregido
+
+- **La app tardaba 5,5 segundos en mostrar la biblioteca.** Los pedidos salían antes de que la sesión terminara de conectar, así que fallaban, y el frontend los reintentaba cuatro segundos después: la espera estaba en el reintento y no en la conexión. Ahora el backend espera a que la sesión esté lista y responde de una.
+- **El DJ se quedaba mudo un par de segundos antes de la frase que cierra un tramo.** El audio se pedía por adelantado, pero sólo para las páginas siguientes: la primera se pedía en el momento de hablarla. Ahora la primera página también lo pide, y la misma frase nunca se pide dos veces.
+- **La build de develop con el mismo número que la pública decía que estabas al día.** El plugin sólo contesta cuando los números difieren, así que la puerta de vuelta a la línea pública quedaba cerrada para quien corría la 0.5.3 de develop. Ahora el manifest público se pide en Rust y la fila ofrece instalar la versión pública del mismo número.
+- **El log dice cuánto tarda cada lectura.** «Cargar la biblioteca es lento» no es un error que nadie pueda arreglar; «la biblioteca tardó 1211 ms» sí.
+- **La cola se paraba en vez de seguir.** Al cambiar de playlist mientras sonaba, la app perdía el lugar de la canción en la cola, y al terminar repetía la misma canción: en el segundo final se paraba y no pasaba a la siguiente. Ahora el lugar se resuelve en el momento del final, y un final más de la misma canción —que el DJ ofrece dos veces— también avanza.
+
+### Copy / Textos
+
+- **Los textos de la app ya no usan el voseo y son más cortos.** «Prerelease de develop» no explica qué es develop: dice lo que hace.
+- **Las notas de cada versión se reescribieron en español neutro y más corto**, en la app y en GitHub.
+
+### Changed / Cambiado
+
+- **La release lleva un solo instalador, y es el `.msi`.** Hasta la 0.5.3 había dos —el `.exe` de NSIS y el `.msi`—, y la página tenía cinco archivos para descargar. Ahora son tres: el instalador, su firma y el manifest. El nombre del instalador tampoco lleva el idioma encima: `Starless_0.5.4_x64.msi` y no `Starless_0.5.4_x64_en-US.msi`.
+- **Si instalaste con el `.exe`, instala el `.msi` una vez.** El `.msi` instala para toda la máquina y el `.exe` lo hacía sólo para el usuario: Windows pide permiso de administrador, y quedan dos copias en la máquina hasta que desinstales la vieja. A partir de ahí las actualizaciones son del `.msi`.
+
+---
+
 ## [0.5.3] — 2026-10-23 · prerelease
 
 ### Fixed / Corregido
 
-- **El botón de "Buscar prerelease" no encontraba nada, y además daba la impresión de que GitHub estaba caído.** Eran tres motivos apilados. El frontend bajaba el manifest, y el manifest vive detrás de una redirección a otro host que no trae cabeceras CORS: el navegador cortaba la petición antes de que llegara un byte. La API de GitHub rechaza con 403 toda petición sin `User-Agent`, y la biblioteca HTTP no manda ese encabezado solo. Y la lista de releases es un índice que va con retraso. Ahora el canal se resuelve entero en el backend —las etiquetas, la release y el manifest—, donde no hay CORS que pueda cortar nada y donde la pregunta se hace como hay que hacerla.
-- **Si GitHub limitó las consultas desde esa máquina, la fila lo dice.** El límite de la API es de sesenta consultas por hora y por dirección, y agotarlo se ve igual que una caída: un 403 sin explicación. Ahora la fila distingue los dos casos, porque uno se acaba y el otro no.
-- **La línea pública también es una puerta.** Estando en una prerelease, la release pública sólo se ofrecía si era más nueva, así que no había forma de volver a la línea estable desde la app. Ahora se ofrece igual —aunque sea más vieja— y la fila lo dice antes de hacerlo: «Volver a la 0.5.1». La pastilla del botón de Ajustes y la alerta del arranque no la anuncian: un «0.5.1» mientras corrés 0.5.3 no es una actualización, es una vuelta atrás.
+- **El botón de «Buscar prerelease» no encontraba nada y hacía parecer que GitHub estaba caído.** Tres motivos: el manifest se bajaba desde el frontend, detrás de una redirección a otro host sin cabeceras CORS; la API de GitHub responde 403 sin `User-Agent` y la biblioteca HTTP no lo manda solo; y la lista de releases es un índice que va con retraso. Ahora el canal se resuelve entero en el backend —etiquetas, release y manifest—, sin CORS de por medio.
+- **Si GitHub limitó las consultas desde esa máquina, la fila lo dice.** El límite es de sesenta consultas por hora y por dirección, y agotarlo se ve igual que una caída: un 403 sin explicación. Ahora la fila distingue los dos casos: uno se acaba y el otro no.
+- **La línea pública también es una puerta.** Desde una prerelease, la release pública sólo se ofrecía si era más nueva, así que no había forma de volver a la línea estable. Ahora se ofrece igual —aunque sea más vieja— y la fila lo dice antes de hacerlo: «Volver a la 0.5.1». La pastilla de Ajustes y la alerta del arranque no la anuncian: un «0.5.1» mientras corres 0.5.3 es una vuelta atrás.
 
 ---
 
@@ -44,8 +73,8 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed / Corregido
 
-- **El botón de "Buscar prerelease" no encontraba la prerelease.** La app preguntaba a la lista de releases de GitHub, y esa lista es un índice que va con retraso: la release existe desde el minuto en que se publica, pero la lista que la apunta tarda unos minutos más en actualizarse. Con la 0.5.1 recién publicada, el botón decía "No hay prerelease" mientras la página de GitHub mostraba una. Ahora el camino va por las etiquetas —que existen desde que se empuja el tag— y cada una se pregunta por su nombre.
-- **La prerelease se encontraba pero no se podía instalar.** El frontend armaba el `Update` con el JSON del manifest, pero un `Update` del plugin es un handle a un recurso que vive en Rust: sin el `rid` que devuelve el backend no hay nada que descargar. El botón quedaba ahí, prometiendo instalar, y no instalaba. Ahora es el backend el que apunta el manifest —con el mismo updater, la misma llave y la misma verificación de firma— y lo que vuelve es algo instalable.
+- **El botón de «Buscar prerelease» no encontraba la prerelease.** La app preguntaba a la lista de releases de GitHub, y esa lista es un índice que va con retraso: la release existe desde que se publica, pero la lista que la apunta tarda unos minutos más. Con la 0.5.1 recién publicada, el botón decía «No hay prerelease» mientras GitHub mostraba una. Ahora el camino va por las etiquetas —que existen desde que se empuja el tag— y cada una se pregunta por su nombre.
+- **La prerelease se encontraba pero no se podía instalar.** El frontend armaba el `Update` con el JSON del manifest, pero un `Update` del plugin es un handle a un recurso que vive en Rust: sin el `rid` que devuelve el backend no hay nada que descargar. Ahora es el backend el que apunta el manifest —con el mismo updater, la misma llave y la misma verificación de firma— y lo que vuelve es instalable.
 - **Una descarga que falla ahora lo dice.** Antes la promesa se rechazaba sola: el botón no cambiaba y nada explicaba por qué. Ahora la fila dice que la descarga falló, que la copia instalada no cambió, y deja el botón para reintentar.
 
 ---
@@ -54,12 +83,12 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### New / Nuevo
 
-- **La app ahora dice si es una pre-release.** Al lado de la versión en Ajustes aparece una pastilla «pre-release» cuando la build salió de `develop`; en una release no aparece nada. El ícono invertido ya lo decía, pero sólo para quien sabe qué significa: dos copias de la app en la misma máquina se ven iguales, y ahora se distinguen.
+- **La app ahora dice si es una pre-release.** Junto a la versión en Ajustes aparece una pastilla «pre-release» cuando la build salió de `develop`; en una release no aparece nada. El ícono invertido ya lo decía, pero sólo para quien sabe qué significa: dos copias de la app en la misma máquina se veían iguales, y ahora se distinguen.
 
 ### Fixed / Corregido
 
-- **La app se abría con una cola que nadie había pedido.** Al abrir Starless, el panel «A CONTINUACIÓN» traía las canciones que se veían en pantalla: ocho canciones bajo un encabezado de cola, antes de que hubiera sonado una sola. Ahora la cola no existe hasta que vos la creás: hasta que suena algo, el panel dice que no hay nada en cola, y lo que se ve en pantalla es lo que se ve.
-- **Agregar una canción a la cola convertía la pantalla entera en cola.** Si no había cola, la canción que agregabas era la cola: quedaban ocho canciones en el panel, siete de las cuales nunca pediste. Ahora, cuando no hay cola, la canción agregada *es* la cola —y queda una sola—; cuando hay cola, se agrega al final, como siempre.
+- **La app se abría con una cola que nadie había pedido.** Al abrir Starless, el panel «A CONTINUACIÓN» traía las canciones que se veían en pantalla: ocho canciones bajo un encabezado de cola, antes de que sonara una sola. Ahora la cola no existe hasta que la creas: hasta que suena algo, el panel dice que no hay nada en cola.
+- **Agregar una canción a la cola convertía la pantalla entera en cola.** Sin cola, la canción agregada era la cola: quedaban ocho canciones en el panel, siete de las cuales nunca pediste. Ahora, sin cola, la canción agregada *es* la cola —y queda una sola—; con cola, se agrega al final, como siempre.
 
 ---
 
@@ -67,23 +96,23 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### New / Nuevo
 
-- **El DJ de Spotify ahora suena, y se escucha.** La tarjeta de la repisa de Inicio —la que decía «0 canciones»— no es una playlist: su contenido no está en la lista y hay que pedirlo. Al hacer clic arranca la primera canción y el DJ sigue eligiendo: la cola se vuelve a llenar sola con las páginas siguientes de su sesión, así que no se acaba como una lista, y cada vez que lo tocás sigue con material nuevo en vez de repetir las mismas canciones. Y la voz del DJ también se oye: la pide al servicio que la fabrica y sale por el mismo auricular que la música, con el mismo volumen —si lo bajás, baja el del DJ—. La frase queda escrita arriba de la cola, en nombre del DJ, para poder leerla. La tarjeta también se ve como la de Spotify, con su fondo azul y su medusa: antes era un cuadro vacío, indistinguible de una portada rota.
-- **El DJ habla antes de que empiece la música.** Cuando lo tocás, Starless corta lo que estaba sonando, deja que el DJ diga su frase —con su ícono abajo a la izquierda, en la barra— y recién después arranca la canción. Si ponés una canción mientras habla, la frase se corta: estaba dicha para otra. Con el DJ sonando la cola no muestra qué viene después: el DJ sigue eligiendo, así que lo que viene todavía no está decidido, y la frase es una sorpresa.
-- **El DJ vuelve a hablar en cada tramo.** La frase va pegada a su canción, no a la tanda: la de apertura abre el tramo con la primera canción y la de cierre lo cierra con la última, y las dos se dicen antes de que suene esa canción. Antes Starless la pedía una sola vez, cuando le devolvía la tanda, así que después de la primera canción el DJ se callaba para siempre —la frase siguiente aparecía escrita arriba de la cola y nadie la decía—.
+- **El DJ de Spotify ahora suena, y se escucha.** La tarjeta de la repisa de Inicio —la que decía «0 canciones»— no es una playlist: su contenido hay que pedirlo aparte. Al hacer clic arranca la primera canción y el DJ sigue eligiendo: la cola se llena sola con las páginas siguientes de su sesión, así que no se acaba como una lista y cada vez trae material nuevo. La voz del DJ también se oye: la pide el servicio que la fabrica, sale por el mismo auricular que la música, con el mismo volumen —si lo bajas, baja el del DJ— y queda escrita arriba de la cola, en nombre del DJ. Y la tarjeta se ve como la de Spotify, con su fondo azul y su medusa, en vez de un cuadro vacío, indistinguible de una portada rota.
+- **El DJ habla antes de que empiece la música.** Cuando lo tocas, Starless corta lo que estaba sonando, deja que el DJ diga su frase —con su ícono abajo a la izquierda, en la barra— y recién después arranca la canción. Si pones una canción mientras habla, la frase se corta: estaba dicha para otra. Con el DJ sonando la cola no muestra qué viene después: el DJ sigue eligiendo, así que lo que viene no está decidido, y la frase es una sorpresa.
+- **El DJ vuelve a hablar en cada tramo.** La frase va pegada a su canción, no a la tanda: la de apertura abre el tramo con la primera y la de cierre lo cierra con la última, y las dos se dicen antes de que suene esa canción. Antes Starless la pedía una sola vez, cuando le devolvía la tanda, así que después de la primera canción el DJ se callaba para siempre —la frase siguiente aparecía escrita arriba de la cola y nadie la decía—.
 - **El DJ tiene su botón en la barra**, como en el cliente oficial. Aparece con la sesión del DJ y desaparece con ella, y hace el mismo camino que la card: el DJ no arranca de cero, sigue su propia sesión y pasa a la tanda siguiente. Es la marca del DJ —el anillo de la medusa— en un solo color, porque la barra es cromo y el cromo va en tinta.
-- **La barra de reproducción ya no está ahí desde que abrís la app.** Antes aparecía con un fundido al abrir la ventana, y lo que aparecía era un rectángulo de vidrio vacío: un play apagado, dos ceros y nada a la izquierda. Ahora la barra llega con la música —cuando ponés una canción, o cuando el DJ empieza a hablar— y antes de eso la ventana es sólo la biblioteca. Y la ventana le hace lugar: la biblioteca, el riel y la cola bajan hasta el borde mientras no hay barra, y suben cuando la música llega a buscar su sitio.
-- **La pantalla de playlists.** Abrís una de tus listas y la ves como en Spotify: el mosaico de portadas, el nombre, quién la armó, cuántas canciones tiene y cuánto dura, los botones de reproducir y de aleatorio —el de aleatorio sólo enciende el modo, no empieza a sonar—, y la tabla con número, título, álbum, la fecha en que la agregaste y la duración. Podés filtrarla y ordenarla, el nombre del artista y el del álbum llevan a su ficha, y cada canción tiene su menú. La lista que ves es la que suena: filtrar o reordenar cambia lo que viene después.
+- **La barra de reproducción ya no está ahí desde que abres la app.** Antes aparecía con un fundido al abrir la ventana, y lo que aparecía era un rectángulo de vidrio vacío: un play apagado, dos ceros y nada a la izquierda. Ahora la barra llega con la música —cuando pones una canción, o cuando el DJ empieza a hablar— y antes de eso la ventana es sólo la biblioteca. Y la ventana le hace lugar: la biblioteca, el riel y la cola bajan hasta el borde mientras no hay barra, y suben cuando la música llega.
+- **La pantalla de playlists.** Abres una de tus listas y la ves como en Spotify: el mosaico de portadas, el nombre, quién la armó, cuántas canciones tiene y cuánto dura, los botones de reproducir y de aleatorio —el de aleatorio sólo enciende el modo, no empieza a sonar—, y la tabla con número, título, álbum, la fecha en que la agregaste y la duración. Puedes filtrarla y ordenarla, el nombre del artista y el del álbum llevan a su ficha, y cada canción tiene su menú. La lista que ves es la que suena: filtrar o reordenar cambia lo que viene después.
 - **Desde el menú de cada canción se puede agregar a una playlist**, y también crear una playlist nueva desde ahí, con la canción ya adentro. Se escribe por la misma sesión con la que Starless reproduce: no hay ningún permiso nuevo ni una segunda pantalla de autorización.
 
 ### Fixed / Corregido
 
 - **Starless saltaba para atrás, y a veces arrancaban dos canciones a la vez.** El «siguiente» se decidía buscando por su id la canción que estaba sonando, y el DJ ofrece la misma canción dos veces: la app encontraba la primera copia —la que ya había sonado— y de ahí el salto era a una canción del pasado. Ahora la app recuerda en qué lugar de la cola está, y cada pedido de reproducción lleva un número: si mientras tanto pediste otra cosa, la respuesta que llega tarde no pone ninguna canción encima de la que ya está sonando. En el log se veía: dos canciones arrancando con 19 milisegundos de diferencia.
-- **El DJ repetía las mismas canciones.** No era cosa de Spotify: Starless le preguntaba al servicio por la línea de tiempo desde el principio, y esa línea siempre empieza igual. Ahora le pregunta por el tramo de ahora —la misma puerta que usa el cliente de Spotify—, así que cada vez que lo tocás arranca con canciones distintas y la cola sigue llenándose con material nuevo.
+- **El DJ repetía las mismas canciones.** No era cosa de Spotify: Starless le preguntaba al servicio por la línea de tiempo desde el principio, y esa línea siempre empieza igual. Ahora le pregunta por el tramo de ahora —la misma puerta que usa el cliente de Spotify—, así que cada vez que lo tocas arranca con canciones distintas y la cola sigue llenándose con material nuevo.
 - **Con el DJ hablando, el volumen y el transporte quedaban bloqueados.** El control de volumen quedaba en gris y no se podía tocar, y el botón de siguiente tampoco. Ahora la barra no está apagada mientras el DJ habla: la música viene, y el volumen es justamente lo que se quiere bajar —la voz es lo más fuerte de la sala—. Y el botón de reproducir corta la frase y deja sonar la canción que el DJ eligió.
-- **Cuando salteabas, se oía un pedazo de la canción anterior antes de que el DJ hablara.** La música se cortaba recién cuando el audio de la frase ya estaba listo, y eso pasaba un par de segundos después del click: la app seguía con la canción que vos ya habías salteado. Ahora la música se calla en el momento, y el audio de la frase se pide por adelantado.
+- **Cuando salteabas, se oía un pedazo de la canción anterior antes de que el DJ hablara.** La música se cortaba recién cuando el audio de la frase ya estaba listo, un par de segundos después del clic: la app seguía con la canción que ya habías salteado. Ahora la música se calla en el momento, y el audio de la frase se pide por adelantado.
 - **Se cayó la conexión con Spotify y Starless se la levanta.** Antes saltaba canción tras canción diciendo que esa no se pudo reproducir —la pista estaba bien, lo que faltaba era la conexión— y terminabas viendo seis errores seguidos. Ahora la app avisa que está reconectando, arma una sesión nueva con las mismas credenciales y vuelve a poner la canción que había fallado.
 - **Starless se quedaba mudo y no volvía.** Cuando el dispositivo de salida dejaba de tomar el audio, el hilo que reproduce se quedaba esperando para siempre —no estaba muerto: estaba esperando— y la app seguía mandándole cosas que nadie leía. La ventana se veía perfecta y no sonaba nada. Ahora la app lo nota, deja el reproductor viejo atrás sin esperar a que vuelva, abre otro y pone la canción de nuevo.
-- **Starless perdía la música y no la recuperaba.** Si la conexión con Spotify se caía cuando no había nada en la cola, la app ni se enteraba: la reconexión estaba atada a una canción que falla, y con la cola vacía no falla ninguna. La conexión se quedaba muerta —y el DJ, que habla por su propio camino, seguía hablando— sin que nadie la volviera a levantar. Ahora un clic arma la sesión nueva y vuelve a poner la canción que pediste.
+- **Starless perdía la música y no la recuperaba.** Si la conexión con Spotify se caía con la cola vacía, la app ni se enteraba: la reconexión está atada a una canción que falla, y con la cola vacía no falla ninguna. La conexión se quedaba muerta —y el DJ, que habla por su propio camino, seguía hablando—. Ahora un clic arma la sesión nueva y vuelve a poner la canción que pediste.
 
 ### Removed / Eliminado
 
@@ -95,9 +124,9 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### New / Nuevo
 
-- Cuando hay una versión nueva, Starless lo dice: una alerta flotante que aparece una vez y se desvanece sola, el botón de Ajustes queda marcado en verde, y dentro de Ajustes el botón de actualizar se pone en verde con la versión disponible. Nada se descarga y nada se instala solo — instalar sigue siendo un clic tuyo, en Ajustes, porque Starless está sonando.
+- Cuando hay una versión nueva, Starless lo dice: una alerta flotante que aparece una vez y se desvanece sola, el botón de Ajustes queda marcado en verde, y dentro de Ajustes el botón de actualizar se pone en verde con la versión disponible. Nada se descarga ni se instala solo — instalar sigue siendo un clic tuyo, en Ajustes, porque Starless está sonando.
 - Un fallo al comprobar no marca nada. Si GitHub no se puede alcanzar, eso dice algo de la red y nada de tu instalación, así que el botón se queda como estaba.
-- **Letra de las canciones.** Botón en la barra de abajo, al lado del botón de cola. Sigue la posición del audio línea por línea cuando el proveedor manda los tiempos, y avisa que no puede seguirlas cuando no los manda —en vez de quedarse clavada en la primera toda la canción—. Cada línea con tiempo es un botón: hacé clic y la canción salta a ese minuto. Viene por la misma sesión que ya reproducía: ni un permiso nuevo, ni un client id propio. Este apartado es para el gordito `kaliuchisfangirl`.
+- **Letra de las canciones.** Botón en la barra de abajo, al lado del botón de cola. Sigue la posición del audio línea por línea cuando el proveedor manda los tiempos, y avisa que no puede seguirlas cuando no los manda —en vez de quedarse clavada en la primera toda la canción—. Cada línea con tiempo es un botón: haz clic y la canción salta a ese minuto. Viene por la misma sesión que ya reproducía: ni un permiso nuevo, ni un client id propio. Este apartado es para el gordito `kaliuchisfangirl`.
 
 ### Fixed / Corregido
 
@@ -106,7 +135,7 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Se cayó la conexión con Spotify y Starless lo dice. Antes saltaba canción tras canción diciendo que esa canción no se pudo reproducir —la pista estaba bien, lo que faltaba era la conexión—, y como la sesión de reproducción no vuelve sola, terminabas viendo seis errores en catorce segundos. Ahora dice qué pasó y para. Hay que cerrar y abrir la app.
 - Las portadas de tus playlists vuelven. Spotify no las manda al leer la biblioteca, pero sí las tiene en otro lado, y ahora Starless las busca ahí: son las imágenes de Spotify, no un mosaico dibujado por la app.
 - El botón de Inicio vuelve al inicio de verdad. Antes sólo cambiaba una pestaña y dejaba la playlist abierta en pantalla.
-- Hay una pantalla principal. Antes "Inicio" era la lista de canciones que te gustan con otro nombre: una lista de cosas que ya elegiste, que es mala forma de decidir qué escuchar después. Ahora es una repisa con tus playlists y, aparte, lo que Spotify te fabricó —hoy, DJ—. **No hay fila de filtros ni recomendaciones**: esas salen del motor de recomendaciones de Spotify, que estaba detrás de la Web API que ya no funciona, y se probaron catorce URIs contra la sesión disponible sin que ninguna respondiera.
+- Hay una pantalla principal. Antes «Inicio» era la lista de canciones que te gustan con otro nombre: una lista de cosas que ya elegiste, que es mala forma de decidir qué escuchar después. Ahora es una repisa con tus playlists y, aparte, lo que Spotify te fabricó —hoy, DJ—. **No hay fila de filtros ni recomendaciones**: salen del motor de recomendaciones de Spotify, que estaba detrás de la Web API que ya no funciona, y se probaron catorce URIs contra la sesión disponible sin que ninguna respondiera.
 - Arreglada la cola después de buscar. Elegir una canción del desplegable, o hacer clic dentro de la playlist que ya estaba abierta, dejaban la cola de la lista anterior —buscabas una canción y después seguían las que te gustan—. Ahora cada lista define la cola que la sigue.
 - El botón de aleatorio ahora se ve. Antes sorteaba una canción distinta en cada salto pero el panel de cola seguía mostrando el mismo orden de siempre: lo que estaba al lado contradecía lo que sonaba. Ahora al prenderlo se decide un orden nuevo, se ve en el panel y se mantiene; apagarlo no lo deshace.
 
@@ -114,7 +143,7 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - Entrar es una sola aprobación. Antes se pedía permiso dos veces —una para reproducir y otra para leer la biblioteca— y la segunda era la que empezaba a devolver errores.
 - La pantalla de resultados es una lista de canciones en orden alfabético.
-- Reproducir desde la pantalla de inicio ahora arma una cola nueva cada vez. Una playlist es una afirmación sobre el orden, así que abrirla y reproducir respeta ese orden; desde cualquier otro lugar no, y hasta ahora siempre salía la misma cola y terminabas escuchando siempre las mismas canciones seguidas. Las playlists siguen sonando en el orden en que están.
+- Reproducir desde la pantalla de inicio arma una cola nueva cada vez. Una playlist es una afirmación sobre el orden, así que abrirla y reproducir respeta ese orden; desde cualquier otro lugar no. Antes siempre salía la misma cola y terminabas escuchando las mismas canciones seguidas. Las playlists siguen sonando en el orden en que están.
 
 ### Removed / Eliminado
 
@@ -128,7 +157,7 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - Al abrir otra playlist, la lista arrancaba a la altura donde habías dejado la anterior. Ahora cada lista arranca en su propio arriba.
 - Las filas de una lista aparecían con huecos entre medio durante unos segundos: la cascada de entrada no tenía tope, así que en una playlist de 198 canciones la última fila esperaba casi seis segundos en ser visible. Ahora la cascada se detiene en la primera docena.
-- Abrir una playlist mostraba filas de la anterior. Una playlist puede tener la misma canción dos veces, y con esa fila compartida entre dos canciones React dejaba las filas viejas montadas: seguían pintando la lista previa debajo del nombre y el conteo de la nueva. Cuatro canciones repetidas en «Mi playlist n.º 4» eran cuatro filas de más en cada lista que abrieras después.
+- Abrir una playlist mostraba filas de la anterior. Una playlist puede tener la misma canción dos veces, y con esa fila compartida entre dos canciones React dejaba las filas viejas montadas, pintando la lista previa debajo del nombre y el conteo de la nueva. Cuatro canciones repetidas en «Mi playlist n.º 4» eran cuatro filas de más en cada lista que abrieras después.
 - Pasar el cursor por las playlists volvía a descargar todas sus páginas, una y otra vez: el precargado se guardaba ya vencido, así que el `staleTime` de cinco minutos del hook no llegaba nunca a aplicarse. Una playlist larga se descargó seis veces completas en diez segundos.
 - Después de una actualización, la app siguiente abría pidiendo el reporte de un crash que nunca hubo. El actualizador entrega el instalador a Windows y el proceso se va antes de que se pueda cerrar la sesión a tiempo, así que el marcador de sesión sobrevive.
 - Una sesión que moría a los pocos segundos ya no cuenta como caída. Un cierre abrupto se distingue de un crash por lo único que los separa: cuánto vivió.
@@ -155,7 +184,7 @@ Cerrar sesión, abrir, reportar. / Sign in, open, report.
 ### Changed / Cambiado
 
 - El formulario de feedback y el aviso de caída ya no se apilan sobre otro panel de vidrio, que `DESIGN.md` prohíbe: ahora llevan un velo plano detrás.
-- La build compilada salía con el vidrio **sin difuminado**. El minificador de Tailwind se comía el `backdrop-filter` estándar y dejaba solo el prefijo `-webkit-`, que WebView2 ignora: al 55% se leían las canciones de atrás a través del panel, mientras `bun run dev` se veía perfecto porque ahí el CSS no pasa por el minificador. Ahora el vidrio sale difuminado como corresponde, y qué tan opaco es lo eliges en Ajustes → Personalización.
+- La build compilada salía con el vidrio **sin difuminado**. El minificador de Tailwind se comía el `backdrop-filter` estándar y dejaba solo el prefijo `-webkit-`, que WebView2 ignora: al 55% se leían las canciones de atrás a través del panel, mientras `bun run dev` se veía perfecto porque ahí el CSS no pasa por el minificador. Ahora el vidrio sale difuminado, y qué tan opaco es lo eliges en Ajustes → Personalización.
 - El ajuste de opacidad también alcanza a la cola y a los ajustes, no sólo a los menús flotantes.
 
 ---
@@ -205,7 +234,7 @@ La primera versión pública. / The first public release.
 
 ---
 
-## 0.2.0 — reconstruido / reconstructed
+## [0.2.0] — reconstruido / reconstructed
 
 Nunca se publicó. / Never published.
 
@@ -234,7 +263,7 @@ Nunca se publicó. / Never published.
 
 ---
 
-## 0.1.0 — reconstruido / reconstructed
+## [0.1.0] — reconstruido / reconstructed
 
 Nunca se publicó. / Never published.
 
@@ -247,8 +276,11 @@ Nunca se publicó. / Never published.
 
 ---
 
+[0.5.3]: https://github.com/baironvillar/Starless/releases/tag/v0.5.3
 [0.5.2]: https://github.com/baironvillar/Starless/releases/tag/v0.5.2
 [0.5.1]: https://github.com/baironvillar/Starless/releases/tag/v0.5.1
 [0.5.0]: https://github.com/baironvillar/Starless/releases/tag/v0.5.0
+[0.4.0]: https://github.com/baironvillar/Starless/releases/tag/v0.4.0
+[0.3.2]: https://github.com/baironvillar/Starless/releases/tag/v0.3.2
 [0.3.1]: https://github.com/baironvillar/Starless/releases/tag/v0.3.1
 [0.3.0]: https://github.com/baironvillar/Starless/releases/tag/v0.3.0

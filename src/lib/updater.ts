@@ -108,11 +108,19 @@ export function installableUpdate(state: UpdateState): Update | null {
  * and the one you are standing in is not always the one you want. So the
  * public release is offered even when it is older than what is running, and
  * the row says what is about to happen instead of calling it an update.
+ *
+ * **The same number is the same door, with the same reason.** The public
+ * 0.5.3 and the develop 0.5.3 are two different programs that carry the same
+ * number, and a build of `develop` has never seen the public one. Comparing
+ * the numbers alone would say "you already have it" and close the door on the
+ * one person who needs it: somebody standing on the develop line who wants to
+ * get back to the public one.
  */
 export function isGoingBack(update: Update): boolean {
-  return (
-    update.version !== update.currentVersion && !isNewerThan(update.version, update.currentVersion)
-  );
+  if (update.version === update.currentVersion) {
+    return isPrerelease();
+  }
+  return !isNewerThan(update.version, update.currentVersion);
 }
 
 /**
@@ -132,7 +140,12 @@ export function newerVersion(state: UpdateState): string | null {
   // to compare it against.
   if (state.status === "simulated") return version;
   const update = installableUpdate(state);
-  return update && isGoingBack(update) ? null : version;
+  if (!update) return version;
+  // The same number is not a newer version, whatever the two builds are: the
+  // public 0.5.3 and the develop 0.5.3 are different programs, and announcing
+  // one as an update of the other would be a lie about the machine.
+  if (update.version === update.currentVersion) return null;
+  return isGoingBack(update) ? null : version;
 }
 
 /**
@@ -171,6 +184,24 @@ export async function checkForUpdate(): Promise<void> {
     if (update) {
       publish({ status: "available", update });
       return;
+    }
+    // **The plugin only answers when the numbers differ, and the numbers can
+    // be equal while the programs are not.** The public 0.5.3 and the develop
+    // 0.5.3 are two different builds, and a build of `develop` has never seen
+    // the public one. So the plugin says "nothing" and the app would tell the
+    // person standing on the develop line that they are up to date, with the
+    // door back to the public line closed for them.
+    //
+    // The backend is asked for the same manifest with the comparison turned
+    // off —the same deal as the develop channel— and the answer arrives as an
+    // update with a handle to install it. On a build of the public line this
+    // is not asked at all: there, the same number really is the same build.
+    if (isPrerelease()) {
+      const metadata = await invoke<UpdateMetadata | null>("check_public_manifest");
+      if (metadata) {
+        publish({ status: "available", update: new Update(metadata) });
+        return;
+      }
     }
     publish({ status: "current" });
   } catch (e) {

@@ -23,6 +23,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { withoutLocale } from "./releases.ts";
 
 const ROOT = join(import.meta.dir, "..");
 const CONF = join(ROOT, "src-tauri", "tauri.conf.json");
@@ -105,15 +106,21 @@ function buildManifest(): void {
   const tag = `v${version}`;
   const entries: Record<string, { signature: string; url: string }> = {};
 
-  for (const dir of [join(BUNDLE, "nsis"), join(BUNDLE, "msi")]) {
-    const platform = dir.endsWith("nsis") ? "windows-x86_64" : "windows-x86_64-msi";
-    for (const sig of signatureFiles(dir)) {
-      const artifact = sig.replace(/\.sig$/, "");
-      entries[platform] = {
-        signature: readFileSync(join(dir, sig), "utf8").trim(),
-        url: `https://github.com/${repo}/releases/download/${tag}/${artifact}`,
-      };
-    }
+  // The bundle is one MSI, so the manifest carries two keys for it: the generic
+  // one —which is what the app asks for on the develop channel— and the one
+  // with the installer type —which is what the plugin asks for when the
+  // installed copy came from an MSI. Both point at the same file.
+  const dir = join(BUNDLE, "msi");
+  for (const sig of signatureFiles(dir)) {
+    const bundled = sig.replace(/\.sig$/, "");
+    // The file is uploaded under its clean name: the workflow renames it when
+    // it uploads it, because the bundler names the MSI with the locale on it
+    // and the locale is not something anybody wants to see in a download.
+    const uploaded = withoutLocale(bundled) ?? bundled;
+    const url = `https://github.com/${repo}/releases/download/${tag}/${uploaded}`;
+    const signature = readFileSync(join(dir, sig), "utf8").trim();
+    entries["windows-x86_64"] = { signature, url };
+    entries["windows-x86_64-msi"] = { signature, url };
   }
 
   const platforms = Object.keys(entries);
@@ -139,11 +146,9 @@ function buildManifest(): void {
   console.log(`  platforms ${platforms.join(", ")}`);
   console.log("");
   console.log("Sube a la release estos archivos:");
-  for (const dir of [join(BUNDLE, "nsis"), join(BUNDLE, "msi")]) {
-    for (const file of readdirSync(dir)) {
-      if (/\.(zip|sig)$/.test(file))
-        console.log(`  ${join("src-tauri/target/release/bundle", pathOf(dir), file)}`);
-    }
+  for (const file of readdirSync(dir)) {
+    if (/\.(zip|sig)$/.test(file))
+      console.log(`  ${join("src-tauri/target/release/bundle", pathOf(dir), file)}`);
   }
   console.log("  latest.json");
 }

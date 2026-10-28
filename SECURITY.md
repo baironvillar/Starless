@@ -2,7 +2,7 @@
 
 ## Reportar un problema
 
-No abras un issue público. Usá **Security Advisories**:
+No abras un issue público. Usa **Security Advisories**:
 
 **https://github.com/baironvillar/Starless/security/advisories/new**
 
@@ -29,7 +29,7 @@ local con rotación, y el `settings.json` que guarda el volumen.
 
 **El reporte automático de crashes.** Los builds oficiales llevan dentro un token
 de GitHub con permiso de `Issues: Write` sobre este repositorio y nada más, para
-que el botón del reporte pueda abrir el issue sin que vos hagas nada. Cualquiera
+que el botón del reporte pueda abrir el issue sin que tú hagas nada. Cualquiera
 que tenga Starless instalado puede extraer ese token del binario: **cualquiera
 puede abrir issues en este repositorio**. Eso es un vector de spam, no de
 lectura — el token no puede ver el código ni los issues privados. Si alguna vez

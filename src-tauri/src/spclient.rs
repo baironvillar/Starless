@@ -41,14 +41,16 @@ use librespot_protocol::extended_metadata::{BatchedEntityRequest, EntityRequest,
 use librespot_protocol::extension_kind::ExtensionKind;
 use librespot_protocol::metadata::Track as TrackMessage;
 use librespot_protocol::playlist4_external::{
-    Add, ChangeInfo, Delta, Item, ItemAttributes, ListAttributes, ListAttributesPartialState,
-    ListChanges, Op, SelectedListContent, UpdateListAttributes, op,
+    Add, ChangeInfo, Delta, Item, ItemAttributes, ItemAttributesPartialState, ListAttributeKind,
+    ListAttributes, ListAttributesPartialState, ListChanges, Op, RegisterPlaylistImageRequest,
+    RegisterPlaylistImageResponse, SelectedListContent, UpdateItemAttributes, UpdateListAttributes,
+    op,
 };
 use protobuf::{EnumOrUnknown, Message, MessageField};
 
 use crate::models::{
-    Account, Album, Artist, DjMix, DjNarration, DjPage, Image, LyricLine, Lyrics, Playlist, Track,
-    TrackTotal,
+    Account, Album, Artist, DjMix, DjNarration, DjPage, Image, LyricLine, Lyrics, Playlist,
+    PlaylistDetails, Track, TrackTotal,
 };
 use crate::voice::VoiceParams;
 
@@ -549,7 +551,7 @@ pub fn account(session: &Session) -> Result<Account, String> {
 // La biblioteca
 // ---------------------------------------------------------------------------
 
-/// Todas las playlists de la cuenta: las suyas y las que seguís.
+/// Todas las playlists de la cuenta: las suyas y las que sigues.
 ///
 /// Las dos listas vienen en el mismo mensaje —las URIs en `items`, la metadata
 /// en `meta_items`— y van en el mismo orden, así que se leen de a pares. El
@@ -625,6 +627,28 @@ pub fn playlists(session: &Session) -> Result<Vec<Playlist>, String> {
                     total: meta.length().max(0) as u32,
                 }),
                 collaborative: attributes.is_some_and(|a| a.collaborative()),
+                // La descripción del dueño viaja en los mismos atributos que el
+                // nombre, y una vacía es una vacía: el `Option` con filtro
+                // distingue "no escribió nada" de "escribió un espacio".
+                description: attributes
+                    .map(|a| a.description())
+                    .filter(|text| !text.is_empty())
+                    .map(|text| text.to_owned()),
+                // El id de la imagen propia del dueño. Sin él no hay portada
+                // propia: la que se ve la armó Spotify con las primeras
+                // canciones, y esa no se quita.
+                custom_cover: attributes.is_some_and(|a| !a.picture().is_empty()),
+                // La visibilidad es un atributo del ítem de la biblioteca, no de
+                // la playlist: `public` es el campo 10 de `ItemAttributes`, el
+                // mismo que el cliente de escritorio manda en `true` cuando la
+                // playlist entra en la biblioteca. Un ítem sin el atributo es
+                // una playlist pública, que es lo que Spotify hace por
+                // omisión.
+                is_public: item
+                    .attributes
+                    .as_ref()
+                    .and_then(|attributes| attributes.public)
+                    .unwrap_or(true),
             }
         })
         .collect();
@@ -1037,12 +1061,6 @@ fn host_path(url: &str) -> String {
 /// comenzar, elegí temas como este de <entity type="artist" uri="…">bôa</entity>…</speak>`.
 /// Lo que se muestra es la frase con el nombre adentro: la `entity` es una
 /// referencia, no una palabra.
-/// La narración de una fila del DJ, si la trae.
-///
-/// El SSML viene con las etiquetas y las referencias: `<speak xml:lang="es-MX">Para
-/// comenzar, elegí temas como este de <entity type="artist" uri="…">bôa</entity>…</speak>`.
-/// Lo que se muestra es la frase con el nombre adentro: la `entity` es una
-/// referencia, no una palabra.
 ///
 /// **El DJ abre y cierra.** La primera fila del tramo trae `narration.intro` y
 /// la última trae `narration.outro`: la de apertura es la que se muestra, y la
@@ -1427,6 +1445,254 @@ pub fn add_to_playlist(session: &Session, playlist_id: &str, track_id: &str) -> 
     Ok(())
 }
 
+/// Cambia los detalles de una playlist que ya existe: el nombre, la descripción
+/// y la portada.
+///
+/// **Es el mismo mensaje que la crea, con otra revisión.** La creación escribe
+/// un `UPDATE_LIST_ATTRIBUTES` contra la revisión `0,root` de una lista que
+/// todavía no existe; esto escribe ese mismo `UPDATE_LIST_ATTRIBUTES` contra la
+/// revisión que la playlist tiene ahora. Lo que cambia no es el mensaje sino
+/// contra qué se cose — y eso es exactamente lo que el comentario de
+/// [`create_list_change`] ya decía: *"el mismo mensaje que usaría un
+/// renombrado"*.
+///
+/// **El nombre va recortado y no puede quedar vacío.** Un nombre vacío es una
+/// playlist sin nombre, y `create_playlist` ya lo rechaza por la misma razón.
+///
+/// `docs/escribir-playlists.md` tiene el procedimiento completo y de dónde salió.
+pub fn update_playlist_details(
+    session: &Session,
+    playlist_id: &str,
+    details: &PlaylistDetails,
+    picture: Option<Vec<u8>>,
+) -> Result<(), String> {
+    if details.name.is_some() && details.name.as_deref().unwrap_or_default().trim().is_empty() {
+        return Err("empty_name".to_string());
+    }
+
+    SpotifyId::from_base62(playlist_id).map_err(|e| {
+        log::error!("spclient: id de playlist inválido ({playlist_id}): {e}");
+        "bad_id".to_string()
+    })?;
+
+    let account_name = session.username().to_owned();
+    let timestamp = now_millis();
+
+    let revision = playlist_revision(session, playlist_id)?;
+    let changes = details_change(&revision, &account_name, timestamp, details, picture);
+
+    send_changes(
+        session,
+        &format!("/playlist/v2/playlist/{playlist_id}/changes"),
+        &changes,
+        "details_failed",
+    )?;
+
+    log::info!("spclient: los detalles de {playlist_id} quedaron escritos");
+
+    // La visibilidad es otro mensaje y otro endpoint, y va después de los
+    // detalles: si los detalles no se pudieron escribir, la playlist sigue como
+    // estaba y no tiene sentido cambiarle la visibilidad a una cosa que
+    // Después se va a volver a abrir.
+    if let Some(is_public) = details.is_public {
+        set_playlist_visibility(session, playlist_id, is_public)?;
+    }
+
+    Ok(())
+}
+
+/// Cambia si una playlist es pública o privada.
+///
+/// **La visibilidad es un atributo del ítem de la biblioteca, no de la playlist.**
+/// `public` es el campo 10 de `ItemAttributes`, y el ítem es una fila del
+/// rootlist — la lista de la biblioteca. Por eso esto se escribe contra la
+/// revisión de la biblioteca y en el endpoint del rootlist, y no contra la
+/// revisión de la playlist: son dos listas distintas y dos revisiones
+/// distintas.
+///
+/// La receta está medida: un `UPDATE_ITEM_ATTRIBUTES` con el ítem y su uri, y
+/// el `200` vino con el atributo cambiado. `docs/escribir-playlists.md` tiene
+/// el procedimiento y el detalle de lo que se probó.
+pub fn set_playlist_visibility(
+    session: &Session,
+    playlist_id: &str,
+    is_public: bool,
+) -> Result<(), String> {
+    SpotifyId::from_base62(playlist_id).map_err(|e| {
+        log::error!("spclient: id de playlist inválido ({playlist_id}): {e}");
+        "bad_id".to_string()
+    })?;
+
+    let account_name = session.username().to_owned();
+    let timestamp = now_millis();
+    let uri = format!("spotify:playlist:{playlist_id}");
+
+    let changes = visibility_change(
+        &rootlist_revision(session)?,
+        &account_name,
+        timestamp,
+        &uri,
+        is_public,
+    );
+
+    send_changes(
+        session,
+        &format!("/playlist/v2/user/{account_name}/rootlist/changes"),
+        &changes,
+        "visibility_failed",
+    )?;
+
+    log::info!(
+        "spclient: la visibilidad de {playlist_id} quedó escrita (pública={is_public})"
+    );
+    Ok(())
+}
+
+/// Sube una imagen y la deja registrada como la portada de una playlist.
+///
+/// **Son dos pedidos, y el segundo es el que devuelve la imagen.** El primero
+/// manda el JPEG a `image-upload.spotify.com` y contesta un `uploadToken`; el
+/// segundo le pasa ese token al servicio de playlists y contesta el `picture`:
+/// el id de la imagen, que es lo que va en los atributos de la playlist.
+///
+/// **El token es el de la cuenta, no el del cliente.** Con el `client-token` la
+/// puerta contesta `401`: lo que se sube es de la cuenta y se guarda en la
+/// cuenta, y el servicio lo sabe por el token que lo identifica.
+///
+/// **El host no es el del spclient.** `image-upload.spotify.com` no es el
+/// access point de la sesión, así que el pedido se arma a mano en vez de pasar
+/// por `spclient().request()`, que le pone su base y sus cabeceras.
+///
+/// **La imagen la sube el usuario y para la playlist del usuario.** No sale
+/// nada de la máquina por su cuenta: hay un clic, un archivo que él eligió y una
+/// playlist que es suya.
+pub fn upload_playlist_cover(
+    session: &Session,
+    playlist_id: &str,
+    jpeg: &[u8],
+) -> Result<Vec<u8>, String> {
+    SpotifyId::from_base62(playlist_id).map_err(|e| {
+        log::error!("spclient: id de playlist inválido ({playlist_id}): {e}");
+        "bad_id".to_string()
+    })?;
+
+    if jpeg.is_empty() {
+        return Err("upload_failed".to_string());
+    }
+
+    let owned = session.clone();
+    let token = call(session, async move {
+        owned
+            .login5()
+            .auth_token()
+            .await
+            .map_err(|e| {
+                log::error!("spclient: no se pudo pedir el token de la cuenta: {e}");
+                "network_failed".to_string()
+            })
+    })?;
+    log::info!("spclient: el token de la cuenta salió");
+
+    let authorization = format!("{} {}", token.token_type, token.access_token);
+    let body = jpeg.to_vec();
+    // La subida no usa la sesión: el host es otro y el token ya está en la
+    // cabecera.
+    let uploaded = call(session, async move {
+        // **El cliente lleva su propio tope.** `reqwest::Client::new()` no
+        // tiene ninguno: sin esto, una conexión que se queda colgada espera
+        // para siempre, y `call` —que sí tiene tope— sólo suelta al que
+        // llama, dejando el pedido colgado adentro del runtime.
+        let client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(20))
+            .build()
+            .map_err(|e| {
+                log::error!("spclient: no se pudo crear el cliente HTTP: {e}");
+                "upload_failed".to_string()
+            })?;
+
+        let answer = client
+            .post("https://image-upload.spotify.com/v4/playlist")
+            .header(reqwest::header::AUTHORIZATION, authorization)
+            .header(reqwest::header::CONTENT_TYPE, "image/jpeg")
+            .body(body)
+            .send()
+            .await
+            .map_err(|e| {
+                log::error!("spclient: la subida de la imagen falló: {e}");
+                "network_failed".to_string()
+            })?;
+
+        let status = answer.status();
+        let bytes = answer.bytes().await.map_err(|e| {
+            log::error!("spclient: la respuesta de la subida no se pudo leer: {e}");
+            "network_failed".to_string()
+        })?;
+
+        if !status.is_success() {
+            log::error!(
+                "spclient: el servicio rechazó la imagen: {status} — {}",
+                String::from_utf8_lossy(&bytes)
+            );
+            return Err("upload_failed".to_string());
+        }
+        Ok(bytes.to_vec())
+    })?;
+    log::info!("spclient: la imagen subió a image-upload ({} bytes)", uploaded.len());
+
+    // `{"uploadToken": "..."}`
+    let upload_token = serde_json::from_slice::<serde_json::Value>(&uploaded)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("uploadToken")
+                .and_then(|token| token.as_str())
+                .map(|token| token.to_owned())
+        })
+        .ok_or_else(|| {
+            log::error!("spclient: la subida no devolvió un token");
+            "bad_response".to_string()
+        })?;
+
+    // El registro: el token de la imagen se cambia por el id de la imagen.
+    let request = RegisterPlaylistImageRequest {
+        upload_token: Some(upload_token),
+        ..Default::default()
+    };
+    let body = request.write_to_bytes().map_err(|e| {
+        log::error!("spclient: el registro de la imagen no se pudo serializar: {e}");
+        "bad_response".to_string()
+    })?;
+
+    let owned = session.clone();
+    let path = format!("/playlist/v2/playlist/{playlist_id}/register-image");
+    log::info!("spclient: registrando la imagen contra {playlist_id}");
+    let response = call(session, async move {
+        owned
+            .spclient()
+            .request(&reqwest::Method::POST, &path, Some(spclient_headers()), Some(&body))
+            .await
+            .map_err(|e| {
+                log::error!("spclient: el registro de la imagen falló: {e}");
+                "upload_failed".to_string()
+            })
+    })?;
+
+    let reply = RegisterPlaylistImageResponse::parse_from_bytes(&response).map_err(|e| {
+        log::error!("spclient: la respuesta del registro no se pudo leer: {e}");
+        "bad_response".to_string()
+    })?;
+
+    let picture = reply.picture().to_vec();
+    if picture.is_empty() {
+        log::error!("spclient: el registro no devolvió ninguna imagen");
+        return Err("upload_failed".to_string());
+    }
+
+    log::info!("spclient: la imagen quedó registrada para {playlist_id}");
+    Ok(picture)
+}
+
 /// La revisión de una playlist, leída de la biblioteca.
 ///
 /// **La biblioteca, y no un pedido a la playlist.** La biblioteca ya pide la
@@ -1484,8 +1750,8 @@ fn add_track_change(
 ) -> ListChanges {
     ListChanges {
         base_revision: Some(base_revision.to_vec()),
-        deltas: vec![single_delta(
-            Op {
+        deltas: vec![delta(
+            vec![Op {
                 kind: Some(EnumOrUnknown::new(op::Kind::ADD)),
                 add: MessageField::some(Add {
                     add_last: Some(true),
@@ -1501,7 +1767,7 @@ fn add_track_change(
                     ..Default::default()
                 }),
                 ..Default::default()
-            },
+            }],
             account,
             timestamp,
         )],
@@ -1526,8 +1792,8 @@ fn add_list_change(
 ) -> ListChanges {
     ListChanges {
         base_revision: Some(base_revision),
-        deltas: vec![single_delta(
-            Op {
+        deltas: vec![delta(
+            vec![Op {
                 kind: Some(EnumOrUnknown::new(op::Kind::ADD)),
                 add: MessageField::some(Add {
                     from_index: Some(0),
@@ -1535,16 +1801,18 @@ fn add_list_change(
                         uri: Some(playlist_uri.to_owned()),
                         attributes: MessageField::some(ItemAttributes {
                             timestamp: Some(timestamp),
-                            // `true`, como lo manda el cliente oficial. Starless
-                            // querría `false` —una lista que el usuario no pidió
-                            // hacer pública es el único error de todo esto que no
-                            // se puede deshacer desde la app— pero **no está
-                            // probado**: la vez que se mandó `false` el pedido
-                            // falló por otra razón y el resultado no dice nada
-                            // sobre este campo. Va `true` hasta que el camino
-                            // entero funcione, porque un `attach_failed` deja una
-                            // playlist que existe y no está en la biblioteca, y
-                            // esa no se ve ni se puede borrar desde la app.
+                            // `true`, como lo manda el cliente oficial. Lo que
+                            // **sí** está medido hoy es que este atributo se
+                            // puede cambiar después —es el `public` de
+                            // `ItemAttributes`, y un
+                            // `UPDATE_ITEM_ATTRIBUTES` contra el rootlist lo
+                            // cambia—, así que una playlist creada pública se
+                            // puede volver privada desde la app. Lo que **no**
+                            // está medido es esta forma: un `ADD` con `false`
+                            // adentro. Por eso va `true`: crear la playlist
+                            // pública y corregirla después es un estado que la
+                            // app sabe deshacer, y crearla en un estado que
+                            // nadie verificó no lo es.
                             public: Some(true),
                             ..Default::default()
                         }),
@@ -1553,7 +1821,7 @@ fn add_list_change(
                     ..Default::default()
                 }),
                 ..Default::default()
-            },
+            }],
             account,
             timestamp,
         )],
@@ -1568,31 +1836,47 @@ fn add_list_change(
     }
 }
 
-/// El `ListChanges` que **crea** una playlist: atributos contra una lista que
-/// todavía no tiene ninguna.
+/// El `ListChanges` que **cambia la visibilidad** de una playlist: pública o
+/// privada.
 ///
-/// Es un `UPDATE_LIST_ATTRIBUTES`, el mismo mensaje que usaría un renombrado. Lo
-/// que lo crea no es el mensaje sino la revisión contra la que se cose: cero. Por
-/// eso el nombre va en el primer pedido y no en un segundo —no hay segundo pedido,
-/// porque para cuando se manda el primero la playlist ya existe.
-fn create_list_change(account: &str, timestamp: i64, name: &str) -> ListChanges {
+/// **Es un op de atributos de ítem, no de lista, y va contra el rootlist.** La
+/// playlist es una fila de la biblioteca —un ítem del rootlist— y su
+/// visibilidad es un atributo de esa fila: `ItemAttributes.public`. La playlist
+/// en sí no tiene dónde guardarlo: `ListAttributes` no tiene un campo de
+/// visibilidad, y por eso esto no puede ser un `UPDATE_LIST_ATTRIBUTES`.
+///
+/// **El ítem va con su uri.** El proto deja las dos formas —`index` y `item`— y
+/// la que se midió es la segunda: el `200` vino con el atributo cambiado. Un
+/// `200` que no cambia nada es la forma más silenciosa de no escribir, así que
+/// la forma que se usa es la que se comprobó, y no la que se suponía.
+fn visibility_change(
+    base_revision: &[u8],
+    account: &str,
+    timestamp: i64,
+    playlist_uri: &str,
+    is_public: bool,
+) -> ListChanges {
     ListChanges {
-        base_revision: Some(UNBORN_REVISION.to_vec()),
-        deltas: vec![single_delta(
-            Op {
-                kind: Some(EnumOrUnknown::new(op::Kind::UPDATE_LIST_ATTRIBUTES)),
-                update_list_attributes: MessageField::some(UpdateListAttributes {
-                    new_attributes: MessageField::some(ListAttributesPartialState {
-                        values: MessageField::some(ListAttributes {
-                            name: Some(name.to_owned()),
+        base_revision: Some(base_revision.to_vec()),
+        deltas: vec![delta(
+            vec![Op {
+                kind: Some(EnumOrUnknown::new(op::Kind::UPDATE_ITEM_ATTRIBUTES)),
+                update_item_attributes: MessageField::some(UpdateItemAttributes {
+                    new_attributes: MessageField::some(ItemAttributesPartialState {
+                        values: MessageField::some(ItemAttributes {
+                            public: Some(is_public),
                             ..Default::default()
                         }),
+                        ..Default::default()
+                    }),
+                    item: MessageField::some(Item {
+                        uri: Some(playlist_uri.to_owned()),
                         ..Default::default()
                     }),
                     ..Default::default()
                 }),
                 ..Default::default()
-            },
+            }],
             account,
             timestamp,
         )],
@@ -1603,14 +1887,113 @@ fn create_list_change(account: &str, timestamp: i64, name: &str) -> ListChanges 
     }
 }
 
-/// Un `Delta` con una sola operación y la misma `ChangeInfo` que el resto.
+/// El `ListChanges` que **crea** una playlist: atributos contra una lista que
+/// todavía no tiene ninguna.
 ///
-/// La creación y el renombrado son dos deltas distintos con la misma forma
-/// alrededor, y sin este helper el mensaje se repite dos veces con un `?` de
-/// diferencia en algún lado.
-fn single_delta(op: Op, user: &str, timestamp: i64) -> Delta {
+/// Es un `UPDATE_LIST_ATTRIBUTES`, el mismo mensaje que usan el renombrado y
+/// la portada. Lo que lo crea no es el mensaje sino la revisión contra la que
+/// se cose: cero. Por eso el nombre va en el primer pedido y no en un segundo
+/// —no hay segundo pedido, porque para cuando se manda el primero la playlist
+/// ya existe.
+fn create_list_change(account: &str, timestamp: i64, name: &str) -> ListChanges {
+    details_change(
+        UNBORN_REVISION,
+        account,
+        timestamp,
+        &PlaylistDetails {
+            name: Some(name.to_owned()),
+            ..Default::default()
+        },
+        None,
+    )
+}
+
+/// El `ListChanges` que **cambia los detalles** de una playlist: el nombre, la
+/// descripción y la portada.
+///
+/// **Un solo op con todo lo que cambió.** Los atributos de una playlist se
+/// escriben como un estado parcial: `values` lleva lo que se pone y `no_value`
+/// lo que se vacía, y lo que no está en ninguno de los dos se queda como
+/// estaba. Por eso un op con el nombre, la descripción y la portada juntos es
+/// un cambio, no tres — y por eso el op del renombrado no tocó la descripción
+/// de las playlists que ya la traían.
+///
+/// **La portada va como los bytes del id de la imagen**, no como una URL: es
+/// lo que contesta el registro de la imagen, y es lo que el servicio guarda.
+///
+/// **Quitar la portada es otro op, y dice "vacía el id de la imagen".** Es un op
+/// con `values` vacío y `no_value` con `LIST_PICTURE`: la playlist vuelve a la
+/// portada que arma Spotify con las primeras canciones.
+fn details_change(
+    base_revision: &[u8],
+    account: &str,
+    timestamp: i64,
+    details: &PlaylistDetails,
+    picture: Option<Vec<u8>>,
+) -> ListChanges {
+    let mut values = ListAttributes::default();
+    if let Some(name) = details.name.as_deref() {
+        values.name = Some(name.trim().to_owned());
+    }
+    if let Some(description) = details.description.as_deref() {
+        values.description = Some(description.to_owned());
+    }
+    if let Some(picture) = picture.as_ref() {
+        values.picture = Some(picture.clone());
+    }
+
+    let mut ops = Vec::new();
+    if values.name.is_some() || values.description.is_some() || values.picture.is_some() {
+        ops.push(Op {
+            kind: Some(EnumOrUnknown::new(op::Kind::UPDATE_LIST_ATTRIBUTES)),
+            update_list_attributes: MessageField::some(UpdateListAttributes {
+                new_attributes: MessageField::some(ListAttributesPartialState {
+                    values: MessageField::some(values),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+    }
+    if details.remove_picture {
+        ops.push(Op {
+            kind: Some(EnumOrUnknown::new(op::Kind::UPDATE_LIST_ATTRIBUTES)),
+            update_list_attributes: MessageField::some(UpdateListAttributes {
+                new_attributes: MessageField::some(ListAttributesPartialState {
+                    values: MessageField::some(ListAttributes::default()),
+                    no_value: vec![EnumOrUnknown::new(ListAttributeKind::LIST_PICTURE)],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+    }
+
+    ListChanges {
+        base_revision: Some(base_revision.to_vec()),
+        deltas: vec![delta(ops, account, timestamp)],
+        want_resulting_revisions: Some(true),
+        want_sync_result: Some(true),
+        nonces: vec![1],
+        ..Default::default()
+    }
+}
+
+/// Un `Delta` con las operaciones y la misma `ChangeInfo` que el resto.
+///
+/// La creación, el renombrado y la subida de una portada son tres deltas
+/// distintos con la misma forma alrededor, y sin este helper el mensaje se
+/// repite tres veces con un `?` de diferencia en algún lado.
+///
+/// **Varias operaciones en un delta son una cosa, no dos.** El delta es lo que
+/// se cose contra la revisión: mandar los cambios en un solo delta es una
+/// escritura y una revisión; mandarlos en deltas separados son dos y la
+/// segunda puede chocar con la primera.
+fn delta(ops: Vec<Op>, user: &str, timestamp: i64) -> Delta {
     Delta {
-        ops: vec![op],
+        ops,
         info: MessageField::some(ChangeInfo {
             user: Some(user.to_owned()),
             timestamp: Some(timestamp),
@@ -1618,6 +2001,22 @@ fn single_delta(op: Op, user: &str, timestamp: i64) -> Delta {
         }),
         ..Default::default()
     }
+}
+
+/// Las cabeceras que el router de Spotify espera ver en un pedido de playlist.
+///
+/// **La cabecera que miente.** `application/x-www-form-urlencoded` sobre un
+/// cuerpo que no es formulario — y esa mentira es parte de lo que el router
+/// espera ver. Un `400 invalid argument` a un cuerpo idéntico byte por byte al
+/// que él mismo acepta es la forma que tiene el router de decir que la
+/// cabecera no fue la que quería.
+fn spclient_headers() -> reqwest::header::HeaderMap {
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        reqwest::header::CONTENT_TYPE,
+        reqwest::header::HeaderValue::from_static("application/x-www-form-urlencoded"),
+    );
+    headers
 }
 
 /// Manda un `ListChanges`.
@@ -1643,11 +2042,7 @@ fn send_changes(
     // acepta. La cabecera que manda el cliente oficial es
     // `x-www-form-urlencoded` sobre un cuerpo que no es formulario — y esa
     // mentira es parte de lo que el router de Spotify espera ver.
-    let mut headers = reqwest::header::HeaderMap::new();
-    headers.insert(
-        reqwest::header::CONTENT_TYPE,
-        reqwest::header::HeaderValue::from_static("application/x-www-form-urlencoded"),
-    );
+    let headers = spclient_headers();
 
     let printable = hex_without_account(&body, &session.username());
     let owned = session.clone();
@@ -1732,9 +2127,9 @@ mod probe;
 
 #[cfg(debug_assertions)]
 pub use probe::{
-    create_requested, dj_requested, home_requested, pictures_requested, requested, run_create_probe,
-    run_dj_probe, run_home_probe, run_picture_probe, run_probe, run_shape_probe, run_voice_probe,
-    shapes_requested, voice_requested,
+    create_requested, dj_requested, home_requested, pictures_requested, private_requested,
+    requested, run_create_probe, run_dj_probe, run_home_probe, run_picture_probe, run_private_probe,
+    run_probe, run_shape_probe, run_voice_probe, shapes_requested, voice_requested,
 };
 
 #[cfg(test)]

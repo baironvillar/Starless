@@ -1,6 +1,8 @@
 # Escribir playlists
 
-Cómo se crea una playlist por la sesión de librespot, y cómo se averiguó.
+Cómo se crea una playlist por la sesión de librespot, y cómo se averiguó. Lo
+mismo para renombrarla y para meterle canciones, que son el mismo endpoint con
+la revisión cambiada.
 
 Este documento describe el protocolo y deja constancia de cómo se llegó a él.
 Los dos pedidos se verificaron en vivo contra el servicio, con el token del
@@ -47,6 +49,99 @@ ningún campo del mensaje que esté mal.
 Todo eso ya está en `playlist4_external.proto`, que librespot compila. **No hace
 falta ni un proto nuevo.** Es el mismo `playlist4` de toda la vida con el que se
 editan las playlists; la creación no es un caso especial.
+
+## Los detalles: nombre, descripción y portada
+
+Las escrituras del diálogo de detalles son **el mismo endpoint y el mismo
+mensaje**, con la revisión cambiada:
+
+| | Crear | Editar los detalles | Agregar una canción |
+| --- | --- | --- | --- |
+| `base_revision` | `0,root` | la de la playlist | la de la playlist |
+| `Op.kind` | `UPDATE_LIST_ATTRIBUTES` | `UPDATE_LIST_ATTRIBUTES` | `ADD` |
+| Contenido | `ListAttributes { name }` | `ListAttributes { name, description, picture }` | `Add { add_last: true, items: [...] }` |
+
+**La revisión se lee en el momento de escribir, y no antes.** El servicio
+contesta `409 Aborted` a un cambio cosido contra una revisión vieja, así que una
+revisión cacheada es una revisión que puede estar equivocada. Por eso
+`spclient` la pide en el mismo viaje que la escritura, y no la guarda.
+
+**Los atributos se escriben como un estado parcial.** `ListAttributesPartialState`
+lleva los valores que se cambian en `values` y, por aparte, la lista de los que
+se vacían en `no_value`. Mandar el nombre y nada más deja la descripción y la
+portada donde estaban: para vaciar hay que nombrar el campo en `no_value` —y
+para quitar la portada, `no_value` lleva `LIST_PICTURE` y `values` va vacío.
+
+### La portada es otro pedido, y son dos
+
+La portada **no viaja en el mensaje de los atributos**: lo que viaja es el id de
+la imagen, y ese id sale de dos pedidos anteriores:
+
+1. **La subida.** `POST https://image-upload.spotify.com/v4/playlist` con el
+   JPEG en el cuerpo, `Content-Type: image/jpeg` y el **token de la cuenta**
+   (`login5().auth_token()`), no el `client-token` —con el del cliente la puerta
+   contesta `401`. Contesta `{"uploadToken": "…"}`. El host no es el del spclient,
+   así que el pedido se arma a mano.
+2. **El registro.** `POST /playlist/v2/playlist/<id>/register-image` con el
+   `RegisterPlaylistImageRequest { upload_token }` de `playlist4_external.proto`.
+   Contesta el `RegisterPlaylistImageResponse { picture }`, y esos bytes son
+   exactamente lo que va en `ListAttributes.picture`.
+
+**El `picture` son los bytes del id de la imagen**, no una URL: el id crudo de
+`i.scdn.co/image/<id>`. La dirección de la imagen se arma con eso, y no es un
+detalle: una URL en ese campo es una URL que el servicio no sabe leer.
+
+**La imagen la sube el usuario, para la playlist del usuario.** No sale nada de
+la máquina por su cuenta: hay un clic, un archivo que él eligió y una playlist
+que es suya.
+
+## La visibilidad: pública o privada
+
+La privacidad de una playlist **no está en los atributos de la playlist**.
+`ListAttributes` no tiene ningún campo para eso —tiene `name`, `description`,
+`picture`, `collaborative` y poco más—, y `get_playlist` tampoco lo trae: por
+eso el encabezado de la pantalla no podía decir "privada" y decía la mitad de
+la verdad.
+
+**Está en el ítem de la biblioteca.** La playlist es una fila del rootlist, y
+cada fila trae sus propios `ItemAttributes`, donde el campo 10 es `public`: el
+mismo que el cliente de escritorio manda en `true` cuando la playlist entra en
+la biblioteca. O sea que la visibilidad se lee del rootlist:
+
+| | |
+| --- | --- |
+| Dónde | `ItemAttributes.public` del ítem del rootlist |
+| Si el campo no vino | pública — es lo que Spotify hace por omisión |
+
+Y se escribe en el rootlist, con un op de atributos de ítem:
+
+| | |
+| --- | --- |
+| Endpoint | `POST /playlist/v2/user/<usuario>/rootlist/changes` |
+| `base_revision` | la revisión del rootlist |
+| Operación | `Op.kind = UPDATE_ITEM_ATTRIBUTES` (`5`) |
+| Contenido | `UpdateItemAttributes { new_attributes: { values: { public: false } }, item: { uri } }` |
+
+**El ítem va con su uri.** El proto deja las dos formas —`index` y `item`— y la
+que se midió es la segunda: el `200` vino con el atributo cambiado. Un `200`
+que no cambia nada es la forma más silenciosa de no escribir.
+
+Medido contra el servicio con la cuenta del usuario. La sonda es
+`STARLESS_SP_PRIVATE=1`, y además pide `STARLESS_SP_PRIVATE_ID=<id>` para
+saber a qué playlist puede tocar —la que se le nombre— y la deja como la
+encontró:
+
+```
+[0] spotify:playlist:3cmFu… · public=Some(true) · timestamp=Some(…)
+la forma `item` → 200 · 113 bytes
+después de la forma `item`, public=Some(false)
+```
+
+El `ADD` del rootlist —el que mete una playlist nueva en la biblioteca— lleva
+`public` en `true`, que es lo que manda el cliente de escritorio. **Esa forma
+no está medida**: el `ADD` con `public` en `false` puede que no cree una
+playlist privada. Lo que sí está medido es que después se puede cambiar, así
+que crear pública y corregir después es un estado que la app sabe deshacer.
 
 ## Qué ya estaba público
 
@@ -216,9 +311,9 @@ playlist nueva con `00 00 00 00` + `"root"`. En la URL las dos aparecen como
 Detalles que salen del cuerpo real y no se deducen del proto:
 
 - `ItemAttributes.public = true`. El cliente de escritorio pone la playlist
-  **pública** por defecto. Starless querría `false`, y **no está probado**: la
-  única vez que se mandó `false` el pedido falló por el orden y ese resultado no
-  dice nada sobre este campo.
+  **pública** por defecto. Que ese atributo se pueda cambiar después está
+  medido —ver «La visibilidad: pública o privada»—, pero mandar `false` en el
+  `ADD` no: esa forma no se probó.
 
 ## La envolvente: lo que se descartó
 
@@ -267,17 +362,19 @@ nombró el código 400. Ninguna de las dos señales era un mensaje del servicio.
 
 Honesto, porque buena parte de esto no se comprobó:
 
-- **`public = false` no se probó.** La receta verificada crea la playlist
-  **pública**, porque eso es lo que manda el escritorio. Starless querría
-  `private`, y la vuelta —un `Op{kind: UPDATE_ITEM_ATTRIBUTES}` sobre el
-  rootlist— no se encontró en ninguna captura. Mandar `false` en
-  `ItemAttributes` es lo más probable, pero no se verificó que el servicio lo
-  acepte.
-- **No se prueba el caso real**, que es crear una playlist *con canciones*. El
-  `Op{kind: ADD}` de pistas dentro de la playlist es
+- **El `ADD` con `public = false` no se probó.** La receta verificada crea la
+  playlist **pública**, porque eso es lo que manda el escritorio. Cambiar la
+  visibilidad después sí está medido —ver «La visibilidad: pública o
+  privada»—, pero la forma del `ADD` con `public` en `false` no: puede que el
+  servicio no acepte una playlist que nace privada.
+- **El caso real, que es crear una playlist *con canciones*, ya está
+  implementado.** El `Op{kind: ADD}` de pistas dentro de la playlist es
   `Add{items: [Item{uri: "spotify:track:…"}]}` sobre
   `POST /playlist/v2/playlist/<id>/changes` —el mismo endpoint del primer paso,
-  pero con una revisión que ya no es cero— y no se vio.
+  pero con una revisión que ya no es cero—, y es lo que escribe «Agregar a la
+  playlist» del menú de una canción. Editar los detalles es el mismo
+  `UPDATE_LIST_ATTRIBUTES` de la creación, contra la revisión que la playlist
+  tiene ahora. Ver «Los detalles: nombre, descripción y portada».
 - **La Web API documentada sigue siendo otra cosa.** `POST /me/playlists` es el
   camino oficial y pide scopes `playlist-modify-*`. Nada de esto lo reemplaza ni
   lo contradice: es el mismo `playlist4` privado, que es el único que una sesión
@@ -337,7 +434,7 @@ Conviene no llegar como si nada de esto fuera nuevo:
 **Esto es lo que se manda.** Es un comentario, no un PR: no se toca código, no
 se pide ninguna función. Redactado en inglés, que es como se escriben ahí.
 **No está publicado** —en esta máquina no hay `gh` ni token de GitHub—, así que
-lo pegás vos.
+lo pegas tú.
 
 El PR agrega `post_playlist_changes`: escribir filas —agregar, sacar, mover— dentro
 de una playlist que ya existe. No crea playlists ni toca la biblioteca. El

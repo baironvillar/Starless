@@ -1,6 +1,6 @@
 [package]
 name = "starless"
-version = "0.5.3"
+version = "0.5.4"
 description = "A native desktop client for Spotify"
 authors = ["bairo"]
 edition = "2024"

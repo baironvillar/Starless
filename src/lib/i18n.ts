@@ -47,10 +47,10 @@ export const strings = {
     libraryTitle: "Tu biblioteca",
     likedSongs: "Canciones que te gustan",
     yourPlaylists: "Tus playlists",
-    madeForYou: "Hecho para vos",
+    madeForYou: "Hecho para ti",
     // El DJ de la cuenta. Su card no muestra cuántas canciones tiene —no se
     // sabe hasta que se pide el mix— sino lo que es: alguien que elige.
-    djSubtitle: "Elige la música por vos",
+    djSubtitle: "Elige la música por ti",
     djPlay: "Reproducir",
     djUnavailable: "No se pudo leer el DJ",
     // El DJ hablando, en la barra. El nombre y la frase los manda el
@@ -76,6 +76,7 @@ export const strings = {
     newPlaylistFailedCreate: "No se pudo crear la playlist",
     newPlaylistFailedAttach: "La playlist se creó pero no apareció en la biblioteca",
     newPlaylistFailedAdd: "La playlist se creó, pero la canción no entró",
+    newPlaylistDone: "Playlist creada",
     homeTitle: "Inicio",
     openPlaylist: "Abrir",
     lyricsTitle: "Letra",
@@ -83,7 +84,7 @@ export const strings = {
     closeLyrics: "Volver",
     noLyrics: "Esta canción no tiene letra.",
     lyricsNotSynced: "Esta letra viene sin sincronizar, así que no se puede seguir sola.",
-    lyricsPaused: "Reproducí la canción para que la letra se mueva.",
+    lyricsPaused: "Reproduce la canción para que la letra se mueva.",
     jumpToLine: "Ir a este momento",
     playlists: "playlists",
     planPremium: "Premium",
@@ -94,6 +95,7 @@ export const strings = {
     // La playlist, dibujada como la dibuja el cliente de escritorio: el tipo de
     // lista arriba y el orden y el filtro al lado de las canciones.
     playlistCollaborative: "Playlist colaborativa",
+    playlistPrivate: "Playlist privada",
     playlistSearch: "Buscar en esta playlist",
     playlistNoMatches: "Ninguna canción de esta playlist coincide con la búsqueda.",
     playlistOrder: "Orden de la lista",
@@ -112,12 +114,32 @@ export const strings = {
     addToPlaylist: "Agregar a la playlist",
     findPlaylist: "Buscar una playlist",
     addedToPlaylist: "Agregada a «{name}»",
-    noPlaylistsYet: "Todavía no tenés ninguna playlist.",
+    noPlaylistsYet: "Todavía no tienes ninguna playlist.",
     noPlaylistMatches: "Ninguna playlist coincide con la búsqueda.",
     copyLink: "Copiar enlace",
     copyFailed: "No se pudo copiar",
+    // El menú de los tres puntos de una playlist. Tres filas y las tres
+    // hacen algo: las que no podrían, se leen como averiadas.
+    playlistMenu: "Opciones de la playlist",
+    playlistMenuFor: "Opciones de «{name}»",
+    playlistQueued: "{count} canciones en la cola",
+    // El diálogo de los detalles: la portada, el nombre y la descripción.
+    playlistDetails: "Editar los detalles",
+    playlistDetailsName: "Nombre",
+    playlistDetailsDescription: "Agregá una descripción opcional",
+    playlistDetailsSave: "Guardar",
+    playlistDetailsCancel: "Cancelar",
+    playlistDetailsSaving: "Guardando…",
+    playlistDetailsFailed: "No se pudieron guardar los detalles.",
+    playlistDetailsTimeout: "El guardado no respondió a tiempo. Vuelve a intentarlo.",
+    playlistVisibilityFailed:
+      "Se guardaron los detalles, pero la playlist no cambió de visibilidad.",
+    playlistMakePrivate: "Hacerla privada",
+    playlistChoosePhoto: "Elegir una foto",
+    playlistRestoreCover: "Volver a la portada de Spotify",
+    playlistUploadFailed: "No se pudo subir la imagen.",
     playlistNotReadable:
-      "Esta playlist la creó otra persona. Spotify solo deja leer el contenido de las que te pertenecen o en las que colaboras.",
+      "Esta playlist la creó otra persona. Spotify solo deja leer las que te pertenecen o en las que colaboras.",
     librarySubtitle: "Tu música, tal cual la guardaste",
     songs: "canciones",
 
@@ -187,13 +209,11 @@ export const strings = {
     sectionAccount: "Cuenta",
     sectionCustom: "Personalización",
     menuOpacity: "Opacidad de los menús",
-    menuOpacityHint:
-      "Qué tan sólidos se ven los menús: el de búsqueda, el aviso de caída, el formulario de feedback, la cola y hasta los ajustes. Más sólido es más fácil de leer; más translúcido se ve más profundo.",
+    menuOpacityHint: "Qué tan sólidos se ven los menús. Más sólido es más fácil de leer.",
     menuOpacitySolid: "Sólido",
     menuOpacityGlass: "Translúcido",
     accentColor: "Color de acento",
-    accentColorHint:
-      "El color que marca las acciones: el botón de Inicio, la barrita a la izquierda de la playlist o la canción que tenés seleccionada, las canciones que te gustan y los botones principales.",
+    accentColorHint: "El color que marca las acciones.",
     accentColorCustom: "Otro color",
     sectionDiagnostics: "Diagnóstico",
     close: "Cerrar",
@@ -242,13 +262,14 @@ export const strings = {
     updateInstall: "Actualizar",
     updateDownloading: "Descargando…",
     updateGoBack:
-      "Hay una versión pública ({version}) y estás corriendo una más nueva. Podés volver a la pública cuando quieras.",
+      "Hay una versión pública ({version}) y estás corriendo una más nueva. Puedes volver a la pública cuando quieras.",
     updateGoBackShort: "Volver a la {version}",
+    updateGoBackSame: "La {version} pública es otra build: no la de develop que tienes instalada.",
+    updateGoBackSameShort: "Instalar la {version} pública",
     updateInstallError:
-      "La descarga falló. La copia que tenés instalada no cambió, y podés intentarlo otra vez.",
+      "La descarga falló. La copia que tienes instalada no cambió, y puedes intentarlo otra vez.",
     prereleaseTitle: "Prerelease de develop",
-    prereleaseHint:
-      "La build que sale de `develop`, antes de que sea pública. Se instala encima de la que tenés y la reemplaza, así que te deja corriendo la versión de desarrollo hasta que salga la próxima pública.",
+    prereleaseHint: "Se instala encima de la que tienes y la reemplaza.",
     prereleaseCheck: "Buscar prerelease",
     prereleaseChecking: "Buscando…",
     prereleaseNone: "No hay prerelease",
@@ -256,11 +277,11 @@ export const strings = {
     prereleaseAvailable: "Hay una {version} de develop lista. Se instalará al cerrar Starless.",
     prereleaseInstall: "Instalar la prerelease",
     prereleaseError:
-      "No se pudo preguntar a GitHub. Eso dice de la conexión, no de la copia que tenés instalada.",
+      "No se pudo preguntar a GitHub. Es un problema de conexión, no de la copia instalada.",
     prereleaseRateLimited:
-      "GitHub limitó las consultas desde esta máquina. El presupuesto vuelve en una hora: probá otra vez después.",
+      "GitHub limitó las consultas desde esta máquina. El presupuesto vuelve en una hora: prueba otra vez después.",
     prereleaseInstallError:
-      "La descarga de la prerelease falló. La copia que tenés instalada no cambió, y podés intentarlo otra vez.",
+      "La descarga de la prerelease falló. La copia que tienes instalada no cambió, y puedes intentarlo otra vez.",
     updateAlertTitle: "Hay una versión nueva",
     updateAlertBody: "v{version} está lista. Se instala desde Ajustes, cuando tú lo decidas.",
     updateSimulated: "v{version} (simulada). No hay nada que instalar: es un estado de prueba.",
@@ -275,7 +296,7 @@ export const strings = {
     devClearUpdate: "Quitar la simulación",
     devSimulateCrash: "Simular un crash",
     devCrashPlanted:
-      "Listo. Cerrá la app y volvé a abrirla: el aviso de crash aparece al arrancar.",
+      "Listo. Cierra la app y vuelve a abrirla: el aviso de crash aparece al arrancar.",
 
     newPlaylist: "Nueva playlist",
     showLibrary: "Mostrar biblioteca",
@@ -292,22 +313,21 @@ export const strings = {
      */
     libraryUnavailableTitle: "No pudimos leer tu biblioteca",
     libraryUnavailableBody:
-      "Starless está firmado, pero Spotify no le está entregando tu biblioteca en este momento. Si recién abriste la app, probá de nuevo en un rato.",
+      "Spotify no le está entregando tu biblioteca en este momento. Si acabas de abrir la app, prueba de nuevo en un rato.",
     hideLibrary: "Ocultar biblioteca",
 
     // A session that ended without being closed
     crashKicker: "La sesión anterior falló",
     crashTitle: "Starless no se cerró bien",
     crashBody:
-      "La última vez que abriste Starless, la app terminó sin cerrarse. Puede ser un fallo puntual o algo de la máquina. Si quieres, mandamos el registro para poder encontrarlo.",
+      "La app terminó sin cerrarse. Puede ser un fallo puntual o algo de la máquina. Si quieres, mandamos el registro para encontrarlo.",
     crashShowDetail: "Ver qué se enviaría",
     crashHideDetail: "Ocultar el detalle",
     crashScrubbed: "Sin datos personales",
     crashSend: "Enviar el registro",
     crashSending: "Enviando…",
     crashDismiss: "Ahora no",
-    crashPrivacy:
-      "No se envía nada hasta que aprietes el botón. Starless no reporta uso, ni aunque lo instales y lo abras mil veces.",
+    crashPrivacy: "No se envía nada hasta que aprietes el botón. Starless no reporta uso.",
     crashSent: "Reporte creado:",
     crashReportUnavailable: "No se pudo preparar el reporte.",
     crashReportFailed: "No se pudo enviar el reporte.",
@@ -316,11 +336,11 @@ export const strings = {
     feedbackKicker: "Feedback",
     feedbackTitle: "Cuéntale a quien lo lee",
     feedbackBody:
-      "Algo que anda lento, algo que no encuentras, algo que te está molestando. No hace falta que esté roto: lo que no se reporta no existe.",
+      "Algo que anda lento, algo que no encuentras, algo que te molesta. No hace falta que esté roto.",
     feedbackPlaceholder: "¿Qué pasó, o qué te gustaría que pasara?",
     feedbackAttachLog: "Adjuntar el registro",
     feedbackAttachLogHint:
-      "Se envía la última parte de starless.log, ya sin tu nombre de cuenta ni identificadores. Apagado por defecto.",
+      "Se envía la última parte de starless.log, sin tu nombre de cuenta ni identificadores. Apagado por defecto.",
     feedbackShowDetail: "Ver qué se enviaría",
     feedbackSend: "Enviar feedback",
 
@@ -413,6 +433,7 @@ export const strings = {
     // The playlist, drawn the way the desktop client draws it: what kind of list
     // this is, then the order and the filter beside the songs.
     playlistCollaborative: "Collaborative playlist",
+    playlistPrivate: "Private playlist",
     playlistSearch: "Search in this playlist",
     playlistNoMatches: "No song in this playlist matches that search.",
     playlistOrder: "Playlist order",
@@ -435,6 +456,25 @@ export const strings = {
     noPlaylistMatches: "No playlist matches that search.",
     copyLink: "Copy link",
     copyFailed: "Couldn't copy",
+    // A playlist's three dots. Three rows, and all three do something: the ones
+    // that could not would read as broken.
+    playlistMenu: "Playlist options",
+    playlistMenuFor: "Options for “{name}”",
+    playlistQueued: "{count} songs in the queue",
+    // The details dialog: the cover, the name and the description.
+    playlistDetails: "Edit details",
+    playlistDetailsName: "Name",
+    playlistDetailsDescription: "Add an optional description",
+    playlistDetailsSave: "Save",
+    playlistDetailsCancel: "Cancel",
+    playlistDetailsSaving: "Saving…",
+    playlistDetailsFailed: "Couldn't save the details.",
+    playlistDetailsTimeout: "The save didn't answer in time. Try again.",
+    playlistVisibilityFailed: "The details were saved, but the playlist didn't change visibility.",
+    playlistMakePrivate: "Make private",
+    playlistChoosePhoto: "Choose photo",
+    playlistRestoreCover: "Restore Spotify's cover",
+    playlistUploadFailed: "Couldn't upload the image.",
     playlistNotReadable:
       "Someone else made this playlist. Spotify only lets an app read the contents of the ones you own or collaborate on.",
     librarySubtitle: "Your music, exactly as you saved it",
@@ -504,13 +544,11 @@ export const strings = {
     sectionAccount: "Account",
     sectionCustom: "Customisation",
     menuOpacity: "Menu opacity",
-    menuOpacityHint:
-      "How solid the menus look: the search menu, the crash prompt, the feedback form, the queue, and the settings panel itself. More solid is easier to read; more translucent looks deeper.",
+    menuOpacityHint: "How solid the menus look. More solid is easier to read.",
     menuOpacitySolid: "Solid",
     menuOpacityGlass: "Translucent",
     accentColor: "Accent colour",
-    accentColorHint:
-      "The colour that marks actions: the Home button, the bar beside the playlist or song you have selected, Liked Songs, and the primary buttons.",
+    accentColorHint: "The colour that marks actions.",
     accentColorCustom: "Custom colour",
     sectionDiagnostics: "Diagnostics",
     close: "Close",
@@ -559,11 +597,13 @@ export const strings = {
     updateGoBack:
       "There is a public version ({version}) and you are running a newer one. You can go back to the public one whenever you want.",
     updateGoBackShort: "Go back to {version}",
+    updateGoBackSame:
+      "The public {version} is a different build: not the develop one you have installed.",
+    updateGoBackSameShort: "Install the public {version}",
     updateInstallError:
       "The download failed. The copy you have installed did not change, and you can try again.",
     prereleaseTitle: "Develop prerelease",
-    prereleaseHint:
-      "The build that comes out of `develop`, before it goes public. It installs over what you are running and replaces it, so it leaves you on the development version until the next public one is out.",
+    prereleaseHint: "It installs over what you are running and replaces it.",
     prereleaseCheck: "Check prerelease",
     prereleaseChecking: "Checking…",
     prereleaseNone: "No prerelease",
@@ -572,7 +612,7 @@ export const strings = {
       "There is a {version} from develop ready. It installs when Starless closes.",
     prereleaseInstall: "Install the prerelease",
     prereleaseError:
-      "GitHub could not be reached. That says something about the connection, not about the copy you have installed.",
+      "GitHub could not be reached. That is a connection problem, not a problem with the copy you have installed.",
     prereleaseRateLimited:
       "GitHub limited the queries from this machine. The budget comes back in an hour: try again later.",
     prereleaseInstallError:
@@ -595,22 +635,21 @@ export const strings = {
     showLibrary: "Show library",
     libraryUnavailableTitle: "We couldn't read your library",
     libraryUnavailableBody:
-      "Starless is signed in, but Spotify isn't handing it your library right now. If you just opened the app, try again in a little while.",
+      "Spotify isn't handing it your library right now. If you just opened the app, try again in a little while.",
     hideLibrary: "Hide library",
 
     // A session that ended without being closed
     crashKicker: "The last session failed",
     crashTitle: "Starless did not close cleanly",
     crashBody:
-      "The last time you opened Starless, the app ended without shutting down. It could be a one-off bug or something about the machine. If you want, we can send the log so it can be found.",
+      "The app ended without shutting down. It could be a one-off bug or something about the machine. If you want, we can send the log so it can be found.",
     crashShowDetail: "See what would be sent",
     crashHideDetail: "Hide the detail",
     crashScrubbed: "No personal data",
     crashSend: "Send the log",
     crashSending: "Sending…",
     crashDismiss: "Not now",
-    crashPrivacy:
-      "Nothing is sent until you press the button. Starless reports no usage, not even if you install it and open it a thousand times.",
+    crashPrivacy: "Nothing is sent until you press the button. Starless reports no usage.",
     crashSent: "Report created:",
     crashReportUnavailable: "The report could not be prepared.",
     crashReportFailed: "The report could not be sent.",
@@ -619,7 +658,7 @@ export const strings = {
     feedbackKicker: "Feedback",
     feedbackTitle: "Tell whoever reads this",
     feedbackBody:
-      "Something that runs slow, something you cannot find, something that keeps getting in your way. It does not have to be broken: what nobody reports does not exist.",
+      "Something that runs slow, something you cannot find, something that keeps getting in your way. It does not have to be broken.",
     feedbackPlaceholder: "What happened, or what you would like to happen?",
     feedbackAttachLog: "Attach the log",
     feedbackAttachLogHint:

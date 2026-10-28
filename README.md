@@ -60,7 +60,7 @@ mantiene baja mientras suena.
 - **Diagnóstico:** registro a archivo local con rotación y un autodiagnóstico
   con `STARLESS_DIAGNOSTIC=1`.
 - **Reportes de crash.** Si la app se muere sin cerrarse, al volver a abrirla
-  Starless lo detecta y te ofrece mandar el registro. Vos decidís: nada sale de
+  Starless lo detecta y te ofrece mandar el registro. Tú decides: nada sale de
   tu máquina hasta que aprietas el botón, y lo que se manda ya viene sin tu
   nombre de cuenta, sin tu usuario de Windows y sin identificadores de
   canción.
