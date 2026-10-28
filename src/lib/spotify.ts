@@ -324,6 +324,43 @@ export async function djMore(): Promise<DjMix> {
 }
 
 /**
+ * Qué se estaba escuchando: el contexto con el que se siembra la radio.
+ *
+ * **Es un contexto y no una canción suelta.** El autoplay de Spotify pregunta
+ * dos cosas: qué se escuchaba —la playlist, la canción— y qué sonó hace
+ * poco. Por eso hay dos variantes y no un id suelto: el backend escribe cada
+ * contexto como lo entiende el servicio, y el webview no lo hace a mano.
+ */
+export type RadioContext = { kind: "playlist"; id: string } | { kind: "track"; id: string };
+
+/**
+ * Ask for the radio: the songs that are like the ones that were playing.
+ *
+ * **This is Spotify's autoplay door, with its own protocol.** The backend sends
+ * the context and the recent tracks, and the service answers with fifty
+ * similar songs and a cursor to keep going.
+ *
+ * The recent tracks are what the service already played: it does not offer them
+ * back, which is why the seed does not have to be filtered out here.
+ */
+export async function radioStart(context: RadioContext, recentTrackIds: string[]): Promise<DjMix> {
+  return invoke<DjMix>("radio_start", { context, recentTrackIds });
+}
+
+/**
+ * Ask for the radio's next page.
+ *
+ * **Same as the DJ's, and for the same reason:** the cursor lives in the
+ * backend, so the webview asks for "the next one" and never handles the path.
+ *
+ * An empty list is the answer when the station is done: the radio ends there,
+ * and that is a fact about the session, not a failure.
+ */
+export async function radioMore(): Promise<DjMix> {
+  return invoke<DjMix>("radio_more");
+}
+
+/**
  * Subscribe to playback events.
  *
  * Called from an effect, not from a hook body: the listener outlives any single
