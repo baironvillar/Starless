@@ -121,6 +121,19 @@ nuevos, y hasta que nadie la publica nadie Bajó la vieja. Cuando la release ya
 está publicada, mover el tag es otra historia: la app instalada ya tiene la
 versión y el manifest viejo sigue apuntando a los archivos que se borraron.
 
+**La excepción es una pre-release publicada que no se podía instalar.** A la
+0.5.5 le pasó: el botón de instalar la pre-release fallaba siempre, y el
+motivo estaba en el backend, así que la release estaba publicada y era
+ininstalable. Ahí nadie podía tener esa versión —la app no pasaba de 0.5.4
+porque el instalador moría antes de descargar un byte—, así que mover el tag
+no le rompe nada a nadie: la corrida deja la release en borrador otra vez con
+los archivos nuevos, y publicarla de nuevo es el mismo paso de siempre, con
+la marca de prerelease puesta a mano. Lo que hay que mirar es el manifest:
+mientras se borra el archivo viejo y se sube el nuevo hay un instante en que
+`latest.json` apunta a un asset que no existe, y el comprobador de la app lo
+toma por «no hay nada nuevo». Por eso la publicación se hace cuando la
+corrida terminó, y no en medio.
+
 Eso es todo. El workflow de `.github/workflows/release.yml` se dispara con el tag
 y hace el resto: corre `lint`, `typecheck`, `bun run version` y `cargo test
 --lib`; compila en un runner de Windows; firma los artefactos; genera
