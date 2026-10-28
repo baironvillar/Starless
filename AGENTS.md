@@ -777,6 +777,21 @@ salen de una captura:
 - **La barra de arriba es zona de arrastre.** Con `decorations: false` no hay
   título del sistema, así que la ventana se mueve desde ahí y los controles
   llevan `data-tauri-drag-region="false"`.
+- **Un control dibujado no sigue al mouse si su valor viene de atrás.** El
+  slider dibujado —`SmoothSlider`— se veía perfecto y se arrastraba **muy
+  desfasado**, y eran dos latencias sumadas: dibujaba **el valor que el
+  backend había reportado**, que para el volumen tarda lo que tarda un comando,
+  una escritura a disco y un evento; y animaba la posición **con el spring de
+  la app**, que es un atraso que **crece con la velocidad de la mano** —a la
+  velocidad de un arrastre real, el pulgar quedaba a un buen tramo del cursor—.
+  Encima, el `input` estaba atado al valor lento, así que React **volvía a
+  tirar del arrastre** hacia el número viejo después de cada evento.
+  **Un control que el mouse maneja tiene que dibujar lo que el mouse pide, en
+  el mismo cuadro**: el número pedido, el `input` atado a ese número, y la
+  posición **sin animar mientras el puntero está abajo**. El spring es para los
+  valores que llegan solos —una tecla, un valor que vuelve del backend— y para
+  el pulgar que crece bajo la mano. El `<input type="range">` nativo que esto
+  reemplazaba seguía al mouse exacto: esa es la vara.
 - **`.agent/` es la copia canónica** de la configuración de agentes. Los shims de
   `.claude/` y `.opencode/` que apuntaban ahí se borraron; para recuperar el
   skill en esas herramientas, `git revert 96cf93c`.
