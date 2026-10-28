@@ -92,6 +92,7 @@ export const strings = {
     loading: "Cargando…",
     emptyList: "Nada por aquí todavía",
     playlistEmpty: "Esta playlist todavía no tiene canciones.",
+    likedEmpty: "Las canciones que marques con el corazón aparecen aquí.",
     // La playlist, dibujada como la dibuja el cliente de escritorio: el tipo de
     // lista arriba y el orden y el filtro al lado de las canciones.
     playlistCollaborative: "Playlist colaborativa",
@@ -101,8 +102,14 @@ export const strings = {
     playlistOrder: "Orden de la lista",
     orderCustom: "Orden personalizado",
     orderTitle: "Título",
+    orderAdded: "Agregado recientemente",
     orderArtist: "Artista",
     orderAlbum: "Álbum",
+    sortBy: "Ordenar por",
+    sortAscending: "ascendente",
+    sortDescending: "descendente",
+    viewAs: "Ver como",
+    viewCompact: "Compacta",
     playAll: "Reproducir todo",
     // El menú de los tres puntos de una canción. Tres filas y las tres hacen
     // algo: las que no podrían, se leen como averiadas.
@@ -431,6 +438,7 @@ export const strings = {
     loading: "Loading…",
     emptyList: "Nothing here yet",
     playlistEmpty: "This playlist has no songs yet.",
+    likedEmpty: "Songs you like with the heart show up here.",
     // The playlist, drawn the way the desktop client draws it: what kind of list
     // this is, then the order and the filter beside the songs.
     playlistCollaborative: "Collaborative playlist",
@@ -440,8 +448,14 @@ export const strings = {
     playlistOrder: "Playlist order",
     orderCustom: "Custom order",
     orderTitle: "Title",
+    orderAdded: "Recently added",
     orderArtist: "Artist",
     orderAlbum: "Album",
+    sortBy: "Sort by",
+    sortAscending: "ascending",
+    sortDescending: "descending",
+    viewAs: "View as",
+    viewCompact: "Compact",
     playAll: "Play all",
     // A song's three dots. Three rows, and all three do something: the ones that
     // could not would read as broken.
