@@ -223,6 +223,60 @@ fn github_client() -> Result<reqwest::Client, String> {
         .map_err(|e| e.to_string())
 }
 
+/// The commit this build was compiled from.
+///
+/// **It is compiled in, and that is the whole point.** The question "is the
+/// public release me?" cannot be answered by asking around: the answer is
+/// needed exactly when GitHub is not answering, and an updater that guesses is
+/// an updater that offers to install the build somebody is already running —
+/// which is what the public 0.5.4 did, forever.
+///
+/// It is `None` in a build made without a checkout and without the variable
+/// set. That is not a failure: it means the app cannot tell the two apart, and
+/// it keeps the door open — which is what it did before this existed.
+const BUILD_COMMIT: Option<&str> = option_env!("STARLESS_COMMIT");
+
+/// The commit of the newest public release.
+///
+/// **The release record carries it.** GitHub keeps `target_commitish` on every
+/// release: the commit it was cut from. That commit is the build inside the
+/// release, so it is the one thing that can say whether the public release is
+/// *this* build or another one that happens to carry the same version number.
+///
+/// **A branch is not a commit.** The field can hold a branch name, and a branch
+/// is not a build: comparing it with a sha would say "different" for every
+/// release, and the loop would come back every time.
+async fn public_release_commit(client: &reqwest::Client) -> Result<Option<String>, String> {
+    const REPO: &str = "baironvillar/Starless";
+
+    let response = client
+        .get(format!("https://api.github.com/repos/{REPO}/releases/latest"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if is_rate_limited(&response) {
+        return Err("rate_limited".to_string());
+    }
+    if !response.status().is_success() {
+        return Ok(None);
+    }
+    let release: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
+    Ok(release
+        .get("target_commitish")
+        .and_then(|value| value.as_str())
+        .map(|value| value.trim().to_string())
+        .filter(|value| is_commit_sha(value)))
+}
+
+/// Whether a string is a commit sha.
+///
+/// **Forty hex characters: that is what a commit is.** Anything else is not
+/// compared, because a wrong answer here is worse than no answer: it would
+/// hide the door back to the public line from the people who need it.
+fn is_commit_sha(value: &str) -> bool {
+    value.len() == 40 && value.chars().all(|c| c.is_ascii_hexdigit())
+}
+
 /// Whether GitHub refused because the hourly budget is spent.
 ///
 /// The header is what tells the two apart; the reading of it is
@@ -408,8 +462,35 @@ async fn check_prerelease_manifest(app: AppHandle) -> Result<Option<serde_json::
 /// `tauri.conf.json`, and writing it a second time is a second thing to
 /// forget. The signature is still the one embedded in the app, because the
 /// builder brings it too.
+///
+/// **And the answer says whether the public release is this very build.** That
+/// is what ends the loop: a public release built from `develop` ships the same
+/// binary the person is running, and offering to install it is offering to
+/// install what is already there —forever, because installing it changes
+/// nothing. The two commits are compared, not the two version numbers.
+#[derive(Serialize)]
+struct PublicChannel {
+    /// The public release, when there is one to install.
+    update: Option<serde_json::Value>,
+    /// Whether the public release is this build.
+    same_build: bool,
+}
+
 #[tauri::command]
-async fn check_public_manifest(app: AppHandle) -> Result<Option<serde_json::Value>, String> {
+async fn check_public_manifest(app: AppHandle) -> Result<PublicChannel, String> {
+    let client = github_client()?;
+
+    // **The comparison is the commit, and the commit is the only thing that
+    // tells two builds apart.** The version numbers can be equal while the
+    // programs are different; the commits cannot.
+    let same_build = match public_release_commit(&client).await {
+        Ok(Some(public)) => BUILD_COMMIT == Some(public.as_str()),
+        // Without both commits there is nothing to compare, and the door stays
+        // open. The door is a feature: the only thing worse than offering it
+        // wrongly is not offering it at all.
+        _ => false,
+    };
+
     let updater = app
         .updater_builder()
         // The comparison is not this command's business: the webview says what
@@ -419,7 +500,10 @@ async fn check_public_manifest(app: AppHandle) -> Result<Option<serde_json::Valu
         .map_err(|e| e.to_string())?;
     let update = updater.check().await.map_err(|e| e.to_string())?;
     let Some(update) = update else {
-        return Ok(None);
+        return Ok(PublicChannel {
+            update: None,
+            same_build,
+        });
     };
 
     // The fields are read before the update is handed to the resource table:
@@ -439,7 +523,10 @@ async fn check_public_manifest(app: AppHandle) -> Result<Option<serde_json::Valu
     if let Some(body) = body {
         metadata["body"] = serde_json::Value::String(body);
     }
-    Ok(Some(metadata))
+    Ok(PublicChannel {
+        update: Some(metadata),
+        same_build,
+    })
 }
 
 /// Development only: plant a crashed session on disk so the crash flow can be
