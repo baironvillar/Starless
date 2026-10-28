@@ -41,12 +41,11 @@ use symphonia::core::probe::Hint;
 /// La salida de audio.
 ///
 /// Lo publica el sink que se abre junto con el player: el `mixer` es por
-/// donde entra la voz y el `sink` es por donde sale la música. Los dos hacen
-/// falta, y por razones distintas: la voz necesita el mixer para mezclarse con
-/// la música, y el DJ necesita el sink para saber si la música ya se calló.
+/// donde entra la voz. Si la música ya se calló lo dice `crossfade`, que es
+/// quien sabe cuántas colas de música hay —con el crossfade puede haber un
+/// final sonando en una cola aparte de la canción nueva—.
 struct Output {
     mixer: rodio::mixer::Mixer,
-    sink: Arc<rodio::Sink>,
 }
 
 static OUTPUT: OnceLock<Output> = OnceLock::new();
@@ -200,11 +199,13 @@ impl rodio::Source for VoiceSource {
 
 /// El sink de Starless.
 ///
-/// Es el de librespot con una diferencia: guarda el `Mixer` del stream, que
-/// librespot no deja ver. Sin eso, la voz tendría que abrir un segundo stream
-/// en el mismo dispositivo.
+/// Es el de librespot con dos diferencias: guarda el `Mixer` del stream, que
+/// librespot no deja ver —sin eso, la voz tendría que abrir un segundo stream
+/// en el mismo dispositivo—, y la música no va a una cola sino a las de
+/// `crossfade`, que puede tener el final de una canción en una y la siguiente
+/// en otra, sobre el mismo mixer.
 pub struct StarlessSink {
-    sink: Arc<rodio::Sink>,
+    decks: Arc<crate::crossfade::Decks>,
     /// El stream tiene que quedar vivo: si se cae, el mixer se cae con él.
     _stream: rodio::OutputStream,
 }
@@ -313,35 +314,28 @@ fn open(device: Option<String>, format: AudioFormat) -> StarlessSink {
     stream.log_on_drop(false);
 
     // El mixer es la puerta de entrada de la voz: se publica acá, y la voz
-    // entra por él, mezclada con la música. El sink va con él porque el DJ
-    // necesita saber cuándo se calló la música.
+    // entra por él, mezclada con la música. Las colas de la música se abren
+    // sobre el mismo mixer.
     let mixer = stream.mixer().clone();
-    let sink = Arc::new(rodio::Sink::connect_new(stream.mixer()));
-    if OUTPUT
-        .set(Output {
-            mixer,
-            sink: sink.clone(),
-        })
-        .is_err()
-    {
+    let decks = crate::crossfade::Decks::open(mixer.clone());
+    if OUTPUT.set(Output { mixer }).is_err() {
         log::warn!("la salida de audio ya estaba publicada; se queda la primera");
     }
 
     StarlessSink {
-        sink,
+        decks,
         _stream: stream,
     }
 }
 
 impl Sink for StarlessSink {
     fn start(&mut self) -> SinkResult<()> {
-        self.sink.play();
+        self.decks.start();
         Ok(())
     }
 
     fn stop(&mut self) -> SinkResult<()> {
-        self.sink.sleep_until_end();
-        self.sink.pause();
+        self.decks.stop();
         Ok(())
     }
 
@@ -349,20 +343,9 @@ impl Sink for StarlessSink {
         let samples = packet
             .samples()
             .map_err(|e| SinkError::OnWrite(e.to_string()))?;
-        let samples_f32: &[f32] = &converter.f64_to_f32(samples);
-        let source = rodio::buffer::SamplesBuffer::new(
-            NUM_CHANNELS as u16,
-            SAMPLE_RATE,
-            samples_f32,
-        );
-        self.sink.append(source);
-
-        // El bucle de vaciado es el de librespot y no se puede acortar: el sink
-        // de rodio espera al dispositivo **dentro** de `write`, en un bucle sin
-        // fin. Es el único lugar donde se puede esperar.
-        while self.sink.len() > 26 {
-            std::thread::sleep(Duration::from_millis(10));
-        }
+        // El ritmo —el bucle que espera al dispositivo— vive en `crossfade`,
+        // porque es justo lo que se suelta en los últimos segundos.
+        self.decks.write(&converter.f64_to_f32(samples));
         Ok(())
     }
 }
@@ -551,7 +534,7 @@ pub fn speak(audio: &[u8], stop: Arc<AtomicBool>) -> Result<Voice, String> {
     // deja el sink vaciándose —lo que ya estaba metido sigue sonando
     // mientras se vacía— y una voz que entra encima de esa cola se pisa con
     // ella. Por eso se espera a que no quede nada sonando.
-    wait_for_silence(&output.sink);
+    wait_for_silence();
 
     let volume = match ATTENUATION.lock() {
         Ok(guard) => guard.clone(),
@@ -580,13 +563,15 @@ pub fn speak(audio: &[u8], stop: Arc<AtomicBool>) -> Result<Voice, String> {
 
 /// Esperar a que la música se callara de verdad.
 ///
-/// El sink cuenta las fuentes que le quedaron metidas: mientras haya alguna,
-/// hay música sonando. La espera tiene un tope, porque un player trabado no
-/// puede dejar al DJ mudo para siempre —en ese caso entra igual y el log lo
-/// dice—.
-fn wait_for_silence(sink: &rodio::Sink) {
-    let deadline = std::time::Instant::now() + Duration::from_millis(1500);
-    while sink.len() > 0 {
+/// Mientras quede audio en alguna cola, hay música sonando. La espera tiene un
+/// tope, porque un player trabado no puede dejar al DJ mudo para siempre —en
+/// ese caso entra igual y el log lo dice—. El tope cuenta lo que quedaba al
+/// empezar: con el crossfade, el final de la canción puede tener varios
+/// segundos en cola, y el DJ habla después de él y no encima.
+fn wait_for_silence() {
+    let deadline =
+        std::time::Instant::now() + crate::crossfade::silence_left() + Duration::from_millis(1500);
+    while !crate::crossfade::silence_left().is_zero() {
         if std::time::Instant::now() >= deadline {
             log::warn!("la música no se calló a tiempo; la voz del DJ entra encima");
             return;

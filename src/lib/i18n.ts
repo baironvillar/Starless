@@ -243,8 +243,11 @@ export const strings = {
 
     normalisation: "Normalizar volumen",
     normalisationHint: "Iguala el volumen entre canciones para que no te sorprendan los picos.",
-    crossfade: "Transición suave",
-    crossfadeHint: "Encadena las canciones con un fundido corto en lugar de cortarse.",
+    crossfade: "Transición entre canciones",
+    crossfadeHint:
+      "Cuando una canción termina sola, la siguiente empieza esos segundos antes y las dos se mezclan.",
+    crossfadeOff: "Apagado",
+    crossfadeSeconds: "{n} s",
 
     startWithWindows: "Iniciar con Windows",
     startWithWindowsHint: "Starless se abre minimizado a la bandeja al arrancar el sistema.",
@@ -586,7 +589,10 @@ export const strings = {
     normalisation: "Normalise volume",
     normalisationHint: "Levels the volume across songs so no track jumps out at you.",
     crossfade: "Crossfade",
-    crossfadeHint: "Blends tracks together instead of cutting between them.",
+    crossfadeHint:
+      "When a song ends on its own, the next one starts that many seconds early and the two blend.",
+    crossfadeOff: "Off",
+    crossfadeSeconds: "{n} s",
 
     startWithWindows: "Start with Windows",
     startWithWindowsHint: "Starless opens minimised to the tray when the system starts.",
