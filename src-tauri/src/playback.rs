@@ -30,6 +30,16 @@ use crate::auth;
 /// that changes in seconds anyway.
 const POSITION_INTERVAL_MS: u64 = 500;
 
+/// How often the state is allowed to travel to the webview while a value that
+/// changes on every pointer event is moving.
+///
+/// The volume is the one value that moves fifty times a second, and the status
+/// it travels in is the whole status — which lands in the root component's
+/// state and re-renders the app. A hundred milliseconds is fast enough for
+/// anything the eye compares between two frames, and slow enough that the
+/// webview's thread is free for the pointer that is asking.
+const STATUS_ECHO_MS: u64 = 100;
+
 const MAX_VOLUME: u16 = 65535;
 
 /// How long the player can stay quiet before the app stops believing it.
@@ -553,6 +563,9 @@ fn forward_events(app: AppHandle, player: Arc<Player>, generation: u32) {
         // parked inside the audio device must not be dropped here: dropping it
         // joins its thread, and that thread is not coming back.
         let mut left_behind = false;
+        // When the last status went out to the webview. A drag is a flood and
+        // the echo does not have to travel at the speed of the hand.
+        let mut last_echo: Option<std::time::Instant> = None;
 
         while let Some(event) = receiver.recv().await {
             let Some(state) = app.try_state::<PlaybackState>() else {
@@ -739,7 +752,29 @@ fn forward_events(app: AppHandle, player: Arc<Player>, generation: u32) {
                 log::info!("evento de player: {}", describe(&event));
             }
 
-            let _ = app.emit("player://status", state.status());
+            // **A drag is an avalanche, and the echo does not have to be.**
+            //
+            // The volume changes on every step of a thumb —fifty times a
+            // second— and every one of those used to push the whole status to
+            // the webview, where it lands in the root component's state and
+            // **re-renders the whole app**. The webview's thread is then
+            // spending its time on the app instead of on the pointer that is
+            // asking, and the thumb ends up trailing the cursor: the slider
+            // that was supposed to follow the hand was the thing making the
+            // hand late.
+            //
+            // The thumb does not need the echo — it knows what it asked for —
+            // so the volume's echo goes out at a human pace. Everything else
+            // is rare enough to go out as it happens.
+            let is_volume = matches!(event, PlayerEvent::VolumeChanged { .. });
+            let due = match last_echo {
+                Some(at) => at.elapsed() >= std::time::Duration::from_millis(STATUS_ECHO_MS),
+                None => true,
+            };
+            if !is_volume || due {
+                last_echo = Some(std::time::Instant::now());
+                let _ = app.emit("player://status", state.status());
+            }
         }
 
         if left_behind {
@@ -947,14 +982,25 @@ pub fn seek(state: &PlaybackState, position_ms: u32) -> Result<(), String> {
 }
 
 pub fn set_volume(state: &PlaybackState, volume: u16) {
-    // Remember the value the user asked for, before `apply_volume` runs the curve.
-    // Persisting the attenuated number would re-square it on the next launch.
-    crate::settings::save_volume(volume);
+    // **The sound first, the disk afterwards.**
+    //
+    // The attenuation is an atomic and librespot's mixer reads it on every
+    // buffer, so from here the volume has already changed: the hand is the
+    // reference and the sound has to be there with it.
+    //
+    // The file was written first, and that put a disk round trip —a read and a
+    // write of the whole settings file, on the thread that also answers the
+    // clicks— between the hand and the sound.
+    //
+    // Remember the value the user asked for, before `apply_volume` runs the
+    // curve. Persisting the attenuated number would re-square it on the next
+    // launch.
     let volume = state.apply_volume(volume);
+    state.mutate(|s| s.volume = volume);
     if let Some(player) = state.player() {
         player.emit_volume_changed_event(volume);
     }
-    state.mutate(|s| s.volume = volume);
+    crate::settings::save_volume(volume);
 }
 
 /// Hand the audio device back. Called on sign-out, so the next session opens a
