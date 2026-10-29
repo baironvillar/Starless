@@ -77,10 +77,12 @@ pub struct PlaybackStatus {
     /// "playing" here would be showing the user a claim we have not verified.
     pub loading: bool,
     pub position_ms: u32,
-    /// How long the track is **with the crossfade on**: the last seconds are
-    /// the mix, so a track of 3:21 with twelve seconds of crossfade lasts
-    /// 3:09 and the next one comes in from the start while the end of this one
-    /// goes down underneath. This is what the bar shows.
+    /// How long the track lasts **with the crossfade on**: the last seconds are
+    /// the mix, so a track of 3:21 with twelve seconds of crossfade lasts 3:09
+    /// and the next one comes in from the start while the end of this one goes
+    /// down underneath. This is what the bar shows, and it is computed every
+    /// time the status is read: changing the setting changes the bar right
+    /// away, not on the next song.
     pub duration_ms: u32,
     /// How long the track really is.
     ///
@@ -245,6 +247,10 @@ impl PlaybackState {
         // segundos por delante de lo que suena, y la barra llegaba al final
         // de la canción cuando la siguiente ya estaba sonando.
         status.position_ms = status.position_ms.saturating_sub(crate::crossfade::queued_ms());
+        // Y la canción dura lo que dura menos la mezcla. Se calcula en cada
+        // lectura y no al cargar la canción: cambiar el crossfade con una
+        // canción sonando tiene que verse en la barra enseguida.
+        status.duration_ms = crate::crossfade::effective_duration_ms(status.real_duration_ms);
         status
     }
 }
@@ -891,10 +897,10 @@ pub fn play(
     // it back to the id the UI already had is work with no purpose.
     state.mutate(|s| {
         s.track_id = Some(track_id.to_string());
+        // **La duración real es la que usa el player**: la ventana del final
+        // del crossfade se mide contra ella. La que ve la webview sale de acá,
+        // con la mezcla descontada.
         s.real_duration_ms = duration_ms;
-        // **Lo que dura la canción es menos que lo que mide: los últimos
-        // segundos son la mezcla.** El crossfade vale desde la próxima
-        // canción, así que la cuenta se hace al cargarla y no mientras suena.
         s.duration_ms = crate::crossfade::effective_duration_ms(duration_ms);
         s.position_ms = position_ms;
         // Deliberately NOT `playing`. librespot still has to fetch, decrypt and
