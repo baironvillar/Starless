@@ -127,6 +127,15 @@ const MAX_VOLUME = 65535;
  */
 const DEFAULT_UNMUTE = MAX_VOLUME / 2;
 
+/**
+ * Cuánto tiene que estar quieta la mano para que el salto se pida.
+ *
+ * Un salto no es un cambio de valor: es cortar la cola y pedirle la canción
+ * al servidor otra vez. Pedirlo en cada pixel del arrastre es pedir cincuenta
+ * veces lo mismo, y el servidor responde a todas.
+ */
+const SEEK_SETTLE_MS = 120;
+
 /** Feeds the `--fill` custom property the slider recipe paints its track with. */
 function fillStyle(percent: number): React.CSSProperties {
   return { "--fill": `${percent}%` } as React.CSSProperties;
@@ -204,7 +213,58 @@ export function PlayerBar({
 
   const position = status?.positionMs ?? 0;
   const duration = status?.durationMs ?? track?.duration_ms ?? 0;
-  const progress = duration > 0 ? Math.min(1, position / duration) : 0;
+
+  /**
+   * La posición que pidió la mano, mientras el backend no la confirma.
+   *
+   * **El control de posición es nativo y su valor viene del backend**, que lo
+   * actualiza dos veces por segundo: cada actualización lo devuelve a donde
+   * estaba y el pulgar se pelea con el mouse — el control da la impression de
+   * estar pegado y el salto no termina de hacerse. Mientras la mano está en
+   * el control, el control dibuja lo que se le pidió; cuando el backend llega
+   * a esa posición, vuelve a seguir al player.
+   */
+  const [seekTo, setSeekTo] = useState<number | null>(null);
+  const shownPosition = seekTo ?? position;
+  const progress = duration > 0 ? Math.min(1, shownPosition / duration) : 0;
+
+  /** Cuándo se mandó el último salto, para no darlo por confirmado antes de tiempo. */
+  const seekSentAt = useRef(-1);
+  const seekTimer = useRef<number | null>(null);
+
+  /**
+   * Pedir un salto.
+   *
+   * **Un salto por mano, no uno por pixel.** Cada salto descarta la cola y
+   * le pide la canción al servidor otra vez: cincuenta saltos por segundo son
+   * cincuenta viajes, y el último no llega antes que el anterior.
+   */
+  const requestSeek = useCallback((next: number) => {
+    setSeekTo(next);
+    if (seekTimer.current !== null) window.clearTimeout(seekTimer.current);
+    seekTimer.current = window.setTimeout(() => {
+      seekTimer.current = null;
+      seekSentAt.current = performance.now();
+      void seekPlayback(next).catch(() => {});
+    }, SEEK_SETTLE_MS);
+  }, []);
+
+  useEffect(() => {
+    if (seekTo === null) return;
+    // El backend llegó a la posición pedida: el control vuelve a seguir al
+    // player. Antes de que se mande el salto no se cuenta: la posición que
+    // llega mientras la mano todavía está moviéndose es la de antes.
+    if (seekSentAt.current < 0) return;
+    if (Math.abs(position - seekTo) <= 1500) setSeekTo(null);
+  }, [position, seekTo]);
+
+  // Un temporizador que sobrevive al panel escribe en una ventana que ya no
+  // está, y el salto que iba a hacer no lo pidió nadie dos veces.
+  useEffect(() => {
+    return () => {
+      if (seekTimer.current !== null) window.clearTimeout(seekTimer.current);
+    };
+  }, []);
 
   // librespot's own scale, not ours. The conversion happens once, here, so nothing
   // downstream has to know that 65535 is a thing.
@@ -419,9 +479,9 @@ export function PlayerBar({
             min={0}
             max={Math.max(duration, 1)}
             step={1}
-            value={Math.min(position, duration || 0)}
+            value={Math.min(shownPosition, duration || 0)}
             disabled={idle || duration <= 0}
-            onChange={(e) => void seekPlayback(Number(e.target.value)).catch(() => {})}
+            onChange={(e) => requestSeek(Number(e.target.value))}
             style={fillStyle(progress * 100)}
             aria-label={t.position}
           />
