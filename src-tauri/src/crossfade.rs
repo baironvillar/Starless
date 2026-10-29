@@ -18,9 +18,9 @@
 //! de tiempo y `EndOfTrack` sale N segundos antes de que la canción deje de
 //! sonar. Cuando la siguiente se carga, ese final se separa en una cola propia
 //! —un `rodio::Sink` más sobre **el mismo mixer**— y la canción nueva entra en
-//! otra. Con la primera muestra de la nueva empieza el fundido: una baja y la
-//! otra sube, con una curva de igual potencia para que el volumen no se hunda
-//! en el medio.
+//! otra. Con la primera muestra de la nueva empieza el fundido: la vieja baja
+//! a lo largo de toda la transición y la nueva sube en un segundo y pico, para
+//! que las dos se oyan desde el primer momento y no una después de la otra.
 //!
 //! **Sólo en el paso automático.** Un clic en otra canción, un seek o una
 //! pausa en esos últimos segundos no son una transición: el final que estaba
@@ -57,6 +57,24 @@ const CUT_FADE: Duration = Duration::from_millis(60);
 
 /// Cada cuánto se mueve el volumen durante un fundido.
 const STEP: Duration = Duration::from_millis(20);
+
+/// Cuánto tarda la canción que entra en llegar a su volumen.
+///
+/// **La que entra sube rápido y la que sale baja en todo el ajuste.** Con la
+/// mezcla de igual potencia de toda la vida —la nueva de cero a uno a lo largo
+/// de los doce segundos del ajuste— la primera canción se oía entera y la
+/// segunda aparecía recién cuando la primera había terminado: eso no es una
+/// mezcla, es una canción y después otra. Spotify deja entrar la nueva
+/// enseguida y baja la vieja debajo, que es lo que hay que hacer.
+const FADE_IN: Duration = Duration::from_millis(1200);
+
+/// Cuánto entra adelantada la canción que entra en una transición.
+///
+/// **Cero: la canción entra desde su principio.** La mezcla es entre las dos y
+/// una que arranca en su segundo seis se oye como si le faltara el principio.
+/// El adelanto que hubo antes —la mitad del crossfade— saltaba la entrada de
+/// cada canción, y con una transición de doce segundos eso son seis.
+const LEAD_IN_MS: u32 = 0;
 
 /// El colchón de la posición.
 ///
@@ -176,8 +194,8 @@ pub fn before_load(automatic: bool, duration_ms: u32, position_ms: u32) -> u32 {
             if automatic {
                 decks.retire(Retire::Crossfade);
                 if position_ms == 0 {
-                    start = lead_in_ms(SECONDS.load(Ordering::Relaxed), duration_ms);
-                    log::info!("crossfade: la siguiente entra en {start} ms");
+                    start = position_ms + LEAD_IN_MS;
+                    log::info!("crossfade: la siguiente entra desde el principio");
                 }
             } else {
                 decks.retire(Retire::Quick);
@@ -193,11 +211,6 @@ pub fn before_load(automatic: bool, duration_ms: u32, position_ms: u32) -> u32 {
     DURATION_MS.store(duration_ms, Ordering::Relaxed);
     POSITION_MS.store(start, Ordering::Relaxed);
     start
-}
-
-/// Cuánto entra adelantada una canción en una transición.
-fn lead_in_ms(seconds: u32, duration_ms: u32) -> u32 {
-    (seconds * 1000 / 2).min(duration_ms / 4)
 }
 
 /// El usuario saltó dentro de la canción: el final que estaba en cola ya no va.
@@ -489,7 +502,7 @@ impl Decks {
 
         // **La cola vieja se va, pero no de golpe.** Un corte seco se oye
         // como un chasquido; una rampa cortita lo evita y casi no se nota.
-        fade_out_and_stop(old, CUT_FADE);
+        fade_out(old, CUT_FADE);
     }
 
     /// La cola vuelve a sonar, con el volumen que tenía.
@@ -582,7 +595,9 @@ fn crossfade(tail: Arc<Deck>, fresh: Arc<Deck>) {
     // final entero de la canción, cuando el decoder no se frenó— y medir el
     // fundido con eso hacía que la canción nueva tardara doce segundos en
     // llegar a su volumen, con la vieja todavía encima: un crossfade que no
-    // se oye como un crossfade.
+    // se oye como un crossfade. Y si la cola se acaba antes, el fundido se
+    // acorta con ella: la vieja tiene que estar callada cuando se acaba su
+    // audio.
     let setting = Duration::from_millis(u64::from(SECONDS.load(Ordering::Relaxed)) * 1000);
     let length = remaining.min(setting);
     // La carga tardó más que el final: no hay nada que mezclar, la nueva entra
@@ -603,11 +618,99 @@ fn crossfade(tail: Arc<Deck>, fresh: Arc<Deck>) {
     );
     // El final que baja ya está en la lista de finales —`retire` lo puso
     // ahí—, así que una pausa lo calla como a cualquier otro.
-    ramp(Some(tail), Some(fresh), length);
+    mix(tail, fresh, length);
 }
 
+/// La transición: la que sale baja mientras la que entra sube.
+///
+/// **La que entra sube en `FADE_IN` y la que sale baja en toda la
+/// transición.** La mezcla de igual potencia —las dos con `cos` y `sin` a lo
+/// largo de los doce segundos del ajuste— deja a la primera entera y a la
+/// segunda en silencio hasta el final: el oído escucha la que está más fuerte
+/// y no la otra. Con la que entra arriba en un segundo y pico, las dos se oyen
+/// desde el primer momento, que es de lo que se trata.
+///
+/// El que baja sigue `cos` y el que sube `sin`: la suma de sus potencias no
+/// cae en el medio de la transición.
+fn mix(tail: Arc<Deck>, fresh: Arc<Deck>, length: Duration) {
+    let down_id = tail.fade.fetch_add(1, Ordering::Relaxed) + 1;
+    let down_from = tail.sink.volume();
+    let up_id = fresh.fade.fetch_add(1, Ordering::Relaxed) + 1;
+    let up_length = FADE_IN.min(length);
+
+    std::thread::spawn(move || {
+        let started = Instant::now();
+        let mut quarter = 0u8;
+        loop {
+            let elapsed = started.elapsed().as_secs_f32();
+            let t = (elapsed / length.as_secs_f32()).min(1.0);
+
+            if tail.fade.load(Ordering::Relaxed) == down_id {
+                tail.sink
+                    .set_volume(down_from * (t * std::f32::consts::FRAC_PI_2).cos());
+            }
+            let up_t = (elapsed / up_length.as_secs_f32()).min(1.0);
+            if fresh.fade.load(Ordering::Relaxed) == up_id {
+                fresh
+                    .sink
+                    .set_volume((up_t * std::f32::consts::FRAC_PI_2).sin());
+            }
+
+            // Un rastro por cuarto de transición: si las dos no se oyen
+            // mezcladas, el log dice por qué.
+            let mark = (t * 4.0) as u8;
+            if mark > quarter {
+                quarter = mark;
+                log::info!(
+                    "crossfade {}%: la vieja en {:.2}, la nueva en {:.2}",
+                    mark * 25,
+                    tail.sink.volume(),
+                    fresh.sink.volume(),
+                );
+            }
+
+            if t >= 1.0 {
+                if tail.fade.load(Ordering::Relaxed) == down_id {
+                    tail.sink.stop();
+                }
+                if fresh.fade.load(Ordering::Relaxed) == up_id {
+                    fresh.sink.set_volume(1.0);
+                }
+                return;
+            }
+            std::thread::sleep(STEP);
+        }
+    });
+}
+
+/// Apagar la cola: el volumen baja a cero en `length` y la cola se va.
+///
+/// **La curva es de igual potencia** —`cos`— y no lineal: dos rampas
+/// lineales se suman con un pozo de volumen en el medio, que es lo que se oye
+/// cuando una canción se apaga debajo de otra.
 fn fade_out(deck: Arc<Deck>, length: Duration) {
-    ramp(Some(deck), None, length);
+    let id = deck.fade.fetch_add(1, Ordering::Relaxed) + 1;
+    let from = deck.sink.volume();
+    std::thread::spawn(move || {
+        let started = Instant::now();
+        loop {
+            let t = (started.elapsed().as_secs_f32() / length.as_secs_f32()).min(1.0);
+            if deck.fade.load(Ordering::Relaxed) == id {
+                let angle = t * std::f32::consts::FRAC_PI_2;
+                deck.sink.set_volume(from * angle.cos());
+            }
+            if t >= 1.0 {
+                if deck.fade.load(Ordering::Relaxed) == id {
+                    deck.sink.set_volume(0.0);
+                    // `stop` vacía la cola: el audio del lugar de antes no
+                    // suena encima del nuevo.
+                    deck.sink.stop();
+                }
+                return;
+            }
+            std::thread::sleep(STEP);
+        }
+    });
 }
 
 /// Apagar la cola y **congelarla**.///
@@ -643,87 +746,6 @@ fn fade_out_and_pause(deck: Arc<Deck>, length: Duration) {
     });
 }
 
-/// Apagar la cola y **descartarla**.
-///
-/// A diferencia de `fade_out_and_pause`, la cola no queda congelada: se va.
-/// Es lo que hace un salto —lo que estaba en la cola es del lugar de antes—,
-/// y por eso el audio de la posición nueva no tiene encima el de la vieja.
-fn fade_out_and_stop(deck: Arc<Deck>, length: Duration) {
-    let id = deck.fade.fetch_add(1, Ordering::Relaxed) + 1;
-    let from = deck.sink.volume();
-    std::thread::spawn(move || {
-        let started = Instant::now();
-        loop {
-            let t = (started.elapsed().as_secs_f32() / length.as_secs_f32()).min(1.0);
-            if deck.fade.load(Ordering::Relaxed) == id {
-                let angle = t * std::f32::consts::FRAC_PI_2;
-                deck.sink.set_volume(from * angle.cos());
-            }
-            if t >= 1.0 {
-                if deck.fade.load(Ordering::Relaxed) == id {
-                    deck.sink.set_volume(0.0);
-                    // `stop` vacía la cola: el audio del lugar de antes no
-                    // suena encima del nuevo.
-                    deck.sink.stop();
-                }
-                return;
-            }
-            std::thread::sleep(STEP);
-        }
-    });
-}
-
-/// Mover los volúmenes en un hilo propio, con curva de igual potencia.
-///
-/// El que baja sigue `cos` y el que sube `sin`: la suma de sus potencias es
-/// siempre la misma, y por eso no hay un pozo de volumen en el medio, que es lo
-/// que se oye con dos rampas lineales.
-fn ramp(down: Option<Arc<Deck>>, up: Option<Arc<Deck>>, length: Duration) {
-    let down = down.map(|deck| {
-        let id = deck.fade.fetch_add(1, Ordering::Relaxed) + 1;
-        let from = deck.sink.volume();
-        (deck, id, from)
-    });
-    let up = up.map(|deck| {
-        let id = deck.fade.fetch_add(1, Ordering::Relaxed) + 1;
-        (deck, id)
-    });
-
-    std::thread::spawn(move || {
-        let started = Instant::now();
-        loop {
-            let t = (started.elapsed().as_secs_f32() / length.as_secs_f32()).min(1.0);
-            let angle = t * std::f32::consts::FRAC_PI_2;
-
-            if let Some((deck, id, from)) = &down
-                && deck.fade.load(Ordering::Relaxed) == *id
-            {
-                deck.sink.set_volume(from * angle.cos());
-            }
-            if let Some((deck, id)) = &up
-                && deck.fade.load(Ordering::Relaxed) == *id
-            {
-                deck.sink.set_volume(angle.sin());
-            }
-
-            if t >= 1.0 {
-                if let Some((deck, id, _)) = &down
-                    && deck.fade.load(Ordering::Relaxed) == *id
-                {
-                    deck.sink.stop();
-                }
-                if let Some((deck, id)) = &up
-                    && deck.fade.load(Ordering::Relaxed) == *id
-                {
-                    deck.sink.set_volume(1.0);
-                }
-                return;
-            }
-            std::thread::sleep(STEP);
-        }
-    });
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -748,12 +770,46 @@ mod tests {
     }
 
     #[test]
-    fn the_next_song_comes_in_half_the_crossfade_ahead() {
-        assert_eq!(lead_in_ms(8, 200_000), 4_000);
-        assert_eq!(lead_in_ms(1, 200_000), 500);
-        // A short song does not start halfway through.
-        assert_eq!(lead_in_ms(12, 20_000), 5_000);
-        assert_eq!(lead_in_ms(0, 200_000), 0);
+    fn the_next_song_comes_in_at_its_own_beginning() {
+        // La mezcla es entre las dos canciones: si la que entra empieza en su
+        // segundo seis, se oye como si le faltara el principio. El adelanto
+        // que hubo antes saltaba la entrada de cada canción.
+        assert_eq!(LEAD_IN_MS, 0);
+    }
+
+    /// El fundido tiene que llegar al audio que **ya está en cola**.
+    ///
+    /// El final de la canción que termina queda encolado —once segundos de
+    /// audio— y el fundido lo baja con `set_volume` sobre el sink. Si rodio
+    /// tomara el volumen sólo en el momento de encolar, esa cola se oiría
+    /// entera: el crossfade sería una canción y después otra.
+    #[test]
+    fn the_fade_reaches_the_audio_that_is_already_queued() {
+        // Un mixer sin dispositivo: el mismo que usa la app.
+        let (mixer, mut output) = rodio::mixer::mixer(2, SAMPLE_RATE);
+        let sink = rodio::Sink::connect_new(&mixer);
+        sink.append(rodio::buffer::SamplesBuffer::new(
+            2,
+            SAMPLE_RATE,
+            vec![1.0f32; SAMPLE_RATE as usize * 2],
+        ));
+
+        // Lo que sale antes de tocar el volumen, ya en régimen: rodio refresca
+        // el volumen del sink cada cinco milisegundos, así que los primeros
+        // milisegundos salen con el valor anterior.
+        let _: f32 = output.by_ref().take(2048).sum();
+        let loud: f32 = output.by_ref().take(8192).sum();
+
+        sink.set_volume(0.1);
+        // Los milisegundos del retraso, y después la medida.
+        let _: f32 = output.by_ref().take(2048).sum();
+        let quiet: f32 = output.by_ref().take(8192).sum();
+
+        assert!(loud > 0.0, "el audio sale del mixer");
+        assert!(
+            quiet < loud / 5.0,
+            "el fundido tiene que bajar el audio encolado: {quiet} contra {loud}"
+        );
     }
 
     #[test]
