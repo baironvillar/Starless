@@ -792,6 +792,22 @@ salen de una captura:
   valores que llegan solos —una tecla, un valor que vuelve del backend— y para
   el pulgar que crece bajo la mano. El `<input type="range">` nativo que esto
   reemplazaba seguía al mouse exacto: esa es la vara.
+- **Un control que manda el backend se pelea con el mouse, sea dibujado o
+  nativo.** El control de posición es un `<input type="range">` nativo y su
+  valor viene del backend, que lo actualiza dos veces por segundo: cada
+  actualización lo mandaba de vuelta a donde estaba y **el pulgar se peleaba
+  con el mouse** —el control parecía pegado y el salto no terminaba de
+  hacerse. Mientras la mano está en el control, el control dibuja lo que se
+  le pidió; cuando el backend llega a esa posición, vuelve a seguir al
+  player. Y **un salto por mano, no uno por pixel**: cada salto descarta la
+  cola y le pide la canción al servidor otra vez, así que cincuenta saltos por
+  segundo son cincuenta viajes y el último no llega antes que el anterior.
+- **Un salto tiene que descartar la cola en la que aterriza.** Lo que estaba
+  en la cola es el audio del lugar de antes: si sigue ahí, suena encima de la
+  posición nueva, **el control del player vuelve a la posición vieja** —que
+  es lo que hace que saltar no parezca funcionar— y la posición que se oye
+  tarda lo que la cola tarda en vaciarse. La cola se descarta con una rampa
+  corta y no de golpe: un corte seco se oye como un chasquido.
 - **El orden de las preguntas del botón de play es el botón de play.** `toggle`
   preguntaba *"¿estoy sonando?"* antes que *"¿el player tiene una pista?"*, y
   la segunda es la que importa: `Player::play` y `Player::pause` sólo hacen
