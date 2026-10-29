@@ -182,6 +182,11 @@ pub fn before_load(automatic: bool, duration_ms: u32, position_ms: u32) -> u32 {
             } else {
                 decks.retire(Retire::Quick);
             }
+        } else if decks.current().silenced.load(Ordering::Relaxed) {
+            // **La cola quedó congelada por una pausa.** La canción nueva
+            // necesita una cola nueva: en la congelada no entraría nada y el
+            // usuario escucharía silencio donde pidió una canción.
+            decks.retire(Retire::Quick);
         }
     }
     ACCEPTING.store(false, Ordering::Relaxed);
@@ -570,7 +575,16 @@ impl Decks {
 /// La canción que termina baja y la nueva sube, durante lo que le queda a la
 /// que termina.
 fn crossfade(tail: Arc<Deck>, fresh: Arc<Deck>) {
-    let length = tail.remaining();
+    let remaining = tail.remaining();
+    // **El fundido dura lo que el ajuste dice, no lo que quedó en la cola.**
+    //
+    // La cola del final puede traer más audio del que dura la transición —el
+    // final entero de la canción, cuando el decoder no se frenó— y medir el
+    // fundido con eso hacía que la canción nueva tardara doce segundos en
+    // llegar a su volumen, con la vieja todavía encima: un crossfade que no
+    // se oye como un crossfade.
+    let setting = Duration::from_millis(u64::from(SECONDS.load(Ordering::Relaxed)) * 1000);
+    let length = remaining.min(setting);
     // La carga tardó más que el final: no hay nada que mezclar, la nueva entra
     // a su volumen.
     if length < Duration::from_millis(50) {
@@ -579,7 +593,16 @@ fn crossfade(tail: Arc<Deck>, fresh: Arc<Deck>) {
         fresh.sink.set_volume(1.0);
         return;
     }
-    log::info!("crossfade de {} ms", length.as_millis());
+    log::info!(
+        "crossfade de {} ms (la cola traía {} ms en {} paquetes; posición {} de {})",
+        length.as_millis(),
+        remaining.as_millis(),
+        tail.sink.len(),
+        POSITION_MS.load(Ordering::Relaxed),
+        DURATION_MS.load(Ordering::Relaxed),
+    );
+    // El final que baja ya está en la lista de finales —`retire` lo puso
+    // ahí—, así que una pausa lo calla como a cualquier otro.
     ramp(Some(tail), Some(fresh), length);
 }
 
