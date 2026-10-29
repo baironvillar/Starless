@@ -848,6 +848,19 @@ salen de una captura:
   que la cola tardaba en vaciarse. La cola se apaga con una rampa corta y
   **se congela** —congelada y no descartada, para que al volver a play la
   canción siga donde estaba y no salte lo que pasó en la pausa.
+- **Una mezcla de igual potencia sobre un ajuste largo deja a la que entra en
+  silencio.** Con 12 s de crossfade, la canción nueva subía de cero a uno a lo
+  largo de los doce segundos y la vieja se oía entera: el oído escucha la que
+  está más fuerte, así que la segunda no se oía hasta que la primera había
+  terminado. Eso no es una mezcla, es una canción y después otra. Ahora **la
+  que entra sube en un segundo y pico y la que sale baja en todo el ajuste**,
+  y la que entra **arranca desde su principio**: el adelanto de la mitad del
+  ajuste saltaba los primeros segundos de cada canción.
+  Y el fundido se aplica con `set_volume` del sink, que **sí** alcanza al
+  audio que ya está en cola —rodio refresca el volumen cada cinco
+  milisegundos mientras reproduce—, pero con unos dieciséis milisegundos de
+  retraso: el test `the_fade_reaches_the_audio_that_is_already_queued` lo fija
+  con un mixer sin dispositivo.
 - **`.agent/` es la copia canónica** de la configuración de agentes. Los shims de
   `.claude/` y `.opencode/` que apuntaban ahí se borraron; para recuperar el
   skill en esas herramientas, `git revert 96cf93c`.
