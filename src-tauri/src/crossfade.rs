@@ -48,6 +48,13 @@ const QUICK_FADE: Duration = Duration::from_millis(400);
 /// milisegundos de "no me hizo caso".
 const PAUSE_FADE: Duration = Duration::from_millis(120);
 
+/// Cuánto tarda en apagarse el audio del lugar de antes cuando el usuario
+/// salta.
+///
+/// Corta a propósito: un salto es un corte, y lo que tiene que desaparecer es
+/// el audio viejo. Lo que no puede ser es un chasquido.
+const CUT_FADE: Duration = Duration::from_millis(60);
+
 /// Cada cuánto se mueve el volumen durante un fundido.
 const STEP: Duration = Duration::from_millis(20);
 
@@ -193,12 +200,16 @@ fn lead_in_ms(seconds: u32, duration_ms: u32) -> u32 {
 /// La posición se pone acá y no se espera al evento `Seeked`: hasta que llega,
 /// la vieja diría que seguimos en los últimos segundos y el decoder no se
 /// frenaría.
+///
+/// **Y lo que quedó en la cola se va con el salto.** La cola es el audio del
+/// lugar de antes: si sigue ahí, suena encima de la posición nueva —el
+/// control del player vuelve a la posición vieja y el salto no parece
+/// funcionar— y la posición que se oye tarda lo que la cola tarda en vaciarse.
 pub fn cut(position_ms: u32) {
     POSITION_MS.store(position_ms, Ordering::Relaxed);
-    if let Some(decks) = decks()
-        && decks.armed.swap(false, Ordering::Relaxed)
-    {
-        decks.retire(Retire::Quick);
+    if let Some(decks) = decks() {
+        decks.armed.swap(false, Ordering::Relaxed);
+        decks.cut();
     }
 }
 
@@ -457,6 +468,25 @@ impl Decks {
         fade_out_and_pause(current, PAUSE_FADE);
     }
 
+    /// Descartar lo que quedó en la cola.
+    ///
+    /// Un salto descarta el audio del lugar de antes: si no, suena encima de
+    /// la posición nueva y el salto no se oye.
+    pub fn cut(&self) {
+        let fresh = Deck::new(&self.mixer, 1.0);
+        let old = std::mem::replace(&mut *lock(&self.current), fresh);
+
+        {
+            let mut tails = lock(&self.tails);
+            tails.retain(|tail| !tail.sink.empty());
+            tails.push(old.clone());
+        }
+
+        // **La cola vieja se va, pero no de golpe.** Un corte seco se oye
+        // como un chasquido; una rampa cortita lo evita y casi no se nota.
+        fade_out_and_stop(old, CUT_FADE);
+    }
+
     /// La cola vuelve a sonar, con el volumen que tenía.
     ///
     /// **Sólo se deshace lo que hizo una pausa.** Una cola nueva —la de una
@@ -557,8 +587,7 @@ fn fade_out(deck: Arc<Deck>, length: Duration) {
     ramp(Some(deck), None, length);
 }
 
-/// Apagar la cola y **congelarla**.
-///
+/// Apagar la cola y **congelarla**.///
 /// A diferencia de `fade_out`, la cola no se vacía: queda guardada, con la
 /// música que le faltaba, para que al volver a play la canción siga donde
 /// estaba. Si se vaciara, al volver a play la canción saltearía todo lo que
@@ -583,6 +612,36 @@ fn fade_out_and_pause(deck: Arc<Deck>, length: Duration) {
                     // en vaciarse. Congelada, el silencio es inmediato y la
                     // música sigue donde la dejaste.
                     deck.sink.pause();
+                }
+                return;
+            }
+            std::thread::sleep(STEP);
+        }
+    });
+}
+
+/// Apagar la cola y **descartarla**.
+///
+/// A diferencia de `fade_out_and_pause`, la cola no queda congelada: se va.
+/// Es lo que hace un salto —lo que estaba en la cola es del lugar de antes—,
+/// y por eso el audio de la posición nueva no tiene encima el de la vieja.
+fn fade_out_and_stop(deck: Arc<Deck>, length: Duration) {
+    let id = deck.fade.fetch_add(1, Ordering::Relaxed) + 1;
+    let from = deck.sink.volume();
+    std::thread::spawn(move || {
+        let started = Instant::now();
+        loop {
+            let t = (started.elapsed().as_secs_f32() / length.as_secs_f32()).min(1.0);
+            if deck.fade.load(Ordering::Relaxed) == id {
+                let angle = t * std::f32::consts::FRAC_PI_2;
+                deck.sink.set_volume(from * angle.cos());
+            }
+            if t >= 1.0 {
+                if deck.fade.load(Ordering::Relaxed) == id {
+                    deck.sink.set_volume(0.0);
+                    // `stop` vacía la cola: el audio del lugar de antes no
+                    // suena encima del nuevo.
+                    deck.sink.stop();
                 }
                 return;
             }
