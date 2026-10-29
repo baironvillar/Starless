@@ -817,6 +817,21 @@ salen de una captura:
   que la mixer de librespot lee en cada buffer, así que el archivo de ajustes
   se escribe después de aplicar el volumen, no antes — antes ponía una
   lectura y una escritura del archivo entero entre la mano y el sonido.
+- **El audio que espera en la cola lleva el volumen viejo.** El sink de esta
+  app deja **26 paquetes en cola** —casi 700 ms de música— y esa cola estaba
+  en el medio entre la mano y el sonido de dos maneras distintas. La
+  atenuación la hacía el mixer de librespot **antes** de encolar el paquete:
+  lo que ya estaba esperando llevaba el volumen con el que se decodificó, así
+  que mover el control se oía recién cuando la cola se vaciaba —y en los
+  últimos segundos de una canción, donde el crossfade deja crecer la cola
+  para guardar el final entero, tardaba **segundos**. **El volumen se aplica
+  cuando la muestra sale de la cola, no cuando entra**: el player entrega el
+  audio sin tocar y el sink atenúa muestra por muestra. Y **pausar el player
+  no es callar la música**: el player dejó de pedir audio, pero lo que ya
+  estaba en la cola siguió sonando en el mixer, así que la pausa tardaba lo
+  que la cola tardaba en vaciarse. La cola se apaga con una rampa corta y
+  **se congela** —congelada y no descartada, para que al volver a play la
+  canción siga donde estaba y no salte lo que pasó en la pausa.
 - **`.agent/` es la copia canónica** de la configuración de agentes. Los shims de
   `.claude/` y `.opencode/` que apuntaban ahí se borraron; para recuperar el
   skill en esas herramientas, `git revert 96cf93c`.
