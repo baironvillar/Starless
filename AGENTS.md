@@ -864,6 +864,18 @@ salen de una captura:
   milisegundos mientras reproduce—, pero con unos dieciséis milisegundos de
   retraso: el test `the_fade_reaches_the_audio_that_is_already_queued` lo fija
   con un mixer sin dispositivo.
+- **La posición que ve la webview es la del decoder, y la cola la hace ir por
+  delante.** En los últimos segundos de una canción el decoder deja de frenarse
+  y deja el final entero en la cola —con un crossfade de doce segundos, doce
+  segundos—, así que la posición que manda va doce segundos por delante de lo
+  que se oye: la barra llegaba al final de la canción cuando la siguiente ya
+  estaba sonando, y el crossfade no acortaba nada. **Lo que se muestra
+  es lo que se oye**: la posición menos el audio que quedó en la cola, y la
+  duración menos los segundos del crossfade —con doce segundos, una canción de
+  tres minutos veintiuno dura tres minutos nueve—. Y el backend tiene **dos
+  duraciones**: la que se muestra, que es la corta, y la real, que es contra la
+  que se mide la ventana del final. Pasarle la corta al player hace que la
+  cola del final crezca el doble.
 - **`.agent/` es la copia canónica** de la configuración de agentes. Los shims de
   `.claude/` y `.opencode/` que apuntaban ahí se borraron; para recuperar el
   skill en esas herramientas, `git revert 96cf93c`.

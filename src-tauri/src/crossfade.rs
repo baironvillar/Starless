@@ -82,6 +82,37 @@ const PACED_PACKETS: usize = 26;
 /// Los segundos del ajuste; 0 es apagado.
 static SECONDS: AtomicU32 = AtomicU32::new(0);
 
+/// Cuánto dura la canción con el crossfade puesto.
+///
+/// **La canción dura menos: los últimos segundos son la mezcla.** Con doce
+/// segundos de crossfade, una canción de tres minutos veintiuno dura tres
+/// minutos nueve, y la siguiente entra desde el principio mientras el final
+/// de la anterior se baja debajo. Es lo que hace Spotify, y sin esto la
+/// barra llegaba al final de la canción cuando la siguiente ya estaba
+/// sonando.
+pub fn effective_duration_ms(duration_ms: u32) -> u32 {
+    shorten(duration_ms, SECONDS.load(Ordering::Relaxed))
+}
+
+/// La misma cuenta, con los segundos a mano.
+fn shorten(duration_ms: u32, seconds: u32) -> u32 {
+    duration_ms.saturating_sub(seconds * 1000)
+}
+
+/// Cuánto audio queda en la cola del sink: lo que el decoder ya escribió y
+/// todavía no sonó.
+///
+/// **La posición que se muestra es la que se oye, no la que lleva el
+/// decoder.** En los últimos segundos de una canción el decoder deja de
+/// frenarse y deja el final entero en la cola —con un crossfade de doce
+/// segundos, doce segundos—, así que la posición que manda va por delante de
+/// lo que se está oyendo.
+pub fn queued_ms() -> u32 {
+    decks()
+        .map(|decks| decks.current().remaining().as_millis() as u32)
+        .unwrap_or_default()
+}
+
 /// La duración de la pista que se está decodificando.
 static DURATION_MS: AtomicU32 = AtomicU32::new(0);
 
@@ -776,6 +807,17 @@ mod tests {
         // segundo seis, se oye como si le faltara el principio. El adelanto
         // que hubo antes saltaba la entrada de cada canción.
         assert_eq!(LEAD_IN_MS, 0);
+    }
+
+    #[test]
+    fn the_crossfade_takes_its_seconds_off_the_song() {
+        // Con doce segundos de crossfade, una canción de tres minutos
+        // veintiuno dura tres minutos nueve: los últimos segundos son la
+        // mezcla y no forman parte de la canción.
+        assert_eq!(shorten(201_946, 12), 189_946);
+        assert_eq!(shorten(201_946, 0), 201_946);
+        // Una canción más corta que el crossfade no da la vuelta.
+        assert_eq!(shorten(5_000, 12), 0);
     }
 
     #[test]

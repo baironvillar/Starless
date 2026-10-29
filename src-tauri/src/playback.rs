@@ -77,7 +77,18 @@ pub struct PlaybackStatus {
     /// "playing" here would be showing the user a claim we have not verified.
     pub loading: bool,
     pub position_ms: u32,
+    /// How long the track is **with the crossfade on**: the last seconds are
+    /// the mix, so a track of 3:21 with twelve seconds of crossfade lasts
+    /// 3:09 and the next one comes in from the start while the end of this one
+    /// goes down underneath. This is what the bar shows.
     pub duration_ms: u32,
+    /// How long the track really is.
+    ///
+    /// **The player needs the whole thing and the window of the crossfade is
+    /// measured against it**: the tail is the last `crossfade + margin` of the
+    /// real duration, not of the shortened one. It never leaves the backend.
+    #[serde(skip)]
+    pub real_duration_ms: u32,
     /// 0..=65535, matching librespot's own scale. The UI maps it to 0..=100.
     pub volume: u16,
     /// The track ran to its end and nothing replaced it.
@@ -227,7 +238,14 @@ impl PlaybackState {
     }
 
     pub fn status(&self) -> PlaybackStatus {
-        self.status.lock().map(|g| g.clone()).unwrap_or_default()
+        let mut status = self.status.lock().map(|g| g.clone()).unwrap_or_default();
+        // **Lo que se muestra es lo que se oye.** La posición que manda es la
+        // del decoder, y en los últimos segundos de una canción el decoder
+        // deja de frenarse y deja el final entero en la cola: va hasta doce
+        // segundos por delante de lo que suena, y la barra llegaba al final
+        // de la canción cuando la siguiente ya estaba sonando.
+        status.position_ms = status.position_ms.saturating_sub(crate::crossfade::queued_ms());
+        status
     }
 }
 
@@ -545,7 +563,7 @@ fn rebuild_after_stall(app: &AppHandle) {
     // in the middle and there is no position to come back to.
     let status = state.status();
     if let Some(track_id) = status.track_id
-        && let Err(error) = play(&state, &track_id, 0, status.duration_ms)
+        && let Err(error) = play(&state, &track_id, 0, status.real_duration_ms)
     {
         log::error!("[audio_stalled] no se pudo volver a cargar la pista: {error}");
         state.mutate(|s| s.error = Some("audio_device_failed".into()));
@@ -658,7 +676,7 @@ fn forward_events(app: AppHandle, player: Arc<Player>, generation: u32) {
                         // happening: this is not a track that cannot be played,
                         // it is a connection that has to be rebuilt. The track
                         // that failed goes back on when it is up.
-                        schedule_reconnect(&app, track_id, state.status().duration_ms);
+                        schedule_reconnect(&app, track_id, state.status().real_duration_ms);
                     } else {
                         log::error!("[track_unavailable] {track_id}");
                         state.mutate(|s| {
@@ -873,7 +891,11 @@ pub fn play(
     // it back to the id the UI already had is work with no purpose.
     state.mutate(|s| {
         s.track_id = Some(track_id.to_string());
-        s.duration_ms = duration_ms;
+        s.real_duration_ms = duration_ms;
+        // **Lo que dura la canción es menos que lo que mide: los últimos
+        // segundos son la mezcla.** El crossfade vale desde la próxima
+        // canción, así que la cuenta se hace al cargarla y no mientras suena.
+        s.duration_ms = crate::crossfade::effective_duration_ms(duration_ms);
         s.position_ms = position_ms;
         // Deliberately NOT `playing`. librespot still has to fetch, decrypt and
         // start the stream; until it says so, nothing is audible.
@@ -958,7 +980,7 @@ pub fn toggle(app: &AppHandle, state: &PlaybackState) -> Result<(), String> {
         // frase era para otra cosa: el usuario pidió música, y la música entra
         // sola. Es la misma regla que corta al DJ cuando se elige una canción.
         crate::voice::stop();
-        play(state, &track_id, 0, current.duration_ms)?;
+        play(state, &track_id, 0, current.real_duration_ms)?;
         push_status(app, state);
         return Ok(());
     }
