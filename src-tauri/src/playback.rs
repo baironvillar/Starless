@@ -850,10 +850,10 @@ pub fn play(
     let player = state.live_player()?;
     let uri = track_uri(track_id)?;
 
-    // Una cola congelada por una pausa está callada: si la canción entra sin
-    // despertarla, no se oye nada. Sólo deshace lo que hizo una pausa —una
-    // cola nueva tiene su propio volumen y no se toca.
-    crate::crossfade::resume();
+    // **Una cola congelada por una pausa no se descongela acá.** Descongelarla
+    // aquí volvía a poner a sonar la canción de antes encima de la nueva: la
+    // cola congelada es la de la canción vieja, y la nueva entra en una cola
+    // nueva —eso lo hace `before_load`—.
 
     let started = std::time::Instant::now();
     log::info!("play {track_id} @ {position_ms}ms");
