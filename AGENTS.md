@@ -876,6 +876,21 @@ salen de una captura:
   duraciones**: la que se muestra, que es la corta, y la real, que es contra la
   que se mide la ventana del final. Pasarle la corta al player hace que la
   cola del final crezca el doble.
+- **Un control que escribe una variable CSS global en cada paso del arrastre
+  repinta media ventana.** El slider de opacidad de los menús —en
+  Personalización— era el único rango que quedaba en el `<input type="range">`
+  nativo, así que el pulgar ya seguía al mouse exacto: **lo que lo volvía
+  lento era otra cosa**. Cada paso del arrastre escribía `--menu-alpha` en la
+  raíz, y **toda superficie de vidrio de la app la lee** —el panel de Ajustes,
+  la cola, los popovers—: media ventana se repintaba por evento de puntero, y
+  el valor además se guardaba en disco por paso. Un arrastre que repinta
+  media ventana en cada evento *se siente* como un control que no te sigue.
+  **Lo que se aplica a la ventana entera se aplica cuando la mano se
+  detiene**: el número, el pulgar y la leyenda contestan a velocidad de
+  puntero —la leyenda es un degradado de 46×28 y puede permitírselo— y los
+  menús cambian una vez, al soltar. La leyenda tiene su propia variable
+  (`--legend-alpha`) por eso: si leyera la de los menús, no podría contestar
+  antes que ellos.
 - **`.agent/` es la copia canónica** de la configuración de agentes. Los shims de
   `.claude/` y `.opencode/` que apuntaban ahí se borraron; para recuperar el
   skill en esas herramientas, `git revert 96cf93c`.
