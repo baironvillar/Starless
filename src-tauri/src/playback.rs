@@ -872,16 +872,12 @@ pub fn stop(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-pub fn toggle(state: &PlaybackState) -> Result<(), String> {
+pub fn toggle(app: &AppHandle, state: &PlaybackState) -> Result<(), String> {
     let player = state.live_player()?;
     let current = state.status();
-    if current.playing {
-        player.pause();
-        state.mutate(|s| s.playing = false);
-        return Ok(());
-    }
 
-    // **A player with no track in it cannot be resumed.**
+    // **A player with no track in it cannot be paused, and that is the first
+    // thing to check.**
     //
     // `Player::play` only does something from `Paused` or `Loading`: from
     // `Stopped` or `EndOfTrack` librespot answers with an error and silence.
@@ -890,9 +886,14 @@ pub fn toggle(state: &PlaybackState) -> Result<(), String> {
     // its end — and calling `play()` on it is how the app ends up claiming to
     // be playing while nothing is audible.
     //
-    // So here "play" means "load the track again", and the track goes back on
-    // from the beginning: it was cut short or it ran out, and there is no
-    // position to come back to.
+    // The order matters, and it was the wrong way round. A click that landed
+    // right when the track ended was answered with a `pause()` on a player
+    // that had already finished: librespot refused it (`Player::pause called
+    // from invalid state: EndOfTrack`), the app set its own flag to "playing"
+    // anyway, and **the next click asked for a pause on a player that was
+    // never playing**. Three clicks, three refusals, and nothing on screen
+    // changed — because a state the app changes on its own is a state the
+    // webview never hears about.
     if state.holds_no_track.load(Ordering::Relaxed) {
         let Some(track_id) = current.track_id.clone() else {
             return Err(auth::fail("no_track", "no hay ninguna pista cargada"));
@@ -901,19 +902,39 @@ pub fn toggle(state: &PlaybackState) -> Result<(), String> {
         // frase era para otra cosa: el usuario pidió música, y la música entra
         // sola. Es la misma regla que corta al DJ cuando se elige una canción.
         crate::voice::stop();
-        return play(state, &track_id, 0, current.duration_ms);
+        play(state, &track_id, 0, current.duration_ms)?;
+        push_status(app, state);
+        return Ok(());
     }
 
-    player.play();
-    // Clearing `finished` here is what makes pressing play on a finished track
-    // mean "again", not "next". Leaving it set would let the advance effect
-    // fire on the user's own resume and skip the track they asked to hear.
-    state.mutate(|s| {
-        s.playing = true;
-        s.loading = false;
-        s.finished = false;
-    });
+    if current.playing {
+        player.pause();
+        state.mutate(|s| s.playing = false);
+    } else {
+        player.play();
+        // Clearing `finished` here is what makes pressing play on a finished track
+        // mean "again", not "next". Leaving it set would let the advance effect
+        // fire on the user's own resume and skip the track they asked to hear.
+        state.mutate(|s| {
+            s.playing = true;
+            s.loading = false;
+            s.finished = false;
+        });
+    }
+
+    // **The state the app just changed, pushed.**
+    //
+    // Without this the webview only learns what librespot says, and on the
+    // paths where librespot says nothing —a command it refuses— it learns
+    // nothing at all: the button looks dead and the app's own idea of what is
+    // playing drifts away from what the person sees.
+    push_status(app, state);
     Ok(())
+}
+
+/// Tell the webview what the player is doing right now.
+fn push_status(app: &AppHandle, state: &PlaybackState) {
+    let _ = app.emit("player://status", state.status());
 }
 
 pub fn seek(state: &PlaybackState, position_ms: u32) -> Result<(), String> {

@@ -1510,8 +1510,8 @@ async fn play_track(
 }
 
 #[tauri::command]
-fn toggle_playback(state: State<PlaybackState>) -> Result<(), String> {
-    playback::toggle(&state)
+fn toggle_playback(app: tauri::AppHandle, state: State<PlaybackState>) -> Result<(), String> {
+    playback::toggle(&app, &state)
 }
 
 #[tauri::command]
