@@ -41,6 +41,13 @@ pub const MAX_SECONDS: u32 = 12;
 /// un corte seco en el medio de una onda se oye como un chasquido.
 const QUICK_FADE: Duration = Duration::from_millis(400);
 
+/// Cuánto tarda en callarse la música cuando el usuario pausa.
+///
+/// Más corto que un corte de song: una pausa es una orden de "ahora", y cuatro
+/// cientos de milisegundos de cola sonando ya son cuatro cientos de
+/// milisegundos de "no me hizo caso".
+const PAUSE_FADE: Duration = Duration::from_millis(120);
+
 /// Cada cuánto se mueve el volumen durante un fundido.
 const STEP: Duration = Duration::from_millis(20);
 
@@ -70,6 +77,39 @@ static POSITION_MS: AtomicU32 = AtomicU32::new(0);
 /// Se reemplaza cada vez que se abre un sink —el player se rehace después de
 /// un atasco— para que las órdenes vayan al que suena y no a uno abandonado.
 static DECKS: Mutex<Option<Arc<Decks>>> = Mutex::new(None);
+
+/// La atenuación del volumen, en bits de f64.
+///
+/// **El audio se atenúa cuando sale de la cola, no cuando entra.** El mixer de
+/// librespot la aplicaba antes de escribir en el sink, y ahí el volumen quedaba
+/// cocido en los paquetes: la cola —hasta 26 paquetes, casi 700 ms de música—
+/// seguía sonando con el volumen viejo, así que mover el control se oía tarde
+/// y con la curva equivocada. Atenuado al salir, el cambio se oye en la
+/// muestra siguiente.
+///
+/// Se publica una sola vez, cuando se abre el sink, y de ahí en adelante la
+/// lee quien hace sonar el audio.
+static ATTENUATION: Mutex<Option<Arc<AtomicU64>>> = Mutex::new(None);
+
+/// Publicar la atenuación del player.
+///
+/// Lo publica el player cuando se crea. Si ya había una —el player se rehace
+/// después de un atasco— se deja la primera: es el mismo arco, y apuntar a
+/// otro dejaría la cola escuchando un volumen viejo.
+pub fn publish_attenuation(attenuation: Arc<AtomicU64>) {
+    let mut guard = lock(&ATTENUATION);
+    if guard.is_none() {
+        *guard = Some(attenuation);
+    }
+}
+
+/// La atenuación de este momento, tal como la va a oír quien escuchó.
+fn attenuation() -> f64 {
+    lock(&ATTENUATION)
+        .as_ref()
+        .map(|value| f64::from_bits(value.load(Ordering::Relaxed)))
+        .unwrap_or(1.0)
+}
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -179,6 +219,32 @@ pub fn silence_left() -> Duration {
     decks().map(|decks| decks.silence_left()).unwrap_or_default()
 }
 
+/// El usuario pausó: la música se calla ya.
+///
+/// **Lo que sigue sonando es la cola, no el player.** Pausar el player deja de
+/// pedirle audio, pero la cola —hasta 26 paquetes, casi 700 ms de música— sigue
+/// en el mixer y se sigue oyendo: la pausa tardaba lo que la cola tarda en
+/// vaciarse, y para quien apretó el botón eso es un botón que no funciona.
+///
+/// La cola se apaga con una rampa corta y después **queda congelada**: si
+/// siguiera vaciándose, al volver a play la canción saltearía todo lo que pasó
+/// en la pausa.
+pub fn silence() {
+    if let Some(decks) = decks() {
+        decks.silence();
+    }
+}
+
+/// El usuario volvió a play: la cola sigue donde estaba.
+///
+/// La cola congelada vuelve a sonar con el volumen que tenía, y la música
+/// sigue donde la dejaste: no hay salto.
+pub fn resume() {
+    if let Some(decks) = decks() {
+        decks.resume();
+    }
+}
+
 /// ¿Estamos en los últimos segundos de la canción, donde el decoder no se frena?
 fn in_tail() -> bool {
     let seconds = SECONDS.load(Ordering::Relaxed);
@@ -207,6 +273,8 @@ struct Deck {
     fade: AtomicU64,
     /// Un final que suena entero: una pausa no lo apaga.
     keep: AtomicBool,
+    /// La cola quedó callada por una pausa y está esperando que vuelva el play.
+    silenced: AtomicBool,
 }
 
 impl Deck {
@@ -219,6 +287,7 @@ impl Deck {
             played: Arc::new(AtomicU64::new(0)),
             fade: AtomicU64::new(0),
             keep: AtomicBool::new(false),
+            silenced: AtomicBool::new(false),
         })
     }
 
@@ -262,7 +331,14 @@ impl Iterator for Counted {
     type Item = f32;
 
     fn next(&mut self) -> Option<f32> {
-        self.inner.next()
+        // **La atenuación se aplica cuando la muestra sale de la cola.**
+        //
+        // Antes la aplicaba el mixer de librespot, antes de que el paquete
+        // entrara en la cola: la cola sonaba con el volumen que tenía cuando
+        // se encoló, y el control del volumen tardaba lo que la cola tarda en
+        // vaciarse —hasta 26 paquetes— en llegar al oído. Acá se atenúa al
+        // salir, que es cuando el oído la está esperando.
+        self.inner.next().map(|sample| sample * attenuation() as f32)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -363,6 +439,40 @@ impl Decks {
         self.current().sink.play();
     }
 
+    /// Callar la música y congelar la cola.
+    ///
+    /// La cola se apaga con una rampa corta y después queda quieta: si
+    /// siguiera vaciándose en silencio, al volver a play la canción saltearía
+    /// todo lo que pasó en la pausa.
+    pub fn silence(&self) {
+        self.settle_waiting();
+        // Una pausa en el medio de un fundido calla también lo que bajaba.
+        for tail in lock(&self.tails).iter() {
+            if !tail.keep.load(Ordering::Relaxed) {
+                fade_out(tail.clone(), QUICK_FADE);
+            }
+        }
+        let current = self.current();
+        current.silenced.store(true, Ordering::Relaxed);
+        fade_out_and_pause(current, PAUSE_FADE);
+    }
+
+    /// La cola vuelve a sonar, con el volumen que tenía.
+    ///
+    /// **Sólo se deshace lo que hizo una pausa.** Una cola nueva —la de una
+    /// canción que recién entra en un fundido— tiene su propio volumen, y
+    /// pisarlo acá dejaría la transición sin fundido.
+    pub fn resume(&self) {
+        let current = self.current();
+        if current.silenced.swap(false, Ordering::Relaxed) {
+            // El fundido que la calló termina acá: si siguiera, volvería a
+            // bajar el volumen después de que volvió el play.
+            current.fade.fetch_add(1, Ordering::Relaxed);
+            current.sink.set_volume(1.0);
+        }
+        current.sink.play();
+    }
+
     /// El player se detuvo: una pausa, un stop, o el DJ que necesita silencio.
     pub fn stop(&self) {
         self.settle_waiting();
@@ -445,6 +555,40 @@ fn crossfade(tail: Arc<Deck>, fresh: Arc<Deck>) {
 
 fn fade_out(deck: Arc<Deck>, length: Duration) {
     ramp(Some(deck), None, length);
+}
+
+/// Apagar la cola y **congelarla**.
+///
+/// A diferencia de `fade_out`, la cola no se vacía: queda guardada, con la
+/// música que le faltaba, para que al volver a play la canción siga donde
+/// estaba. Si se vaciara, al volver a play la canción saltearía todo lo que
+/// pasó en la pausa —o, peor, seguiría sonando desde el principio.
+fn fade_out_and_pause(deck: Arc<Deck>, length: Duration) {
+    let id = deck.fade.fetch_add(1, Ordering::Relaxed) + 1;
+    let from = deck.sink.volume();
+    std::thread::spawn(move || {
+        let started = Instant::now();
+        loop {
+            let t = (started.elapsed().as_secs_f32() / length.as_secs_f32()).min(1.0);
+            if deck.fade.load(Ordering::Relaxed) == id {
+                let angle = t * std::f32::consts::FRAC_PI_2;
+                deck.sink.set_volume(from * angle.cos());
+            }
+            if t >= 1.0 {
+                if deck.fade.load(Ordering::Relaxed) == id {
+                    deck.sink.set_volume(0.0);
+                    // **La cola se queda donde está.** El player dejó de
+                    // pedirle audio, pero lo que ya estaba guardado seguía
+                    // sonando: por eso la pausa tardaba lo que la cola tarda
+                    // en vaciarse. Congelada, el silencio es inmediato y la
+                    // música sigue donde la dejaste.
+                    deck.sink.pause();
+                }
+                return;
+            }
+            std::thread::sleep(STEP);
+        }
+    });
 }
 
 /// Mover los volúmenes en un hilo propio, con curva de igual potencia.

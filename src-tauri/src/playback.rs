@@ -91,16 +91,28 @@ pub struct PlaybackStatus {
     pub error: Option<String>,
 }
 
-/// A volume the user can actually perceive.
+/// The volume, as the player sees it: untouched.
 ///
-/// The mapping is quadratic on purpose: a linear slider spends most of its
-/// travel in a range where you cannot hear the difference, and then a user who
-/// wants "half volume" sets it to 25% and concludes the app is quiet.
-struct SoftVolume(Arc<AtomicU64>);
+/// **The player attenuates before the audio is queued, and that is a whole
+/// queue too early.** The sink of this app keeps up to 26 packets waiting —
+/// almost 700 ms of music — and the packets that were already waiting carry
+/// the volume they had when they were decoded. A volume change therefore took
+/// as long as the queue took to drain, and in the last seconds of a song, when
+/// the crossfade lets the queue grow to hold the whole ending, it took
+/// *seconds*.
+///
+/// So the player hands the audio over untouched and the sink attenuates each
+/// sample as it leaves the queue: the change is heard in the next sample.
+///
+/// The mapping itself is quadratic on purpose: a linear slider spends most of
+/// its travel in a range where you cannot hear the difference, and then a
+/// user who wants "half volume" sets it to 25% and concludes the app is
+/// quiet. See `apply_volume`.
+struct Unattenuated;
 
-impl VolumeGetter for SoftVolume {
+impl VolumeGetter for Unattenuated {
     fn attenuation_factor(&self) -> f64 {
-        f64::from_bits(self.0.load(Ordering::Relaxed))
+        1.0
     }
 }
 
@@ -261,12 +273,16 @@ fn build_player(app: &AppHandle, state: &PlaybackState, session: &Session) {
     // es el volumen de la voz. Sin esto, mutear la app callaba la música y
     // dejaba al DJ hablando.
     crate::voice::publish_attenuation(state.attenuation.clone());
+    // Y la música la lee el sink, cuando el audio sale de la cola: atenuado
+    // antes de encolarse, el cambio de volumen tardaba lo que la cola tarda
+    // en vaciarse en llegar al oído.
+    crate::crossfade::publish_attenuation(state.attenuation.clone());
     crate::crossfade::set_seconds(u32::from(crate::settings::saved_crossfade_seconds()));
 
     let player = Player::new(
         config,
         session.clone(),
-        Box::new(SoftVolume(state.attenuation.clone())),
+        Box::new(Unattenuated),
         // El sink es de Starless y no de librespot.
         //
         // El de librespot no deja ver el `Mixer` del stream, y sin ese mixer la
@@ -834,6 +850,11 @@ pub fn play(
     let player = state.live_player()?;
     let uri = track_uri(track_id)?;
 
+    // Una cola congelada por una pausa está callada: si la canción entra sin
+    // despertarla, no se oye nada. Sólo deshace lo que hizo una pausa —una
+    // cola nueva tiene su propio volumen y no se toca.
+    crate::crossfade::resume();
+
     let started = std::time::Instant::now();
     log::info!("play {track_id} @ {position_ms}ms");
     if let Ok(mut guard) = state.requested_at.lock() {
@@ -944,9 +965,17 @@ pub fn toggle(app: &AppHandle, state: &PlaybackState) -> Result<(), String> {
 
     if current.playing {
         player.pause();
+        // **Pausar el player no calla la música.** El player deja de pedir
+        // audio, pero lo que ya estaba en la cola sigue en el mixer y sigue
+        // sonando: casi 700 ms de música que la pausa no tapa. La cola se
+        // apaga y se congela acá, y al volver a play sigue donde estaba.
+        crate::crossfade::silence();
         state.mutate(|s| s.playing = false);
     } else {
         player.play();
+        // La cola congelada vuelve a sonar con el volumen que tenía, y la
+        // música sigue donde la dejaste: no hay salto.
+        crate::crossfade::resume();
         // Clearing `finished` here is what makes pressing play on a finished track
         // mean "again", not "next". Leaving it set would let the advance effect
         // fire on the user's own resume and skip the track they asked to hear.
