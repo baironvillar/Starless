@@ -19,6 +19,16 @@ const INSTANT = { duration: 0 } as const;
 
 type SmoothSliderProps = {
   value: number;
+  /**
+   * The bottom of the range, when it is not zero.
+   *
+   * **A range that starts somewhere else has to be drawn from that floor.** The
+   * fill is the distance the value travelled, not the value: a control whose
+   * floor is 55 has nothing filled at 55 and everything filled at 100, and a
+   * fill drawn from the value itself would put the thumb in the middle of an
+   * empty bar.
+   */
+  min?: number;
   max: number;
   step?: number;
   disabled?: boolean;
@@ -58,6 +68,7 @@ type SmoothSliderProps = {
  */
 export function SmoothSlider({
   value,
+  min = 0,
   max,
   step = 1,
   disabled = false,
@@ -93,7 +104,8 @@ export function SmoothSlider({
     if (asked !== null && asked === value) setAsked(null);
   }, [asked, value]);
 
-  const fill = max > 0 ? Math.min(100, Math.max(0, (shown / max) * 100)) : 0;
+  const span = max - min;
+  const fill = span > 0 ? Math.min(100, Math.max(0, ((shown - min) / span) * 100)) : 0;
   const scale = disabled ? 1 : held ? 1.3 : hovered ? 1.15 : 1;
 
   return (
@@ -111,7 +123,7 @@ export function SmoothSlider({
       />
       <input
         type="range"
-        min={0}
+        min={min}
         max={max}
         step={step}
         value={shown}

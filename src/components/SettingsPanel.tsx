@@ -12,7 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { type CSSProperties, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { CHANGELOG, PREVIOUS_NOTE } from "../lib/changelog";
 import type { Lang, StringKey } from "../lib/i18n";
 import { SPRING, SPRING_SHEET } from "../lib/motion";
@@ -75,6 +75,16 @@ type SettingsPanelProps = {
  * shipped lime comes first and is also how the section gets its default back.
  */
 const ACCENT_PRESETS = ["#c9f73c", "#3ddc97", "#4cc9f0", "#7aa2ff", "#c08bff", "#ff8fb1"];
+
+/**
+ * How long the hand has to be still before the opacity is applied for real.
+ *
+ * Not a number about taste. The applied value repaints every glass surface in
+ * the window, so applying it on every pointer event is what made the drag
+ * heavy; this is the pause after the last movement, which is what "let go"
+ * means when the release happens outside the control.
+ */
+const OPACITY_COMMIT_MS = 150;
 
 const SECTIONS = [
   "sectionGeneral",
@@ -566,6 +576,7 @@ function Prerelease({ t }: { t: Record<StringKey, string> }) {
 function Custom({ t }: { t: Record<StringKey, string> }) {
   const [opacity, setOpacity] = useState<number | null>(null);
   const [accent, setAccent] = useState<string | null>(null);
+  const commitTimer = useRef<number | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -588,12 +599,36 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
     };
   }, []);
 
+  // A timeout that outlives the panel writes to a window that is not there
+  // anymore, and the write it was going to do is one nobody asked for twice.
+  useEffect(() => {
+    return () => {
+      if (commitTimer.current !== null) window.clearTimeout(commitTimer.current);
+    };
+  }, []);
+
+  /**
+   * Two answers, on purpose.
+   *
+   * **The number, the thumb and the legend answer while the hand moves; the
+   * menus wait.** The applied value is `--menu-alpha`, and every glass surface
+   * in the app reads it — the settings sheet itself, the queue, the popovers.
+   * Moving it repaints all of them, so a drag that moves it repaints half the
+   * window on every pointer event. That is what made this control feel heavy,
+   * and a faster repaint is not the fix.
+   *
+   * The legend is a 46x28 gradient that can follow the hand, so the choice is
+   * still legible while it is being made — which is the whole reason it is
+   * there. The change lands once the hand stops.
+   */
   const change = (value: number) => {
     setOpacity(value);
-    // The colour changes with the thumb, not after it is let go: this is a preview
-    // of what a choice looks like, so it has to answer while it is being made.
-    applyMenuOpacity(value);
-    void setMenuOpacity(value).catch(() => {});
+    if (commitTimer.current !== null) window.clearTimeout(commitTimer.current);
+    commitTimer.current = window.setTimeout(() => {
+      commitTimer.current = null;
+      applyMenuOpacity(value);
+      void setMenuOpacity(value).catch(() => {});
+    }, OPACITY_COMMIT_MS);
   };
 
   // Same answer for the same reason: the panel is the preview of its own choice.
@@ -632,24 +667,35 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
             <span className="min-w-[74px] text-right text-[12px] text-ink-faint tabular">
               {opacity === null ? "…" : `${opacity}%`}
             </span>
-            <input
-              type="range"
+            <SmoothSlider
+              value={opacity ?? MENU_OPACITY_DEFAULT}
               min={MENU_OPACITY_MIN}
               max={MENU_OPACITY_MAX}
               step={5}
-              value={opacity ?? MENU_OPACITY_MAX}
               disabled={opacity === null}
-              onChange={(e) => change(Number(e.target.value))}
-              aria-label={t.menuOpacity}
-              className="w-[180px] accent-[var(--color-accent)] disabled:opacity-45"
+              onChange={change}
+              label={t.menuOpacity}
+              className="w-[180px]"
             />
             {/*
               The swatch is what makes this control legible while it is being
               dragged. Every surface that actually reads the value is a popover
               sitting outside the panel, and this one is an opaque sheet — so
               without a legend right here the thumb moves and nothing answers.
+
+              It reads its own alpha, not the one the menus read: the legend is
+              a gradient over a 46x28 box and can answer at pointer speed, while
+              `--menu-alpha` only moves once the hand stops.
             */}
-            <span aria-hidden="true" className="menu-legend" />
+            <span
+              aria-hidden="true"
+              className="menu-legend"
+              style={
+                {
+                  "--legend-alpha": (opacity ?? MENU_OPACITY_DEFAULT) / 100,
+                } as CSSProperties
+              }
+            />
           </span>
         </Row>
       </Group>
