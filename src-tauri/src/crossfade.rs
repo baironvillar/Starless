@@ -19,8 +19,9 @@
 //! sonar. Cuando la siguiente se carga, ese final se separa en una cola propia
 //! —un `rodio::Sink` más sobre **el mismo mixer**— y la canción nueva entra en
 //! otra. Con la primera muestra de la nueva empieza el fundido: la vieja baja
-//! a lo largo de toda la transición y la nueva sube en un segundo y pico, para
-//! que las dos se oyan desde el primer momento y no una después de la otra.
+//! de una a lo largo de toda la transición y la nueva sube con la potencia que
+//! la vieja deja, para que las dos se oyan mezcladas y la transición no suene
+//! más fuerte que una canción sola.
 //!
 //! **Sólo en el paso automático.** Un clic en otra canción, un seek o una
 //! pausa en esos últimos segundos no son una transición: el final que estaba
@@ -57,16 +58,6 @@ const CUT_FADE: Duration = Duration::from_millis(60);
 
 /// Cada cuánto se mueve el volumen durante un fundido.
 const STEP: Duration = Duration::from_millis(20);
-
-/// Cuánto tarda la canción que entra en llegar a su volumen.
-///
-/// **La que entra sube rápido y la que sale baja en todo el ajuste.** Con la
-/// mezcla de igual potencia de toda la vida —la nueva de cero a uno a lo largo
-/// de los doce segundos del ajuste— la primera canción se oía entera y la
-/// segunda aparecía recién cuando la primera había terminado: eso no es una
-/// mezcla, es una canción y después otra. Spotify deja entrar la nueva
-/// enseguida y baja la vieja debajo, que es lo que hay que hacer.
-const FADE_IN: Duration = Duration::from_millis(1200);
 
 /// Cuánto entra adelantada la canción que entra en una transición.
 ///
@@ -621,22 +612,34 @@ fn crossfade(tail: Arc<Deck>, fresh: Arc<Deck>) {
     mix(tail, fresh, length);
 }
 
+/// Los dos volúmenes de la transición en un momento dado.
+///
+/// `t` es cuánto de la transición pasó, de 0 a 1. La vieja baja linealmente y
+/// la nueva sube con la potencia que queda: la suma de las dos es siempre la
+/// misma, y por eso la transición no se oye más fuerte que una canción sola.
+///
+/// La curva sale de Spotify: la vieja baja de una a lo largo del ajuste y la
+/// nueva entra desde su principio y sube con lo que la vieja deja.
+fn mix_volumes(t: f32) -> (f32, f32) {
+    let down = 1.0 - t;
+    let up = (1.0 - down * down).max(0.0).sqrt();
+    (down, up)
+}
+
 /// La transición: la que sale baja mientras la que entra sube.
 ///
-/// **La que entra sube en `FADE_IN` y la que sale baja en toda la
-/// transición.** La mezcla de igual potencia —las dos con `cos` y `sin` a lo
-/// largo de los doce segundos del ajuste— deja a la primera entera y a la
-/// segunda en silencio hasta el final: el oído escucha la que está más fuerte
-/// y no la otra. Con la que entra arriba en un segundo y pico, las dos se oyen
-/// desde el primer momento, que es de lo que se trata.
+/// **La vieja baja de una y la nueva sube con la potencia constante.** La suma
+/// de las potencias de las dos es siempre la misma, así que la transición no
+/// se oye más fuerte que una canción sola: con las dos a volumen completo
+/// durante el primer segundo se oía el doble, y eso es lo que hace que una
+/// mezcla suene a mezcla y no a dos canciones encima.
 ///
-/// El que baja sigue `cos` y el que sube `sin`: la suma de sus potencias no
-/// cae en el medio de la transición.
+/// La que sale sigue `cos` cuando se apaga sola (`fade_out`), y ahí no hay
+/// nadie que la tape: el pozo de volumen de dos rampas lineales se oye.
 fn mix(tail: Arc<Deck>, fresh: Arc<Deck>, length: Duration) {
     let down_id = tail.fade.fetch_add(1, Ordering::Relaxed) + 1;
     let down_from = tail.sink.volume();
     let up_id = fresh.fade.fetch_add(1, Ordering::Relaxed) + 1;
-    let up_length = FADE_IN.min(length);
 
     std::thread::spawn(move || {
         let started = Instant::now();
@@ -645,15 +648,13 @@ fn mix(tail: Arc<Deck>, fresh: Arc<Deck>, length: Duration) {
             let elapsed = started.elapsed().as_secs_f32();
             let t = (elapsed / length.as_secs_f32()).min(1.0);
 
+            let (down, up) = mix_volumes(t);
+
             if tail.fade.load(Ordering::Relaxed) == down_id {
-                tail.sink
-                    .set_volume(down_from * (t * std::f32::consts::FRAC_PI_2).cos());
+                tail.sink.set_volume(down_from * down);
             }
-            let up_t = (elapsed / up_length.as_secs_f32()).min(1.0);
             if fresh.fade.load(Ordering::Relaxed) == up_id {
-                fresh
-                    .sink
-                    .set_volume((up_t * std::f32::consts::FRAC_PI_2).sin());
+                fresh.sink.set_volume(up);
             }
 
             // Un rastro por cuarto de transición: si las dos no se oyen
@@ -775,6 +776,26 @@ mod tests {
         // segundo seis, se oye como si le faltara el principio. El adelanto
         // que hubo antes saltaba la entrada de cada canción.
         assert_eq!(LEAD_IN_MS, 0);
+    }
+
+    #[test]
+    fn the_mix_never_gets_louder_than_one_song() {
+        // La suma de las potencias de las dos tiene que ser la misma en toda
+        // la transición: si sube, la mezcla se oye más fuerte que una canción
+        // sola, y con las dos a volumen completo al principio se oía el doble.
+        for step in 0..=100 {
+            let t = step as f32 / 100.0;
+            let (down, up) = mix_volumes(t);
+            let power = down * down + up * up;
+            assert!(
+                (power - 1.0).abs() < 0.0001,
+                "en el {t} la mezcla vale {power}, no 1"
+            );
+        }
+        // Y la nueva arranca en silencio y termina sola.
+        assert_eq!(mix_volumes(0.0), (1.0, 0.0));
+        let (down, up) = mix_volumes(1.0);
+        assert!(down < 0.001 && up > 0.999);
     }
 
     /// El fundido tiene que llegar al audio que **ya está en cola**.
