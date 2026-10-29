@@ -792,6 +792,31 @@ salen de una captura:
   valores que llegan solos —una tecla, un valor que vuelve del backend— y para
   el pulgar que crece bajo la mano. El `<input type="range">` nativo que esto
   reemplazaba seguía al mouse exacto: esa es la vara.
+- **El orden de las preguntas del botón de play es el botón de play.** `toggle`
+  preguntaba *"¿estoy sonando?"* antes que *"¿el player tiene una pista?"*, y
+  la segunda es la que importa: `Player::play` y `Player::pause` sólo hacen
+  algo desde `Paused` o `Loading`; desde `Stopped` o `EndOfTrack` librespot
+  contesta con un error y silencio. Un clic que caía justo cuando terminaba la
+  canción recibía un `pause()` sobre un player que ya había terminado —
+  `Player::pause called from invalid state: EndOfTrack` en el log—, el app se
+  ponía "sonando" igual y **el clic siguiente pedía pausar un player que
+  nunca estuvo sonando**. Tres clics, tres rechazos, y en la pantalla no
+  cambiaba nada. **Y un estado que el app cambia solo es un estado que la
+  webview no oye**: `toggle` movía `s.playing` y no lo empujaba, así que la
+  idea del app de qué estaba sonando se iba de la idea de la pantalla. Ahora
+  el estado se empuja después del comando, como hace `play_track`.
+- **Un valor que cambia en cada evento de puntero no puede empujar el estado
+  entero.** El volumen cambia cincuenta veces por segundo y cada una empujaba
+  el estado **completo** a la webview, donde cae en el estado del componente
+  raíz y **re-renderiza la app entera**. El hilo del webview pasa entonces a
+  ocuparse de la app en vez del puntero que pregunta, y el pulgar queda
+  atrás: **el slider que debía seguir la mano era lo que hacía tarde la
+  mano**. El pulgar no necesita el eco —sabe lo que pidió—, así que el eco del
+  volumen sale a ritmo de persona (100 ms) y lo demás sigue saliendo al
+  instante. Y **el disco va después del sonido**: la atenuación es un átomo
+  que la mixer de librespot lee en cada buffer, así que el archivo de ajustes
+  se escribe después de aplicar el volumen, no antes — antes ponía una
+  lectura y una escritura del archivo entero entre la mano y el sonido.
 - **`.agent/` es la copia canónica** de la configuración de agentes. Los shims de
   `.claude/` y `.opencode/` que apuntaban ahí se borraron; para recuperar el
   skill en esas herramientas, `git revert 96cf93c`.
