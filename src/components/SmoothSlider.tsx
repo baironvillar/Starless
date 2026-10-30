@@ -106,7 +106,10 @@ export function SmoothSlider({
 
   const span = max - min;
   const fill = span > 0 ? Math.min(100, Math.max(0, ((shown - min) / span) * 100)) : 0;
-  const scale = disabled ? 1 : held ? 1.3 : hovered ? 1.15 : 1;
+  const active = !disabled && (held || hovered);
+  const scale = disabled ? 1 : held ? 1.45 : hovered ? 1.25 : 1;
+  // The bar thickens under the hand: 4px to 6px, by transform so nothing re-lays out.
+  const thick = active ? 1.5 : 1;
 
   return (
     <span
@@ -114,15 +117,20 @@ export function SmoothSlider({
         disabled ? "opacity-45" : ""
       } ${className}`}
     >
-      <span className="absolute inset-x-0 h-1 rounded-pill bg-white/16" />
+      <motion.span
+        className="absolute inset-x-0 h-1 rounded-pill bg-white/16"
+        initial={false}
+        animate={{ scaleY: thick }}
+        transition={SPRING}
+      />
       {/* The fill and the thumb move by transform, not by `width` and `left`:
           the position ticks twice a second for as long as a song plays, and a
           layout property re-laid out the bar on every frame of every spring. */}
       <motion.span
         className={`absolute inset-x-0 h-1 origin-left rounded-pill ${tone === "accent" ? "bg-accent" : "bg-ink"}`}
         initial={false}
-        animate={{ scaleX: fill / 100 }}
-        transition={held ? INSTANT : SPRING}
+        animate={{ scaleX: fill / 100, scaleY: thick }}
+        transition={{ scaleX: held ? INSTANT : SPRING, scaleY: SPRING }}
       />
       <input
         type="range"
@@ -157,6 +165,13 @@ export function SmoothSlider({
         // is the control itself, and it is where the mouse is.
         transition={held ? INSTANT : SPRING}
       >
+        {/* A frost halo that opens under the hand and widens while held. */}
+        <motion.span
+          className="absolute size-3 -translate-x-1/2 rounded-pill bg-ink/20"
+          initial={false}
+          animate={{ scale: held ? 2.8 : hovered && !disabled ? 2.1 : 1, opacity: active ? 1 : 0 }}
+          transition={SPRING}
+        />
         <motion.span
           className="size-3 -translate-x-1/2 rounded-pill bg-ink shadow-[0_1px_4px_rgb(0_0_0/0.55)]"
           initial={false}

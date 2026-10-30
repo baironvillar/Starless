@@ -121,7 +121,7 @@ export function NewPlaylistDialog({ t, open, onClose, onCreate }: NewPlaylistDia
               event.preventDefault();
               void submit();
             }}
-            className="glass flex w-full max-w-[380px] flex-col gap-4 rounded-[18px] p-5"
+            className="glass-overlay flex w-full max-w-[380px] flex-col gap-4 rounded-[18px] p-5"
           >
             <div className="flex items-start gap-3">
               <span className="grid size-8 shrink-0 place-items-center rounded-[10px] bg-accent/15 text-accent">

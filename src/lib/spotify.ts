@@ -579,7 +579,7 @@ export function applyMenuOpacity(opacity: number): void {
 const ACCENT_KEY = "starless:accent";
 
 /** The colour DESIGN.md ships. Also what "back to default" writes. */
-export const ACCENT_DEFAULT = "#c9f73c";
+export const ACCENT_DEFAULT = "#c8ccd4";
 
 export function isHexColor(value: string): boolean {
   return /^#[0-9a-f]{6}$/i.test(value);
@@ -609,8 +609,9 @@ export async function setAccentColor(color: string): Promise<void> {
  *
  * The accent itself is the user's. `--color-accent-soft` is the tint the focus
  * outline uses, mixed toward white by the same ratio the shipped pair has
- * (#c9f73c → #d9ff6b) so the focus ring keeps its relationship to the accent
- * instead of being the one lime thing left on screen after a repaint.
+ * (chrome #c8ccd4 → frost #f4f5f7, close enough to the 0.22 mix) so the focus
+ * ring keeps its relationship to the accent instead of being the one leftover
+ * colour on screen after a repaint.
  *
  * `--color-on-accent` is the foreground for everything filled with the accent —
  * the Inicio button, the play buttons, the primary buttons of every prompt. It
@@ -634,7 +635,7 @@ export function applyAccentColor(color: string | null): void {
   const value = color.toLowerCase();
   root.setProperty("--color-accent", value);
   root.setProperty("--color-accent-soft", mixToward(value, 0.22));
-  root.setProperty("--color-on-accent", isDark(value) ? "#f4f4fa" : "#0a0a12");
+  root.setProperty("--color-on-accent", isDark(value) ? "#f4f5f7" : "#08080a");
 }
 
 /** `amount` of white mixed into `hex`, as `#rrggbb`. */
