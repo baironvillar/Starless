@@ -30,6 +30,26 @@ and Starless adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [0.5.6] — 2026-10-30
+
+### New / Nuevo
+
+- **Los reportes ya no llevan un token dentro de la app.** Para mandar un reporte de crash o un feedback, Starless ahora habla con un relay propio en vez de usar la API de GitHub con una clave escrita en el binario: esa clave salía de la máquina de cada copia instalada. Ahora la copia no lleva ninguna. El relay abre el issue y devuelve el enlace, avisa cuando el mismo crash ya había sido reportado y suma el tuyo, y dice cuándo se pasó el límite de la hora.
+- **El feedback dice de qué se trata.** El formulario de Ajustes → Diagnóstico pregunta ahora si lo que se está contando es un problema, una idea u otra cosa, y el tema viaja con el reporte.
+
+### Fixed / Corregido
+
+- **El volumen tardaba hasta medio segundo en cambiarse.** El mixer atenuaba el audio antes de encolarlo, así que el cambio esperaba a que la cola se vaciara: lo que ya estaba en la cola seguía sonando con el volumen viejo. Ahora el audio sale de la cola sin tocar y el volumen lo baja el mezclador muestra a muestra, así que el cambio se oye en la muestra siguiente.
+- **Pausar no pausaba, y el botón de play preguntaba en el orden equivocado.** Lo que ya estaba encolado seguía sonando casi setecientos milisegundos después de pausar, así que la pausa parecía no obeyedida. Y el botón preguntaba «¿estoy sonando?» antes que «¿hay una canción cargada?»: desde el final de una canción o con el reproductor parado, librespot se niega, y la app se ponía en «sonando» sin que sonara nada. Ahora pregunta lo segundo, y el estado que la app cambia sola se lo dice al webview en vez de guardárselo.
+- **La barra de posición peleaba con el mouse, y un seek tiraba la cola en la que aterrizaba.** La barra es un control nativo cuyo valor viene del backend dos veces por segundo, y cada actualización la devolvía a donde estaba: el cursor parecía clavado y la búsqueda nunca llegaba. Ahora, mientras la mano está sobre el control, el control dibuja lo que se le pidió, y la búsqueda se manda a mano y no por píxel. Y lo que estaba encolado es el audio del lugar anterior: sonaba encima de la posición nueva y el reproductor volvía a reportar la vieja. La cola ahora se descarta con una rampa corta, porque un corte seco en medio de una onda suena como un chasquido.
+- **Las dos canciones del crossfade no se mezclaban: se pisaban.** La que entraba subía de volumen a lo largo de los doce segundos mientras la que salía se quedaba al máximo, así que el oído sólo oía la más fuerte, y la segunda sólo se oía cuando la primera había terminado. Ahora la que sale baja de a poco y la que entra sube con la potencia que queda: **la suma de las dos potencias siempre da uno**, así que la transición nunca suena más fuerte que una canción sola. Y la que entra arranca en su propio comienzo, y dura menos: con doce segundos de crossfade una pista de 3:21 dura 3:09, que es lo que dice la barra.
+- **El slider de opacidad repintaba media ventana en cada paso.** Cada movimiento escribía la opacidad del vidrio en la raíz, y la leen todas las superficies de la app —el panel de Ajustes, la cola, los menús—, así que la mitad de la ventana se repintaba por cada paso del dedo. Ahora lo que se aplica a toda la ventana se aplica cuando el dedo se levanta: el número, el cursor y la leyenda contestan a la velocidad del dedo, y los menús cambian una vez, al soltar.
+- **La pantalla de inicio de sesión desaparecía de golpe.** Cuando llegaba la sesión, la app estaba y la tarjeta no, sin nada en el medio. Ahora la puerta se desvanece sobre la app que ya está debajo, así que los dos son un movimiento solo. Y el botón ya no se apagaba sin más: dice qué está esperando —la aprobación en el browser, después el handshake con Spotify—, con un spinner, y se queda así hasta que la sesión está de verdad.
+- **El panel de Ajustes volvía después de volver a iniciar sesión.** La puerta desmonta lo que tiene detrás cuando se cierra, pero el estado que decide qué se muestra vive arriba de la puerta, así que el panel de la sesión anterior volvía entero sobre la app nueva. Ahora, al cerrarse la sesión, la pantalla vuelve a su estado de partida: se devuelve lo que es de la cuenta —dónde estabas, qué estaba abierto, la cola— y se queda lo que es de la persona —el idioma, el orden de la estantería, el vidrio—, porque una preferencia no se la lleva cerrar sesión.
+- **La app quedaba atrás del browser después de iniciar sesión.** El browser toma el primer plano para la aprobación, y cuando contesta «Listo. Vuelve a Starless.» la persona está mirando el browser, no la app —que había quedado detrás, sin nada en pantalla que dijera que estaba esperando—. Ahora la app vuelve sola al frente en cuanto el browser termina.
+
+---
+
 ## [0.5.5] — 2026-10-28 · prerelease
 
 ### New / Nuevo

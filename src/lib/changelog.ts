@@ -40,6 +40,57 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.5.6",
+    date: "2026-10-30",
+    released: true,
+    sections: {
+      es: [
+        {
+          title: "Nuevo",
+          items: [
+            "Los reportes ya no llevan un token dentro de la app. Para mandar un reporte de crash o un feedback, Starless ahora habla con un relay propio en vez de usar la API de GitHub con una clave escrita en el binario: esa clave salía de la máquina de cada copia instalada. Ahora la copia no lleva ninguna. El relay abre el issue y devuelve el enlace, avisa cuando el mismo crash ya había sido reportado y suma el tuyo, y dice cuándo se pasó el límite de la hora.",
+            "El feedback dice de qué se trata. El formulario de Ajustes → Diagnóstico pregunta ahora si lo que se está contando es un problema, una idea u otra cosa, y el tema viaja con el reporte.",
+          ],
+        },
+        {
+          title: "Corregido",
+          items: [
+            "El volumen tardaba hasta medio segundo en cambiarse. El mixer atenuaba el audio antes de encolarlo, así que el cambio esperaba a que la cola se vaciara: lo que ya estaba en la cola seguía sonando con el volumen viejo. Ahora el audio sale de la cola sin tocar y el volumen lo baja el mezclador muestra a muestra, así que el cambio se oye en la muestra siguiente.",
+            "Pausar no pausaba, y el botón de play preguntaba en el orden equivocado. Lo que ya estaba encolado seguía sonando casi setecientos milisegundos después de pausar, así que la pausa parecía no obeyedida. Y el botón preguntaba «¿estoy sonando?» antes que «¿hay una canción cargada?»: desde el final de una canción o con el reproductor parado, librespot se niega, y la app se ponía en «sonando» sin que sonara nada. Ahora pregunta lo segundo, y el estado que la app cambia sola se lo dice al webview en vez de guardárselo.",
+            "La barra de posición peleaba con el mouse, y un seek tiraba la cola en la que aterrizaba. La barra es un control nativo cuyo valor viene del backend dos veces por segundo, y cada actualización la devolvía a donde estaba: el cursor parecía clavado y la búsqueda nunca llegaba. Ahora, mientras la mano está sobre el control, el control dibuja lo que se le pidió, y la búsqueda se manda a mano y no por píxel. Y lo que estaba encolado es el audio del lugar anterior: sonaba encima de la posición nueva y el reproductor volvía a reportar la vieja. La cola ahora se descarta con una rampa corta, porque un corte seco en medio de una onda suena como un chasquido.",
+            "Las dos canciones del crossfade no se mezclaban: se pisaban. La que entraba subía de volumen a lo largo de los doce segundos mientras la que salía se quedaba al máximo, así que el oído sólo oía la más fuerte, y la segunda sólo se oía cuando la primera había terminado. Ahora la que sale baja de a poco y la que entra sube con la potencia que queda: la suma de las dos potencias siempre da uno, así que la transición nunca suena más fuerte que una canción sola. Y la que entra arranca en su propio comienzo, y dura menos: con doce segundos de crossfade una pista de 3:21 dura 3:09, que es lo que dice la barra.",
+            "El slider de opacidad repintaba media ventana en cada paso. Cada movimiento escribía la opacidad del vidrio en la raíz, y la leen todas las superficies de la app —el panel de Ajustes, la cola, los menús—, así que la mitad de la ventana se repintaba por cada paso del dedo. Ahora lo que se aplica a toda la ventana se aplica cuando el dedo se levanta: el número, el cursor y la leyenda contestan a la velocidad del dedo, y los menús cambian una vez, al soltar.",
+            "La pantalla de inicio de sesión desaparecía de golpe. Cuando llegaba la sesión, la app estaba y la tarjeta no, sin nada en el medio. Ahora la puerta se desvanece sobre la app que ya está debajo, así que los dos son un movimiento solo. Y el botón ya no se apagaba sin más: dice qué está esperando —la aprobación en el browser, después el handshake con Spotify—, con un spinner, y se queda así hasta que la sesión está de verdad.",
+            "El panel de Ajustes volvía después de volver a iniciar sesión. La puerta desmonta lo que tiene detrás cuando se cierra, pero el estado que decide qué se muestra vive arriba de la puerta, así que el panel de la sesión anterior volvía entero sobre la app nueva. Ahora, al cerrarse la sesión, la pantalla vuelve a su estado de partida: se devuelve lo que es de la cuenta —dónde estabas, qué estaba abierto, la cola— y se queda lo que es de la persona —el idioma, el orden de la estantería, el vidrio—, porque una preferencia no se la lleva cerrar sesión.",
+            "La app quedaba atrás del browser después de iniciar sesión. El browser toma el primer plano para la aprobación, y cuando contesta «Listo. Vuelve a Starless.» la persona está mirando el browser, no la app —que había quedado detrás, sin nada en pantalla que dijera que estaba esperando—. Ahora la app vuelve sola al frente en cuanto el browser termina.",
+          ],
+        },
+      ],
+      en: [
+        {
+          title: "New",
+          items: [
+            "The reports no longer carry a token inside the app. To send a crash report or a piece of feedback, Starless now talks to a relay of its own instead of using the GitHub API with a key written into the binary: that key left the machine of every installed copy. Now the copy carries none. The relay opens the issue and hands back the link, says when the same crash was already reported and adds yours to it, and says when the hourly limit was reached.",
+            "The feedback says what it is about. The form in Settings → Diagnostics now asks whether what you are telling us is a problem, an idea or something else, and the topic travels with the report.",
+          ],
+        },
+        {
+          title: "Fixed",
+          items: [
+            "The volume took up to half a second to change. The mixer attenuated the audio before it was queued, so the change waited for the queue to empty: what was already queued kept playing at the old volume. Now the audio leaves the queue untouched and the volume is turned down by the mixer sample by sample, so the change is heard in the next sample.",
+            "Pausing did not pause, and the play button asked its question in the wrong order. What was already queued kept sounding for almost seven hundred milliseconds after the pause, so the pause looked like it was ignored. And the button asked 'am I playing?' before 'does the player hold a track?': from the end of a song, or with the player stopped, librespot refuses, and the app put itself on 'playing' with nothing playing. It asks the second question now, and the state the app changes on its own is pushed to the webview instead of being kept to itself.",
+            "The position bar fought the mouse, and a seek dropped the queue it landed in. The bar is a native control whose value comes from the backend twice a second, and every update dragged it back to where it was: the thumb looked stuck and the seek never landed. Now, while the hand is on the control, the control draws what was asked for, and the seek is sent by hand and not by pixel. And what was queued is the audio of the place before: it sounded on top of the new position and the player reported the old one again. The queue is now discarded with a short ramp, because a dry cut in the middle of a wave sounds like a click.",
+            "The two songs of the crossfade did not blend: they stepped on each other. The incoming one faded up over the whole twelve seconds while the outgoing one stayed at full volume, so the ear only heard the louder one, and the second was audible only once the first had finished. Now the outgoing one goes down and the incoming one rises with whatever power is left: the sum of the two powers is always one, so the transition is never louder than a single song. And the incoming one starts at its own beginning, and the song lasts less: with twelve seconds of crossfade a track of 3:21 lasts 3:09, which is what the bar says.",
+            "The opacity slider repainted half the window on every step. Every move of the drag wrote the glass opacity on the root, and every surface in the app reads it —the settings panel, the queue, the menus—, so half the window repainted per step of the finger. Now what is applied to the whole window is applied when the finger stops: the number, the thumb and the legend answer at the speed of the finger, and the menus change once, on release.",
+            "The sign-in screen disappeared in a frame. When the session arrived, the app was there and the card was not, with nothing in between. Now the gate fades out over the app that is already underneath it, so the two are one movement. And the button did not just grey out: it says what it is waiting for —the approval in the browser, then the handshake with Spotify— with a spinner, and it stays that way until the session is really up.",
+            "The settings panel came back after signing in again. The gate unmounts what is behind it when it closes, but the state that decides what is shown lives above the gate, so the panel of the previous session came back whole, on top of the new one. Now, when the session closes, the screen goes back to where it started: what belongs to the account —where you were, what was open, the queue— is returned, and what belongs to the person —the language, the order of the shelf, the glass— stays, because a sign-out does not take preferences away.",
+            "The app stayed behind the browser after signing in. The browser takes the foreground for the approval, and when it answers that everything is ready the person is looking at the browser, not at the app —which was left behind it, with nothing on screen saying that it was waiting—. Now the app comes back to the front by itself the moment the browser is done.",
+          ],
+        },
+      ],
+    },
+  },
+  {
     version: "0.5.5",
     date: "2026-10-28",
     released: true,
