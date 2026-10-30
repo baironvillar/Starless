@@ -400,47 +400,87 @@ fn truncate(text: &str) -> String {
 // Sending it
 // ---------------------------------------------------------------------------
 
-/// Baked in at build time, never committed.
+/// Where reports are sent: the relay in `relay/`, baked in at build time.
 ///
-/// `option_env!` rather than a runtime read on purpose: the value has to be inside
-/// the binary that ships, and reading it from the environment at runtime would only
-/// ever work on the machine that built it. A build without the variable simply has
-/// no automatic path, and falls back to the browser — see `submit`.
-const TOKEN: Option<&str> = option_env!("STARLESS_REPORT_TOKEN");
+/// **The app holds an address, not a credential.** It used to bake a GitHub token
+/// in here, and a token inside a public binary belongs to whoever extracts it.
+/// The relay keeps the token on its side and files the issue; the address is not
+/// a secret, it is only where to knock. A build without it —every local build—
+/// has no automatic path and falls back to the browser, see `submit`.
+///
+/// `option_env!` rather than a runtime read: the value has to be inside the binary
+/// that ships, and the release workflow sets it from a repository variable.
+const RELAY: Option<&str> = option_env!("STARLESS_REPORT_RELAY");
 
+/// What the relay is sent.
 #[derive(Serialize)]
-struct IssuePayload<'a> {
+struct RelayPayload<'a> {
+    kind: &'static str,
     title: &'a str,
     body: &'a str,
-    labels: Vec<&'a str>,
+    version: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    signature: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
-struct CreatedIssue {
-    html_url: String,
+struct RelayAnswer {
+    url: String,
+    #[serde(default)]
+    duplicate: bool,
 }
 
 #[derive(Serialize)]
 pub struct ReportOutcome {
-    /// `true` when an issue was created without the user leaving the app.
+    /// `true` when the report was filed without the user leaving the app.
     pub created: bool,
     /// Where the report went, or what to open in the browser.
     pub url: String,
+    /// The same crash was already reported: this one was added to that issue.
+    pub duplicate: bool,
 }
 
-/// What a report is about. The kind only ever changes the title and the label —
+/// What a report is about. The kind only ever changes the title and the labels —
 /// the body is assembled by the same rules either way, so a feedback report and a
 /// crash report are the same object with a different first line.
+///
+/// `Feedback` is the "other" of the three the person can pick; `Bug` and `Idea`
+/// exist so the tracker can be read by what was asked for, not only by who sent it.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Kind {
     Crash,
+    Bug,
+    Idea,
     Feedback,
 }
 
 impl Kind {
-    fn label(self) -> &'static str {
+    /// The kind the panel sends, by name. Anything unknown is "other": a report
+    /// filed with the wrong label is better than one refused over it.
+    pub fn from_topic(topic: &str) -> Kind {
+        match topic {
+            "bug" => Kind::Bug,
+            "idea" => Kind::Idea,
+            _ => Kind::Feedback,
+        }
+    }
+
+    /// The name the relay knows it by.
+    fn wire_name(self) -> &'static str {
+        match self {
+            Kind::Crash => "crash",
+            Kind::Bug => "bug",
+            Kind::Idea => "idea",
+            Kind::Feedback => "other",
+        }
+    }
+
+    /// The labels of the browser path. The relay puts the same ones.
+    fn labels(self) -> &'static str {
         match self {
             Kind::Crash => CRASH_LABEL,
+            Kind::Bug => "feedback,bug",
+            Kind::Idea => "feedback,idea",
             Kind::Feedback => FEEDBACK_LABEL,
         }
     }
@@ -450,6 +490,8 @@ impl Kind {
 fn title(kind: Kind) -> String {
     let version = crate::version_line();
     match kind {
+        Kind::Bug => format!("Problema en {version}"),
+        Kind::Idea => format!("Idea para {version}"),
         Kind::Feedback => format!("Feedback desde {version}"),
         Kind::Crash => match read_panic() {
             Some(panic) => {
@@ -459,6 +501,42 @@ fn title(kind: Kind) -> String {
             None => format!("Crash en {version}: la sesión anterior terminó sin cerrarse"),
         },
     }
+}
+
+/// What makes two crashes the same crash: where it panicked, and what it said.
+///
+/// **Only a crash with a panic has one.** A session that ended without one —a
+/// kill, a power cut— carries nothing that tells one cause from another, and
+/// folding them all into one issue would hide every new one behind the first.
+///
+/// The column is left out and the digits are blanked, because both change for
+/// reasons that are not the bug: a reformatted line moves the column, and a
+/// message like "index 7 out of range for length 3" changes its numbers on every
+/// run. The hash is FNV-1a: short, stable across builds and dependency-free —
+/// it is a name for a group, not a secret.
+fn crash_signature(panic: &str) -> Option<String> {
+    let mut lines = panic.lines();
+    let location = lines.next()?.trim();
+    let location = location.strip_prefix("panic en ").unwrap_or(location);
+    // `file:line:column` → `file:line`.
+    let location = match location.rsplit_once(':') {
+        Some((head, column)) if column.chars().all(|c| c.is_ascii_digit()) => head,
+        _ => location,
+    };
+    let message: String = lines
+        .next()
+        .unwrap_or("")
+        .trim()
+        .chars()
+        .map(|c| if c.is_ascii_digit() { '#' } else { c })
+        .collect();
+
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in location.bytes().chain([b'\n']).chain(message.bytes()) {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    Some(format!("{hash:016x}"))
 }
 
 /// Assemble a report body.
@@ -507,17 +585,18 @@ pub fn build(
 
 /// Send the report.
 ///
-/// With no token compiled in there is no way to speak to the API without one, so
-/// this returns a fully-formed "new issue" URL instead and the caller opens it.
-/// The user still reads the body and still presses create — the only thing lost is
-/// the click, and what is not lost is that nobody had to embed a credential in a
-/// public binary to find out about it.
+/// Through the relay when the build has its address. Without one —or when the
+/// relay cannot be reached— this returns a fully-formed "new issue" URL instead
+/// and the caller opens it: the person still reads the body and presses create,
+/// and the report is not lost because a server was down.
 ///
-/// **The fallback is logged, loudly, because it is the path that ships today.** A
-/// silent one is worse than useless here: without a line saying "no hay token, se
-/// abrió el navegador", a send that did nothing and a send that worked leave
-/// exactly the same log, and that is the whole reason nobody could tell which one
-/// had happened.
+/// **What the relay refuses is not sent to the browser.** A `429` is the limit
+/// per hour and a `400` is a report the relay will not file; opening GitHub
+/// instead would route around the very limit the relay is there to keep. Those
+/// come back as errors the panel can name.
+///
+/// **Every path is logged**, because a send that did nothing and a send that
+/// worked otherwise leave exactly the same log.
 pub fn submit(
     kind: Kind,
     message: &str,
@@ -527,18 +606,23 @@ pub fn submit(
     let body = build(kind, message, attach_log, account);
     let title = title(kind);
 
-    let Some(token) = TOKEN else {
-        let url = browser_url(kind, &title, &body);
-        log::info!(
-            "reporte ({kind:?}) sin token: se abre el navegador. Cuerpo de {body_len} caracteres, \
-             URL de {url_len}. Si el cuerpo se pasa del tope, lo que se pierde es el final del log.",
-            body_len = body.len(),
-            url_len = url.len()
-        );
-        return Ok(ReportOutcome {
-            created: false,
-            url,
-        });
+    let Some(relay) = RELAY else {
+        log::info!("reporte ({kind:?}) sin relay en este build: se abre el navegador");
+        return Ok(browser_outcome(kind, &title, &body));
+    };
+
+    let signature = if kind == Kind::Crash {
+        read_panic().and_then(|panic| crash_signature(&panic))
+    } else {
+        None
+    };
+    let version = crate::version_line();
+    let payload = RelayPayload {
+        kind: kind.wire_name(),
+        title: &title,
+        body: &body,
+        version: &version,
+        signature,
     };
 
     let client = reqwest::blocking::Client::builder()
@@ -546,66 +630,56 @@ pub fn submit(
         .build()
         .map_err(|e| format!("no se pudo crear el cliente HTTP: {e}"))?;
 
-    let endpoint = format!("https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/issues");
-
-    // A label the repository does not have is a `422`, and a `422` would lose the
-    // report entirely — the one failure mode worth spending an extra request on.
-    // `crash` and `feedback` have to exist on the repo for filtering to work, but
-    // losing somebody's report because nobody remembered to create a label is a
-    // worse outcome than a report without one.
-    let with_label = post(&client, &endpoint, token, &title, &body, Some(kind.label()));
-    let response = match with_label {
-        Ok(response) if response.status() == reqwest::StatusCode::UNPROCESSABLE_ENTITY => {
-            log::warn!(
-                "GitHub no tiene la etiqueta `{}`; se reintenta sin ella",
-                kind.label()
-            );
-            post(&client, &endpoint, token, &title, &body, None)?
-        }
+    let endpoint = format!("{}/report", relay.trim_end_matches('/'));
+    let response = match client
+        .post(&endpoint)
+        .header("User-Agent", format!("starless/{version}"))
+        .json(&payload)
+        .send()
+    {
         Ok(response) => response,
-        Err(e) => return Err(e),
+        Err(e) => {
+            log::warn!("el relay no respondió ({e}); el reporte ({kind:?}) va por el navegador");
+            return Ok(browser_outcome(kind, &title, &body));
+        }
     };
 
-    if !response.status().is_success() {
-        let code = response.status();
+    let status = response.status();
+    if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        log::warn!("el relay limitó el reporte ({kind:?}): demasiados en la última hora");
+        return Err("report_rate_limited".to_string());
+    }
+    if status.is_client_error() {
         let detail = response.text().unwrap_or_default();
-        log::error!("GitHub rechazó el reporte: {code} {detail}");
-        return Err(format!("GitHub respondió {code}"));
+        log::error!("el relay rechazó el reporte ({kind:?}): {status} {detail}");
+        return Err("report_rejected".to_string());
+    }
+    if !status.is_success() {
+        log::warn!("el relay falló ({status}); el reporte ({kind:?}) va por el navegador");
+        return Ok(browser_outcome(kind, &title, &body));
     }
 
-    let issue: CreatedIssue = response
+    let answer: RelayAnswer = response
         .json()
-        .map_err(|e| format!("respuesta de GitHub ilegible: {e}"))?;
-
-    log::info!("reporte creado ({kind:?}): {}", issue.html_url);
+        .map_err(|e| format!("respuesta del relay ilegible: {e}"))?;
+    if answer.duplicate {
+        log::info!("reporte ({kind:?}) sumado a uno que ya existía: {}", answer.url);
+    } else {
+        log::info!("reporte creado ({kind:?}): {}", answer.url);
+    }
     Ok(ReportOutcome {
         created: true,
-        url: issue.html_url,
+        url: answer.url,
+        duplicate: answer.duplicate,
     })
 }
 
-fn post(
-    client: &reqwest::blocking::Client,
-    endpoint: &str,
-    token: &str,
-    title: &str,
-    body: &str,
-    label: Option<&str>,
-) -> Result<reqwest::blocking::Response, String> {
-    let payload = IssuePayload {
-        title,
-        body,
-        labels: label.into_iter().collect(),
-    };
-    client
-        .post(endpoint)
-        .header("Authorization", format!("Bearer {token}"))
-        .header("Accept", "application/vnd.github+json")
-        .header("X-GitHub-Api-Version", "2022-11-28")
-        .header("User-Agent", "starless")
-        .json(&payload)
-        .send()
-        .map_err(|e| format!("no se pudo contactar a GitHub: {e}"))
+fn browser_outcome(kind: Kind, title: &str, body: &str) -> ReportOutcome {
+    ReportOutcome {
+        created: false,
+        url: browser_url(kind, title, body),
+        duplicate: false,
+    }
 }
 
 /// The same report, as a URL a browser can open.
@@ -638,7 +712,7 @@ fn browser_url(kind: Kind, title: &str, body: &str) -> String {
 
     format!(
         "https://github.com/{REPO_OWNER}/{REPO_NAME}/issues/new?labels={label}&title={title}&body={body}",
-        label = urlencoding::encode(kind.label()),
+        label = urlencoding::encode(kind.labels()),
         title = urlencoding::encode(title),
         body = urlencoding::encode(&trimmed),
     )
@@ -715,6 +789,44 @@ pub fn simulate_crash() -> Result<(), String> {
 mod tests {
     use super::*;
     use crate::settings::Settings;
+
+    #[test]
+    fn the_same_panic_has_the_same_signature_across_runs() {
+        // Same place, different column and different numbers in the message:
+        // a reformatted line and a different index are still the same bug.
+        let first = "panic en src/playback.rs:120:9
+index 7 out of range for length 3
+";
+        let again = "panic en src/playback.rs:120:14
+index 2 out of range for length 1
+";
+        assert_eq!(crash_signature(first), crash_signature(again));
+        assert_eq!(crash_signature(first).map(|s| s.len()), Some(16));
+    }
+
+    #[test]
+    fn a_different_panic_has_a_different_signature() {
+        let one = "panic en src/playback.rs:120:9
+index 7 out of range
+";
+        let other_line = "panic en src/playback.rs:121:9
+index 7 out of range
+";
+        let other_message = "panic en src/playback.rs:120:9
+called unwrap on None
+";
+        assert_ne!(crash_signature(one), crash_signature(other_line));
+        assert_ne!(crash_signature(one), crash_signature(other_message));
+    }
+
+    #[test]
+    fn the_topic_the_panel_sends_picks_the_kind() {
+        assert_eq!(Kind::from_topic("bug"), Kind::Bug);
+        assert_eq!(Kind::from_topic("idea"), Kind::Idea);
+        assert_eq!(Kind::from_topic("other"), Kind::Feedback);
+        // Unknown is "other": a mislabelled report beats a refused one.
+        assert_eq!(Kind::from_topic("¿?"), Kind::Feedback);
+    }
 
     #[test]
     fn a_session_that_died_at_once_is_not_a_crash() {

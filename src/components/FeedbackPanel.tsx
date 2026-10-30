@@ -4,6 +4,7 @@ import { motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { StringKey } from "../lib/i18n";
 import { SPRING } from "../lib/motion";
+import { type ReportOutcome, reportErrorText } from "../lib/reports";
 
 /**
  * How long the confirmation is on screen before the panel gets out of the way.
@@ -15,6 +16,19 @@ import { SPRING } from "../lib/motion";
  * was the button they had just used.
  */
 const CLOSE_AFTER_MS = 1600;
+
+/**
+ * What the person is telling us. It only changes the title and the labels on
+ * GitHub, but it is what lets the tracker be read as "problems" and "ideas"
+ * instead of one pile called feedback.
+ */
+type Topic = "bug" | "idea" | "other";
+
+const TOPICS: { topic: Topic; label: StringKey }[] = [
+  { topic: "bug", label: "feedbackTopicBug" },
+  { topic: "idea", label: "feedbackTopicIdea" },
+  { topic: "other", label: "feedbackTopicOther" },
+];
 
 type FeedbackPanelProps = {
   t: Record<StringKey, string>;
@@ -41,6 +55,9 @@ type FeedbackPanelProps = {
  */
 export function FeedbackPanel({ t, onClose }: FeedbackPanelProps) {
   const [message, setMessage] = useState("");
+  // "Other" first, not "problem": a preselected "problem" would file every idea
+  // nobody re-labelled as a bug.
+  const [topic, setTopic] = useState<Topic>("other");
   const [attachLog, setAttachLog] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
@@ -66,11 +83,11 @@ export function FeedbackPanel({ t, onClose }: FeedbackPanelProps) {
   const reveal = useCallback(async () => {
     setShowPreview(true);
     try {
-      setPreview(await invoke<string>("feedback_report_preview", { message, attachLog }));
+      setPreview(await invoke<string>("feedback_report_preview", { message, attachLog, topic }));
     } catch {
       setPreview(t.crashReportUnavailable);
     }
-  }, [message, attachLog, t]);
+  }, [message, attachLog, topic, t]);
 
   const send = useCallback(async () => {
     setBusy(true);
@@ -86,23 +103,24 @@ export function FeedbackPanel({ t, onClose }: FeedbackPanelProps) {
       return;
     }
     try {
-      const outcome = await invoke<{ created: boolean; url: string }>("submit_feedback", {
+      const outcome = await invoke<ReportOutcome>("submit_feedback", {
         message,
         attachLog,
+        topic,
       });
-      // Without a token this is a pre-filled browser page, not a send. Opening it
-      // is the honest fallback: the report is the user's to press create on.
+      // Without the relay this is a pre-filled browser page, not a send. Opening
+      // it is the honest fallback: the report is the user's to press create on.
       if (!outcome.created) await openUrl(outcome.url);
       setSent(outcome.url);
       // Only after the browser is handed the pre-filled page: closing first would
       // unmount the panel this promise is still standing on.
       closeTimer.current = setTimeout(onClose, CLOSE_AFTER_MS);
     } catch (e) {
-      setError(typeof e === "string" ? e : t.crashReportFailed);
+      setError(reportErrorText(e, t));
     } finally {
       setBusy(false);
     }
-  }, [message, attachLog, empty, onClose, t]);
+  }, [message, attachLog, topic, empty, onClose, t]);
 
   // The tint is the point, not the decoration. This form opens over whatever is
   // on screen — the library, a settings panel, the sign-in screen — and DESIGN.md
@@ -126,6 +144,42 @@ export function FeedbackPanel({ t, onClose }: FeedbackPanelProps) {
           <h1 className="mt-2 text-[21px] font-semibold tracking-tight">{t.feedbackTitle}</h1>
           <p className="mt-2 text-[13px] leading-relaxed text-ink-muted">{t.feedbackBody}</p>
         </div>
+
+        {/*
+          Three choices in one control, with the selection sliding between them:
+          it is one question with three answers, not three buttons.
+        */}
+        <fieldset className="flex gap-1 rounded-pill border border-white/8 bg-white/4 p-1">
+          <legend className="sr-only">{t.feedbackTopic}</legend>
+          {TOPICS.map(({ topic: option, label }) => (
+            <label
+              key={option}
+              className={`relative flex-1 cursor-pointer rounded-pill px-3 py-2 text-center text-[12.5px] font-semibold transition-colors duration-200 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent-soft ${
+                topic === option ? "text-on-accent" : "text-ink-muted hover:text-ink"
+              }`}
+            >
+              <input
+                type="radio"
+                name="feedback-topic"
+                value={option}
+                checked={topic === option}
+                onChange={() => {
+                  setTopic(option);
+                  setPreview(null);
+                }}
+                className="sr-only"
+              />
+              {topic === option && (
+                <motion.span
+                  layoutId="feedback-topic"
+                  className="absolute inset-0 rounded-pill bg-accent"
+                  transition={SPRING}
+                />
+              )}
+              <span className="relative">{t[label]}</span>
+            </label>
+          ))}
+        </fieldset>
 
         <textarea
           value={message}

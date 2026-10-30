@@ -4,6 +4,7 @@ import { motion } from "motion/react";
 import { useCallback, useEffect, useState } from "react";
 import type { StringKey } from "../lib/i18n";
 import { SPRING } from "../lib/motion";
+import { type ReportOutcome, reportErrorText } from "../lib/reports";
 
 type CrashPromptProps = {
   t: Record<StringKey, string>;
@@ -38,7 +39,8 @@ export function CrashPrompt({ t, barPresent }: CrashPromptProps) {
   const [preview, setPreview] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState<string | null>(null);
+  const [done, setDone] = useState<ReportOutcome | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -67,17 +69,20 @@ export function CrashPrompt({ t, barPresent }: CrashPromptProps) {
 
   const send = useCallback(async () => {
     setBusy(true);
+    setError(null);
     try {
-      const outcome = await invoke<{ created: boolean; url: string }>("submit_crash_report");
+      const outcome = await invoke<ReportOutcome>("submit_crash_report");
       if (!outcome.created) {
-        // No token in this build: the same report, pre-filled, waiting for the
-        // user to press create. Nothing was sent — which is the whole point.
+        // No relay in this build, or it could not be reached: the same report,
+        // pre-filled, waiting for the user to press create.
         await openUrl(outcome.url);
       }
-      setDone(outcome.url);
+      setDone(outcome);
       setOpen(false);
     } catch (e) {
-      setDone(typeof e === "string" ? e : t.crashReportFailed);
+      // The dialog stays open with the reason. It used to put the error where
+      // the link goes, and the dialog — still open — hid it.
+      setError(reportErrorText(e, t));
     } finally {
       setBusy(false);
     }
@@ -92,7 +97,7 @@ export function CrashPrompt({ t, barPresent }: CrashPromptProps) {
   }, []);
 
   if (!open) {
-    return done ? <Sent url={done} t={t} barPresent={barPresent} /> : null;
+    return done ? <Sent outcome={done} t={t} barPresent={barPresent} /> : null;
   }
 
   // Same reason as the feedback form: this one shows up over the sign-in screen as
@@ -136,6 +141,12 @@ export function CrashPrompt({ t, barPresent }: CrashPromptProps) {
           )}
         </div>
 
+        {error && (
+          <p className="rounded-[14px] border border-warn/30 bg-warn/10 px-4 py-3 text-[12.5px] leading-relaxed text-warn">
+            {error}
+          </p>
+        )}
+
         <div className="flex gap-2.5">
           <button
             type="button"
@@ -169,11 +180,11 @@ export function CrashPrompt({ t, barPresent }: CrashPromptProps) {
  * arriving afterwards to confirm it would only be in the way.
  */
 function Sent({
-  url,
+  outcome,
   t,
   barPresent,
 }: {
-  url: string;
+  outcome: ReportOutcome;
   t: Record<StringKey, string>;
   barPresent: boolean;
 }) {
@@ -194,11 +205,13 @@ function Sent({
     >
       <button
         type="button"
-        onClick={() => void openUrl(url)}
+        onClick={() => void openUrl(outcome.url)}
         className="glass flex items-center gap-2.5 rounded-pill px-4 py-2.5 text-[12.5px] font-medium text-ink-muted transition-colors duration-200 hover:text-ink"
       >
-        <span>{t.crashSent}</span>
-        <span className="max-w-[380px] truncate text-ink-faint">{url}</span>
+        {/* A repeated crash went to the issue that already had it: saying "created"
+            would send the person looking for an issue that is not theirs. */}
+        <span>{outcome.duplicate ? t.crashSentDuplicate : t.crashSent}</span>
+        <span className="max-w-[380px] truncate text-ink-faint">{outcome.url}</span>
       </button>
     </div>
   );

@@ -73,6 +73,7 @@ src-tauri/src/
   report.rs               detección de crash, limpiado y envío
   settings.rs             lo que sobrevive a un reinicio
   logging.rs              el log local con rotación
+relay/                    el Worker que recibe los reportes y crea los issues
 .agent/                   configuración de agentes (Claude Code y OpenCode)
 docs/updates.md           cómo se publica una versión
 docs/escribir-playlists.md el protocolo para crear una playlist, y cómo se supo
