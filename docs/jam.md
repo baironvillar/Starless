@@ -383,6 +383,43 @@ los campos pedidos. Lo que falta es **escribir**: leer la cola se sabe, y
 agregar una canción es un `PATCH` —el cliente tiene un `jam.patch_track`— que
 todavía no se encontró.
 
+## La pantalla
+
+El jam tiene su puerta en la barra de arriba, a la derecha, junto a los amigos:
+un botón que abre el panel de **actividad de escucha**, como en Spotify. El
+panel ofrece lo mismo que ofrece Spotify —"Start a Jam"— y, cuando la sesión
+está abierta, el **código para compartir** y **quién está en el jam**.
+
+**El código es toda la invitación.** No hay una página que abrir ni un enlace
+que seguir: la puerta del invitado toma el código, así que el panel muestra el
+código. Se copia con un clic.
+
+Las tres puertas de la UI son las tres del servicio:
+
+| En la pantalla | En el servicio |
+| --- | --- |
+| Empezar un jam | `GET /social-connect/v2/sessions/current_or_new?activate=true` |
+| Entrar con un código | `POST /social-connect/v2/sessions/join/<token>` |
+| Terminar el jam | `DELETE /social-connect/v2/sessions/<session_id>` |
+
+**El panel no lee la sesión al abrirse**, y es a propósito: la única puerta que
+lee una sesión es la que también la crea —`current_or_new`—, así que abrir el
+panel dejaría un jam abierto en la cuenta de alguien que sólo quería mirar. La
+sesión se pide cuando se aprieta el botón.
+
+**Y el jam se termina, no se abandona.** Una sesión que nadie cierra queda
+abierta en la cuenta de quien la abrió, y el siguiente que abre una la
+encuentra ahí.
+
+### Lo que la pantalla todavía no muestra
+
+- **La cola.** Se sabe leerla —su URI, su servicio y su cuerpo en protobuf— y
+  no está en el panel. Hacen falta dos cosas: decodificar el `ListEntity` que
+  contesta el servicio de listas, y resolver los ids de pista en nombres.
+- **La actividad de los amigos.** La lista de "quién está escuchando" es otro
+  servicio, del que no se midió nada. Lo que hay hoy son los participantes del
+  jam, que es otra cosa.
+
 ## La sonda
 
 La sonda vive en `src-tauri/src/spclient/probe.rs`, detrás de `#[cfg(debug_assertions)]`
@@ -391,8 +428,15 @@ puede usar esa puerta**.
 
 | Ambiente | Qué hace |
 | --- | --- |
-| `STARLESS_SP_JAM=1` | mide las rutas: status y cuerpo de cada una |
+| `STARLESS_SP_JAM=1` | mide las rutas: status y cuerpo de cada una, y **prueba las funciones de la app** |
 | `STARLESS_SP_JAM_CREATE=1` | además activa la sesión |
+
+**La sonda mide dos cosas.** Todo lo de abajo habla con `reqwest` y trae el
+cuerpo de todas las respuestas —que es lo que hace falta para *medir*—, pero lo
+que hace la pantalla es otra cosa: las funciones de producción, que hablan con
+el cliente de librespot. Las dos tienen que funcionar, y la que no se puede ver
+desde el log es justamente la segunda: por eso la sonda abre y cierra la sesión
+**también** por la función de la app, y dice en el log qué devolvió.
 
 **La sonda no usa el cliente de librespot.** `HttpClient::request` tira el
 cuerpo de toda respuesta que no sea 2xx, un nivel más abajo que cualquier tipo

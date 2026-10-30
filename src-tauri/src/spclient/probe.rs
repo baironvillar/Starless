@@ -3358,6 +3358,24 @@ pub fn run_jam_probe(app: tauri::AppHandle) {
 
         log::info!("=== DIAGNOSTIC: sonda del jam ===");
 
+        // **Primero por la misma puerta que usa la app.** Todo lo de abajo habla
+        // con `reqwest` y trae el cuerpo de todas las respuestas, que es lo que
+        // hace falta para *medir*. Lo que hace la pantalla es otra cosa: la
+        // función de producción, que habla con el cliente de librespot. Las dos
+        // tienen que funcionar, y la que no se puede ver desde el log es
+        // justamente la segunda.
+        let app_session = super::jam_session(&session, true);
+
+        match &app_session {
+            Ok(found) => log::info!(
+                "SP_JAM: la función de la app devolvió la sesión {} · {} participantes · código {:?}",
+                found.session_id,
+                found.session_members.len(),
+                found.join_session_token
+            ),
+            Err(e) => log::error!("SP_JAM: la función de la app falló: {e}"),
+        }
+
         // La puerta que existe. Todo lo demás depende de su respuesta.
         let current = jam_ask(
             &session,
@@ -3660,8 +3678,30 @@ pub fn run_jam_probe(app: tauri::AppHandle) {
         );
 
         // Y ahora cerrar, que es lo que deja la cuenta como estaba.
-        if let Some(id) = &session_id {
-            jam_end(&session, id);
+        //
+        // **Por la función de la app primero**: es la que aprieta el botón, y
+        // cerrar dos veces la misma sesión no es una medición, es ruido.
+        let closed_by_app = match &app_session {
+            Ok(found) => match super::jam_leave(&session, &found.session_id) {
+                Ok(()) => {
+                    log::info!(
+                        "SP_JAM: la función de la app cerró la sesión {}",
+                        found.session_id
+                    );
+                    true
+                }
+                Err(e) => {
+                    log::error!("SP_JAM: la función de la app no pudo cerrar: {e}");
+                    false
+                }
+            },
+            Err(_) => false,
+        };
+
+        if !closed_by_app {
+            if let Some(id) = &session_id {
+                jam_end(&session, id);
+            }
         }
 
         log::info!("=== DIAGNOSTIC: fin de la sonda del jam ===");

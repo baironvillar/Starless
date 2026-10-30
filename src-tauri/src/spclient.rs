@@ -50,8 +50,8 @@ use librespot_protocol::playlist4_external::{
 use protobuf::{EnumOrUnknown, Message, MessageField};
 
 use crate::models::{
-    Account, Album, Artist, DjMix, DjNarration, DjPage, Image, LyricLine, Lyrics, Playlist,
-    PlaylistDetails, Track, TrackTotal,
+    Account, Album, Artist, DjMix, DjNarration, DjPage, Image, JamSession, LyricLine, Lyrics,
+    Playlist, PlaylistDetails, Track, TrackTotal,
 };
 use crate::voice::VoiceParams;
 
@@ -2187,6 +2187,104 @@ fn hex_without_account(body: &[u8], account: &str) -> String {
     hex.replace(&needle.iter().map(|b| format!("{b:02x}")).collect::<String>(), &"-".repeat(needle.len() * 2))
 }
 
+/// La sesión compartida, tal como la cuenta la está viendo.
+///
+/// **El jam no es una playlist: es una sesión, y el servicio no se llama jam.**
+/// Se llama `social-connect` —"Social Listening" para Spotify— y sus rutas no
+/// lo dicen: `social-connect/v2/sessions/current_or_new`, `…/join/<token>`.
+///
+/// **Abrir una sesión es un `GET`, y la crea.** El camino se llama
+/// `current_or_new` porque es literal: si no hay sesión, la abre —con su token
+/// de join y su dueño—, y `activate=true` además la activa. Un `POST` sobre el
+/// mismo camino contesta `405`: el verbo es el otro.
+///
+/// Medido contra el servicio con una sesión de streaming el 30 de octubre de
+/// 2026; el protocolo entero está en `docs/jam.md`.
+pub fn jam_session(session: &Session, activate: bool) -> Result<JamSession, String> {
+    let owned = session.clone();
+    let route = if activate {
+        "/social-connect/v2/sessions/current_or_new?activate=true"
+    } else {
+        "/social-connect/v2/sessions/current_or_new?activate=false"
+    };
+
+    let body = call(session, async move {
+        owned
+            .spclient()
+            .request(&reqwest::Method::GET, route, None, None)
+            .await
+            .map_err(|e| {
+                log::error!("spclient: la puerta del jam no abrió: {e}");
+                net_code(&e)
+            })
+    })?;
+
+    serde_json::from_slice(&body).map_err(|e| {
+        log::error!("spclient: la sesión del jam vino con otra forma: {e}");
+        "bad_response".to_string()
+    })
+}
+
+/// Entrar a una sesión con su código.
+///
+/// **Es un `POST` con cuerpo.** El `GET` al mismo camino contesta `405` —la
+/// ruta existe, el verbo no es ese— y sin cuerpo contesta `411`. Un `{}` al
+/// final alcanza: el token de la URL es lo que identifica la sesión, no el
+/// cuerpo.
+pub fn jam_join(session: &Session, token: &str) -> Result<JamSession, String> {
+    let owned = session.clone();
+    let route = format!("/social-connect/v2/sessions/join/{token}");
+
+    let body = call(session, async move {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            reqwest::header::CONTENT_TYPE,
+            reqwest::header::HeaderValue::from_static("application/json"),
+        );
+
+        owned
+            .spclient()
+            .request(
+                &reqwest::Method::POST,
+                &route,
+                Some(headers),
+                Some(b"{}"),
+            )
+            .await
+            .map_err(|e| {
+                log::error!("spclient: no se pudo entrar al jam: {e}");
+                net_code(&e)
+            })
+    })?;
+
+    serde_json::from_slice(&body).map_err(|e| {
+        log::error!("spclient: la sesión del jam vino con otra forma: {e}");
+        "bad_response".to_string()
+    })
+}
+
+/// Cerrar la sesión.
+///
+/// **Es un `DELETE`**, y el camino lleva el id de la sesión —no el token—.
+/// Los otros verbos sobre el mismo camino contestan `405`, y el `GET` también:
+/// la ruta existe, y no para eso.
+pub fn jam_leave(session: &Session, session_id: &str) -> Result<(), String> {
+    let owned = session.clone();
+    let route = format!("/social-connect/v2/sessions/{session_id}");
+
+    call(session, async move {
+        owned
+            .spclient()
+            .request(&reqwest::Method::DELETE, &route, None, None)
+            .await
+            .map(|_| ())
+            .map_err(|e| {
+                log::error!("spclient: no se pudo cerrar el jam: {e}");
+                net_code(&e)
+            })
+    })
+}
+
 /// La revisión contra la que hay que escribir sobre el rootlist.
 ///
 /// Si no viene, el `ADD` se mandaría sin base y el servicio lo trata como una
@@ -2293,5 +2391,84 @@ mod tests {
             ids.insert(new_playlist_id());
         }
         assert_eq!(ids.len(), 500, "se repitió un id");
+    }
+}
+
+/// La sesión del jam, tal como la contesta el servicio.
+///
+/// **Copia literal de una respuesta real**, del 30 de octubre de 2026. El
+/// servicio mezcla convenciones de nombres —casi todo en `snake_case` y un
+/// campo en `camelCase`—, y ese `maxMemberCount` es el que hace que el modelo
+/// lleve un `rename`: sin él, la sesión no se puede leer y el jam no arranca.
+#[cfg(test)]
+mod jam_tests {
+    use crate::models::JamSession;
+
+    const SESSION: &str = r#"{
+      "active": true,
+      "hostActiveDeviceId": "",
+      "initialSessionType": "IN_PERSON",
+      "is_controlling": true,
+      "is_listening": true,
+      "is_paused": false,
+      "is_session_owner": true,
+      "join_session_token": "6aUOeCRYpNipAG6Lf3wNiF",
+      "join_session_uri": "spotify:socialsession:6aUOeCRYpNipAG6Lf3wNiF",
+      "join_session_url": "hm://social-connect/v2/sessions/join/6aUOeCRYpNipAG6Lf3wNiF",
+      "maxMemberCount": 32,
+      "queue_only_mode": false,
+      "requires_jam_lens": true,
+      "session_config": {},
+      "session_id": "caed1c83acdc65bd86ff4c4d37a2d459",
+      "session_members": [
+        {
+          "display_name": "Opioide",
+          "id": "2b34c88216d383942379dc6089dac2ac",
+          "image_url": "https://i.scdn.co/image/ab67757000003b82d0c213d58940ded905973ac3",
+          "is_controlling": true,
+          "is_current_user": true,
+          "is_listening": true,
+          "joined_timestamp": "1793335874962",
+          "large_image_url": "https://i.scdn.co/image/ab6775700000ee85d0c213d58940ded905973ac3",
+          "playbackControl": "LISTEN_AND_CONTROL",
+          "username": "t_jitzol"
+        }
+      ],
+      "session_owner_id": "2b34c88216d383942379dc6089dac2ac",
+      "timestamp": "1793335876374",
+      "user_capabilities": {
+        "invite": true,
+        "manage_participant_settings": true,
+        "remove_participants": true
+      },
+      "wifi_broadcast": false
+    }"#;
+
+    /// La sesión se tiene que leer entera, con su código y su gente.
+    #[test]
+    fn the_jam_session_reads_the_service_json() {
+        let session: JamSession = serde_json::from_str(SESSION).expect("la sesión no se leyó");
+
+        assert_eq!(session.session_id, "caed1c83acdc65bd86ff4c4d37a2d459");
+        assert_eq!(
+            session.join_session_token.as_deref(),
+            Some("6aUOeCRYpNipAG6Lf3wNiF")
+        );
+        assert_eq!(
+            session.join_session_uri.as_deref(),
+            Some("spotify:socialsession:6aUOeCRYpNipAG6Lf3wNiF")
+        );
+        assert!(session.active);
+        assert!(session.is_session_owner);
+        // **El `camelCase` del servicio.** Sin el `rename`, este número es
+        // `None` y el panel mostraría un jam sin cupos.
+        assert_eq!(session.max_member_count, Some(32));
+
+        assert_eq!(session.session_members.len(), 1);
+        let member = &session.session_members[0];
+        assert_eq!(member.display_name.as_deref(), Some("Opioide"));
+        assert_eq!(member.username.as_deref(), Some("t_jitzol"));
+        assert!(member.is_controlling);
+        assert!(member.is_listening);
     }
 }

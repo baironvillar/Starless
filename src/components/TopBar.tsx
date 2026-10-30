@@ -5,6 +5,7 @@ import {
   MonitorSmartphone,
   Search,
   SlidersHorizontal,
+  Users,
   X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
@@ -31,6 +32,16 @@ type TopBarProps = {
   onNavigate: (key: StringKey) => void;
   onToggleLibrary: () => void;
   onOpenSettings: () => void;
+  /**
+   * Open the jam —the shared session— and where it lives.
+   *
+   * **The door is where Spotify keeps it: top right, next to the friends.**
+   * The jam is the one feature that is about other people, so it sits with the
+   * other people, not with the app's own settings.
+   */
+  onOpenJam: () => void;
+  /** A jam is open: the button says so. */
+  jamActive?: boolean;
   /**
    * A newer version exists, or `null`.
    *
@@ -75,6 +86,8 @@ export function TopBar({
   onNavigate,
   onToggleLibrary,
   onOpenSettings,
+  onOpenJam,
+  jamActive = false,
   updateVersion = null,
 }: TopBarProps) {
   /* Search ---------------------------------------------------------------- */
@@ -275,6 +288,19 @@ export function TopBar({
               about. Two buttons for the same panel in two bars is one too many. */}
           <IconButton label={t.device} className="hidden xl:grid">
             <MonitorSmartphone className="size-[17px]" strokeWidth={2} />
+          </IconButton>
+
+          {/*
+              The jam: the shared session.
+
+              **It goes before the settings, and next to the friends.** In Spotify
+              this is the button that opens the listening activity, and the Jam is
+              offered from there. It is the one feature of this app that is about
+              other people, so it belongs with them and not with the app's own
+              settings.
+          */}
+          <IconButton label={t.jam} onClick={onOpenJam} badge={jamActive}>
+            <Users className="size-[17px]" strokeWidth={2} />
           </IconButton>
 
           <IconButton label={t.navSettings} onClick={onOpenSettings} badge={updateVersion !== null}>
