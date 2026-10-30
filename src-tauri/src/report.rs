@@ -412,6 +412,19 @@ fn truncate(text: &str) -> String {
 /// that ships, and the release workflow sets it from a repository variable.
 const RELAY: Option<&str> = option_env!("STARLESS_REPORT_RELAY");
 
+/// The address to report to, or `None` when this build has nowhere to report.
+///
+/// **An empty address is not an address.** The release workflow hands over a
+/// repository variable, and a variable that does not exist arrives as an
+/// empty string: `option_env!` gives that as `Some("")`, which is not the
+/// same as `None`. The app would then post to `/report` —a URL without a
+/// host— and blame the relay for not answering, when the truth is that there
+/// is no relay to answer. Every local build has this shape, and every build
+/// made before the variable existed has it too.
+fn relay_address(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|address| !address.is_empty())
+}
+
 /// What the relay is sent.
 #[derive(Serialize)]
 struct RelayPayload<'a> {
@@ -603,10 +616,28 @@ pub fn submit(
     attach_log: bool,
     account: Option<&str>,
 ) -> Result<ReportOutcome, String> {
+    submit_to(RELAY, kind, message, attach_log, account)
+}
+
+/// The sending itself, with the address as an argument.
+///
+/// **The address is a parameter because the address is not always the one that
+/// was compiled in.** A build has one relay, and that is the right one; but a
+/// test that has to check the whole path —the app's payload against the relay
+/// that is really deployed— needs to point somewhere else, and reading it
+/// from the environment at run time is the only way to do that without
+/// rebuilding.
+fn submit_to(
+    address: Option<&str>,
+    kind: Kind,
+    message: &str,
+    attach_log: bool,
+    account: Option<&str>,
+) -> Result<ReportOutcome, String> {
     let body = build(kind, message, attach_log, account);
     let title = title(kind);
 
-    let Some(relay) = RELAY else {
+    let Some(relay) = relay_address(address) else {
         log::info!("reporte ({kind:?}) sin relay en este build: se abre el navegador");
         return Ok(browser_outcome(kind, &title, &body));
     };
@@ -789,6 +820,97 @@ pub fn simulate_crash() -> Result<(), String> {
 mod tests {
     use super::*;
     use crate::settings::Settings;
+
+    /// The fields the relay reads, and the names it reads them by.
+    ///
+    /// **The other side of this is `relay/src/report.ts`, in another
+    /// language.** The Worker refuses what it does not understand with a `400`,
+    /// and the app answers that with "the server did not accept this report" —
+    /// which reads like a server that is down and not like two sides that
+    /// disagree about the shape of a report. The names are written here so
+    /// that a change on one side has to be made on the other.
+    #[test]
+    fn the_payload_has_the_fields_the_relay_reads() {
+        let payload = RelayPayload {
+            kind: "crash",
+            title: "Crash en 0.5.6",
+            body: "## Panic\n\nalgo",
+            version: "0.5.6",
+            signature: Some("0123456789abcdef".to_string()),
+        };
+        let json = serde_json::to_value(&payload).expect("el payload tiene que serializarse");
+        let fields = json.as_object().expect("el payload es un objeto");
+        for name in ["kind", "title", "body", "version", "signature"] {
+            assert!(fields.contains_key(name), "falta el campo {name}");
+        }
+        // A report of a crash carries the signature and a report of a
+        // complaint does not: the relay merges a repeated crash into one
+        // issue by it, and refuses it on anything else.
+        let without = RelayPayload {
+            kind: "other",
+            title: "t",
+            body: "b",
+            version: "0.5.6",
+            signature: None,
+        };
+        let json = serde_json::to_value(&without).expect("el payload tiene que serializarse");
+        assert!(!json.as_object().expect("el payload es un objeto").contains_key("signature"));
+    }
+
+    /// The whole path, against the relay that is really deployed.
+    ///
+    /// **Ignored by default: it talks to the internet and it opens an issue.**
+    /// It is here because nothing else ties the two sides together: the Worker
+    /// is TypeScript, the app is Rust, and the only thing they share is the
+    /// shape of a JSON. A field renamed on one side is a `400` on the other,
+    /// and a `400` is a report that is lost.
+    ///
+    /// ```text
+    /// STARLESS_REPORT_RELAY=https://… cargo test --lib -- --ignored the_relay
+    /// ```
+    ///
+    /// The issue it opens is a real one: it is the report, and it is closed
+    /// afterwards.
+    #[test]
+    #[ignore = "habla con el relay desplegado y abre un issue"]
+    fn the_relay_accepts_what_the_app_sends() {
+        let Ok(address) = std::env::var("STARLESS_REPORT_RELAY") else {
+            panic!("STARLESS_REPORT_RELAY no está: apuntá al relay que esté desplegado");
+        };
+        let outcome = submit_to(
+            Some(address.as_str()),
+            Kind::Feedback,
+            "Prueba del circuito: este reporte lo escribió un test. Se puede cerrar.",
+            false,
+            None,
+        )
+        .expect("el relay tiene que aceptar el reporte");
+        assert!(
+            outcome.created,
+            "el reporte se tiene que haber creado y no abierto en el navegador"
+        );
+        assert!(
+            outcome.url.starts_with("https://github.com/"),
+            "el enlace tiene que ser el del issue, no el del navegador: {}",
+            outcome.url
+        );
+    }
+
+    /// A repository variable that does not exist arrives as an empty string,
+    /// and `option_env!` cannot tell that from a variable that exists and is
+    /// empty. The address has to be checked where it is used, because a build
+    /// without one is every local build and every build made before the
+    /// variable existed.
+    #[test]
+    fn an_empty_relay_address_is_not_an_address() {
+        assert_eq!(relay_address(None), None);
+        assert_eq!(relay_address(Some("")), None);
+        assert_eq!(relay_address(Some("   ")), None);
+        assert_eq!(
+            relay_address(Some("https://relay.test")),
+            Some("https://relay.test")
+        );
+    }
 
     #[test]
     fn the_same_panic_has_the_same_signature_across_runs() {

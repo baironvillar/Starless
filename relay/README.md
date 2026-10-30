@@ -121,6 +121,24 @@ sirve para leer el tracker.
 El id del almacenamiento no es secreto. Commitéalo en una rama, como cualquier
 cambio (`chore/relay-kv-id`), para que el próximo despliegue use el mismo.
 
+### 11. Probarlo con la app
+
+La dirección del relay se compila dentro de la app, no se lee de un archivo en
+tiempo de ejecución: `option_env!("STARLESS_REPORT_RELAY")` la deja en el
+binario. Para una build de desarrollo con el relay adentro:
+
+```bash
+STARLESS_REPORT_RELAY=https://starless-relay.<tu-cuenta>.workers.dev bun run app
+```
+
+Con esa variable, el botón de reportar manda al relay en vez de abrir el
+navegador. **Sin ella el botón abre el navegador**, que es lo que hace toda
+build que no tenga la variable puesta —incluidas las locales, siempre.
+
+Un reporte de prueba tiene que aparecer como issue en el repo en pocos
+segundos. Si no aparece, `bunx wrangler tail --config relay/wrangler.toml`
+muestra los pedidos en vivo y dice por qué los rechazó.
+
 ---
 
 ## Mantenimiento
@@ -131,6 +149,12 @@ cambio (`chore/relay-kv-id`), para que el próximo despliegue use el mismo.
 | Llega spam | Baja `RATE_LIMIT` en `wrangler.toml` y `bun run relay:deploy` |
 | Cambia algo en `relay/src` | `bun run relay:test` y después `bun run relay:deploy` |
 | Ver qué está pasando | `bunx wrangler tail --config relay/wrangler.toml` muestra los pedidos en vivo |
+
+Los tests del relay los corre la CI (`bun run relay:test`) en cada push a
+`develop` y en cada pull request: el Worker es el código que archiva los
+reportes, y un bug ahí pierde un crash entero —y la app contesta a eso
+abriendo el navegador, así que el fallo se ve como una app más lenta y no como
+un relay roto—.
 
 Si el relay se cae, la app no pierde el reporte: abre GitHub en el navegador
 con todo precargado, como antes.

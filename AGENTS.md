@@ -925,6 +925,23 @@ salen de una captura:
   OAuth**, que es cuando el browser muestra "Listo. Vuelve a Starless.": desde
   ahí en adelante el browser es lo que la persona está mirando, y dejarla
   esperando es dejarla atrás.
+- **El relay es el código que archiva los reportes, y la CI no corría sus
+  tests.** `relay/` se deploya a Cloudflare y es el único que sabe crear el
+  issue: un bug ahí no rompe la app, **pierde el reporte**. Y la app contesta a
+  eso abriendo el navegador, así que el síntoma es una app más lenta y no un
+  relay roto —justo el fallo que nadie va a reportar. Los tests de `report.ts`
+  existían, los de `index.ts` —el que crea el issue, agrupa los crashes
+  repetidos y corta por el límite de la hora— no: eran el camino sin probar.
+  Ahora `bun run relay:test` corre en la CI, en cada push y en cada PR.
+- **Una variable de Actions que no existe llega como cadena vacía, y
+  `option_env!` no la distingue de una que existe y está vacía.**
+  `STARLESS_REPORT_RELAY` se pasa al build desde una variable del repositorio:
+  si no existe, el workflow la pasa igual y el binario recibe `Some("")`, que
+  no es lo mismo que `None`. La app posteaba entonces a `/report` —una URL
+  sin host— y culpaba al relay de no contestar, cuando lo que pasa es que no
+  hay relay. **Toda build local tiene esa forma**, y toda build hecha antes
+  de que la variable existiera también. La dirección se chequea donde se usa,
+  no donde se lee.
 - **`.agent/` es la copia canónica** de la configuración de agentes. Los shims de
   `.claude/` y `.opencode/` que apuntaban ahí se borraron; para recuperar el
   skill en esas herramientas, `git revert 96cf93c`.

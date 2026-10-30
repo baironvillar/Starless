@@ -12,6 +12,6 @@ RATE_LIMIT = "10"
 # Created with `bunx wrangler kv namespace create REPORTS`. Paste the id it prints.
 [[kv_namespaces]]
 binding = "REPORTS"
-id = "REPLACE_WITH_THE_KV_NAMESPACE_ID"
+id = "38097c0ffd104e69b19d711da7f19f1f"
 
 # GITHUB_TOKEN is a secret, never in this file: `bunx wrangler secret put GITHUB_TOKEN`.

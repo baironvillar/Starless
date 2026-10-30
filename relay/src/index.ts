@@ -23,12 +23,12 @@
 import { issueBody, labelsFor, parseReport, type Report, rateKey, repeatComment } from "./report";
 
 /** The part of Cloudflare's KV the Worker uses, declared here to need no dependency. */
-type KV = {
+export type KV = {
   get(key: string): Promise<string | null>;
   put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
 };
 
-type Env = {
+export type Env = {
   /** Fine-grained token: this repository only, `Issues: Read and write`. A secret. */
   GITHUB_TOKEN: string;
   /** `owner/name`. */
