@@ -6,27 +6,7 @@ acá para descubrirse de nuevo: cada uno se midió o se reprodujo.
 Si arreglás una, borrala de acá en el mismo commit. Una lista de deudas que
 nunca se vacía deja de informar.
 
-## 1. Dos códigos de error no tienen frase
-
-Rust emite `no_session` (`lib.rs`, macro `spclient_command!`) y `bad_id`
-(`spclient.rs`, `create_playlist`). Ninguno de los dos está en `API_ERRORS`
-(`spotify.ts`), así que `explain()` los devuelve tal cual y **el usuario ve el
-código crudo en la pantalla**: `no_session`, `bad_id`.
-
-No es teórico: son las dos rutas que se ejecutan cuando el lector aprieta algo y
-no hay sesión, o cuando Spotify manda un id que no pasó la validación.
-
-## 2. `API_ERRORS` está entera en español y fuera de `i18n.ts`
-
-Veinte mensajes de error, hardcodeados, en un solo idioma, en un archivo que la
-regla 5 excluye explícitamente. Un usuario en inglés lee todos sus errores en
-español.
-
-Es deuda de traducción, no de arquitectura: no se arregla en un commit de cinco
-minutos. Cuando se toque `API_ERRORS`, el movimiento natural es llevarla a
-`i18n.ts` con sus dos idiomas de una vez.
-
-## 3. Las sondas de ingeniería inversa
+## 1. Las sondas de ingeniería inversa
 
 ~1180 líneas en `src-tauri/src/spclient/probe.rs`, todas detrás de
 `#[cfg(debug_assertions)]`, en `mod probe`. Funcionan y no llegan a release.
@@ -36,7 +16,7 @@ producción, y quien los escriba de nuevo no los va a volver a escribir. Quedan
 como arqueología del protocolo y como forma de volver a mirar una forma de
 respuesta. Borrarlas es un `git rm` limpio si se decide que no vale el peso.
 
-## 4. La comprobación de actualizaciones no distingue tres estados
+## 2. La comprobación de actualizaciones no distingue tres estados
 
 `updater.ts` publica `"idle"` tanto cuando **nunca se comprobó** como cuando
 **la comprobación falló**. Son dos cosas distintas y el usuario las ve iguales.
@@ -46,13 +26,13 @@ no.
 AGENTS.md ya avisa que un fallo silencioso es lo que hace que un actualizador
 roto parezca uno que funciona. Falta el cierre.
 
-## 5. `Track::popularity` viaja y nadie lo lee
+## 3. `Track::popularity` viaja y nadie lo lee
 
 Spotify lo manda en cero para las apps creadas después de febrero de 2026, así
 que el campo no distingue nada. No es un bug: es un dato que viaja con una nota
 al lado. Si algún día hay un orden por popularidad, el campo ya está.
 
-## 6. El lock se toma después del `.await`, no antes
+## 4. El lock se toma después del `.await`, no antes
 
 `begin_login` y `sign_out` (`lib.rs`) toman el lock **después** de su único
 `.await` y lo sostienen a lo largo de `previous.shutdown()`, que es un desarme de
@@ -63,7 +43,7 @@ guard se mantiene durante una llamada lenta.
 deliberado, y mover el lock adentro de un `.await` es exactamente el bug de
 `MutexGuard` no-`Send` que rompe un comando async.
 
-## 7. La voz del DJ: la puerta apareció (resuelto en 0.5.0)
+## 5. La voz del DJ: la puerta apareció (resuelto en 0.5.0)
 
 La narración —el SSML, el artista, los parámetros de mezcla— llega pegada a la
 fila del DJ, y **el audio no viaja en ella**. El servicio que lo produce
@@ -169,7 +149,7 @@ que reproduce el player, o sea la de Sonantic.
 La sonda es `STARLESS_SP_VOICE=1`: pide el audio, lo decodifica y lo pone en el
 mixer, sin que nadie haga clic.
 
-## 8. El DJ abre y cierra cada tramo, y las dos frases se dicen
+## 6. El DJ abre y cierra cada tramo, y las dos frases se dicen
 
 La sesión del DJ trae `narration.intro` y `narration.outro`: el DJ abre cada
 tramo con una frase y lo cierra con otra. Medido: una página trae 5 canciones
@@ -207,7 +187,7 @@ frase del salto, pero **no se ha encontrado la puerta que pide el salto**. Sin
 esa puerta no hay forma de que el usuario le pida algo distinto al DJ, y no se
 puede inventar: un botón que no hace algo real es peor que no tenerlo.
 
-## 9. La estación del DJ: falta la mitad del ciclo
+## 7. La estación del DJ: falta la mitad del ciclo
 
 **Lo que ya está probado, sonando.** Con la sesión de `t_jitzol` y la app real: al
 clickear la card arranca la primera canción, el panel de cola muestra la frase del
@@ -238,7 +218,7 @@ una línea por llamada —"dj: arrancó una sesión con N canciones" y "dj: la e
 pidió la página siguiente y recibió M"—, así que el tamaño de cada página y cuántas
 veces pidió la estación se leen sin esperar a que suene nada.
 
-## 10. El salto de la cola: el lugar, no la canción
+## 8. El salto de la cola: el lugar, no la canción
 
 La cola se recorre por **número**, y a propósito. El DJ ofrece la misma canción
 dos veces —en su sesión una canción puede volver— y `findIndex` por id devuelve
