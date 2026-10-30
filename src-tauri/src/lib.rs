@@ -105,10 +105,11 @@ async fn submit_crash_report(app: AppHandle) -> Result<report::ReportOutcome, St
 fn feedback_report_preview(
     message: String,
     attach_log: bool,
+    topic: String,
     state: State<SessionState>,
 ) -> String {
     report::preview(
-        report::Kind::Feedback,
+        report::Kind::from_topic(&topic),
         &message,
         attach_log,
         account_name(&state).as_deref(),
@@ -125,11 +126,12 @@ async fn submit_feedback(
     app: AppHandle,
     message: String,
     attach_log: bool,
+    topic: String,
 ) -> Result<report::ReportOutcome, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<SessionState>();
         report::submit(
-            report::Kind::Feedback,
+            report::Kind::from_topic(&topic),
             &message,
             attach_log,
             account_name(&state).as_deref(),

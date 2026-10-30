@@ -230,6 +230,10 @@ jobs:
           # Ajustes, para que "esta es una pre-release" se lea y no se deduzca
           # del ícono invertido.
           STARLESS_CHANNEL: ${{ steps.canal.outputs.desdeMain == 'false' && 'develop' || 'release' }}
+          # La dirección del relay de reportes (`relay/`). No es un secreto: el
+          # token de GitHub vive en el relay y no en la app. Es una variable del
+          # repositorio; sin ella, el botón de reportar abre el navegador.
+          STARLESS_REPORT_RELAY: ${{ vars.STARLESS_REPORT_RELAY }}
           # El commit de esta build, para que la app sepa si la release pública
           # es la misma build que está corriendo: una release pública con una
           # build de `develop` adentro hace que la app se ofrezca a sí misma,

@@ -301,25 +301,23 @@ hook on for a clone.
 
 ## El botón de reportar un crash
 
-Un build normal **no** lleva token: el botón arma el reporte y abre GitHub en el
-navegador con todo pre-cargado, y apretas "Create". Para que el botón cree el
-issue solo hay que hornear un token de GitHub con permiso `Issues: Write` sobre
-este repositorio y nada más:
+Los reportes —de crash y de feedback— van al **relay** de `relay/`, un
+Cloudflare Worker que tiene el token de GitHub y crea el issue. La app no lleva
+ningún token: solo sabe la dirección del relay, que se hornea en el build desde
+la variable del repositorio `STARLESS_REPORT_RELAY`.
+
+Un build local no la tiene, así que el botón abre GitHub en el navegador con el
+reporte precargado y apretas "Create". Para probar contra un relay:
 
 ```bash
-# PowerShell, sólo para el build que se va a publicar
-$env:STARLESS_REPORT_TOKEN = "github_pat_..."
-bun run app:build
+# PowerShell
+$env:STARLESS_REPORT_RELAY = "https://starless-relay.<cuenta>.workers.dev"
+bun run app
 ```
 
-Nunca commitees ese token. No está en ningún archivo: se lee con `option_env!` en
-tiempo de compilación, así que si no lo pasás, simplemente no existe esa
-funcionalidad y el build funciona igual.
-
-Un token embebido en un binario público lo puede extraer cualquiera. Por eso el
-alcance tiene que ser el mínimo: **un repositorio, `Issues: Write`, nada más**.
-Con eso lo peor que puede pasar es que alguien abra issues de spam, que es
-justo lo que `SECURITY.md` dice al respecto.
+Cómo se despliega el relay, y por qué existe, está en
+[`relay/README.md`](relay/README.md). Sus reglas se prueban con
+`bun run relay:test`.
 
 ## Reglas que no son negociables
 
