@@ -10,6 +10,8 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+# Astro writes its generated types here on every `astro dev`.
+.astro
 *.local
 
 # Wrangler's scratch: the bundles it builds while it runs the relay locally or
