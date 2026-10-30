@@ -2035,6 +2035,32 @@ export default function App() {
               ? t.loading
               : t.librarySubtitle;
 
+  /**
+   * Put the screen back the way a fresh session finds it.
+   *
+   * **The view behind the door belonged to the session that just ended.** The
+   * gate unmounts its children when it closes, but the state that decides what
+   * those children show lives up here — and it survives. So signing out of the
+   * settings panel and signing back in brought the settings panel back, whole,
+   * on top of the app: the previous session's screen, over the new one.
+   *
+   * What goes back to its first value is everything *about the account*: where
+   * you are, what is open, what is queued, what was playing. What stays is
+   * everything *about the person*: the language, the order of the shelf, the
+   * glass, the collapsed rail. Those are preferences, and a sign-out does not
+   * take preferences away.
+   */
+  const resetView = useCallback(() => {
+    setSettingsOpen(false);
+    setLyricsOpen(false);
+    setDetail(null);
+    setActive("navHome");
+    setActiveItem("liked");
+    closeNaming();
+    setQueueOverride(null);
+    leaveResults();
+  }, [closeNaming, setQueueOverride, leaveResults]);
+
   return (
     <div className="relative h-full overflow-hidden bg-ground">
       {/*
@@ -2061,7 +2087,7 @@ export default function App() {
         }}
       />
 
-      <AuthGate t={t} onReport={() => setFeedbackOpen(true)}>
+      <AuthGate t={t} onReport={() => setFeedbackOpen(true)} onSignedOut={resetView}>
         <TopBar
           t={t}
           active={active}

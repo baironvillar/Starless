@@ -770,6 +770,29 @@ fn auth_status(session_state: State<SessionState>) -> AuthStatus {
     }
 }
 
+/// Put the window back in front of the person.
+///
+/// **Windows does not hand the foreground to a background process for free.**
+/// `SetForegroundWindow` is refused unless the caller owns the foreground, and
+/// during a login the browser owns it. `tao` does the work around that: it
+/// tries `SetForegroundWindow` first and, when Windows says no, it sends the
+/// ALT key to unlock the foreground lock and tries again. The result is a
+/// window that comes back on its own even though another program is in front.
+///
+/// The un-minimize comes first because `tao` refuses to focus a minimized
+/// window: raising one does nothing at all, and "the app is running but nothing
+/// happened" is the exact silence this is here to avoid.
+///
+/// From the backend, not from the webview: the window permissions this needs are
+/// not in `capabilities/default.json`, and the backend already has the handle.
+fn bring_to_front(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
 /// Open the browser, wait for the approval, and come back with a session.
 ///
 /// The wait is user-paced — it blocks until they finish in the browser — so it
@@ -779,12 +802,19 @@ async fn begin_login(
     app: AppHandle,
     session_state: State<'_, SessionState>,
 ) -> Result<AuthStatus, String> {
-    let session = tauri::async_runtime::spawn_blocking(auth::login_interactively)
-        .await
-        .map_err(|e| {
-            log::error!("[login_task_failed]: {e}");
-            "login_task_failed".to_string()
-        })??;
+    // The browser takes the foreground for the approval, and the person is
+    // looking at it when it answers "Listo. Vuelve a Starless." — so the window
+    // comes back by itself the moment the browser is done, instead of waiting
+    // to be clicked.
+    let window = app.clone();
+    let session = tauri::async_runtime::spawn_blocking(move || {
+        auth::login_interactively(move || bring_to_front(&window))
+    })
+    .await
+    .map_err(|e| {
+        log::error!("[login_task_failed]: {e}");
+        "login_task_failed".to_string()
+    })??;
 
     // Same reasoning as the restore path: the device is opened while the handshake
     // completes, so the first song after signing in is not the thing that pays for it.
@@ -1512,8 +1542,8 @@ async fn play_track(
 }
 
 #[tauri::command]
-fn toggle_playback(state: State<PlaybackState>) -> Result<(), String> {
-    playback::toggle(&state)
+fn toggle_playback(app: tauri::AppHandle, state: State<PlaybackState>) -> Result<(), String> {
+    playback::toggle(&app, &state)
 }
 
 #[tauri::command]
@@ -1609,14 +1639,7 @@ pub fn run() {
         // deliver. See `AGENTS.md`.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             log::info!("segunda instancia: le cedo el lugar a la que ya está");
-            if let Some(window) = app.get_webview_window("main") {
-                // Un-minimize first: raising a minimized window does nothing,
-                // and "the app is running but nothing happened" is the exact
-                // silence this is here to avoid.
-                let _ = window.unminimize();
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+            bring_to_front(app);
         }))
         .plugin(tauri_plugin_opener::init())
         // The updater only downloads and verifies; *when* it runs is decided by the

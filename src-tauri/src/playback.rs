@@ -30,6 +30,16 @@ use crate::auth;
 /// that changes in seconds anyway.
 const POSITION_INTERVAL_MS: u64 = 500;
 
+/// How often the state is allowed to travel to the webview while a value that
+/// changes on every pointer event is moving.
+///
+/// The volume is the one value that moves fifty times a second, and the status
+/// it travels in is the whole status — which lands in the root component's
+/// state and re-renders the app. A hundred milliseconds is fast enough for
+/// anything the eye compares between two frames, and slow enough that the
+/// webview's thread is free for the pointer that is asking.
+const STATUS_ECHO_MS: u64 = 100;
+
 const MAX_VOLUME: u16 = 65535;
 
 /// How long the player can stay quiet before the app stops believing it.
@@ -67,7 +77,20 @@ pub struct PlaybackStatus {
     /// "playing" here would be showing the user a claim we have not verified.
     pub loading: bool,
     pub position_ms: u32,
+    /// How long the track lasts **with the crossfade on**: the last seconds are
+    /// the mix, so a track of 3:21 with twelve seconds of crossfade lasts 3:09
+    /// and the next one comes in from the start while the end of this one goes
+    /// down underneath. This is what the bar shows, and it is computed every
+    /// time the status is read: changing the setting changes the bar right
+    /// away, not on the next song.
     pub duration_ms: u32,
+    /// How long the track really is.
+    ///
+    /// **The player needs the whole thing and the window of the crossfade is
+    /// measured against it**: the tail is the last `crossfade + margin` of the
+    /// real duration, not of the shortened one. It never leaves the backend.
+    #[serde(skip)]
+    pub real_duration_ms: u32,
     /// 0..=65535, matching librespot's own scale. The UI maps it to 0..=100.
     pub volume: u16,
     /// The track ran to its end and nothing replaced it.
@@ -81,16 +104,28 @@ pub struct PlaybackStatus {
     pub error: Option<String>,
 }
 
-/// A volume the user can actually perceive.
+/// The volume, as the player sees it: untouched.
 ///
-/// The mapping is quadratic on purpose: a linear slider spends most of its
-/// travel in a range where you cannot hear the difference, and then a user who
-/// wants "half volume" sets it to 25% and concludes the app is quiet.
-struct SoftVolume(Arc<AtomicU64>);
+/// **The player attenuates before the audio is queued, and that is a whole
+/// queue too early.** The sink of this app keeps up to 26 packets waiting —
+/// almost 700 ms of music — and the packets that were already waiting carry
+/// the volume they had when they were decoded. A volume change therefore took
+/// as long as the queue took to drain, and in the last seconds of a song, when
+/// the crossfade lets the queue grow to hold the whole ending, it took
+/// *seconds*.
+///
+/// So the player hands the audio over untouched and the sink attenuates each
+/// sample as it leaves the queue: the change is heard in the next sample.
+///
+/// The mapping itself is quadratic on purpose: a linear slider spends most of
+/// its travel in a range where you cannot hear the difference, and then a
+/// user who wants "half volume" sets it to 25% and concludes the app is
+/// quiet. See `apply_volume`.
+struct Unattenuated;
 
-impl VolumeGetter for SoftVolume {
+impl VolumeGetter for Unattenuated {
     fn attenuation_factor(&self) -> f64 {
-        f64::from_bits(self.0.load(Ordering::Relaxed))
+        1.0
     }
 }
 
@@ -205,7 +240,18 @@ impl PlaybackState {
     }
 
     pub fn status(&self) -> PlaybackStatus {
-        self.status.lock().map(|g| g.clone()).unwrap_or_default()
+        let mut status = self.status.lock().map(|g| g.clone()).unwrap_or_default();
+        // **Lo que se muestra es lo que se oye.** La posición que manda es la
+        // del decoder, y en los últimos segundos de una canción el decoder
+        // deja de frenarse y deja el final entero en la cola: va hasta doce
+        // segundos por delante de lo que suena, y la barra llegaba al final
+        // de la canción cuando la siguiente ya estaba sonando.
+        status.position_ms = status.position_ms.saturating_sub(crate::crossfade::queued_ms());
+        // Y la canción dura lo que dura menos la mezcla. Se calcula en cada
+        // lectura y no al cargar la canción: cambiar el crossfade con una
+        // canción sonando tiene que verse en la barra enseguida.
+        status.duration_ms = crate::crossfade::effective_duration_ms(status.real_duration_ms);
+        status
     }
 }
 
@@ -251,12 +297,16 @@ fn build_player(app: &AppHandle, state: &PlaybackState, session: &Session) {
     // es el volumen de la voz. Sin esto, mutear la app callaba la música y
     // dejaba al DJ hablando.
     crate::voice::publish_attenuation(state.attenuation.clone());
+    // Y la música la lee el sink, cuando el audio sale de la cola: atenuado
+    // antes de encolarse, el cambio de volumen tardaba lo que la cola tarda
+    // en vaciarse en llegar al oído.
+    crate::crossfade::publish_attenuation(state.attenuation.clone());
     crate::crossfade::set_seconds(u32::from(crate::settings::saved_crossfade_seconds()));
 
     let player = Player::new(
         config,
         session.clone(),
-        Box::new(SoftVolume(state.attenuation.clone())),
+        Box::new(Unattenuated),
         // El sink es de Starless y no de librespot.
         //
         // El de librespot no deja ver el `Mixer` del stream, y sin ese mixer la
@@ -519,7 +569,7 @@ fn rebuild_after_stall(app: &AppHandle) {
     // in the middle and there is no position to come back to.
     let status = state.status();
     if let Some(track_id) = status.track_id
-        && let Err(error) = play(&state, &track_id, 0, status.duration_ms)
+        && let Err(error) = play(&state, &track_id, 0, status.real_duration_ms)
     {
         log::error!("[audio_stalled] no se pudo volver a cargar la pista: {error}");
         state.mutate(|s| s.error = Some("audio_device_failed".into()));
@@ -553,6 +603,9 @@ fn forward_events(app: AppHandle, player: Arc<Player>, generation: u32) {
         // parked inside the audio device must not be dropped here: dropping it
         // joins its thread, and that thread is not coming back.
         let mut left_behind = false;
+        // When the last status went out to the webview. A drag is a flood and
+        // the echo does not have to travel at the speed of the hand.
+        let mut last_echo: Option<std::time::Instant> = None;
 
         while let Some(event) = receiver.recv().await {
             let Some(state) = app.try_state::<PlaybackState>() else {
@@ -629,7 +682,7 @@ fn forward_events(app: AppHandle, player: Arc<Player>, generation: u32) {
                         // happening: this is not a track that cannot be played,
                         // it is a connection that has to be rebuilt. The track
                         // that failed goes back on when it is up.
-                        schedule_reconnect(&app, track_id, state.status().duration_ms);
+                        schedule_reconnect(&app, track_id, state.status().real_duration_ms);
                     } else {
                         log::error!("[track_unavailable] {track_id}");
                         state.mutate(|s| {
@@ -739,7 +792,29 @@ fn forward_events(app: AppHandle, player: Arc<Player>, generation: u32) {
                 log::info!("evento de player: {}", describe(&event));
             }
 
-            let _ = app.emit("player://status", state.status());
+            // **A drag is an avalanche, and the echo does not have to be.**
+            //
+            // The volume changes on every step of a thumb —fifty times a
+            // second— and every one of those used to push the whole status to
+            // the webview, where it lands in the root component's state and
+            // **re-renders the whole app**. The webview's thread is then
+            // spending its time on the app instead of on the pointer that is
+            // asking, and the thumb ends up trailing the cursor: the slider
+            // that was supposed to follow the hand was the thing making the
+            // hand late.
+            //
+            // The thumb does not need the echo — it knows what it asked for —
+            // so the volume's echo goes out at a human pace. Everything else
+            // is rare enough to go out as it happens.
+            let is_volume = matches!(event, PlayerEvent::VolumeChanged { .. });
+            let due = match last_echo {
+                Some(at) => at.elapsed() >= std::time::Duration::from_millis(STATUS_ECHO_MS),
+                None => true,
+            };
+            if !is_volume || due {
+                last_echo = Some(std::time::Instant::now());
+                let _ = app.emit("player://status", state.status());
+            }
         }
 
         if left_behind {
@@ -799,6 +874,11 @@ pub fn play(
     let player = state.live_player()?;
     let uri = track_uri(track_id)?;
 
+    // **Una cola congelada por una pausa no se descongela acá.** Descongelarla
+    // aquí volvía a poner a sonar la canción de antes encima de la nueva: la
+    // cola congelada es la de la canción vieja, y la nueva entra en una cola
+    // nueva —eso lo hace `before_load`—.
+
     let started = std::time::Instant::now();
     log::info!("play {track_id} @ {position_ms}ms");
     if let Ok(mut guard) = state.requested_at.lock() {
@@ -817,7 +897,11 @@ pub fn play(
     // it back to the id the UI already had is work with no purpose.
     state.mutate(|s| {
         s.track_id = Some(track_id.to_string());
-        s.duration_ms = duration_ms;
+        // **La duración real es la que usa el player**: la ventana del final
+        // del crossfade se mide contra ella. La que ve la webview sale de acá,
+        // con la mezcla descontada.
+        s.real_duration_ms = duration_ms;
+        s.duration_ms = crate::crossfade::effective_duration_ms(duration_ms);
         s.position_ms = position_ms;
         // Deliberately NOT `playing`. librespot still has to fetch, decrypt and
         // start the stream; until it says so, nothing is audible.
@@ -872,16 +956,12 @@ pub fn stop(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-pub fn toggle(state: &PlaybackState) -> Result<(), String> {
+pub fn toggle(app: &AppHandle, state: &PlaybackState) -> Result<(), String> {
     let player = state.live_player()?;
     let current = state.status();
-    if current.playing {
-        player.pause();
-        state.mutate(|s| s.playing = false);
-        return Ok(());
-    }
 
-    // **A player with no track in it cannot be resumed.**
+    // **A player with no track in it cannot be paused, and that is the first
+    // thing to check.**
     //
     // `Player::play` only does something from `Paused` or `Loading`: from
     // `Stopped` or `EndOfTrack` librespot answers with an error and silence.
@@ -890,9 +970,14 @@ pub fn toggle(state: &PlaybackState) -> Result<(), String> {
     // its end — and calling `play()` on it is how the app ends up claiming to
     // be playing while nothing is audible.
     //
-    // So here "play" means "load the track again", and the track goes back on
-    // from the beginning: it was cut short or it ran out, and there is no
-    // position to come back to.
+    // The order matters, and it was the wrong way round. A click that landed
+    // right when the track ended was answered with a `pause()` on a player
+    // that had already finished: librespot refused it (`Player::pause called
+    // from invalid state: EndOfTrack`), the app set its own flag to "playing"
+    // anyway, and **the next click asked for a pause on a player that was
+    // never playing**. Three clicks, three refusals, and nothing on screen
+    // changed — because a state the app changes on its own is a state the
+    // webview never hears about.
     if state.holds_no_track.load(Ordering::Relaxed) {
         let Some(track_id) = current.track_id.clone() else {
             return Err(auth::fail("no_track", "no hay ninguna pista cargada"));
@@ -901,19 +986,47 @@ pub fn toggle(state: &PlaybackState) -> Result<(), String> {
         // frase era para otra cosa: el usuario pidió música, y la música entra
         // sola. Es la misma regla que corta al DJ cuando se elige una canción.
         crate::voice::stop();
-        return play(state, &track_id, 0, current.duration_ms);
+        play(state, &track_id, 0, current.real_duration_ms)?;
+        push_status(app, state);
+        return Ok(());
     }
 
-    player.play();
-    // Clearing `finished` here is what makes pressing play on a finished track
-    // mean "again", not "next". Leaving it set would let the advance effect
-    // fire on the user's own resume and skip the track they asked to hear.
-    state.mutate(|s| {
-        s.playing = true;
-        s.loading = false;
-        s.finished = false;
-    });
+    if current.playing {
+        player.pause();
+        // **Pausar el player no calla la música.** El player deja de pedir
+        // audio, pero lo que ya estaba en la cola sigue en el mixer y sigue
+        // sonando: casi 700 ms de música que la pausa no tapa. La cola se
+        // apaga y se congela acá, y al volver a play sigue donde estaba.
+        crate::crossfade::silence();
+        state.mutate(|s| s.playing = false);
+    } else {
+        player.play();
+        // La cola congelada vuelve a sonar con el volumen que tenía, y la
+        // música sigue donde la dejaste: no hay salto.
+        crate::crossfade::resume();
+        // Clearing `finished` here is what makes pressing play on a finished track
+        // mean "again", not "next". Leaving it set would let the advance effect
+        // fire on the user's own resume and skip the track they asked to hear.
+        state.mutate(|s| {
+            s.playing = true;
+            s.loading = false;
+            s.finished = false;
+        });
+    }
+
+    // **The state the app just changed, pushed.**
+    //
+    // Without this the webview only learns what librespot says, and on the
+    // paths where librespot says nothing —a command it refuses— it learns
+    // nothing at all: the button looks dead and the app's own idea of what is
+    // playing drifts away from what the person sees.
+    push_status(app, state);
     Ok(())
+}
+
+/// Tell the webview what the player is doing right now.
+fn push_status(app: &AppHandle, state: &PlaybackState) {
+    let _ = app.emit("player://status", state.status());
 }
 
 pub fn seek(state: &PlaybackState, position_ms: u32) -> Result<(), String> {
@@ -926,14 +1039,25 @@ pub fn seek(state: &PlaybackState, position_ms: u32) -> Result<(), String> {
 }
 
 pub fn set_volume(state: &PlaybackState, volume: u16) {
-    // Remember the value the user asked for, before `apply_volume` runs the curve.
-    // Persisting the attenuated number would re-square it on the next launch.
-    crate::settings::save_volume(volume);
+    // **The sound first, the disk afterwards.**
+    //
+    // The attenuation is an atomic and librespot's mixer reads it on every
+    // buffer, so from here the volume has already changed: the hand is the
+    // reference and the sound has to be there with it.
+    //
+    // The file was written first, and that put a disk round trip —a read and a
+    // write of the whole settings file, on the thread that also answers the
+    // clicks— between the hand and the sound.
+    //
+    // Remember the value the user asked for, before `apply_volume` runs the
+    // curve. Persisting the attenuated number would re-square it on the next
+    // launch.
     let volume = state.apply_volume(volume);
+    state.mutate(|s| s.volume = volume);
     if let Some(player) = state.player() {
         player.emit_volume_changed_event(volume);
     }
-    state.mutate(|s| s.volume = volume);
+    crate::settings::save_volume(volume);
 }
 
 /// Hand the audio device back. Called on sign-out, so the next session opens a

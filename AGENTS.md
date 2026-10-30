@@ -793,6 +793,138 @@ salen de una captura:
   valores que llegan solos —una tecla, un valor que vuelve del backend— y para
   el pulgar que crece bajo la mano. El `<input type="range">` nativo que esto
   reemplazaba seguía al mouse exacto: esa es la vara.
+- **Un control que manda el backend se pelea con el mouse, sea dibujado o
+  nativo.** El control de posición es un `<input type="range">` nativo y su
+  valor viene del backend, que lo actualiza dos veces por segundo: cada
+  actualización lo mandaba de vuelta a donde estaba y **el pulgar se peleaba
+  con el mouse** —el control parecía pegado y el salto no terminaba de
+  hacerse. Mientras la mano está en el control, el control dibuja lo que se
+  le pidió; cuando el backend llega a esa posición, vuelve a seguir al
+  player. Y **un salto por mano, no uno por pixel**: cada salto descarta la
+  cola y le pide la canción al servidor otra vez, así que cincuenta saltos por
+  segundo son cincuenta viajes y el último no llega antes que el anterior.
+- **Un salto tiene que descartar la cola en la que aterriza.** Lo que estaba
+  en la cola es el audio del lugar de antes: si sigue ahí, suena encima de la
+  posición nueva, **el control del player vuelve a la posición vieja** —que
+  es lo que hace que saltar no parezca funcionar— y la posición que se oye
+  tarda lo que la cola tarda en vaciarse. La cola se descarta con una rampa
+  corta y no de golpe: un corte seco se oye como un chasquido.
+- **El orden de las preguntas del botón de play es el botón de play.** `toggle`
+  preguntaba *"¿estoy sonando?"* antes que *"¿el player tiene una pista?"*, y
+  la segunda es la que importa: `Player::play` y `Player::pause` sólo hacen
+  algo desde `Paused` o `Loading`; desde `Stopped` o `EndOfTrack` librespot
+  contesta con un error y silencio. Un clic que caía justo cuando terminaba la
+  canción recibía un `pause()` sobre un player que ya había terminado —
+  `Player::pause called from invalid state: EndOfTrack` en el log—, el app se
+  ponía "sonando" igual y **el clic siguiente pedía pausar un player que
+  nunca estuvo sonando**. Tres clics, tres rechazos, y en la pantalla no
+  cambiaba nada. **Y un estado que el app cambia solo es un estado que la
+  webview no oye**: `toggle` movía `s.playing` y no lo empujaba, así que la
+  idea del app de qué estaba sonando se iba de la idea de la pantalla. Ahora
+  el estado se empuja después del comando, como hace `play_track`.
+- **Un valor que cambia en cada evento de puntero no puede empujar el estado
+  entero.** El volumen cambia cincuenta veces por segundo y cada una empujaba
+  el estado **completo** a la webview, donde cae en el estado del componente
+  raíz y **re-renderiza la app entera**. El hilo del webview pasa entonces a
+  ocuparse de la app en vez del puntero que pregunta, y el pulgar queda
+  atrás: **el slider que debía seguir la mano era lo que hacía tarde la
+  mano**. El pulgar no necesita el eco —sabe lo que pidió—, así que el eco del
+  volumen sale a ritmo de persona (100 ms) y lo demás sigue saliendo al
+  instante. Y **el disco va después del sonido**: la atenuación es un átomo
+  que la mixer de librespot lee en cada buffer, así que el archivo de ajustes
+  se escribe después de aplicar el volumen, no antes — antes ponía una
+  lectura y una escritura del archivo entero entre la mano y el sonido.
+- **El audio que espera en la cola lleva el volumen viejo.** El sink de esta
+  app deja **26 paquetes en cola** —casi 700 ms de música— y esa cola estaba
+  en el medio entre la mano y el sonido de dos maneras distintas. La
+  atenuación la hacía el mixer de librespot **antes** de encolar el paquete:
+  lo que ya estaba esperando llevaba el volumen con el que se decodificó, así
+  que mover el control se oía recién cuando la cola se vaciaba —y en los
+  últimos segundos de una canción, donde el crossfade deja crecer la cola
+  para guardar el final entero, tardaba **segundos**. **El volumen se aplica
+  cuando la muestra sale de la cola, no cuando entra**: el player entrega el
+  audio sin tocar y el sink atenúa muestra por muestra. Y **pausar el player
+  no es callar la música**: el player dejó de pedir audio, pero lo que ya
+  estaba en la cola siguió sonando en el mixer, así que la pausa tardaba lo
+  que la cola tardaba en vaciarse. La cola se apaga con una rampa corta y
+  **se congela** —congelada y no descartada, para que al volver a play la
+  canción siga donde estaba y no salte lo que pasó en la pausa.
+- **Una mezcla tiene que mantener la potencia, o se oyen dos canciones.**
+  Con 12 s de crossfade, la canción nueva subía de cero a uno a lo largo de
+  los doce segundos y la vieja se oía entera: el oído escucha la que está
+  más fuerte, así que la segunda no se oía hasta que la primera había
+  terminado. Y al revés: hacerlas llegar a una las dos al principio se oye
+  el doble y la mezcla suena a dos canciones encima. Lo que hace Spotify es
+  **la vieja baja de una y la nueva sube con la potencia que queda**: la suma
+  de las potencias de las dos es siempre la misma, así que la transición no
+  se oye más fuerte que una canción sola. Y la que entra **arranca desde su
+  principio**: el adelanto de la mitad del ajuste saltaba los primeros
+  segundos de cada canción.
+  Y el fundido se aplica con `set_volume` del sink, que **sí** alcanza al
+  audio que ya está en cola —rodio refresca el volumen cada cinco
+  milisegundos mientras reproduce—, pero con unos dieciséis milisegundos de
+  retraso: el test `the_fade_reaches_the_audio_that_is_already_queued` lo fija
+  con un mixer sin dispositivo.
+- **La posición que ve la webview es la del decoder, y la cola la hace ir por
+  delante.** En los últimos segundos de una canción el decoder deja de frenarse
+  y deja el final entero en la cola —con un crossfade de doce segundos, doce
+  segundos—, así que la posición que manda va doce segundos por delante de lo
+  que se oye: la barra llegaba al final de la canción cuando la siguiente ya
+  estaba sonando, y el crossfade no acortaba nada. **Lo que se muestra
+  es lo que se oye**: la posición menos el audio que quedó en la cola, y la
+  duración menos los segundos del crossfade —con doce segundos, una canción de
+  tres minutos veintiuno dura tres minutos nueve—. Y el backend tiene **dos
+  duraciones**: la que se muestra, que es la corta, y la real, que es contra la
+  que se mide la ventana del final. Pasarle la corta al player hace que la
+  cola del final crezca el doble.
+- **Un control que escribe una variable CSS global en cada paso del arrastre
+  repinta media ventana.** El slider de opacidad de los menús —en
+  Personalización— era el único rango que quedaba en el `<input type="range">`
+  nativo, así que el pulgar ya seguía al mouse exacto: **lo que lo volvía
+  lento era otra cosa**. Cada paso del arrastre escribía `--menu-alpha` en la
+  raíz, y **toda superficie de vidrio de la app la lee** —el panel de Ajustes,
+  la cola, los popovers—: media ventana se repintaba por evento de puntero, y
+  el valor además se guardaba en disco por paso. Un arrastre que repinta
+  media ventana en cada evento *se siente* como un control que no te sigue.
+  **Lo que se aplica a la ventana entera se aplica cuando la mano se
+  detiene**: el número, el pulgar y la leyenda contestan a velocidad de
+  puntero —la leyenda es un degradado de 46×28 y puede permitírselo— y los
+  menús cambian una vez, al soltar. La leyenda tiene su propia variable
+  (`--legend-alpha`) por eso: si leyera la de los menús, no podría contestar
+  antes que ellos.
+- **Una puerta que se abre no es un corte, y un login en curso no es una
+  restauración.** La pantalla de inicio de sesión desaparecía en un fotograma
+  cuando llegaba la sesión: la app estaba y la tarjeta no, sin ninguna
+  transición. Ahora la puerta se desvanece sobre la app que ya está debajo, y
+  los dos son un movimiento solo. Y el techo de la restauración se reinicia
+  cuando la persona aprieta el botón, así que la condición de "restaurando"
+  tiene que **excluir el login en curso**: sin eso la tarjeta desaparecía bajo
+  los dedos y el botón se iba antes de que la sesión estuviera. El botón, además,
+  sólo se apagaba —sin spinner y sin decir qué estaba esperando—, y el handshake
+  con Spotify puede fallar solo: tiene un techo, o el botón queda apagado
+  para siempre y la pantalla no tiene salida.
+- **La vista de atrás de la puerta sobrevive al cierre de sesión, y no tiene por
+  qué.** `AuthGate` desmonta sus hijos cuando se cierra, pero el estado que
+  decide qué muestran vive **arriba** del gate, en `App`: `settingsOpen` seguía
+  en `true` después de cerrar sesión desde el panel de Ajustes, así que al
+  volver a entrar el panel aparecía entero sobre la app — la pantalla de la
+  sesión anterior encima de la nueva. El que lo arregla es el dueño del estado,
+  así que el gate avisa (`onSignedOut`) y `App` lo devuelve a su primer valor.
+  Lo que se devuelve es **lo de la cuenta** (dónde estabas, qué estaba abierto,
+  la cola); lo que se queda es **lo de la persona** (el idioma, el orden de la
+  estantería, el vidrio): una preferencia no se la lleva cerrar sesión.
+- **Traer la ventana al frente se pide desde Rust, y en Windows el foco tiene
+  precio.** Son tres cosas y las tres importan: `tao::set_focus` **no hace
+  nada** si la ventana está minimizada (hay que `unminimize()` antes);
+  `SetForegroundWindow` se le **niega** a un proceso que no tiene el foreground
+  —que durante el login lo tiene el browser— y `tao` lo resuelve con el truco
+  de la tecla ALT; y el webview **no puede** hacerlo, porque
+  `capabilities/default.json` no le da `set-focus`, `show` ni `unminimize`. El
+  backend ya tenía el handle y el patrón, así que el login avisa desde
+  `auth.rs` y `lib.rs` levanta la ventana. **El momento es el callback de
+  OAuth**, que es cuando el browser muestra "Listo. Vuelve a Starless.": desde
+  ahí en adelante el browser es lo que la persona está mirando, y dejarla
+  esperando es dejarla atrás.
 - **`.agent/` es la copia canónica** de la configuración de agentes. Los shims de
   `.claude/` y `.opencode/` que apuntaban ahí se borraron; para recuperar el
   skill en esas herramientas, `git revert 96cf93c`.

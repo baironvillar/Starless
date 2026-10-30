@@ -259,8 +259,19 @@ pub fn cached_session(cache: &Cache) -> Option<Session> {
 ///
 /// Blocking: it opens a browser and blocks until the user approves or cancels.
 /// Call it from a blocking thread, never from the UI thread.
-fn pkce(client_id: &str, redirect_uri: &str) -> Result<librespot_oauth::OAuthToken, String> {
-    librespot_oauth::OAuthClientBuilder::new(client_id, redirect_uri, SCOPES.to_vec())
+///
+/// `on_browser_done` is called once the browser is done with its part, approved
+/// or not. **That is the moment the person is looking at "Listo. Vuelve a
+/// Starless." instead of at Starless**, so it is the moment the window has to
+/// come back to the front by itself: the alternative is a person who has just
+/// authorised everything having to go and fetch a window that is hiding behind
+/// the browser.
+fn pkce(
+    client_id: &str,
+    redirect_uri: &str,
+    on_browser_done: impl FnOnce() + Send + 'static,
+) -> Result<librespot_oauth::OAuthToken, String> {
+    let token = librespot_oauth::OAuthClientBuilder::new(client_id, redirect_uri, SCOPES.to_vec())
         .open_in_browser()
         .with_custom_message(
             "<!doctype html><meta charset=utf-8>\
@@ -271,7 +282,15 @@ fn pkce(client_id: &str, redirect_uri: &str) -> Result<librespot_oauth::OAuthTok
         .build()
         .map_err(|e| fail("oauth_unavailable", e))?
         .get_access_token()
-        .map_err(|e| fail("login_cancelled", e))
+        .map_err(|e| fail("login_cancelled", e));
+
+    // Called on the way out, approved or abandoned: the browser is done either
+    // way and the app has something to say about it. A cancelled login that
+    // leaves the window behind the browser is the same silence as a successful
+    // one — the message is just the other kind.
+    on_browser_done();
+
+    token
 }
 
 /// Run the browser exchange and hand back a connecting session.
@@ -282,9 +301,13 @@ fn pkce(client_id: &str, redirect_uri: &str) -> Result<librespot_oauth::OAuthTok
 /// the music, so there is nothing left that needs a second question.
 ///
 /// Blocking. Call it from a blocking thread.
-pub fn login_interactively() -> Result<Session, String> {
+///
+/// `on_browser_done` is handed to the browser round trip: see [`pkce`].
+pub fn login_interactively(
+    on_browser_done: impl FnOnce() + Send + 'static,
+) -> Result<Session, String> {
     let client_id = streaming_client_id();
-    let token = pkce(&client_id, STREAMING_REDIRECT_URI)?;
+    let token = pkce(&client_id, STREAMING_REDIRECT_URI, on_browser_done)?;
 
     let cache = open_cache()?;
     let session = Session::new(session_config(&client_id), Some(cache));

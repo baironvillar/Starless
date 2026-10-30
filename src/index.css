@@ -121,6 +121,14 @@
  * The stripes are the thing the alpha is measured against; without something
  * behind them, 100% and 55% are the same grey and the control answers nothing
  * while it is being dragged.
+ *
+ * **The legend has its own alpha, and it is the one that moves.** The menus
+ * read `--menu-alpha`, which the panel only changes once the hand stops: every
+ * surface that reads it repaints, and the settings sheet is one of them, so a
+ * drag that moves it repaints half the window on every pointer event. The
+ * legend is a 46x28 box with a gradient — it can answer at pointer speed, and
+ * that is the whole reason it is there. `--legend-alpha` is set on the legend
+ * itself, so only that box is restyled.
  */
 @utility menu-legend {
   width: 46px;
@@ -128,7 +136,10 @@
   border-radius: 7px;
   border: 1px solid rgb(255 255 255 / 0.14);
   background-image:
-    linear-gradient(rgb(20 20 32 / var(--menu-alpha, 0.55)), rgb(20 20 32 / var(--menu-alpha, 0.55))),
+    linear-gradient(
+      rgb(20 20 32 / var(--legend-alpha, var(--menu-alpha, 0.55))),
+      rgb(20 20 32 / var(--legend-alpha, var(--menu-alpha, 0.55)))
+    ),
     repeating-linear-gradient(
       115deg,
       rgb(255 255 255 / 0.26) 0 2px,

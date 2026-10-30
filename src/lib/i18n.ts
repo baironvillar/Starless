@@ -188,6 +188,8 @@ export const strings = {
     authReport: "¿Algo no anda? Cuéntanos qué pasó.",
     feedbackEmpty: "Cuéntanos qué pasó, o adjunta el log para que el reporte sirva de algo.",
     authWaiting: "Termina la autorización en el navegador…",
+    authConnecting: "Conectando con Spotify…",
+    authTimeout: "Spotify no respondió. Probá otra vez.",
     authPremium:
       "Se necesita Premium. Sin Premium, Spotify no entrega audio aunque la cuenta sea válida.",
     authPrivate: "Tu sesión se queda en este equipo. Ni credenciales ni historial salen de aquí.",
@@ -543,6 +545,8 @@ export const strings = {
     authReport: "Something not working? Tell us what happened.",
     feedbackEmpty: "Tell us what happened, or attach the log so the report is worth reading.",
     authWaiting: "Finish the approval in your browser…",
+    authConnecting: "Connecting to Spotify…",
+    authTimeout: "Spotify did not answer. Try again.",
     authPremium:
       "Premium is required. Without it, Spotify delivers no audio even when the account is valid.",
     authPrivate: "Your session stays on this machine. Neither credentials nor history leave it.",
