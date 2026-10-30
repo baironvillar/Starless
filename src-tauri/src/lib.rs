@@ -32,7 +32,9 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_updater::UpdaterExt;
 
 use playback::{PlaybackState, PlaybackStatus};
-use models::{Account, DjMix, DjVoiceEvent, Lyrics, Playlist, PlaylistDetails, Track};
+use models::{
+    Account, DjMix, DjVoiceEvent, JamSession, Lyrics, Playlist, PlaylistDetails, Track,
+};
 
 /// The version a report carries, read from the compiled-in crate metadata.
 ///
@@ -954,6 +956,57 @@ spclient_command!(playlist_tracks, spclient::playlist_tracks, Vec<Track>, playli
 spclient_command!(search_tracks, spclient::search_tracks, Vec<Track>, query: String);
 spclient_command!(lyrics, spclient::lyrics, Lyrics, track_id: String);
 
+// El jam: la sesión compartida.
+//
+// **No es una playlist: es una sesión, y el servicio no se llama jam.** Se
+// llama `social-connect`, y sus rutas no lo dicen. El protocolo entero —lo que
+// hay, lo que no, y cómo se midió— está en `docs/jam.md`.
+//
+// Los tres comandos son las tres puertas que se midieron: abrir, entrar y
+// cerrar. **Abrir es un `GET` que crea la sesión si no había**, así que el
+// botón del panel es el que decide que exista una.
+//
+// Cada uno salta a un hilo de bloqueo antes de hablar con la red: un comando
+// `async` que hace un viaje HTTP en el hilo principal congela la ventana
+// treinta segundos.
+#[tauri::command]
+async fn jam_start(app: AppHandle) -> Result<JamSession, String> {
+    let session = ready_session(&app).await?;
+
+    tauri::async_runtime::spawn_blocking(move || spclient::jam_session(&session, true))
+        .await
+        .map_err(|e| {
+            eprintln!("Starless [command_failed]: {e}");
+            "command_failed".to_string()
+        })?
+}
+
+/// Entrar a un jam con su código.
+#[tauri::command]
+async fn jam_join(app: AppHandle, token: String) -> Result<JamSession, String> {
+    let session = ready_session(&app).await?;
+
+    tauri::async_runtime::spawn_blocking(move || spclient::jam_join(&session, &token))
+        .await
+        .map_err(|e| {
+            eprintln!("Starless [command_failed]: {e}");
+            "command_failed".to_string()
+        })?
+}
+
+/// Cerrar el jam: la sesión se borra y la cuenta queda como estaba.
+#[tauri::command]
+async fn jam_leave(app: AppHandle, session_id: String) -> Result<(), String> {
+    let session = ready_session(&app).await?;
+
+    tauri::async_runtime::spawn_blocking(move || spclient::jam_leave(&session, &session_id))
+        .await
+        .map_err(|e| {
+            eprintln!("Starless [command_failed]: {e}");
+            "command_failed".to_string()
+        })?
+}
+
 // El DJ: las canciones que Spotify le fabricó a la cuenta, y lo que dice al
 // empezar.
 //
@@ -1805,6 +1858,13 @@ pub fn run() {
             if spclient::radio_requested() {
                 spclient::run_radio_probe(handle.clone());
             }
+            // El jam: la sesión compartida. La puerta se encontró en el cliente
+            // de escritorio; lo que falta es si una sesión de streaming la
+            // puede usar.
+            #[cfg(debug_assertions)]
+            if spclient::jam_requested() {
+                spclient::run_jam_probe(handle.clone());
+            }
             if selftest::requested() {
                 selftest::run(handle);
             }
@@ -1826,6 +1886,9 @@ pub fn run() {
             dj_mix,
             dj_more,
             dj_speak,
+            jam_start,
+            jam_join,
+            jam_leave,
             radio_start,
             radio_more,
             player_status,

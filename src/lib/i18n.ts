@@ -210,6 +210,31 @@ export const strings = {
     device: "Dispositivo",
     more: "Más opciones",
 
+    // El jam: la sesión compartida.
+    //
+    // La puerta está donde la tiene Spotify: arriba a la derecha, junto a los
+    // amigos. "Start a Jam" es el nombre que el servicio ya usa, y se deja
+    // como está: traducir el nombre de una función de otro producto lo hace
+    // más difícil de buscar y no más fácil de entender.
+    jam: "Jam",
+    jamActivity: "Actividad de escucha",
+    jamStart: "Empezar un jam",
+    jamStartHint: "Invitá a otros a tu jam y escuchen juntos, desde cualquier lado.",
+    jamLeave: "Terminar el jam",
+    jamEnding: "Terminando…",
+    jamCode: "Código para compartir",
+    jamCopied: "Copiado",
+    jamCopy: "Copiar el código",
+    jamJoinTitle: "Entrar a un jam",
+    jamJoinPlaceholder: "Código del jam",
+    jamJoin: "Entrar",
+    jamJoining: "Entrando…",
+    jamMembers: "En el jam",
+    jamAlone: "Por ahora estás solo.",
+    jamFailed: "No se pudo abrir el jam.",
+    jamJoinFailed: "No se pudo entrar al jam.",
+    jamLeaveFailed: "No se pudo terminar el jam.",
+
     // Settings
     settingsTitle: "Ajustes",
     settingsSubtitle: "Audio, cuenta y diagnóstico.",
@@ -565,6 +590,31 @@ export const strings = {
     queueEmpty: "Nothing queued",
     device: "Device",
     more: "More options",
+
+    // The jam: the shared session.
+    //
+    // The door is where Spotify keeps it: top right, next to the friends.
+    // "Start a Jam" is the name the service already uses, and it stays as it
+    // is: translating the name of another product's feature makes it harder to
+    // look up, not easier to understand.
+    jam: "Jam",
+    jamActivity: "Listening activity",
+    jamStart: "Start a Jam",
+    jamStartHint: "Invite others to your Jam, and listen together from anywhere.",
+    jamLeave: "End the Jam",
+    jamEnding: "Ending…",
+    jamCode: "Code to share",
+    jamCopied: "Copied",
+    jamCopy: "Copy the code",
+    jamJoinTitle: "Join a Jam",
+    jamJoinPlaceholder: "Jam code",
+    jamJoin: "Join",
+    jamJoining: "Joining…",
+    jamMembers: "In the Jam",
+    jamAlone: "You are on your own for now.",
+    jamFailed: "Could not start the Jam.",
+    jamJoinFailed: "Could not join the Jam.",
+    jamLeaveFailed: "Could not end the Jam.",
 
     settingsTitle: "Settings",
     settingsSubtitle: "Audio, account and diagnostics.",

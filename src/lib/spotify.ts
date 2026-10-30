@@ -362,6 +362,75 @@ export async function radioMore(): Promise<DjMix> {
 }
 
 /**
+ * A shared session: the jam.
+ *
+ * **The jam is not a playlist: it is a session, and the service is not called
+ * jam.** It is `social-connect`, and its paths do not say so. The whole
+ * protocol —what exists, what does not, and how it was measured— is in
+ * `docs/jam.md`.
+ *
+ * The field names are the service's own, as they come: mostly `snake_case` and
+ * one in `camelCase`, which is how the service mixes the two conventions.
+ * Renaming one of them would give the same field two names depending on where
+ * you looked.
+ */
+export type JamMember = {
+  id: string;
+  username: string | null;
+  display_name: string | null;
+  image_url: string | null;
+  /** True when it can drive the playback, and not only listen. */
+  is_controlling: boolean;
+  is_listening: boolean;
+};
+
+export type JamSession = {
+  session_id: string;
+  /** The code people join with. */
+  join_session_token: string | null;
+  /** The code as a URI: `spotify:socialsession:<token>`. */
+  join_session_uri: string | null;
+  /** The joining door, with the service's internal prefix. */
+  join_session_url: string | null;
+  active: boolean;
+  is_session_owner: boolean;
+  session_members: JamMember[];
+  maxMemberCount: number | null;
+};
+
+/**
+ * Open a jam.
+ *
+ * **It is a `GET` that creates it.** The path is called `current_or_new`
+ * because it is literal: if there is no session, it opens one —with its join
+ * token and its owner— and `activate=true` also activates it. A `POST` on the
+ * same path answers `405`: that is not the verb.
+ */
+export async function jamStart(): Promise<JamSession> {
+  return invoke<JamSession>("jam_start");
+}
+
+/**
+ * Join a jam with its code.
+ *
+ * **It is a `POST` with a body**, and an empty one is enough: the token in the
+ * path is what identifies the session, not the body.
+ */
+export async function jamJoin(token: string): Promise<JamSession> {
+  return invoke<JamSession>("jam_join", { token });
+}
+
+/**
+ * Close the jam.
+ *
+ * The session is deleted and the account is left as it was: a jam that nobody
+ * ends stays open on the account of whoever started it.
+ */
+export async function jamLeave(sessionId: string): Promise<void> {
+  return invoke<void>("jam_leave", { sessionId });
+}
+
+/**
  * Subscribe to playback events.
  *
  * Called from an effect, not from a hook body: the listener outlives any single

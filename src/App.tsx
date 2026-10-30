@@ -8,6 +8,7 @@ import { AuthGate } from "./components/AuthGate";
 import { CrashPrompt } from "./components/CrashPrompt";
 import { FeedbackPanel } from "./components/FeedbackPanel";
 import { HomeScreen } from "./components/HomeScreen";
+import { JamPanel } from "./components/JamPanel";
 import { LibrarySidebar } from "./components/LibrarySidebar";
 import { LyricsPanel } from "./components/LyricsPanel";
 import { NewPlaylistDialog } from "./components/NewPlaylistDialog";
@@ -36,6 +37,10 @@ import {
   djSpeak,
   explain,
   isDjCard,
+  type JamSession,
+  jamJoin,
+  jamLeave,
+  jamStart,
   keys,
   type LibrarySort,
   type LibraryView,
@@ -253,6 +258,76 @@ export default function App() {
    * a request to look up what the click was handed is a request for nothing.
    */
   const [detail, setDetail] = useState<Detail | null>(null);
+
+  /**
+   * The jam: the shared session, and whether its panel is open.
+   *
+   * **The session lives in the service, and this is only what it last said.** It
+   * has no local copy that could drift: the jam is a thing on the account, with
+   * its owner and its guests, and the app holds the last answer so the panel
+   * has something to draw.
+   *
+   * **It is not read on open.** The only door that reads a session is the one
+   * that also creates it —`current_or_new`—, so opening the panel would leave a
+   * jam open on the account of somebody who only wanted to look.
+   */
+  const [jamOpen, setJamOpen] = useState(false);
+  const [jam, setJam] = useState<JamSession | null>(null);
+  const [jamBusy, setJamBusy] = useState(false);
+  const [jamError, setJamError] = useState<string | null>(null);
+
+  /**
+   * Open a jam.
+   *
+   * **The button is what decides that there is a jam.** The service opens one
+   * if there is none, so the panel does not create anything by itself: it
+   * waits for this.
+   */
+  const startJam = useCallback(async () => {
+    setJamBusy(true);
+    setJamError(null);
+    try {
+      setJam(await jamStart());
+    } catch (e) {
+      setJamError(explain(e));
+    } finally {
+      setJamBusy(false);
+    }
+  }, []);
+
+  /** Join a jam with its code. */
+  const joinJam = useCallback(async (token: string) => {
+    setJamBusy(true);
+    setJamError(null);
+    try {
+      setJam(await jamJoin(token));
+    } catch (e) {
+      setJamError(explain(e));
+    } finally {
+      setJamBusy(false);
+    }
+  }, []);
+
+  /**
+   * End the jam.
+   *
+   * **The session is deleted, not abandoned.** A jam that nobody ends stays
+   * open on the account of whoever started it, and the next person to open one
+   * finds it there.
+   */
+  const leaveJam = useCallback(async () => {
+    if (!jam) return;
+    setJamBusy(true);
+    setJamError(null);
+    try {
+      await jamLeave(jam.session_id);
+      setJam(null);
+    } catch (e) {
+      setJamError(explain(e));
+    } finally {
+      setJamBusy(false);
+    }
+  }, [jam]);
 
   /**
    * How the shelf is ordered and drawn, read once at startup for the same reason the
@@ -2146,6 +2221,12 @@ export default function App() {
           searching={searching}
           searchError={searchError}
           onOpenSettings={() => setSettingsOpen(true)}
+          onOpenJam={() => {
+            setJamOpen((v) => !v);
+            // Mismo rincón, mismo motivo que en la cola.
+            setQueueOpen(false);
+          }}
+          jamActive={jam !== null}
           updateVersion={updateVersion}
         />
 
@@ -2184,6 +2265,27 @@ export default function App() {
               barPresent={barPresent}
               onPlay={onPlay}
               onClose={() => setQueueOpen(false)}
+            />
+          )}
+        </AnimatePresence>
+
+        {/*
+            The jam, in the same corner as the queue: the two panels answer the
+            same question —what is playing, and what comes next— and one of them
+            is about other people. They cannot both be open: the corner belongs
+            to one panel at a time.
+        */}
+        <AnimatePresence>
+          {jamOpen && (
+            <JamPanel
+              t={t}
+              session={jam}
+              busy={jamBusy}
+              error={jamError}
+              onStart={() => void startJam()}
+              onJoin={(token) => void joinJam(token)}
+              onLeave={() => void leaveJam()}
+              onClose={() => setJamOpen(false)}
             />
           )}
         </AnimatePresence>
@@ -2458,7 +2560,14 @@ export default function App() {
           djBusy={djBusy}
           t={t}
           queueOpen={queueOpen}
-          onToggleQueue={() => setQueueOpen((v) => !v)}
+          onToggleQueue={() => {
+            setQueueOpen((v) => !v);
+            // **Los dos paneles viven en la misma esquina.** El jam y la cola
+            // contestan la misma pregunta —qué está sonando y qué sigue— y uno
+            // es sobre los demás. Abrir uno cierra al otro: dos paneles
+            // superpuestos en el mismo rincón son dos que nadie puede leer.
+            setJamOpen(false);
+          }}
           lyricsOpen={lyricsOpen}
           onToggleLyrics={() => setLyricsOpen((v) => !v)}
           onPrevious={onPrevious}

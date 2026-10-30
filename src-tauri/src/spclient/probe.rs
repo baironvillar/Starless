@@ -3291,3 +3291,737 @@ fn post_rootlist(session: &Session, path: &str, body: Vec<u8>) -> (u16, String) 
         Err(e) => (0, format!("ERROR: {e}")),
     }
 }
+
+// ---------------------------------------------------------------------------
+// El jam: la puerta de la sesión compartida
+// ---------------------------------------------------------------------------
+
+/// `true` when the environment asks for the jam probe.
+///
+/// **El jam no es una playlist: es una sesión.** El servicio lo llama
+/// `social-connect` —"Social Listening" para el servicio— y el cliente de
+/// escritorio le habla con rutas de la forma `servicio/vN/método`:
+/// `social-connect/v2/sessions/current`, `social-connect/v2/session_update`,
+/// `social-connect/v2/sessions/current_or_new?activate=…`.
+///
+/// La puerta **no se adivinó**: salió de los strings del `Spotify.dll` del
+/// cliente de escritorio, que las trae enteras, y de ahí salió también el
+/// nombre del proto que las describe (`social_connect_v2.proto`, volcado con
+/// `scripts/proto-dump.ts`). Lo que falta —y lo que esta sonda mide— es si esa
+/// puerta existe **para una sesión de streaming** y qué contesta.
+///
+/// Un `404` dice que el camino está mal; un `405` que el router lo conoce pero
+/// no con ese verbo; un `200` que la puerta está abierta. La diferencia entre
+/// esas tres cosas es lo que separa un camino inventado de uno real, y por eso
+/// se miden las dos: no se mira el cuerpo, que es lo que más miente.
+#[cfg(debug_assertions)]
+pub fn jam_requested() -> bool {
+    std::env::var("STARLESS_SP_JAM")
+        .map(|value| value != "0" && !value.is_empty())
+        .unwrap_or(false)
+}
+
+/// Crear una sesión de jam **sí escribe en la cuenta**.
+///
+/// Va detrás de un ambiente aparte, y no como una bandera más, porque la
+/// diferencia importa: una lectura no le cambia nada a nadie, y una sesión de
+/// jam viva se le ve a la persona que la está probando —aparece en el cliente
+/// de Spotify y en la lista de sesiones— hasta que alguien la cierre.
+#[cfg(debug_assertions)]
+pub fn jam_create_requested() -> bool {
+    std::env::var("STARLESS_SP_JAM_CREATE")
+        .map(|value| value != "0" && !value.is_empty())
+        .unwrap_or(false)
+}
+
+/// El jam, medido.
+///
+/// **La primera llamada crea la sesión, y no es culpa de la sonda.** El
+/// camino que funciona se llama `current_or_new`: "la actual o una nueva". Es
+/// una lectura que además abre una sesión si no había una —con su token de
+/// join y su dueño— y por eso el cierre va **siempre**, no sólo cuando el
+/// ambiente pidió crear.
+///
+/// De la respuesta de esa primera llamada salen el `session_id` y el
+/// `join_session_token`, y de ahí salen las preguntas que dependen de ellos:
+/// la puerta por la que se une la gente, y la puerta para cerrar.
+///
+/// Las rutas que ya se midsieron y contestaron `404` se vuelven a medir: son
+/// baratas, y una ruta que un día conteste `200` es un dato, no una curiosidad.
+#[cfg(debug_assertions)]
+pub fn run_jam_probe(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(session) = crate::selftest::wait_for_session(&app) else {
+            log::error!("SP_JAM: la sesión no llegó a conectar");
+            return;
+        };
+
+        log::info!("=== DIAGNOSTIC: sonda del jam ===");
+
+        // **Primero por la misma puerta que usa la app.** Todo lo de abajo habla
+        // con `reqwest` y trae el cuerpo de todas las respuestas, que es lo que
+        // hace falta para *medir*. Lo que hace la pantalla es otra cosa: la
+        // función de producción, que habla con el cliente de librespot. Las dos
+        // tienen que funcionar, y la que no se puede ver desde el log es
+        // justamente la segunda.
+        let app_session = super::jam_session(&session, true);
+
+        match &app_session {
+            Ok(found) => log::info!(
+                "SP_JAM: la función de la app devolvió la sesión {} · {} participantes · código {:?}",
+                found.session_id,
+                found.session_members.len(),
+                found.join_session_token
+            ),
+            Err(e) => log::error!("SP_JAM: la función de la app falló: {e}"),
+        }
+
+        // La puerta que existe. Todo lo demás depende de su respuesta.
+        let current = jam_ask(
+            &session,
+            "lectura",
+            "la sesión actual o una nueva",
+            &reqwest::Method::GET,
+            "/social-connect/v2/sessions/current_or_new?activate=false",
+            None,
+        );
+
+        let payload = current
+            .as_ref()
+            .and_then(|(_, bytes)| serde_json::from_slice::<serde_json::Value>(bytes).ok());
+
+        let session_id = payload.as_ref().and_then(|value| find_key(value, "session_id"));
+        let join_token = payload
+            .as_ref()
+            .and_then(|value| find_key(value, "join_session_token"));
+        let join_uri = payload.as_ref().and_then(|value| find_key(value, "join_session_uri"));
+        let join_url = payload.as_ref().and_then(|value| find_key(value, "join_session_url"));
+
+        log::info!(
+            "SP_JAM: session_id={session_id:?} · join_session_token={join_token:?} · join_session_uri={join_uri:?} · join_session_url={join_url:?}"
+        );
+
+        // La puerta por la que se une la gente: es la que se comparte, y es la
+        // que decide si el jam es un sistema o una sala de espera vacía.
+        //
+        // El `GET` contesta `405`, y eso no es un fallo: es el router diciendo
+        // "esta dirección existe y no con ese verbo". Así que el verbo se
+        // busca, con y sin cuerpo.
+        if let Some(token) = &join_token {
+            let route = format!("/social-connect/v2/sessions/join/{token}");
+
+            jam_ask(
+                &session,
+                "join",
+                "unirse con el token, con GET",
+                &reqwest::Method::GET,
+                &route,
+                None,
+            );
+            jam_ask(
+                &session,
+                "join",
+                "unirse con el token, con POST",
+                &reqwest::Method::POST,
+                &route,
+                None,
+            );
+            jam_ask(
+                &session,
+                "join",
+                "unirse con el token, con POST y cuerpo",
+                &reqwest::Method::POST,
+                &route,
+                Some(b"{}"),
+            );
+        }
+
+        // Activar: el mismo camino, con `activate=true`. La creación es un
+        // `GET`, y mandarlo por `POST` contesta `405` —el router lo rechaza—.
+        if jam_create_requested() {
+            jam_ask(
+                &session,
+                "activar",
+                "la sesión nueva, activada",
+                &reqwest::Method::GET,
+                "/social-connect/v2/sessions/current_or_new?activate=true",
+                None,
+            );
+        } else {
+            log::info!("SP_JAM: sin STARLESS_SP_JAM_CREATE no se activa ninguna sesión");
+        }
+
+        // La sesión por su id, con barra y sin barra: la barra final cambia
+        // el camino en estos routers, y no hay que suponerlo.
+        //
+        // El `GET` contesta `405` en los dos casos, así que la ruta existe y
+        // el verbo es otro: se prueba el `POST` —que en este servicio es el
+        // que modifica una sesión— con y sin cuerpo.
+        if let Some(id) = &session_id {
+            jam_ask(
+                &session,
+                "lectura",
+                "la sesión por su id",
+                &reqwest::Method::GET,
+                &format!("/social-connect/v2/sessions/{id}"),
+                None,
+            );
+            jam_ask(
+                &session,
+                "lectura",
+                "la sesión por su id, con barra",
+                &reqwest::Method::GET,
+                &format!("/social-connect/v2/sessions/{id}/"),
+                None,
+            );
+            jam_ask(
+                &session,
+                "escritura",
+                "la sesión por su id, con POST",
+                &reqwest::Method::POST,
+                &format!("/social-connect/v2/sessions/{id}"),
+                None,
+            );
+            jam_ask(
+                &session,
+                "escritura",
+                "la sesión por su id, con POST y cuerpo",
+                &reqwest::Method::POST,
+                &format!("/social-connect/v2/sessions/{id}"),
+                Some(b"{}"),
+            );
+
+            // La cola: es una lista (`spotify:list:jam-list:`), y se pregunta
+            // si el servicio de playlists la sirve, que es lo que contestaría
+            // si fuera una playlist común.
+            jam_ask(
+                &session,
+                "cola",
+                "la cola, por el servicio de playlists",
+                &reqwest::Method::GET,
+                &format!("/playlist/v2/playlist/{id}"),
+                None,
+            );
+
+            // Y si no es una playlist, es una *lista*: el servicio de listas es
+            // `playlist/spotify.list.v1.ListReadService/GetLists` —también
+            // del cliente de escritorio—, y su identificador es la URI.
+            // Cuál es la URI de la cola no se sabe: se prueban las dos cosas
+            // que la sesión trae, y sobre todo **la respuesta sin
+            // parámetros**, que dice qué es lo que el servicio echa de menos.
+            jam_ask(
+                &session,
+                "cola",
+                "el servicio de listas, sin parámetros",
+                &reqwest::Method::GET,
+                "/playlist/spotify.list.v1.ListReadService/GetLists",
+                None,
+            );
+            jam_ask(
+                &session,
+                "cola",
+                "la cola como lista, con el id de la sesión",
+                &reqwest::Method::GET,
+                &format!(
+                    "/playlist/spotify.list.v1.ListReadService/GetLists?uri=spotify:list:jam-list:{id}"
+                ),
+                None,
+            );
+
+            if let Some(token) = &join_token {
+                jam_ask(
+                    &session,
+                    "cola",
+                    "la cola como lista, con el token",
+                    &reqwest::Method::GET,
+                    &format!(
+                        "/playlist/spotify.list.v1.ListReadService/GetLists?uri=spotify:list:jam-list:{token}"
+                    ),
+                    None,
+                );
+            }
+
+            // Y si la cola viviera en la sesión, con sus propias rutas.
+            jam_ask(
+                &session,
+                "cola",
+                "la cola, dentro de la sesión",
+                &reqwest::Method::GET,
+                &format!("/social-connect/v2/sessions/{id}/queue"),
+                None,
+            );
+
+            // El servicio de listas es `POST`, no `GET` —el `405` lo dice— y
+            // el cuerpo es lo que falta. Un cuerpo vacío dice qué echa de
+            // menos el servicio; los dos identificadores que la sesión trae
+            // se prueban después, en JSON y a pelo.
+            jam_ask(
+                &session,
+                "cola",
+                "el servicio de listas, con POST y cuerpo vacío",
+                &reqwest::Method::POST,
+                "/playlist/spotify.list.v1.ListReadService/GetLists",
+                Some(b"{}"),
+            );
+            jam_ask(
+                &session,
+                "cola",
+                "el servicio de listas, con POST y el id de la sesión",
+                &reqwest::Method::POST,
+                "/playlist/spotify.list.v1.ListReadService/GetLists",
+                Some(
+                    format!(
+                        r#"{{"requests":[{{"identifier":{{"uri":"spotify:list:jam-list:{id}"}}}}]}}"#
+                    )
+                    .as_bytes(),
+                ),
+            );
+
+            // Y el mismo pedido **en protobuf**, que es como lo habla el
+            // servicio: el JSON de arriba lo rechazó con un mensaje que decía
+            // qué faltaba —"RequestedFields must not be empty"—, y ese
+            // mensaje viene en el `RequestedFields` del `RequestOptions`.
+            for (que, slug, uri) in [
+                (
+                    "el id de la sesión",
+                    "sesion",
+                    format!("spotify:list:jam-list:{id}"),
+                ),
+                (
+                    "el token",
+                    "token",
+                    join_token
+                        .as_ref()
+                        .map(|token| format!("spotify:list:jam-list:{token}"))
+                        .unwrap_or_default(),
+                ),
+            ] {
+                if uri.ends_with(':') {
+                    continue;
+                }
+
+                let answered = jam_ask_typed(
+                    &session,
+                    "cola",
+                    &format!("la cola como lista, en protobuf, con {que}"),
+                    &reqwest::Method::POST,
+                    "/playlist/spotify.list.v1.ListReadService/GetLists",
+                    Some(&jam_list_request(&uri)),
+                    "application/x-protobuf",
+                );
+
+                // La respuesta del servicio de listas es **protobuf**, y
+                // grande: el log la muestra recortada, así que se guarda
+                // entera en disco para poder mirarla sin volver a medir.
+                if let Some((status, bytes)) = answered {
+                    let path = jam_scratch_path(&format!("jam-list-{slug}.bin"));
+                    let written = std::fs::write(&path, &bytes).is_ok();
+
+                    log::info!(
+                        "SP_JAM: [cola] {que} → {status} · {} bytes · {}",
+                        bytes.len(),
+                        describe_strings(&bytes)
+                    );
+
+                    if written {
+                        log::info!("SP_JAM: [cola] la respuesta entera quedó en {path}");
+                    }
+                }
+            }
+
+            // El verbo para modificar una sesión: el `POST` está descartado
+            // (`405`), así que se prueban los otros dos.
+            jam_ask(
+                &session,
+                "escritura",
+                "la sesión por su id, con PUT",
+                &reqwest::Method::PUT,
+                &format!("/social-connect/v2/sessions/{id}"),
+                Some(b"{}"),
+            );
+            jam_ask(
+                &session,
+                "escritura",
+                "la sesión por su id, con PATCH",
+                &reqwest::Method::PATCH,
+                &format!("/social-connect/v2/sessions/{id}"),
+                Some(b"{}"),
+            );
+        }
+
+        // Los permisos de la sesión, que son dos puertas con barra.
+        for route in [
+            "/social-connect/v2/sessions/current/queue_only_mode",
+            "/social-connect/v2/sessions/current/queue_only_mode/",
+            "/social-connect/v2/sessions/current/volume_control",
+            "/social-connect/v2/sessions/current/volume_control/",
+        ] {
+            jam_ask(
+                &session,
+                "lectura",
+                "los permisos de la sesión",
+                &reqwest::Method::GET,
+                route,
+                None,
+            );
+        }
+
+        // La actualización: el router la conoce —`411 Length Required` la delata
+        // aunque no la entienda— pero exige un cuerpo.
+        jam_ask(
+            &session,
+            "escritura",
+            "la actualización, con cuerpo",
+            &reqwest::Method::POST,
+            "/social-connect/v2/session_update",
+            Some(b"{}"),
+        );
+
+        // Y ahora cerrar, que es lo que deja la cuenta como estaba.
+        //
+        // **Por la función de la app primero**: es la que aprieta el botón, y
+        // cerrar dos veces la misma sesión no es una medición, es ruido.
+        let closed_by_app = match &app_session {
+            Ok(found) => match super::jam_leave(&session, &found.session_id) {
+                Ok(()) => {
+                    log::info!(
+                        "SP_JAM: la función de la app cerró la sesión {}",
+                        found.session_id
+                    );
+                    true
+                }
+                Err(e) => {
+                    log::error!("SP_JAM: la función de la app no pudo cerrar: {e}");
+                    false
+                }
+            },
+            Err(_) => false,
+        };
+
+        if !closed_by_app {
+            if let Some(id) = &session_id {
+                jam_end(&session, id);
+            }
+        }
+
+        log::info!("=== DIAGNOSTIC: fin de la sonda del jam ===");
+    });
+}
+
+/// Una pregunta a la puerta del jam, y lo que contestó.
+///
+/// **No se usa el cliente de librespot.** `HttpClient::request` tira el cuerpo
+/// de toda respuesta que no sea 2xx, un nivel más abajo que cualquier tipo con
+/// nombre: un `404` y un `400` llegarían sin cuerpo y sin explicación, que es
+/// justo lo que hay que ver. Por eso esto habla con `reqwest` —el cliente
+/// async, que dentro de `call` no levanta un runtime propio— y trae el status
+/// y el cuerpo de todo.
+///
+/// El `client-token` va como lo manda librespot, y el token de la cuenta es el
+/// de la sesión: un `401` con el del cliente sería una respuesta sobre la
+/// identidad, no sobre la puerta.
+#[cfg(debug_assertions)]
+fn jam_ask(
+    session: &Session,
+    label: &str,
+    what: &str,
+    method: &reqwest::Method,
+    route: &str,
+    body: Option<&[u8]>,
+) -> Option<(u16, Vec<u8>)> {
+    jam_ask_typed(session, label, what, method, route, body, "application/json")
+}
+
+/// Lo mismo, pero con el `content-type` que se le pida.
+///
+/// **El servicio de listas habla protobuf y contesta `application/x-protobuf`**,
+/// y el `content-type` del pedido es parte de eso: no es un detalle que se
+/// pueda dejar en JSON y esperar que el servicio lo entienda igual.
+#[cfg(debug_assertions)]
+fn jam_ask_typed(
+    session: &Session,
+    label: &str,
+    what: &str,
+    method: &reqwest::Method,
+    route: &str,
+    body: Option<&[u8]>,
+    content_type: &'static str,
+) -> Option<(u16, Vec<u8>)> {
+    let owned = session.clone();
+    let route = route.to_owned();
+    let method = method.clone();
+    let body = body.map(|bytes| bytes.to_vec());
+
+    // El log los vuelve a necesitar, y el pedido se los lleva: se guardan las
+    // etiquetas aparte en vez de clonar el método y la ruta dos veces.
+    let method_label = method.to_string();
+    let route_label = route.clone();
+
+    let outcome = call(session, async move {
+        let base = owned.spclient().base_url().await.map_err(|e| e.to_string())?;
+        let token = owned.login5().auth_token().await.map_err(|e| e.to_string())?;
+        let client_token = owned.spclient().client_token().await.unwrap_or_default();
+        let url = jam_url(&base, &route, &owned.country());
+        let authorization = format!("{} {}", token.token_type, token.access_token);
+
+        let mut request = reqwest::Client::new().request(method, url);
+        request = request.header(reqwest::header::AUTHORIZATION, authorization);
+        if !client_token.is_empty() {
+            request = request.header("client-token", client_token);
+        }
+        if let Some(bytes) = body {
+            request = request
+                .header(reqwest::header::CONTENT_TYPE, content_type)
+                .body(bytes);
+        }
+
+        let response = request.send().await.map_err(|e| format!("la red: {e}"))?;
+        let status = response.status().as_u16();
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("—")
+            .to_owned();
+        let bytes = response.bytes().await.map_err(|e| format!("el cuerpo: {e}"))?;
+
+        Ok((status, content_type, bytes.to_vec()))
+    });
+
+    match outcome {
+        Ok((status, content_type, bytes)) => {
+            log::info!(
+                "SP_JAM: [{label}] {what} · {method_label} {route_label} → {status} · {content_type} · {}",
+                describe_body(&bytes)
+            );
+            Some((status, bytes))
+        }
+        Err(e) => {
+            log::error!("SP_JAM: [{label}] {what} · {method_label} {route_label} → no llegó: {e}");
+            None
+        }
+    }
+}
+
+/// La URL completa, con la query que el router de Spotify espera.
+///
+/// `product=0` y `country` son los que `spclient` le agrega a cada pedido, y
+/// `salt` es lo que rompe la caché de los `GET`. No se inventan: si el camino
+/// ya trae su propia query, los extras se cuelgan de ella con `&`.
+#[cfg(debug_assertions)]
+fn jam_url(base: &str, route: &str, country: &str) -> String {
+    let separator = if route.contains('?') { '&' } else { '?' };
+    format!("{base}{route}{separator}product=0&country={country}&salt=1")
+}
+
+/// El cuerpo de una respuesta, como JSON si lo es.
+///
+/// La forma del jam es JSON —la ruta de la sesión lo pide con `alt=protobuf`
+/// para el otro caso—, y un JSON entero dice más que un volcado de bytes: los
+/// nombres de los campos son la mitad del protocolo.
+#[cfg(debug_assertions)]
+fn describe_body(bytes: &[u8]) -> String {
+    let text = String::from_utf8_lossy(bytes);
+
+    match serde_json::from_str::<serde_json::Value>(text.trim()) {
+        Ok(value) => {
+            let compact = value.to_string();
+            format!("{} bytes · json {}", bytes.len(), cut_chars(&compact, 1500))
+        }
+        Err(_) => describe_bytes(bytes),
+    }
+}
+
+/// Corta por caracteres, y no por bytes.
+///
+/// Un byte parte un carácter, y un acento cortado a la mitad no es texto: es
+/// basura que después hay que distinguir de un error real.
+#[cfg(debug_assertions)]
+fn cut_chars(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_owned();
+    }
+
+    let cut: String = text.chars().take(max).collect();
+    format!("{cut}…")
+}
+
+/// Intenta cerrar la sesión que se acaba de abrir.
+///
+/// Tampoco se sabe cómo se cierra —eso es parte de lo que hay que medir—, así
+/// que se prueban las tres formas que el router de este servicio acepta en el
+/// resto de la API: borrar el recurso, o decirle al servidor que la sesión
+/// terminó.
+#[cfg(debug_assertions)]
+fn jam_end(session: &Session, session_id: &str) {
+    let candidates = [
+        (
+            reqwest::Method::DELETE,
+            format!("/social-connect/v2/sessions/{session_id}"),
+            "borrar la sesión",
+        ),
+        (
+            reqwest::Method::DELETE,
+            "/social-connect/v2/sessions/current".to_owned(),
+            "borrar la sesión actual",
+        ),
+        (
+            reqwest::Method::POST,
+            "/social-connect/v2/sessions/current/leave".to_owned(),
+            "salir de la sesión",
+        ),
+    ];
+
+    for (method, route, what) in candidates {
+        let answered = jam_ask(session, "cerrar", what, &method, &route, None);
+
+        if let Some((status, _)) = answered {
+            if status < 400 {
+                log::info!("SP_JAM: la sesión se cerró con {method} {route} ({what})");
+                return;
+            }
+        }
+    }
+
+    log::error!(
+        "SP_JAM: no se pudo cerrar la sesión {session_id}; se cierra desde el cliente de Spotify"
+    );
+}
+
+/// El cuerpo de un `GetListsRequest`, armado a mano.
+///
+/// El servicio de listas habla protobuf y **no hay proto de él en
+/// librespot**: los mensajes viven en el cliente de escritorio, y el
+/// `spotify/list/v1/list_read_service.proto` que el cliente trae embebido no
+/// compila. Así que el cuerpo se arma a mano, con los números de campo del
+/// volcado:
+///
+/// ```text
+/// GetListsRequest { requests: 1 }
+///   GetListRequest { identifier: 1, options: 2 }
+///     ListIdentifier { uri: 1 }
+///     RequestOptions { requested_fields: 4 }
+///       RequestedFields { all: 1 }
+/// ```
+///
+/// `all: true` es lo que el servicio pedía con su mensaje: sin eso contesta
+/// "RequestedFields must not be empty".
+#[cfg(debug_assertions)]
+fn jam_list_request(uri: &str) -> Vec<u8> {
+    // `RequestedFields { all: true }` — campo 1, varint.
+    let requested = vec![0x08, 0x01];
+    // `RequestOptions { requested_fields: 4 }`
+    let options = pb_bytes(4, &requested);
+    // `ListIdentifier { uri: 1 }`
+    let identifier = pb_bytes(1, uri.as_bytes());
+    // `GetListRequest { identifier: 1, options: 2 }`
+    let mut get_list = pb_bytes(1, &identifier);
+    get_list.extend(pb_bytes(2, &options));
+    // `GetListsRequest { requests: 1 }`
+    pb_bytes(1, &get_list)
+}
+
+/// Un campo de protobuf en longitud-delimitada.
+///
+/// A mano, porque el crate no tiene el proto de este servicio: los mensajes
+/// están en el cliente de escritorio y no en librespot.
+#[cfg(debug_assertions)]
+fn pb_bytes(number: u32, payload: &[u8]) -> Vec<u8> {
+    let mut out = pb_varint(((number as u64) << 3) | 2);
+    out.extend(pb_varint(payload.len() as u64));
+    out.extend_from_slice(payload);
+    out
+}
+
+/// Un varint de protobuf.
+#[cfg(debug_assertions)]
+fn pb_varint(mut value: u64) -> Vec<u8> {
+    let mut out = Vec::new();
+
+    loop {
+        let byte = (value & 0x7f) as u8;
+        value >>= 7;
+
+        if value == 0 {
+            out.push(byte);
+            break;
+        }
+
+        out.push(byte | 0x80);
+    }
+
+    out
+}
+
+/// Los strings de un cuerpo binario.
+///
+/// Un protobuf no se lee, pero sus strings sí: los nombres de campo y los
+/// valores de texto quedan como texto plano adentro, y con eso se ve qué trae
+/// la respuesta sin necesidad de compilar el proto del servicio.
+#[cfg(debug_assertions)]
+fn describe_strings(bytes: &[u8]) -> String {
+    let mut found: Vec<String> = Vec::new();
+    let mut current = String::new();
+
+    for byte in bytes {
+        if byte.is_ascii_graphic() || *byte == b' ' {
+            current.push(*byte as char);
+        } else {
+            if current.len() >= 5 && !found.contains(&current) {
+                found.push(current.clone());
+            }
+            current.clear();
+        }
+    }
+
+    if current.len() >= 5 && !found.contains(&current) {
+        found.push(current);
+    }
+
+    found
+        .into_iter()
+        .take(40)
+        .map(|text| format!("“{text}”"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Dónde dejar un archivo de la sonda.
+///
+/// Vive con el log, en `%LOCALAPPDATA%\Starless`: es el único directorio que
+/// sobrevive a un reinicio y que no se borra al cerrar sesión, que es lo que
+/// un archivo de medición necesita.
+#[cfg(debug_assertions)]
+fn jam_scratch_path(name: &str) -> String {
+    let base = std::env::var("LOCALAPPDATA").unwrap_or_default();
+    format!("{base}\\Starless\\{name}")
+}
+
+/// Busca un campo por nombre, a cualquier nivel del JSON.
+#[cfg(debug_assertions)]
+fn find_key(value: &serde_json::Value, key: &str) -> Option<String> {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (name, child) in map {
+                if name == key {
+                    if let Some(text) = child.as_str() {
+                        return Some(text.to_owned());
+                    }
+                }
+                if let Some(found) = find_key(child, key) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                if let Some(found) = find_key(item, key) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
