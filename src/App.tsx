@@ -22,7 +22,13 @@ import { TrackList } from "./components/TrackList";
 import { UpdateAlert } from "./components/UpdateAlert";
 import { type Lang, type StringKey, strings } from "./lib/i18n";
 import { SPRING } from "./lib/motion";
-import { placeOfSong, queueWithAdded, rowPlace, upNextTracks } from "./lib/queue";
+import {
+  placeOfSong,
+  queueWithAdded,
+  queueWithListAdded,
+  rowPlace,
+  upNextTracks,
+} from "./lib/queue";
 import {
   type Album,
   type Artist,
@@ -2062,14 +2068,16 @@ export default function App() {
     (track: Track) => {
       // La cola del DJ sigue siendo la cola del DJ: agregar una canción no
       // borra las frases que la trajeron, ni la convierte en una lista.
-      setQueue((current) => ({
-        tracks: queueWithAdded(current?.tracks ?? null, track, visibleTracks),
-        lines: current?.lines ?? {},
-        source: current?.source ?? "list",
-        context: current?.context ?? null,
-      }));
+      const edit = queueWithAdded(queue?.tracks ?? null, track, visibleTracks, queueAtRef.current);
+      setQueue({
+        tracks: edit.tracks,
+        lines: queue?.lines ?? {},
+        source: queue?.source ?? "list",
+        context: queue?.context ?? null,
+      });
+      moveTo(edit.at);
     },
-    [visibleTracks],
+    [queue, visibleTracks, moveTo],
   );
 
   /**
@@ -2084,15 +2092,20 @@ export default function App() {
    * la misma canción quiso oírla dos veces, y descartarla en silencio es la
    * app contradiciendo una decisión que se tomó a propósito.
    */
-  const onAddListToQueue = useCallback((tracks: Track[]) => {
-    if (tracks.length === 0) return;
-    setQueue((current) => ({
-      tracks: current ? [...current.tracks, ...tracks] : [...tracks],
-      lines: current?.lines ?? {},
-      source: current?.source ?? "list",
-      context: current?.context ?? null,
-    }));
-  }, []);
+  const onAddListToQueue = useCallback(
+    (tracks: Track[]) => {
+      if (tracks.length === 0) return;
+      const edit = queueWithListAdded(queue?.tracks ?? null, tracks, queueAtRef.current);
+      setQueue({
+        tracks: edit.tracks,
+        lines: queue?.lines ?? {},
+        source: queue?.source ?? "list",
+        context: queue?.context ?? null,
+      });
+      moveTo(edit.at);
+    },
+    [queue, moveTo],
+  );
 
   /**
    * Open an artist or an album, and come back from one.
