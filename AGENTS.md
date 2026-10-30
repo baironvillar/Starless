@@ -902,6 +902,16 @@ salen de una captura:
   sólo se apagaba —sin spinner y sin decir qué estaba esperando—, y el handshake
   con Spotify puede fallar solo: tiene un techo, o el botón queda apagado
   para siempre y la pantalla no tiene salida.
+- **La vista de atrás de la puerta sobrevive al cierre de sesión, y no tiene por
+  qué.** `AuthGate` desmonta sus hijos cuando se cierra, pero el estado que
+  decide qué muestran vive **arriba** del gate, en `App`: `settingsOpen` seguía
+  en `true` después de cerrar sesión desde el panel de Ajustes, así que al
+  volver a entrar el panel aparecía entero sobre la app — la pantalla de la
+  sesión anterior encima de la nueva. El que lo arregla es el dueño del estado,
+  así que el gate avisa (`onSignedOut`) y `App` lo devuelve a su primer valor.
+  Lo que se devuelve es **lo de la cuenta** (dónde estabas, qué estaba abierto,
+  la cola); lo que se queda es **lo de la persona** (el idioma, el orden de la
+  estantería, el vidrio): una preferencia no se la lleva cerrar sesión.
 - **`.agent/` es la copia canónica** de la configuración de agentes. Los shims de
   `.claude/` y `.opencode/` que apuntaban ahí se borraron; para recuperar el
   skill en esas herramientas, `git revert 96cf93c`.

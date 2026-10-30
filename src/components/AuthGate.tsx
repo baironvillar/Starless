@@ -85,10 +85,25 @@ const HANDSHAKE_LIMIT = 20;
 export function AuthGate({
   t,
   onReport,
+  onSignedOut,
   children,
 }: {
   t: Record<StringKey, string>;
   onReport?: () => void;
+  /**
+   * The session is gone and the door has closed.
+   *
+   * **The screen behind the door belonged to the session that just ended.**
+   * The gate unmounts its children when it closes, but the state that decides
+   * what those children show lives above it — and it survives. So a settings
+   * panel that was open when somebody signed out came back, whole, on top of
+   * the app, the moment they signed in again: the panel of the previous
+   * session, over the new one, for no reason anybody could explain.
+   *
+   * Whoever owns that state is the one who has to put it back, which is why
+   * this is a callback and not something the gate does by itself.
+   */
+  onSignedOut?: () => void;
   children: React.ReactNode;
 }) {
   const [status, setStatus] = useState<AuthStatus | null>(null);
@@ -126,13 +141,19 @@ export function AuthGate({
     // Both directions. Closing the door drops what it authorised, so signing out
     // cannot leave a previous account's library sitting in memory either.
     if (open === wasOpen.current) return;
+    const was = wasOpen.current;
     wasOpen.current = open;
 
     void queryClient.invalidateQueries({ queryKey: ["playlist-tracks"] });
     for (const key of AUTH_KEYS) {
       void queryClient.invalidateQueries({ queryKey: key });
     }
-  }, [status?.signedIn, queryClient]);
+
+    // Only on the way *out*. A launch that finds no session yet is not a
+    // sign-out, and a launch that restores one is not either — resetting on
+    // those would wipe the screen of somebody who never asked for it.
+    if (was && !open) onSignedOut?.();
+  }, [status?.signedIn, queryClient, onSignedOut]);
 
   /**
    * Signing out is announced rather than inferred.
