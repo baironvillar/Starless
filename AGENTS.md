@@ -77,6 +77,7 @@ relay/                    el Worker que recibe los reportes y crea los issues
 .agent/                   configuración de agentes (Claude Code y OpenCode)
 docs/updates.md           cómo se publica una versión
 docs/escribir-playlists.md el protocolo para crear una playlist, y cómo se supo
+docs/jam.md               el protocolo de la sesión compartida, y cómo se supo
 ```
 
 **Antes de tocar la creación de playlists, lee `docs/escribir-playlists.md`.** Es
@@ -94,6 +95,30 @@ salen de una captura:
   que no pasen de `2^127`. Se hace con `SpotifyId::from_raw(..).to_base62()`, que
   ya está en la dependencia y lo resuelve bien. Escribirlo a mano al revés fue lo
   que hizo que esto pareciera imposible durante horas.
+
+**Antes de tocar el jam, lee `docs/jam.md`.** El jam es la sesión compartida, y
+**no es una playlist**: es otro servicio, con otro nombre, y el nombre no lo
+dice. `jam` no aparece en ninguna ruta; el servicio es **`social-connect`**. Lo
+que está medido y lo que falta está en ese documento; tres hechos que no están
+en ningún proto ni en ninguna issue:
+
+- **Abrir una sesión de jam es un `GET`, y la crea.** El camino es
+  `GET /social-connect/v2/sessions/current_or_new?activate=false` sobre
+  `spclient.wg.spotify.com`, y "current_or_new" es literal: si no hay sesión,
+  la abre —con su token de join y su dueño—. Unirse es un `POST` **con cuerpo**
+  contra `/social-connect/v2/sessions/join/<token>`, y cerrarla es un `DELETE`
+  contra `/social-connect/v2/sessions/<session_id>`.
+- **La cola del jam es una lista, y se lee en protobuf.** La URI es
+  `spotify:list:jam-list:<session_id>` —con el id de la sesión, no con el
+  token— y la puerta es `POST /playlist/spotify.list.v1.ListReadService/GetLists`,
+  que contesta `application/x-protobuf` aunque le mandes JSON, y que exige
+  `requested_fields` o se queja en inglés.
+- **El jam no viene en librespot.** Ni el servicio, ni el proto
+  (`social_connect_v2.proto`, que vive en el `Spotify.dll` del cliente de
+  escritorio), ni el pubsub por el que llegan los cambios de la sesión: el
+  `dealer` de librespot no tiene pubsub. El protocolo se sacó de los strings y
+  de los descriptores del cliente de escritorio —con `scripts/proto-dump.ts`—, y
+  no de adivinar: un `405` es la diferencia entre un camino real y uno inventado.
 
 ## Reglas que no se rompen
 

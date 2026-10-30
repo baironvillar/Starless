@@ -1783,6 +1783,13 @@ pub fn run() {
             if spclient::radio_requested() {
                 spclient::run_radio_probe(handle.clone());
             }
+            // El jam: la sesión compartida. La puerta se encontró en el cliente
+            // de escritorio; lo que falta es si una sesión de streaming la
+            // puede usar.
+            #[cfg(debug_assertions)]
+            if spclient::jam_requested() {
+                spclient::run_jam_probe(handle.clone());
+            }
             if selftest::requested() {
                 selftest::run(handle);
             }

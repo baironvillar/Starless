@@ -2235,10 +2235,10 @@ mod probe;
 
 #[cfg(debug_assertions)]
 pub use probe::{
-    create_requested, dj_requested, home_requested, pictures_requested, private_requested,
-    radio_requested, requested, run_create_probe, run_dj_probe, run_home_probe, run_picture_probe,
-    run_private_probe, run_probe, run_radio_probe, run_shape_probe, run_voice_probe,
-    shapes_requested, voice_requested,
+    create_requested, dj_requested, home_requested, jam_requested, pictures_requested,
+    private_requested, radio_requested, requested, run_create_probe, run_dj_probe, run_home_probe,
+    run_jam_probe, run_picture_probe, run_private_probe, run_probe, run_radio_probe, run_shape_probe,
+    run_voice_probe, shapes_requested, voice_requested,
 };
 
 #[cfg(test)]
