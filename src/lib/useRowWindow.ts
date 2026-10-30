@@ -1,4 +1,4 @@
-import { type RefObject, useEffect, useState } from "react";
+import { type RefObject, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 
 /** Below this many rows a list is drawn whole: windowing would buy nothing. */
@@ -27,6 +27,9 @@ export function useRowWindow(
 ): { first: number; last: number; pitch: number } {
   const whole = count < WINDOW_FROM;
   const [range, setRange] = useState({ first: 0, last: Math.min(count, OVERSCAN * 3), pitch: 0 });
+  // Kept across lists: a new list can arrive with nothing drawn where the old
+  // one was scrolled to, and the pitch is what finds where to draw.
+  const pitchRef = useRef(0);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `remeasure` is the trigger that makes the pitch be read again when the rows change height.
   useEffect(() => {
@@ -39,15 +42,16 @@ export function useRowWindow(
     }
     const target: HTMLElement | Window = scroller ?? window;
 
-    let pitch = 0;
     let drawn = { first: -1, last: -1 };
     // Called from the scroll event itself and committed with `flushSync`, so
     // the rows exist before the frame is painted: deferred to the next frame,
     // a fast scroll outran them and the list was seen filling in row by row.
     // It only renders when the visible part gets near an edge of what is drawn.
-    const update = () => {
+    const update = (sync: boolean) => {
       const rows = el.querySelectorAll<HTMLElement>("[data-row]");
-      if (rows.length > 1) pitch = rows[1].offsetTop - rows[0].offsetTop || pitch;
+      if (rows.length > 1)
+        pitchRef.current = rows[1].offsetTop - rows[0].offsetTop || pitchRef.current;
+      const pitch = pitchRef.current;
       if (!pitch) return;
       const top = el.getBoundingClientRect().top;
       const viewTop = scroller ? scroller.getBoundingClientRect().top : 0;
@@ -62,17 +66,25 @@ export function useRowWindow(
       const first = Math.min(count, Math.max(0, seenFirst - OVERSCAN));
       const last = Math.min(count, Math.max(first, seenLast + OVERSCAN));
       drawn = { first, last };
-      flushSync(() => setRange({ first, last, pitch }));
+      // Not inside the effect's own first call: React refuses `flushSync` there.
+      if (sync) flushSync(() => setRange({ first, last, pitch }));
+      else setRange({ first, last, pitch });
     };
 
-    update();
-    target.addEventListener("scroll", update, { passive: true });
-    addEventListener("resize", update);
+    const onScroll = () => update(true);
+    update(false);
+    target.addEventListener("scroll", onScroll, { passive: true });
+    addEventListener("resize", onScroll);
     return () => {
-      target.removeEventListener("scroll", update);
-      removeEventListener("resize", update);
+      target.removeEventListener("scroll", onScroll);
+      removeEventListener("resize", onScroll);
     };
   }, [list, count, whole, remeasure]);
 
-  return whole ? { first: 0, last: count, pitch: 0 } : range;
+  if (whole) return { first: 0, last: count, pitch: 0 };
+  // Until the pitch is measured, draw the top of the list: the pitch is read
+  // from two drawn rows, so a list that mounted empty and filled later (Liked
+  // Songs, which loads after the screen opens) never drew one and stayed blank.
+  if (!range.pitch) return { first: 0, last: Math.min(count, OVERSCAN * 3), pitch: 0 };
+  return range;
 }
