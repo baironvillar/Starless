@@ -15,6 +15,7 @@ use std::sync::{
 };
 
 use librespot_core::{Session, SpotifyId, SpotifyUri};
+use librespot_metadata::{Metadata, Track as MetaTrack, audio::AudioFileFormat};
 use librespot_playback::{
     config::{AudioFormat, PlayerConfig},
     mixer::VolumeGetter,
@@ -692,7 +693,8 @@ fn forward_events(app: AppHandle, player: Arc<Player>, generation: u32) {
                         });
                     }
                 }
-                PlayerEvent::Loading { .. } => {
+                PlayerEvent::Loading { track_id, .. } => {
+                    log_track_files(&app, track_id);
                     state.holds_no_track.store(false, Ordering::Relaxed);
                     state.mutate(|s| {
                         s.loading = true;
@@ -856,6 +858,75 @@ fn describe(event: &PlayerEvent) -> &'static str {
         PlayerEvent::AutoPlayChanged { .. } => "AutoPlayChanged",
         PlayerEvent::FilterExplicitContentChanged { .. } => "FilterExplicitContentChanged",
     }
+}
+
+/// The order librespot walks at its default 160 kbps (`player.rs`, `load_track`):
+/// the first of these the track has is the file whose key gets requested.
+const PREFERRED_FORMATS: [AudioFileFormat; 7] = [
+    AudioFileFormat::OGG_VORBIS_160,
+    AudioFileFormat::MP3_160,
+    AudioFileFormat::OGG_VORBIS_96,
+    AudioFileFormat::MP3_96,
+    AudioFileFormat::MP3_256,
+    AudioFileFormat::OGG_VORBIS_320,
+    AudioFileFormat::MP3_320,
+];
+
+/// Write down which file a track is about to be played from, and what the
+/// account looks like to Spotify.
+///
+/// `error audio key 0 1` is Spotify refusing the key for **one file**, not for
+/// the song — and librespot never says which file it asked for. Two accounts
+/// with the same build, the same client id and the same machine can get
+/// different answers, so the only way to tell them apart is to put the two
+/// logs side by side: the formats the track offers to each account, the one
+/// that was picked, and the attributes Spotify sent each session.
+///
+/// Fire and forget, on the session's own runtime: the player is already
+/// loading, and this must never be the reason a track starts late.
+fn log_track_files(app: &AppHandle, track_id: &SpotifyUri) {
+    let Some(session) = app.try_state::<crate::SessionState>().and_then(|state| {
+        state.0.lock().ok().and_then(|guard| guard.as_ref().cloned())
+    }) else {
+        return;
+    };
+
+    // The attributes do not change within a session, so once per session is
+    // enough — and once per track would drown the log it is meant to explain.
+    static ATTRIBUTES_LOGGED_FOR: Mutex<String> = Mutex::new(String::new());
+    if let Ok(mut logged) = ATTRIBUTES_LOGGED_FOR.lock() {
+        let id = session.session_id();
+        if *logged != id {
+            let mut attributes: Vec<_> = session.user_data().attributes.into_iter().collect();
+            attributes.sort();
+            let attributes: Vec<String> =
+                attributes.into_iter().map(|(key, value)| format!("{key}={value}")).collect();
+            log::info!("[diag] atributos de la cuenta: {}", attributes.join(" "));
+            *logged = id;
+        }
+    }
+
+    let uri = track_id.clone();
+    let owned = session.clone();
+    session.spawn(async move {
+        match MetaTrack::get(&owned, &uri).await {
+            Ok(track) => {
+                let mut offered: Vec<String> =
+                    track.files.keys().map(|format| format!("{format:?}")).collect();
+                offered.sort();
+                let picked = PREFERRED_FORMATS
+                    .iter()
+                    .find_map(|format| track.files.get(format).map(|file| format!("{format:?} {file}")))
+                    .unwrap_or_else(|| "ninguno".to_string());
+                log::info!(
+                    "[diag] {uri}: formatos [{}], elegido {picked}, alternativas {}",
+                    offered.join(", "),
+                    track.alternatives.len()
+                );
+            }
+            Err(error) => log::warn!("[diag] {uri}: sin metadata: {error}"),
+        }
+    });
 }
 
 /// A Spotify track id is base62; librespot wants a typed URI.
