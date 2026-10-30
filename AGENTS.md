@@ -960,6 +960,18 @@ en ningún proto ni en ninguna issue:
   hay relay. **Toda build local tiene esa forma**, y toda build hecha antes
   de que la variable existiera también. La dirección se chequea donde se usa,
   no donde se lee.
+- **Una animación que no es `transform` ni `opacity` cuesta el layout entero, y
+  una lista larga lo multiplica.** Medido en la app con un contador de cuadros: el
+  ecualizador de la fila que suena animaba `height` en un bucle infinito, y
+  mientras hubiera música la app iba a 30 fps; la barra de progreso animaba
+  `width` y `left` en cada tic. Ahora son `scaleY`, `scaleX` y `x`. Y una lista
+  de mil canciones dibujaba las mil filas en cada render de `App` —el volumen,
+  la posición, un menú—: 300 a 700 ms con la ventana congelada. `useRowWindow`
+  dibuja sólo las filas cerca de la pantalla y lo hace dentro del mismo evento
+  de scroll (`flushSync`): diferido al cuadro siguiente, un scroll rápido le
+  ganaba y la lista se veía llenarse de a poco. **Si animas algo, que sea un
+  transform; si agregas una lista que puede ser larga, pásala por
+  `useRowWindow`.**
 - **`.agent/` es la copia canónica** de la configuración de agentes. Los shims de
   `.claude/` y `.opencode/` que apuntaban ahí se borraron; para recuperar el
   skill en esas herramientas, `git revert 96cf93c`.

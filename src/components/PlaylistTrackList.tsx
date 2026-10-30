@@ -1,5 +1,6 @@
 import { Clock, Play } from "lucide-react";
 import { motion } from "motion/react";
+import { useRef } from "react";
 import type { StringKey } from "../lib/i18n";
 import { SPRING } from "../lib/motion";
 import {
@@ -12,6 +13,7 @@ import {
   type TrackListView,
   trackRowKeys,
 } from "../lib/spotify";
+import { useRowWindow } from "../lib/useRowWindow";
 import { ArtistLine } from "./ArtistLine";
 
 /**
@@ -95,6 +97,8 @@ export function PlaylistTrackList({
 }: PlaylistTrackListProps) {
   const rowKeys = trackRowKeys(tracks);
   const compact = view === "compact";
+  const rowsRef = useRef<HTMLDivElement>(null);
+  const { first, last, pitch } = useRowWindow(rowsRef, tracks.length, view);
   /**
    * Header and rows share one template string, always. They did not once: the
    * rows gained the album and date columns in one change and the header was left
@@ -137,106 +141,116 @@ export function PlaylistTrackList({
       {loading && <Note>{t.loading}</Note>}
       {error && !loading && <Note tone="warn">{error}</Note>}
 
-      {!loading &&
-        !error &&
-        tracks.map((track, index) => {
-          const isPlaying = track.id === nowPlayingId;
-          const isLoading = track.id === loadingId;
-          const isFailed = track.id === failedId;
-          const cover = coverImage(track.album?.images);
-          const album = track.album;
-          const addedAt = formatAddedAt(track.added_at, lang);
+      {!loading && !error && (
+        <div ref={rowsRef}>
+          {first > 0 && <div style={{ height: first * pitch }} aria-hidden />}
+          {tracks.slice(first, last).map((track, offset) => {
+            const index = first + offset;
+            const isPlaying = track.id === nowPlayingId;
+            const isLoading = track.id === loadingId;
+            const isFailed = track.id === failedId;
+            const cover = coverImage(track.album?.images);
+            const album = track.album;
+            const addedAt = formatAddedAt(track.added_at, lang);
 
-          return (
-            <motion.div
-              key={rowKeys[index]}
-              role="button"
-              tabIndex={0}
-              onClick={() => onPlay(track)}
-              onKeyDown={(e) => {
-                if (e.key !== "Enter" && e.key !== " ") return;
-                e.preventDefault();
-                onPlay(track);
-              }}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ ...SPRING, delay: Math.min(index, STAGGER_CAP) * STAGGER_STEP }}
-              className={`group grid cursor-pointer items-center gap-4 border-b border-white/8 px-4 ${
-                compact ? "py-1" : "py-2"
-              } text-left transition-colors duration-200 last:border-b-0 hover:bg-white/6 ${
-                isPlaying ? "bg-white/6" : ""
-              }`}
-              style={{ gridTemplateColumns: columns }}
-            >
-              <span className="relative grid place-items-center text-right">
-                <span
-                  className={`tabular text-[13px] ${
-                    isFailed
-                      ? "text-warn"
-                      : isPlaying
-                        ? "text-accent"
-                        : "text-ink-faint group-hover:opacity-0"
-                  } ${isLoading && !isPlaying ? "opacity-0" : ""}`}
-                >
-                  {index + 1}
+            return (
+              <motion.div
+                key={rowKeys[index]}
+                role="button"
+                tabIndex={0}
+                onClick={() => onPlay(track)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter" && e.key !== " ") return;
+                  e.preventDefault();
+                  onPlay(track);
+                }}
+                data-row
+                // Only the rows the list opens onto come in; a row that mounts
+                // because the list was scrolled to it is already there.
+                initial={index < STAGGER_CAP ? { opacity: 0, y: 8 } : false}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ ...SPRING, delay: index * STAGGER_STEP }}
+                className={`group grid cursor-pointer items-center gap-4 border-b border-white/8 px-4 ${
+                  compact ? "py-1" : "py-2"
+                } text-left transition-colors duration-200 last:border-b-0 hover:bg-white/6 ${
+                  isPlaying ? "bg-white/6" : ""
+                }`}
+                style={{ gridTemplateColumns: columns }}
+              >
+                <span className="relative grid place-items-center text-right">
+                  <span
+                    className={`tabular text-[13px] ${
+                      isFailed
+                        ? "text-warn"
+                        : isPlaying
+                          ? "text-accent"
+                          : "text-ink-faint group-hover:opacity-0"
+                    } ${isLoading && !isPlaying ? "opacity-0" : ""}`}
+                  >
+                    {index + 1}
+                  </span>
+
+                  {/* In the exact slot the number occupied, so the hand does not have
+                    to travel between reading a row and playing it. */}
+                  <motion.button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onPlay(track);
+                    }}
+                    whileTap={{ scale: 0.88 }}
+                    transition={SPRING}
+                    aria-label={`${t.play} — ${track.name}`}
+                    className={`absolute grid size-7 place-items-center rounded-pill transition-opacity duration-150 ${
+                      isPlaying
+                        ? "opacity-100"
+                        : isFailed
+                          ? "text-warn opacity-100 group-hover:opacity-0"
+                          : "text-ink opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                    }`}
+                  >
+                    {/* The one thing in the app allowed to breathe forever — and it is
+                      the one thing the user is listening for. */}
+                    {isPlaying ? (
+                      <Equalizer />
+                    ) : (
+                      <Play className="size-4 fill-current" strokeWidth={0} />
+                    )}
+                  </motion.button>
+
+                  {isLoading && !isPlaying && (
+                    <span className="absolute size-2 animate-pulse rounded-pill bg-accent" />
+                  )}
                 </span>
 
-                {/* In the exact slot the number occupied, so the hand does not have
-                    to travel between reading a row and playing it. */}
-                <motion.button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onPlay(track);
-                  }}
-                  whileTap={{ scale: 0.88 }}
-                  transition={SPRING}
-                  aria-label={`${t.play} — ${track.name}`}
-                  className={`absolute grid size-7 place-items-center rounded-pill transition-opacity duration-150 ${
-                    isPlaying
-                      ? "opacity-100"
-                      : isFailed
-                        ? "text-warn opacity-100 group-hover:opacity-0"
-                        : "text-ink opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-                  }`}
-                >
-                  {/* The one thing in the app allowed to breathe forever — and it is
-                      the one thing the user is listening for. */}
-                  {isPlaying ? (
-                    <Equalizer />
+                <div className="flex min-w-0 items-center gap-3">
+                  {compact ? null : cover ? (
+                    <span className="size-9 shrink-0 overflow-hidden rounded-[8px]">
+                      <img
+                        src={cover.url}
+                        alt=""
+                        loading="lazy"
+                        className="size-full object-cover"
+                      />
+                    </span>
                   ) : (
-                    <Play className="size-4 fill-current" strokeWidth={0} />
+                    <span className="size-9 shrink-0 rounded-[8px] bg-white/8" aria-hidden />
                   )}
-                </motion.button>
-
-                {isLoading && !isPlaying && (
-                  <span className="absolute size-2 animate-pulse rounded-pill bg-accent" />
-                )}
-              </span>
-
-              <div className="flex min-w-0 items-center gap-3">
-                {compact ? null : cover ? (
-                  <span className="size-9 shrink-0 overflow-hidden rounded-[8px]">
-                    <img src={cover.url} alt="" loading="lazy" className="size-full object-cover" />
-                  </span>
-                ) : (
-                  <span className="size-9 shrink-0 rounded-[8px] bg-white/8" aria-hidden />
-                )}
-                <div className={compact ? "flex min-w-0 items-baseline gap-2" : "min-w-0"}>
-                  <p
-                    className={`truncate text-[13.5px] font-semibold ${isPlaying ? "text-accent" : ""}`}
-                  >
-                    {track.name}
-                  </p>
-                  <ArtistLine
-                    track={track}
-                    onOpenArtist={onOpenArtist}
-                    className="truncate text-[12.5px] text-ink-muted"
-                  />
+                  <div className={compact ? "flex min-w-0 items-baseline gap-2" : "min-w-0"}>
+                    <p
+                      className={`truncate text-[13.5px] font-semibold ${isPlaying ? "text-accent" : ""}`}
+                    >
+                      {track.name}
+                    </p>
+                    <ArtistLine
+                      track={track}
+                      onOpenArtist={onOpenArtist}
+                      className="truncate text-[12.5px] text-ink-muted"
+                    />
+                  </div>
                 </div>
-              </div>
 
-              {/*
+                {/*
                 The album, as a door.
 
                 **The stop lives here rather than in a shared component**, because
@@ -245,39 +259,44 @@ export function PlaylistTrackList({
                 is neither of those things. The artist's line has the same guard,
                 one file over, for the same reason.
               */}
-              <span className="min-w-0 truncate text-[12.5px] text-ink-muted">
-                {album && onOpenAlbum ? (
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onOpenAlbum(album);
-                    }}
-                    title={album.name}
-                    className="block max-w-full truncate text-left transition-colors duration-150 hover:text-ink hover:underline"
-                  >
-                    {album.name}
-                  </button>
-                ) : (
-                  (track.album?.name ?? "—")
-                )}
-              </span>
+                <span className="min-w-0 truncate text-[12.5px] text-ink-muted">
+                  {album && onOpenAlbum ? (
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onOpenAlbum(album);
+                      }}
+                      title={album.name}
+                      className="block max-w-full truncate text-left transition-colors duration-150 hover:text-ink hover:underline"
+                    >
+                      {album.name}
+                    </button>
+                  ) : (
+                    (track.album?.name ?? "—")
+                  )}
+                </span>
 
-              <span className="min-w-0 truncate text-[12.5px] text-ink-muted">
-                {addedAt ?? "—"}
-              </span>
+                <span className="min-w-0 truncate text-[12.5px] text-ink-muted">
+                  {addedAt ?? "—"}
+                </span>
 
-              <span className="tabular text-right text-[12.5px] text-ink-muted">
-                {formatDuration(track.duration_ms)}
-              </span>
+                <span className="tabular text-right text-[12.5px] text-ink-muted">
+                  {formatDuration(track.duration_ms)}
+                </span>
 
-              {/* The menu stops the row from firing: the dots are a control that
+                {/* The menu stops the row from firing: the dots are a control that
                   happens to sit on a row, and a click that both opened a menu and
                   started the song is not a control at all. */}
-              {trackMenu?.(track)}
-            </motion.div>
-          );
-        })}
+                {trackMenu?.(track)}
+              </motion.div>
+            );
+          })}
+          {last < tracks.length && (
+            <div style={{ height: (tracks.length - last) * pitch }} aria-hidden />
+          )}
+        </div>
+      )}
 
       {/* Two different empties, said once each. "This playlist has no songs" and
           "your filter hid all of them" are both true at once when a search runs
@@ -296,6 +315,10 @@ export function PlaylistTrackList({
  * Three bars at three heights, because a single dot is what a spinner looks like
  * and a spinner on a row that is already playing says "working". The animation
  * is the app's only loop, and DESIGN.md allows exactly one.
+ *
+ * **`scaleY`, not `height`.** Animating the height re-laid out the whole list
+ * every frame while a song played, and the app ran at 30 fps for as long as
+ * there was music. A transform is drawn by the compositor and costs nothing.
  */
 function Equalizer() {
   return (
@@ -303,8 +326,8 @@ function Equalizer() {
       {[0, 1, 2].map((bar) => (
         <motion.span
           key={bar}
-          className="w-[2px] rounded-pill bg-accent"
-          animate={{ height: ["35%", "100%", "55%"] }}
+          className="h-full w-[2px] origin-bottom rounded-pill bg-accent"
+          animate={{ scaleY: [0.35, 1, 0.55] }}
           transition={{
             duration: 1.1,
             repeat: Infinity,

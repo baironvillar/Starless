@@ -115,10 +115,13 @@ export function SmoothSlider({
       } ${className}`}
     >
       <span className="absolute inset-x-0 h-1 rounded-pill bg-white/16" />
+      {/* The fill and the thumb move by transform, not by `width` and `left`:
+          the position ticks twice a second for as long as a song plays, and a
+          layout property re-laid out the bar on every frame of every spring. */}
       <motion.span
-        className={`absolute left-0 h-1 rounded-pill ${tone === "accent" ? "bg-accent" : "bg-ink"}`}
+        className={`absolute inset-x-0 h-1 origin-left rounded-pill ${tone === "accent" ? "bg-accent" : "bg-ink"}`}
         initial={false}
-        animate={{ width: `${fill}%` }}
+        animate={{ scaleX: fill / 100 }}
         transition={held ? INSTANT : SPRING}
       />
       <input
@@ -142,20 +145,25 @@ export function SmoothSlider({
         aria-label={label}
         className="peer absolute inset-0 z-10 w-full cursor-pointer opacity-0 disabled:cursor-default"
       />
+      {/* A full-width track that slides by a percentage of its own width,
+          which is the bar's width: the thumb sits at its left edge. */}
       <motion.span
         aria-hidden
-        className="pointer-events-none absolute size-3 rounded-pill bg-ink shadow-[0_1px_4px_rgb(0_0_0/0.55)] peer-focus-visible:ring-2 peer-focus-visible:ring-accent"
-        style={{ x: "-50%" }}
+        className="pointer-events-none absolute inset-x-0 flex h-3 items-center peer-focus-visible:*:ring-2 peer-focus-visible:*:ring-accent"
         initial={false}
-        animate={{ left: `${fill}%`, scale }}
-        transition={{
-          // **The position follows the pointer; the size does not.** The thumb
-          // growing under the hand is a decoration and it springs. The
-          // position is the control itself, and it is where the mouse is.
-          left: held ? INSTANT : SPRING,
-          scale: SPRING,
-        }}
-      />
+        animate={{ x: `${fill}%` }}
+        // **The position follows the pointer; the size does not.** The thumb
+        // growing under the hand is a decoration and it springs. The position
+        // is the control itself, and it is where the mouse is.
+        transition={held ? INSTANT : SPRING}
+      >
+        <motion.span
+          className="size-3 -translate-x-1/2 rounded-pill bg-ink shadow-[0_1px_4px_rgb(0_0_0/0.55)]"
+          initial={false}
+          animate={{ scale }}
+          transition={SPRING}
+        />
+      </motion.span>
     </span>
   );
 }
