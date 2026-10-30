@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Wrangler's scratch: the bundles it builds while it runs the relay locally or
+# deploys it. They are generated, they name the machine that made them, and
+# they break the lint the moment somebody runs `wrangler dev`.
+.wrangler/
+
 # The updater's private signing key. It can sign an update for every installed
 # copy of Starless, it is never needed to build the app, and a repository is the
 # last place it should ever land. The public half (`.pub`) is committed on purpose,
