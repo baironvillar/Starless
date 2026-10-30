@@ -55,7 +55,14 @@ type QueuePanelProps = {
    * the window's own inset: that space is the queue's, not empty ground.
    */
   barPresent: boolean;
-  onPlay: (track: Track) => void;
+  /**
+   * Play a song from the panel, and say which row it was.
+   *
+   * **The row's place, not the song.** The queue can hold the same song twice,
+   * and looking it up by its id finds the first copy —the one that already
+   * played—. The panel knows the place, so it says it.
+   */
+  onPlay: (track: Track, row: number) => void;
   onClose: () => void;
 };
 
@@ -177,6 +184,7 @@ export function QueuePanel({
                     track={track}
                     position={first + offset + 1}
                     onPlay={onPlay}
+                    row={first + offset}
                   />
                 ))}
                 {last < upNext.length && (
@@ -305,10 +313,12 @@ function QueueRow({
   track,
   position,
   onPlay,
+  row,
 }: {
   track: Track;
   position?: number;
-  onPlay: (track: Track) => void;
+  onPlay: (track: Track, row: number) => void;
+  row: number;
 }) {
   return (
     <motion.li
@@ -322,7 +332,7 @@ function QueueRow({
     >
       <button
         type="button"
-        onClick={() => onPlay(track)}
+        onClick={() => onPlay(track, row)}
         className="group flex w-full items-center gap-3 rounded-[14px] px-2 py-2 text-left transition-colors duration-200 hover:bg-white/6"
       >
         {position !== undefined ? (

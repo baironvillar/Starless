@@ -950,7 +950,26 @@ en ningún proto ni en ninguna issue:
   relay roto —justo el fallo que nadie va a reportar. Los tests de `report.ts`
   existían, los de `index.ts` —el que crea el issue, agrupa los crashes
   repetidos y corta por el límite de la hora— no: eran el camino sin probar.
-  Ahora `bun run relay:test` corre en la CI, en cada push y en cada PR.
+  Ahora `bun run test` corre en la CI, en cada push y en cada PR: los del
+  relay y los de la app.
+- **Una canción agregada a la cola con nada sonando era la cola entera.**
+  `onAddToQueue` armaba `[track]` cuando no había cola: la lista de la pantalla
+  se caía de la cola en ese momento, y **después de esa canción no había nada**.
+  Lo que pasó en vivo fue peor de lo que se veía: la canción terminó, la app no
+  encontró nada detrás y **arrancó la radio** —el log mostró `radio: arrancó con
+  50 canciones`—, así que la app seguía con música y lo que había seguido era
+  otra cosa. Ahora la cola es la lista de la pantalla **más** lo que el usuario
+  le puso, y la regla vive en `src/lib/queue.ts`, que tiene tests.
+- **Poner una canción en la cola es ponerla en un lugar, y ese lugar es el de
+  después de la que está sonando.** No es "agregar al final": una canción que
+  el usuario está esperando al final de una cola de treinta queda esperando
+  media hora. Y **reemplaza la copia que ya estaba**: la canción salió de la
+  pantalla, así que si la cola ya la tenía, la copia vieja sale y la nueva queda
+  en el lugar de al lado. Las dos cosas se notaron en vivo, en este orden: la
+  canción quedaba al final, y después quedaba **dos veces** en el panel. La cola
+  decía una cosa y el panel mostraba otra, dos veces.
+  **Y la canción que está sonando no se agrega ni se saca**: es el cursor, y
+  sin cursor no hay dónde insertar nada.
 - **Una variable de Actions que no existe llega como cadena vacía, y
   `option_env!` no la distingue de una que existe y está vacía.**
   `STARLESS_REPORT_RELAY` se pasa al build desde una variable del repositorio:
