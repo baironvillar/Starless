@@ -891,6 +891,17 @@ salen de una captura:
   menús cambian una vez, al soltar. La leyenda tiene su propia variable
   (`--legend-alpha`) por eso: si leyera la de los menús, no podría contestar
   antes que ellos.
+- **Una puerta que se abre no es un corte, y un login en curso no es una
+  restauración.** La pantalla de inicio de sesión desaparecía en un fotograma
+  cuando llegaba la sesión: la app estaba y la tarjeta no, sin ninguna
+  transición. Ahora la puerta se desvanece sobre la app que ya está debajo, y
+  los dos son un movimiento solo. Y el techo de la restauración se reinicia
+  cuando la persona aprieta el botón, así que la condición de "restaurando"
+  tiene que **excluir el login en curso**: sin eso la tarjeta desaparecía bajo
+  los dedos y el botón se iba antes de que la sesión estuviera. El botón, además,
+  sólo se apagaba —sin spinner y sin decir qué estaba esperando—, y el handshake
+  con Spotify puede fallar solo: tiene un techo, o el botón queda apagado
+  para siempre y la pantalla no tiene salida.
 - **`.agent/` es la copia canónica** de la configuración de agentes. Los shims de
   `.claude/` y `.opencode/` que apuntaban ahí se borraron; para recuperar el
   skill en esas herramientas, `git revert 96cf93c`.
