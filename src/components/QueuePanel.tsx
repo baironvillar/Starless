@@ -1,4 +1,4 @@
-import { Play, Users, X } from "lucide-react";
+import { Play, Plus, Users, X } from "lucide-react";
 import { motion } from "motion/react";
 import type { StringKey } from "../lib/i18n";
 import { SPRING, SPRING_SHEET } from "../lib/motion";
@@ -63,6 +63,16 @@ type QueuePanelProps = {
    * listening— and neither one has to make room for the other.
    */
   onOpenJam: () => void;
+  /**
+   * Whether a jam is open, and what to do with a song.
+   *
+   * **The plus only shows up with a jam open**, because without one there is
+   * nowhere to put the song. And it is only on the songs that come next: the
+   * one that is sounding is already in the jam's queue —that is what a jam is—
+   * and adding it again would be adding the same song twice.
+   */
+  jamOpen?: boolean;
+  onAddToJam?: (track: Track) => void;
 };
 
 /**
@@ -115,6 +125,8 @@ export function QueuePanel({
   onPlay,
   onClose,
   onOpenJam,
+  jamOpen,
+  onAddToJam,
 }: QueuePanelProps) {
   const rowKeys = trackRowKeys(upNext);
 
@@ -196,7 +208,15 @@ export function QueuePanel({
           <Section label={t.queueNextUp}>
             {upNext.length > 0 ? (
               upNext.map((track, index) => (
-                <QueueRow key={rowKeys[index]} track={track} position={index + 1} onPlay={onPlay} />
+                <QueueRow
+                  key={rowKeys[index]}
+                  t={t}
+                  track={track}
+                  position={index + 1}
+                  onPlay={onPlay}
+                  jamOpen={jamOpen}
+                  onAddToJam={onAddToJam}
+                />
               ))
             ) : (
               <Empty t={t} />
@@ -304,13 +324,19 @@ function NowPlaying({ track }: { track: Track }) {
 }
 
 function QueueRow({
+  t,
   track,
   position,
   onPlay,
+  jamOpen,
+  onAddToJam,
 }: {
+  t: Record<StringKey, string>;
   track: Track;
   position?: number;
   onPlay: (track: Track) => void;
+  jamOpen?: boolean;
+  onAddToJam?: (track: Track) => void;
 }) {
   return (
     <motion.li
@@ -318,33 +344,57 @@ function QueueRow({
       animate={{ opacity: 1, x: 0 }}
       transition={{ ...SPRING, delay: 0.02 * (position ?? 0) }}
     >
-      <button
-        type="button"
-        onClick={() => onPlay(track)}
-        className="group flex w-full items-center gap-3 rounded-[14px] px-2 py-2 text-left transition-colors duration-200 hover:bg-white/6"
-      >
-        {position !== undefined ? (
-          <span className="tabular w-3 shrink-0 text-[12px] text-ink-faint">{position}</span>
-        ) : (
-          <span className="w-3 shrink-0" />
-        )}
+      {/*
+          The row is a div with the play button inside, and not a button with
+          the play button inside it.
 
-        <span className="relative size-9 shrink-0 rounded-[9px]">
-          <Cover track={track} className="absolute inset-0 size-full rounded-[9px]" />
-          <span className="absolute inset-0 grid place-items-center rounded-[9px] bg-ground/55 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-            <Play className="size-3.5 translate-x-px fill-ink text-ink" strokeWidth={0} />
+          **A button inside a button is not a thing** —the browser swallows the
+          inner one and the click lands on the outer— and the plus needs to be
+          its own control, with its own label.
+      */}
+      <div className="group flex w-full items-center gap-1 rounded-[14px] px-2 py-2 text-left transition-colors duration-200 hover:bg-white/6">
+        <button
+          type="button"
+          onClick={() => onPlay(track)}
+          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+        >
+          {position !== undefined ? (
+            <span className="tabular w-3 shrink-0 text-[12px] text-ink-faint">{position}</span>
+          ) : (
+            <span className="w-3 shrink-0" />
+          )}
+
+          <span className="relative size-9 shrink-0 rounded-[9px]">
+            <Cover track={track} className="absolute inset-0 size-full rounded-[9px]" />
+            <span className="absolute inset-0 grid place-items-center rounded-[9px] bg-ground/55 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+              <Play className="size-3.5 translate-x-px fill-ink text-ink" strokeWidth={0} />
+            </span>
           </span>
-        </span>
 
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-medium">{track.name}</span>
-          <span className="block truncate text-[12px] text-ink-muted">{trackArtists(track)}</span>
-        </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[13px] font-medium">{track.name}</span>
+            <span className="block truncate text-[12px] text-ink-muted">{trackArtists(track)}</span>
+          </span>
 
-        <span className="tabular shrink-0 text-[12px] text-ink-faint">
-          {formatDuration(track.duration_ms)}
-        </span>
-      </button>
+          <span className="tabular shrink-0 text-[12px] text-ink-faint">
+            {formatDuration(track.duration_ms)}
+          </span>
+        </button>
+
+        {jamOpen && onAddToJam ? (
+          <motion.button
+            type="button"
+            onClick={() => onAddToJam(track)}
+            whileTap={{ scale: 0.9 }}
+            transition={SPRING}
+            aria-label={t.addToJam}
+            title={t.addToJam}
+            className="grid size-7 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink"
+          >
+            <Plus className="size-4" strokeWidth={2.2} />
+          </motion.button>
+        ) : null}
+      </div>
     </motion.li>
   );
 }

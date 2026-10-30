@@ -38,6 +38,7 @@ import {
   explain,
   isDjCard,
   type JamSession,
+  jamAddToQueue,
   jamJoin,
   jamLeave,
   jamQueue,
@@ -372,6 +373,41 @@ export default function App() {
       setJamBusy(false);
     }
   }, [jam]);
+
+  /**
+   * Put a song in the jam's shared queue.
+   *
+   * **The queue is filled with a command, not with a list write.** The command
+   * goes to the session, the session knows whose device it is, and the song
+   * lands in the queue that both sides read.
+   */
+  const addToJam = useCallback(
+    async (track: Track) => {
+      if (!jam) return;
+      setJamBusy(true);
+      setJamError(null);
+      try {
+        await jamAddToQueue(jam.session_id, track.id);
+      } catch (e) {
+        setJamError(explain(e));
+      } finally {
+        setJamBusy(false);
+      }
+    },
+    [jam],
+  );
+
+  /**
+   * Whether the screens should offer to put a song in the jam.
+   *
+   * **The row only exists while there is a jam to put the song in.** A menu
+   * row that is always there and does nothing is worse than no row: it reads
+   * as broken.
+   */
+  const onAddToJam = useMemo(
+    () => (jam ? (track: Track) => void addToJam(track) : undefined),
+    [jam, addToJam],
+  );
 
   /**
    * How the shelf is ordered and drawn, read once at startup for the same reason the
@@ -1047,13 +1083,21 @@ export default function App() {
         // The first poll only writes it down: the queue starts with a seed
         // that the service fills by itself, and jumping into that would be
         // playing something nobody chose.
+        //
+        // **A read that comes back empty does not erase the head.** The
+        // service answers `Not Found` while the jam has no queue, and that is
+        // a moment, not a state: if the head were forgotten there, the app
+        // would stop following until the queue changed again —and the queue
+        // changing is exactly what it was waiting for.
         const head = queue[0];
-        const before = jamHead.current;
-        jamHead.current = head?.id ?? null;
-        if (head && before !== null && before !== head.id && head.id !== jamPlaying.current) {
-          playTrack(head).catch((e) => {
-            console.error("Starless: no se pudo seguir la cola del jam", explain(e));
-          });
+        if (head) {
+          const before = jamHead.current;
+          jamHead.current = head.id;
+          if (before !== null && before !== head.id && head.id !== jamPlaying.current) {
+            playTrack(head).catch((e) => {
+              console.error("Starless: no se pudo seguir la cola del jam", explain(e));
+            });
+          }
         }
       } catch (e) {
         // A jam that cannot be read right now is not a jam that is over: the
@@ -2371,6 +2415,8 @@ export default function App() {
               onPlay={onPlay}
               onClose={() => setQueueOpen(false)}
               onOpenJam={() => setJamOpen(true)}
+              jamOpen={jam !== null}
+              onAddToJam={(track) => void addToJam(track)}
             />
           )}
         </AnimatePresence>
@@ -2495,6 +2541,7 @@ export default function App() {
                 onOpenArtist={openArtist}
                 onAddToQueue={onAddToQueue}
                 onNewPlaylist={openNaming}
+                onAddToJam={onAddToJam}
               />
             ) : (
               <p className="rounded-card border border-white/8 bg-white/4 px-5 py-6 text-center text-[13px] text-ink-faint">
@@ -2578,6 +2625,7 @@ export default function App() {
               onOpenAlbum={openAlbum}
               onAddToQueue={onAddToQueue}
               onNewPlaylist={openNaming}
+              onAddToJam={onAddToJam}
               onAddListToQueue={onAddListToQueue}
               prefs={trackPrefs}
               onPrefsChange={changeTrackPrefs}
@@ -2616,6 +2664,7 @@ export default function App() {
               onOpenAlbum={openAlbum}
               onAddToQueue={onAddToQueue}
               onNewPlaylist={openNaming}
+              onAddToJam={onAddToJam}
               // Los tres puntos de la playlist: la lista entera va a la cola, y
               // los detalles son un diálogo aparte.
               onAddListToQueue={onAddListToQueue}

@@ -27,8 +27,9 @@ En corto:
 | Unirse | `POST /social-connect/v2/sessions/join/<token>`, con cuerpo |
 | Cerrarla | `DELETE /social-connect/v2/sessions/<session_id>` |
 | La cola | `spotify:list:jam-list:<session_id>`, por `playlist/spotify.list.v1.ListReadService/GetLists` — `POST`, protobuf |
+| Llenar la cola | `POST /social-connect/v2/sessions/<session_id>/commands/from/<device_id>`, con un comando de `endpoint: "add_to_queue"` |
 | Forma de la respuesta | JSON, con `session_id`, `join_session_token` y los participantes |
-| Lo que falta | escribir en la cola, la puerta del invitado, y el pubsub |
+| Lo que falta | el camino de vuelta de los comandos —el pubsub— y una segunda cuenta para medir el cruce |
 
 ## Lo que está medido
 
@@ -256,13 +257,15 @@ son dos cosas: la cola es del jam, y la semilla viene de otra lista.
 La respuesta entera queda en `%LOCALAPPDATA%\Starless\jam-list-sesion.bin`,
 porque son 43 KB de protobuf y el log la muestra recortada.
 
-### Escribir en la cola: lo que se intentó
+### Escribir en la cola: la puerta que no era
 
-La cola se lee; **escribirla es lo que no está**. La puerta que el repo ya
-conoce para las playlists es `POST /playlist/v2/playlist/<id>/changes` con un
-`ListChanges`, y se probó contra la cola del jam con la revisión que trae la
-propia lectura —la revisión viene en `GetListResponse.info.revision`, y sin ella
-la escritura es un `400` a un cuerpo que el servicio acepta—:
+La cola se lee; **escribirla se hace por otra puerta, y no por playlist4**.
+
+Lo primero que se probó fue la puerta que el repo ya conoce para las playlists:
+`POST /playlist/v2/playlist/<id>/changes` con un `ListChanges`, contra la cola del
+jam, con la revisión que trae la propia lectura —la revisión viene en
+`GetListResponse.info.revision`, y sin ella la escritura es un `400` a un cuerpo
+que el servicio acepta—:
 
 | id probado | respuesta |
 | --- | --- |
@@ -271,21 +274,22 @@ la escritura es un `400` a un cuerpo que el servicio acepta—:
 | `spotify:list:jam-list:<session_id>` | `400` |
 | `4uLU6hMCjMI75M1A2tKUQC` —un id que no existe— | `404` |
 
-**El `404` del id inventado es el dato**: el id de la sesión no es un id que el
-servicio no conozca, así que el `400` no es "esa lista no existe" sino "ese
-cuerpo no". Y `400` es lo que contesta playlist4 a un cuerpo que no sabe
-interpretar.
+**El `400` no era el cuerpo.** Era el **id**. Playlist4 sólo acepta ids de 22
+caracteres de base62, y un id de esa forma que no existe contesta `404`: la
+comparación de la tabla lo dice solo. Los tres `400` eran ids con otra forma —32
+hex, 36 con prefijo, una URI—, y no un `ListChanges` mal escrito.
 
-Lo que se probó como cuerpo, sin que ninguno pasara: `ADD` con `add_last`, `ADD`
-sin `add_last`, `ADD` sin atributos en el item, y `ADD` con el **id del
-participante** en vez del nombre de la cuenta. Los cuatro contestaron `400` y la
-cola siguió con las mismas canciones.
+Eso cierra la puerta de playlist4 para la cola del jam: **la cola del jam no es
+una playlist y no tiene id de playlist4.** Es una lista del otro sistema —el de
+`spotify:list:`—, que se lee por el servicio de listas y que no tiene servicio de
+escritura en el cliente de escritorio.
 
-**Lo que falta es la forma del `ListChanges` que acepta una cola de jam**, que
-es de otro tipo que una playlist: es la lista del anfitrión, y el servicio la
-gestiona de otra manera. El candidato que queda es el *patch* de pista que
-menciona el cliente de escritorio (`jam.patch_track`), que no es un verbo HTTP
-sino un nombre de operación.
+Los cuatro cuerpos que se probaron (`ADD` con `add_last`, `ADD` sin `add_last`,
+`ADD` sin atributos en el item, `ADD` con el id del participante) contestaron
+`400`, pero ese `400` era el del id y no el del cuerpo: **lo que se estaba
+midiendo mal era la pregunta.**
+
+La puerta que sí funciona es la de comandos, y está abajo.
 
 ## La puerta de comandos
 
@@ -307,17 +311,69 @@ vuelve lo mismo, y con `{"command":{"type":"PLAY","context_uri":"spotify:track:�
 vuelve `INVALID_PLAYER_COMMAND` —"Could not parse command"—: el campo se
 encontró, pero lo que hay adentro no es un comando de reproducción.
 
-La forma que arma el cliente de escritorio está en sus strings:
+### El comando no lleva `type`: lleva `endpoint`
 
-```
-{"command":%.*s,"connection_type":"%s","intent_id":"%s"}
+**El error no era que el comando fuera inválido: era que el campo estaba mal
+llamado.** El comando de reproducción no es un objeto con `type`, es un objeto
+con **`endpoint`**:
+
+```json
+{"command": {"endpoint": "add_to_queue",
+             "track": {"uri": "spotify:track:3b5E38f6Dbx28IVof4oeAA"},
+             "options": {"override_restrictions": false,
+                         "only_for_local_device": false,
+                         "system_initiated": false},
+             "logging_params": {"command_initiated_time": 1759…,
+                                "command_received_time": 1759…,
+                                "page_instance_ids": [], "interaction_ids": [],
+                                "device_identifier": "Starless",
+                                "command_id": "<32 hex>"}},
+ "connection_type": "wlan",
+ "intent_id": "<32 hex>"}
 ```
 
-y el comando de reproducción es un `ProxyTransferCommand` con
-`player_command_json`, `target_device_id` y `command_id`. **Falta el JSON del
-comando en sí**, y con él la otra mitad: el invitado no *recibe* comandos, los
-pide —esta puerta es de escritura—, así que aunque se manden, el otro lado
-necesita pubsub para enterarse. Y el pubsub no está en librespot.
+Con esa forma, medido el 30 de octubre de 2026:
+
+| comando | respuesta |
+| --- | --- |
+| `add_to_queue` con la uri de la pista | `200` · `{"status":"RECOVERED"}` |
+| `add_to_queue` con la uri y el uid | `200` · `{"status":"RECOVERED"}` |
+| `add_to_queue` sin `logging_params` | `200` · `{"status":"RECOVERED"}` |
+| `play` con la uri de la pista | `200` · `{"status":"RECOVERED"}` |
+| `skip_next` | `200` · `{"status":"RECOVERED"}` |
+| `pause` | `200` · `{"status":"DEVICE_NOT_FOUND"}` |
+
+El `options` y el `logging_params` **no hacen falta**: con
+`{"endpoint":"add_to_queue","track":{"uri":"…"}}` a secas también entra. Se mandan
+igual porque es lo que manda el cliente de escritorio.
+
+El estado no es un error: `RECOVERED` es que el comando entró, y
+`DEVICE_NOT_FOUND` —lo que contesta `pause`— es que no había un dispositivo al
+que mandárselo.
+
+### De dónde salió la forma
+
+Del cliente de escritorio, y de un proyecto que ya la tenía escrita:
+[`mcMineyC/spotcontrol`](https://github.com/mcMineyC/spotcontrol), que invierte
+el protocolo de Spotify Connect capturando el tráfico del cliente. Su
+`PlayerCommand` es exactamente esto —`endpoint`, `value`, `track`, `options`,
+`logging_params`— y su `PlayerCommandRequest` es el sobre con `command`,
+`connection_type` e `intent_id`. La pista del comando es un
+`spotify.connectstate.ContextTrack`, que tiene `uri`, `uid`, `gid` y `metadata`.
+
+**El `connection_type` es `"wlan"`**, no `"LOCAL"`.
+
+### Lo que esta puerta no arregla
+
+**Es de escritura.** El comando entra en la sesión, y el servicio lo aplica —el
+estado que contesta es el del player—. Lo que **no** hay es el camino de vuelta:
+el invitado no *recibe* comandos, los pide, y para enterarse de lo que el otro
+lado manda hace falta pubsub. El pubsub no está en librespot.
+
+Lo que sí queda de este lado es la cola: **los dos leen la misma cola**, y el
+que la llena la llena con un comando como este. Por eso la reproducción cruza
+de un lado al otro sin pubsub: no es que uno mande al otro, es que los dos miran
+la misma lista.
 
 ## El estado del dispositivo
 
@@ -572,14 +628,13 @@ Honesto, porque buena parte de esto no se comprobó:
   sesión del anfitrión. El servicio nombra dos tokens distintos —de lectura y
   de escritura— y la sesión que devuelve trae uno solo: falta la puerta del
   convite, y con ella la forma de compartir el jam.
-- **Escribir en la cola.** Se sabe leerla —con su URI, su servicio y su
-  cuerpo— y se probó escribirla: el id de la lista es el id de la sesión —un id
-  inventado contesta `404` y el de la sesión contesta `400`—, así que lo que se
-  rechaza es el **cuerpo** del `ListChanges`. Cuatro variantes de `ADD`
-  contestaron `400`. Falta la forma que acepta una cola de jam, que es de otro
-  tipo que una playlist.
-- **El formato del comando de reproducción.** La puerta existe y pide un campo
-  `command`; falta el JSON que va adentro, que es el del cliente de escritorio.
+- **El camino de vuelta de los comandos.** La puerta de comandos es de escritura:
+  el comando entra y el servicio lo aplica, pero el otro lado no lo *recibe* sin
+  pubsub. Por eso el cruce funciona por la cola —los dos leen la misma lista— y
+  no por el comando.
+- **Si el comando que manda el invitado llega a la cola del anfitrión.** El
+  servicio contesta `200` con `{"status":"RECOVERED"}`, que dice que el comando
+  entró, pero no dice **qué hizo**: eso necesita dos cuentas.
 - **Cómo se modifica una sesión.** `GET`, `POST`, `PUT` y `PATCH` sobre
   `/social-connect/v2/sessions/<id>` contestan `405`: el verbo es otro, y
   probablemente sea un `POST` con el cuerpo del proto. Los permisos
@@ -614,3 +669,9 @@ Si esto termina en un issue o un PR, lo que aporta es:
 6. Que **salir y cerrar son puertas distintas**: la primera es la del
    invitado, la segunda la del anfitrión. Con una sola, el invitado no puede
    salirse.
+7. Que **la cola se llena con un comando de reproducción, no con una escritura
+   de lista**, y que ese comando lleva `endpoint` y no `type` —con `type` el
+   servicio contesta `Could not parse command`, que es un error que parece
+   говори de otra cosa—. Y que la cola **no se escribe por playlist4**: el
+   `400` de `…/playlist/<id>/changes` es por el **id**, que no tiene la forma
+   que playlist4 acepta.

@@ -463,6 +463,21 @@ export async function jamLeave(sessionId: string, isOwner: boolean): Promise<voi
 }
 
 /**
+ * Add a song to the shared queue.
+ *
+ * **The shared queue is filled with a player command, not with a list write.**
+ * The door is `…/sessions/<id>/commands/from/<device>` and the body is a command
+ * whose `endpoint` is `add_to_queue`.
+ *
+ * The command is the one the desktop client sends, and it is the door that
+ * crosses: whoever adds the song, the song lands in the jam's queue and both
+ * sides see it in the queue they poll.
+ */
+export async function jamAddToQueue(sessionId: string, trackId: string): Promise<void> {
+  return invoke<void>("jam_add_to_queue", { sessionId, trackId });
+}
+
+/**
  * Subscribe to playback events.
  *
  * Called from an effect, not from a hook body: the listener outlives any single

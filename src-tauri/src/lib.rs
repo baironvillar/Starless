@@ -1066,6 +1066,33 @@ async fn jam_leave(app: AppHandle, session_id: String, is_owner: bool) -> Result
     })?
 }
 
+/// Agregar una canción a la cola compartida del jam.
+///
+/// **La cola compartida se llena con un comando del player**, no con una
+/// escritura de lista: la puerta es `…/sessions/<id>/commands/from/<device>`
+/// y el cuerpo es un comando con `endpoint: "add_to_queue"`.
+///
+/// El comando lo aplica el servicio del jam, que es el que sabe de quién es
+/// cada dispositivo: por eso el `device` del camino es el nuestro y no el del
+/// anfitrión.
+#[tauri::command]
+async fn jam_add_to_queue(
+    app: AppHandle,
+    session_id: String,
+    track_id: String,
+) -> Result<(), String> {
+    let session = ready_session(&app).await?;
+
+    tauri::async_runtime::spawn_blocking(move || {
+        spclient::jam_add_to_queue(&session, &session_id, &track_id)
+    })
+    .await
+    .map_err(|e| {
+        eprintln!("Starless [command_failed]: {e}");
+        "command_failed".to_string()
+    })?
+}
+
 // El DJ: las canciones que Spotify le fabricó a la cuenta, y lo que dice al
 // empezar.
 //
@@ -1950,6 +1977,7 @@ pub fn run() {
             jam_status,
             jam_queue,
             jam_leave,
+            jam_add_to_queue,
             radio_start,
             radio_more,
             player_status,

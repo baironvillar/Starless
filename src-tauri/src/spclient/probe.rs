@@ -3460,6 +3460,14 @@ pub fn run_jam_probe(app: tauri::AppHandle) {
                 "/social-connect/v2/sessions/current_or_new?activate=true",
                 None,
             );
+
+            // **La cola del jam no está enseguida.** La primera vez que se midió
+            // —con la sesión activada cinco minutos antes— la cola estaba, con
+            // trescientas canciones; con la sesión activada hace cinco segundos
+            // el servicio contesta `Not Found`. Lo que se puede medir es el
+            // tiempo, y por eso se espera antes de leer.
+            log::info!("SP_JAM: se esperan 10 s a que la cola del jam exista");
+            std::thread::sleep(std::time::Duration::from_secs(10));
         } else {
             log::info!("SP_JAM: sin STARLESS_SP_JAM_CREATE no se activa ninguna sesión");
         }
@@ -3626,8 +3634,20 @@ pub fn run_jam_probe(app: tauri::AppHandle) {
                 // La respuesta del servicio de listas es **protobuf**, y
                 // grande: el log la muestra recortada, así que se guarda
                 // entera en disco para poder mirarla sin volver a medir.
+                //
+                // **La cola y la respuesta de error van a archivos distintos.**
+                // El servicio contesta `Not Found` cuando el jam todavía no
+                // tiene cola, y un archivo con eso adentro no es una cola: es
+                // lo que el test del decodificador lee, y si lo leyera
+                // estaría probando que el decodificador falla.
                 if let Some((status, bytes)) = answered {
-                    let path = jam_scratch_path(&format!("jam-list-{slug}.bin"));
+                    let is_queue = super::jamlist::tracks(&bytes).is_some();
+                    let name = if is_queue {
+                        format!("jam-list-{slug}.bin")
+                    } else {
+                        format!("jam-list-{slug}-error.bin")
+                    };
+                    let path = jam_scratch_path(&name);
                     let written = std::fs::write(&path, &bytes).is_ok();
 
                     log::info!(
@@ -3673,6 +3693,7 @@ pub fn run_jam_probe(app: tauri::AppHandle) {
             // camino inventado de uno real, y es lo único que se afirma acá.
             jam_probe_paths(&session, id, &member_id, &device);
             jam_probe_writes(&session, id, &device);
+            jam_probe_queue_write(&session, id, &device);
         }
 
         // Los permisos de la sesión, que son dos puertas con barra.
@@ -4001,6 +4022,266 @@ fn jam_probe_writes(session: &Session, session_id: &str, device: &str) {
             bytes.len()
         );
     }
+}
+
+/// **La puerta que falta: escribir en la cola compartida del jam.**
+///
+/// Lo que se sabe hasta ahora es que la cola **no** es una playlist de playlist4,
+/// y que el `400` de `POST /playlist/v2/playlist/<id>/changes` no dice "el cuerpo
+/// está mal": dice que **el id no tiene la forma que playlist4 acepta**. La
+/// comparación lo prueba —un id de base62 que no existe contesta `404`, y el id
+/// de la sesión, que son 32 hex, contesta `400`—. playlist4 sólo acepta ids de
+/// 22 caracteres de base62, así que la cola del jam —que se lee como
+/// `spotify:list:jam-list:<id>`— no tiene id de playlist4: no se escribe por
+/// ahí.
+///
+/// Lo que sí tiene la cola es un **servicio**: el de la lectura es
+/// `playlist/spotify.list.v1.ListReadService/GetLists`, en el host `playlist`.
+/// El de la escritura no aparece en el cliente de escritorio —su descriptor no
+/// está embebido, así que no hay forma de volcarlo—, pero los nombres de los
+/// servicios sí están, y son los que se preguntan acá.
+///
+/// **Un cuerpo vacío no escribe nada**, así que la matriz es segura: lo que
+/// contesten los status dice si el servicio existe. Un `404` es que no existe;
+/// un `405` es que el router lo conoce pero no con ese verbo; un `400` es que el
+/// método existe y el cuerpo no es el suyo —que es el dato bueno, porque el
+/// error dice qué falta—; y un `200` es que el método se accepts.
+#[cfg(debug_assertions)]
+fn jam_probe_queue_write(session: &Session, session_id: &str, device: &str) {
+    let track = "spotify:track:3b5E38f6Dbx28IVof4oeAA";
+
+    // **1. La puerta de comandos del jam, con la forma que el servicio
+    // entiende.**
+    //
+    // El error "Could not parse command" no era por el tipo de comando: era
+    // por la **forma**. El comando no es un objeto con `type`, es un objeto con
+    // `endpoint`, y el `command` del sobre es ese objeto —no una cadena—:
+    //
+    //   {"command": {"endpoint": "add_to_queue", "track": {"uri": "spotify:track:…"},
+    //                "options": {…}, "logging_params": {…}},
+    //    "connection_type": "wlan", "intent_id": "<hex>"}
+    //
+    // Los endpoints son los del player: `add_to_queue`, `play`, `pause`,
+    // `skip_next`, `skip_prev`, `seek_to`, `set_queue`… y `add_to_queue` es
+    // el que mete una canción en la cola del jam.
+    let commands = format!("/social-connect/v2/sessions/{session_id}/commands/from/{device}");
+
+    let now = crate::spclient::now_millis();
+    // El `intent_id` y el `command_id` son hex de 16 bytes. Que sean
+    // aleatorios no importa para la medición; que estén es lo que importa.
+    let intent = "a1b2c3d4e5f60718293a4b5c6d7e8f90";
+
+    for (what, command) in [
+        (
+            "add_to_queue, con la uri de la pista",
+            format!(
+                "{{\"endpoint\":\"add_to_queue\",\"track\":{{\"uri\":\"{track}\"}},\"options\":{{\"override_restrictions\":false,\"only_for_local_device\":false,\"system_initiated\":false}},\"logging_params\":{{\"command_initiated_time\":{now},\"command_received_time\":{now},\"page_instance_ids\":[],\"interaction_ids\":[],\"device_identifier\":\"{device}\",\"command_id\":\"{intent}\"}}}}"
+            ),
+        ),
+        (
+            "add_to_queue, con la uri y el uid",
+            format!(
+                "{{\"endpoint\":\"add_to_queue\",\"track\":{{\"uri\":\"{track}\",\"uid\":\"cb970d145ffcc3721d38\"}},\"options\":{{\"override_restrictions\":false,\"only_for_local_device\":false,\"system_initiated\":false}},\"logging_params\":{{\"command_initiated_time\":{now},\"command_received_time\":{now},\"page_instance_ids\":[],\"interaction_ids\":[],\"device_identifier\":\"{device}\",\"command_id\":\"{intent}\"}}}}"
+            ),
+        ),
+        (
+            "add_to_queue, sin logging_params",
+            format!(
+                "{{\"endpoint\":\"add_to_queue\",\"track\":{{\"uri\":\"{track}\"}}}}"
+            ),
+        ),
+        (
+            "play, con la uri de la pista",
+            format!(
+                "{{\"endpoint\":\"play\",\"track\":{{\"uri\":\"{track}\"}},\"options\":{{\"override_restrictions\":false,\"only_for_local_device\":false,\"system_initiated\":false}},\"logging_params\":{{\"command_initiated_time\":{now},\"command_received_time\":{now},\"page_instance_ids\":[],\"interaction_ids\":[],\"device_identifier\":\"{device}\",\"command_id\":\"{intent}\"}}}}"
+            ),
+        ),
+        (
+            "pause",
+            format!(
+                "{{\"endpoint\":\"pause\",\"options\":{{\"override_restrictions\":false,\"only_for_local_device\":false,\"system_initiated\":false}},\"logging_params\":{{\"command_initiated_time\":{now},\"command_received_time\":{now},\"page_instance_ids\":[],\"interaction_ids\":[],\"device_identifier\":\"{device}\",\"command_id\":\"{intent}\"}}}}"
+            ),
+        ),
+        (
+            "skip_next",
+            format!(
+                "{{\"endpoint\":\"skip_next\",\"options\":{{\"override_restrictions\":false,\"only_for_local_device\":false,\"system_initiated\":false}},\"logging_params\":{{\"command_initiated_time\":{now},\"command_received_time\":{now},\"page_instance_ids\":[],\"interaction_ids\":[],\"device_identifier\":\"{device}\",\"command_id\":\"{intent}\"}}}}"
+            ),
+        ),
+    ] {
+        let body = format!(
+            "{{\"command\":{command},\"connection_type\":\"wlan\",\"intent_id\":\"{intent}\"}}"
+        );
+
+        jam_ask(
+            session,
+            "comandos",
+            what,
+            &reqwest::Method::POST,
+            &commands,
+            Some(body.as_bytes()),
+        );
+    }
+
+    // **2. Los servicios del host `playlist`.** El de la lectura se sabe; los
+    // de la escritura se preguntan por su forma.
+    //
+    // **El cuerpo tiene que tener bytes.** Un cuerpo de cero bytes no manda
+    // `Content-Length` y contesta `411 Length Required` —la respuesta del
+    // front door, que no dice nada del servicio—. Por eso el cuerpo es un
+    // protobuf válido y vacío: dos bytes que el servicio puede leer.
+    for service in [
+        "spotify.list.v1.ListWriteService",
+        "spotify.list.v1.ListService",
+        "spotify.list.v1.ListEditService",
+        "spotify.list.v1.ListMutationService",
+        "spotify.list.v1.ListItemService",
+        "spotify.playlist_esperanto.proto.PlaylistService",
+        "spotify.playlist_esperanto.proto.PlaylistDataService",
+        "spotify.playlist_esperanto.proto.PlaylistPlayService",
+    ] {
+        for method in ["Modify", "AddItems", "Add", "WriteLists", "PutLists", "AddToList"] {
+            let route = format!("/playlist/{service}/{method}");
+
+            jam_ask_typed(
+                session,
+                "escritura",
+                "un servicio de escritura de listas",
+                &reqwest::Method::POST,
+                &route,
+                Some(b"\x0a\x00"),
+                "application/x-protobuf",
+            );
+
+            // El servicio corta con `429` si le llegan many requests juntos:
+            // la matriz son decenas, y una tanda que se corta a mitad no
+            // sirve para nada.
+            std::thread::sleep(std::time::Duration::from_millis(150));
+        }
+    }
+
+    // **El control**: el servicio de la lectura, que se sabe que existe. Si
+    // este contesta `200`, la matriz se lee bien; si contesta `404`, el
+    // problema es otro y la matriz no dice nada.
+    jam_ask_typed(
+        session,
+        "escritura",
+        "el control: el servicio que se sabe que existe",
+        &reqwest::Method::POST,
+        "/playlist/spotify.list.v1.ListReadService/GetLists",
+        Some(b"\x0a\x00"),
+        "application/x-protobuf",
+    );
+
+    // **3. Las puertas de la cola dentro del propio servicio del jam.** El
+    // cliente de escritorio tiene el nombre `jam.patch_track`, y `queue` ya se
+    // midió —`404`— pero en singular y con más segmentos no.
+    for route in [
+        format!("/social-connect/v2/sessions/{session_id}/tracks"),
+        format!("/social-connect/v2/sessions/{session_id}/track"),
+        format!("/social-connect/v2/sessions/{session_id}/items"),
+        format!("/social-connect/v2/sessions/{session_id}/queue/items"),
+        format!("/social-connect/v2/sessions/{session_id}/queue/add"),
+        format!("/social-connect/v2/sessions/{session_id}/patch_track"),
+        format!("/social-connect/v2/sessions/{session_id}/jam/patch_track"),
+    ] {
+        jam_ask(
+            session,
+            "cola",
+            "una puerta de la cola del jam",
+            &reqwest::Method::POST,
+            &route,
+            Some(b"{}"),
+        );
+    }
+
+    // **4. El verbo `PATCH` sobre playlist4.** El cliente de escritorio tiene
+    // las dos cadenas `PATCH` y `Accept-Patch` al lado de la URL de playlist4,
+    // y eso es una pista que la sonda no había seguido.
+    for id in [session_id.to_owned(), format!("jam-{session_id}")] {
+        jam_ask(
+            session,
+            "escritura",
+            "la cola del jam, con PATCH",
+            &reqwest::Method::PATCH,
+            &format!("/playlist/v2/playlist/{id}"),
+            Some(b"{}"),
+        );
+    }
+
+    // **5. Y ahora la función de producción**, que es la que aprieta el botón
+    // de la app: el mismo comando, pero armado por el código que quedó y no a
+    // mano. Si esta contesta bien, lo que se midió arriba es lo que la app
+    // manda.
+    let before = jam_queue_tracks(session, session_id);
+    log::info!(
+        "SP_JAM: [cola] antes del comando: {} canciones",
+        before.as_ref().map(|c| c.len()).unwrap_or(0)
+    );
+
+    match super::jam_add_to_queue(session, session_id, "3b5E38f6Dbx28IVof4oeAA") {
+        Ok(()) => log::info!(
+            "SP_JAM: [comandos] la función de la app agregó la canción al jam y el servicio la aceptó"
+        ),
+        Err(e) => log::error!("SP_JAM: [comandos] la función de la app no pudo agregar: {e}"),
+    }
+
+    // **Y la pregunta que decide si la función sirve**: ¿la cola del jam
+    // cambió? El comando puede entrar y no hacer nada —el servicio lo acepta
+    // y lo aplica al device que puede, que puede no ser el del jam—, y la
+    // diferencia entre "entró" y "sirvió" está en la cola.
+    std::thread::sleep(std::time::Duration::from_secs(3));
+    let after = jam_queue_tracks(session, session_id);
+    log::info!(
+        "SP_JAM: [cola] después del comando: {} canciones",
+        after.as_ref().map(|c| c.len()).unwrap_or(0)
+    );
+
+    match (&before, &after) {
+        (Some(before), Some(after)) => {
+            if before.len() == after.len() && before == after {
+                log::info!("SP_JAM: [cola] la cola NO cambió: el comando entró y no la llenó");
+            } else {
+                log::info!(
+                    "SP_JAM: [cola] la cola cambió: {} → {} canciones",
+                    before.len(),
+                    after.len()
+                );
+                if let Some(added) = after.iter().find(|uri| !before.contains(uri)) {
+                    log::info!("SP_JAM: [cola] la canción nueva es {added}");
+                }
+            }
+        }
+        _ => log::info!("SP_JAM: [cola] no se pudo comparar: la cola no se pudo leer"),
+    }
+}
+
+/// La cola del jam, leída y decodificada.
+///
+/// **Es la misma lectura que hace la app**, con el mismo cuerpo y el mismo
+/// `content-type`: lo que se compara antes y después del comando tiene que ser
+/// lo que la app ve.
+#[cfg(debug_assertions)]
+fn jam_queue_tracks(session: &Session, session_id: &str) -> Option<Vec<String>> {
+    let uri = format!("spotify:list:jam-list:{session_id}");
+    let body = jam_list_request(&uri);
+
+    let (status, bytes) = jam_ask_typed(
+        session,
+        "cola",
+        "la cola del jam",
+        &reqwest::Method::POST,
+        "/playlist/spotify.list.v1.ListReadService/GetLists",
+        Some(&body),
+        "application/x-protobuf",
+    )?;
+
+    if status != 200 {
+        log::info!("SP_JAM: [cola] la cola del jam → {status} · {} bytes", bytes.len());
+        return None;
+    }
+
+    super::jamlist::tracks(&bytes)
 }
 
 /// La puerta de salida, que es la última porque **puede cerrar la sesión**.

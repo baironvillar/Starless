@@ -103,6 +103,8 @@ type PlaylistScreenProps = {
   onAddToQueue: (track: Track) => void;
   /** The row's extras: open the new-playlist dialog with this song pending. */
   onNewPlaylist: (track: Track) => void;
+  /** The row's extras: put the song in the jam's shared queue. */
+  onAddToJam?: (track: Track) => void;
   /**
    * The playlist's own three dots: the whole list goes into the queue.
    *
@@ -207,6 +209,7 @@ export function PlaylistScreen({
   onOpenAlbum,
   onAddToQueue,
   onNewPlaylist,
+  onAddToJam,
   onAddListToQueue,
   prefs,
   onPrefsChange,
@@ -522,6 +525,7 @@ export function PlaylistScreen({
             onOpenAlbum={onOpenAlbum}
             onAddToQueue={onAddToQueue}
             onNewPlaylist={onNewPlaylist}
+            onAddToJam={onAddToJam}
           />
         )}
         loading={loading}

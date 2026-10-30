@@ -275,6 +275,7 @@ function OpenJam({
         <h3 className="pb-1.5 text-[12px] font-semibold tracking-wide uppercase text-ink-faint">
           {t.jamQueue}
         </h3>
+        <p className="pb-1.5 text-[11.5px] leading-relaxed text-ink-faint">{t.jamQueueHint}</p>
         {queue.length === 0 ? (
           <p className="px-0.5 text-[12.5px] text-ink-faint">{t.jamQueueEmpty}</p>
         ) : (
