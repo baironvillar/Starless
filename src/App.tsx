@@ -215,6 +215,20 @@ function shuffleFrom<T extends { id: string }>(items: T[], currentId?: string | 
   return current ? [current, ...order] : order;
 }
 
+/** Narrow enough that an open library squeezes the content; see `railOnly`. */
+const NARROW_QUERY = "(max-width: 999px)";
+
+function useNarrowWindow(): boolean {
+  const [narrow, setNarrow] = useState(() => matchMedia(NARROW_QUERY).matches);
+  useEffect(() => {
+    const query = matchMedia(NARROW_QUERY);
+    const onChange = () => setNarrow(query.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+  return narrow;
+}
+
 export default function App() {
   const [lang, setLang] = useState<Lang>("es");
   const [active, setActive] = useState<StringKey>("navHome");
@@ -225,6 +239,16 @@ export default function App() {
    * already carries it, and the name is in the header over the list it opens.
    */
   const [libraryCollapsed, setLibraryCollapsed] = useState(true);
+  /**
+   * Below this width the library is the riel, whatever was chosen.
+   *
+   * **The content needs the pixels more than the names do.** At 900 px an open
+   * library and the queue leave a 340 px column in the middle, and the lyrics
+   * are a reading column. The choice is kept, not overwritten: widen the window
+   * and the library comes back the way it was.
+   */
+  const narrow = useNarrowWindow();
+  const railOnly = libraryCollapsed || narrow;
   /**
    * The queue is there from the start, the way the library is.
    *
@@ -2239,9 +2263,9 @@ export default function App() {
               likedCount={liked.data?.length ?? null}
               error={Boolean(playlists.error ?? account.error) && !playlists.isLoading}
               activeId={activeItem}
-              collapsed={libraryCollapsed}
+              collapsed={railOnly}
               barPresent={barPresent}
-              onToggleCollapsed={() => setLibraryCollapsed((v) => !v)}
+              onToggleCollapsed={narrow ? undefined : () => setLibraryCollapsed((v) => !v)}
               sort={sortOrder}
               onSortChange={changeSort}
               view={shelfView}
@@ -2329,7 +2353,7 @@ export default function App() {
           // gap — and without it the last column of cards ended up touching the
           // thumb, which read as one object instead of two.
           className={`absolute top-[104px] ${barPresent ? "bottom-[144px]" : "bottom-5"} overflow-x-hidden overflow-y-auto pr-3 transition-[left,right,bottom] duration-300 ease-[var(--ease-glass)] ${
-            libraryOpen ? (libraryCollapsed ? "left-[112px]" : "left-[280px]") : "left-9"
+            libraryOpen ? (railOnly ? "left-[112px]" : "left-[280px]") : "left-9"
           } ${queueOpen ? "right-[280px]" : "right-9"}`}
         >
           {/*
