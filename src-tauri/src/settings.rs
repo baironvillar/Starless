@@ -79,6 +79,16 @@ pub struct Settings {
     /// Grid or list, as one of [`LIBRARY_VIEWS`]. Same reasoning as `library_sort`.
     #[serde(default)]
     pub library_view: Option<String>,
+
+    /// How a playlist's songs are ordered and which way round, as one of
+    /// [`TRACK_ORDERS`]. One for every playlist, like the client this mirrors:
+    /// it is how the person reads a list, not a fact about one list.
+    #[serde(default)]
+    pub track_order: Option<String>,
+
+    /// List or compact, as one of [`TRACK_VIEWS`].
+    #[serde(default)]
+    pub track_view: Option<String>,
 }
 
 /// Read-modify-write, so the day a third field appears this keeps working
@@ -263,6 +273,58 @@ pub fn saved_library_view() -> &'static str {
     known_or_default(load().library_view.as_deref(), &LIBRARY_VIEWS, DEFAULT_LIBRARY_VIEW)
 }
 
+/// A playlist opens in its own order, top to bottom.
+pub const DEFAULT_TRACK_ORDER: &str = "custom-asc";
+
+/// Every order `PlaylistScreen` offers, each both ways round.
+pub const TRACK_ORDERS: [&str; 10] = [
+    "custom-asc",
+    "custom-desc",
+    "title-asc",
+    "title-desc",
+    "added-asc",
+    "added-desc",
+    "artist-asc",
+    "artist-desc",
+    "album-asc",
+    "album-desc",
+];
+
+pub const DEFAULT_TRACK_VIEW: &str = "list";
+
+pub const TRACK_VIEWS: [&str; 2] = ["list", "compact"];
+
+/// Same gate as `save_library_sort`, for the same reason.
+pub fn save_track_order(order: &str) {
+    if !TRACK_ORDERS.contains(&order) {
+        log::warn!("orden de canciones ignorado, no es una orden conocida: {order}");
+        return;
+    }
+    if load().track_order.as_deref() == Some(order) {
+        return;
+    }
+    update(|settings| settings.track_order = Some(order.to_string()));
+}
+
+pub fn saved_track_order() -> &'static str {
+    known_or_default(load().track_order.as_deref(), &TRACK_ORDERS, DEFAULT_TRACK_ORDER)
+}
+
+pub fn save_track_view(view: &str) {
+    if !TRACK_VIEWS.contains(&view) {
+        log::warn!("vista de canciones ignorada, no es una vista conocida: {view}");
+        return;
+    }
+    if load().track_view.as_deref() == Some(view) {
+        return;
+    }
+    update(|settings| settings.track_view = Some(view.to_string()));
+}
+
+pub fn saved_track_view() -> &'static str {
+    known_or_default(load().track_view.as_deref(), &TRACK_VIEWS, DEFAULT_TRACK_VIEW)
+}
+
 /// The saved value when it is one this build knows, and the default when it is not.
 ///
 /// A hand-edited file is as likely as a bad write, and an order this build does not
@@ -301,7 +363,8 @@ pub fn saved_crossfade_seconds() -> u8 {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_hex_color, known_or_default, LIBRARY_SORTS, LIBRARY_VIEWS, DEFAULT_LIBRARY_SORT,
+        is_hex_color, known_or_default, DEFAULT_LIBRARY_SORT, DEFAULT_TRACK_ORDER, LIBRARY_SORTS,
+        LIBRARY_VIEWS, TRACK_ORDERS,
     };
 
     /// The accent is the one setting whose value is written onto `:root`, so the
@@ -355,5 +418,22 @@ mod tests {
         // not a view, so neither may satisfy the other's gate.
         assert!(!LIBRARY_VIEWS.contains(&"tracks"));
         assert!(!LIBRARY_SORTS.contains(&"grid"));
+    }
+
+    /// The frontend writes `<order>-<asc|desc>` for the five orders of
+    /// `PLAYLIST_ORDERS` in `spotify.ts`; one missing here would be refused on
+    /// save and the screen would forget it on every restart.
+    #[test]
+    fn every_playlist_order_is_known_both_ways_round() {
+        for order in ["custom", "title", "added", "artist", "album"] {
+            for direction in ["asc", "desc"] {
+                let value = format!("{order}-{direction}");
+                assert!(TRACK_ORDERS.contains(&value.as_str()), "{value}");
+            }
+        }
+        assert_eq!(
+            known_or_default(Some("title"), &TRACK_ORDERS, DEFAULT_TRACK_ORDER),
+            "custom-asc"
+        );
     }
 }

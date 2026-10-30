@@ -29,6 +29,7 @@ import {
   applyAccentColor,
   applyMenuOpacity,
   createPlaylist as createPlaylistCall,
+  DEFAULT_TRACK_LIST_PREFS,
   type DjNarration,
   djMix,
   djMore,
@@ -55,10 +56,14 @@ import {
   SESSION_ERRORS,
   setLibrarySort,
   setLibraryView,
+  setTrackOrder,
+  setTrackView,
   sortPlaylists,
   type Track,
+  type TrackListPrefs,
   togglePlayback,
   trackArtists,
+  trackListPrefs,
   useAccount,
   useLikedTracks,
   useLyrics,
@@ -290,6 +295,30 @@ export default function App() {
   const changeView = (view: LibraryView) => {
     setShelfView(view);
     void setLibraryView(view).catch(() => {});
+  };
+
+  // How every playlist is read, kept the same way as the shelf's: the screen
+  // changes first, the write follows, and a failed write only costs the restart.
+  const [trackPrefs, setTrackPrefs] = useState<TrackListPrefs>(DEFAULT_TRACK_LIST_PREFS);
+
+  useEffect(() => {
+    let alive = true;
+    void trackListPrefs()
+      .then((value) => {
+        if (alive) setTrackPrefs(value);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const changeTrackPrefs = (next: TrackListPrefs) => {
+    setTrackPrefs(next);
+    if (next.order !== trackPrefs.order || next.descending !== trackPrefs.descending) {
+      void setTrackOrder(next.order, next.descending).catch(() => {});
+    }
+    if (next.view !== trackPrefs.view) void setTrackView(next.view).catch(() => {});
   };
 
   /**
@@ -2335,6 +2364,8 @@ export default function App() {
               onAddToQueue={onAddToQueue}
               onNewPlaylist={openNaming}
               onAddListToQueue={onAddListToQueue}
+              prefs={trackPrefs}
+              onPrefsChange={changeTrackPrefs}
               shuffle={shuffle}
               onToggleShuffle={onToggleShuffle}
               playing={playlistPlaying}
@@ -2373,6 +2404,8 @@ export default function App() {
               // Los tres puntos de la playlist: la lista entera va a la cola, y
               // los detalles son un diálogo aparte.
               onAddListToQueue={onAddListToQueue}
+              prefs={trackPrefs}
+              onPrefsChange={changeTrackPrefs}
               // The two controls the playlist shares with the transport, handed the
               // transport's own state and handlers. Two shuffle buttons showing two
               // different answers is the thing this cannot be.

@@ -21,8 +21,11 @@ import {
   type Artist,
   coverImage,
   formatRuntime,
+  PLAYLIST_ORDERS,
   type Playlist,
+  type PlaylistOrder,
   type Track,
+  type TrackListPrefs,
   trackArtists,
 } from "../lib/spotify";
 import { MenuPanel } from "./MenuPanel";
@@ -109,11 +112,13 @@ type PlaylistScreenProps = {
    * another playlist.
    */
   onAddListToQueue: (tracks: Track[]) => void;
+  /**
+   * The order, its direction and the view, held by `App` so they outlive this
+   * screen and a restart: they are how the person reads every playlist.
+   */
+  prefs: TrackListPrefs;
+  onPrefsChange: (prefs: TrackListPrefs) => void;
 };
-
-type PlaylistOrder = "custom" | "title" | "added" | "artist" | "album";
-
-const ORDERS: PlaylistOrder[] = ["custom", "title", "added", "artist", "album"];
 
 const ORDER_LABEL: Record<PlaylistOrder, StringKey> = {
   custom: "orderCustom",
@@ -203,21 +208,20 @@ export function PlaylistScreen({
   onAddToQueue,
   onNewPlaylist,
   onAddListToQueue,
+  prefs,
+  onPrefsChange,
 }: PlaylistScreenProps) {
   const [query, setQuery] = useState("");
-  const [order, setOrder] = useState<PlaylistOrder>("custom");
-  const [descending, setDescending] = useState(false);
-  const [view, setView] = useState<TrackListView>("list");
+  const { order, descending, view } = prefs;
 
   // The same order again flips it; a new one starts the way it reads naturally.
-  const pickOrder = (next: PlaylistOrder) => {
-    if (next === order) {
-      setDescending((value) => !value);
-    } else {
-      setOrder(next);
-      setDescending(STARTS_DESCENDING[next]);
-    }
-  };
+  const pickOrder = (next: PlaylistOrder) =>
+    onPrefsChange({
+      ...prefs,
+      order: next,
+      descending: next === order ? !descending : STARTS_DESCENDING[next],
+    });
+  const setView = (next: TrackListView) => onPrefsChange({ ...prefs, view: next });
   // El diálogo de los detalles vive acá y no en el menú: el menú se cierra al
   // abrirlo, y un diálogo que se cierra con el menú que lo abrió no se abre
   // nunca.
@@ -742,7 +746,7 @@ function OrderMenu({ t, order, descending, onOrderChange, view, onViewChange }: 
         width={MENU_PX}
       >
         <MenuHeading>{t.sortBy}</MenuHeading>
-        {ORDERS.map((option) => {
+        {PLAYLIST_ORDERS.map((option) => {
           const current = option === order;
           return (
             <button

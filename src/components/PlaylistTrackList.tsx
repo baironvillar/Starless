@@ -9,6 +9,7 @@ import {
   formatAddedAt,
   formatDuration,
   type Track,
+  type TrackListView,
   trackRowKeys,
 } from "../lib/spotify";
 import { ArtistLine } from "./ArtistLine";
@@ -18,7 +19,7 @@ import { ArtistLine } from "./ArtistLine";
  * title; `compact` drops the cover and puts both on one line, so a long playlist
  * fits about twice the songs on screen.
  */
-export type TrackListView = "list" | "compact";
+export type { TrackListView };
 
 type PlaylistTrackListProps = {
   tracks: Track[];
