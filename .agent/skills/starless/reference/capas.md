@@ -10,7 +10,7 @@ este repo.
 |---|---|---|
 | Un comando Tauri nuevo | registrarlo en `generate_handler!` de `lib.rs` **y** su wrapper en `spotify.ts` | el webview invoca un comando que no existe; o el comando existe y nadie lo llama |
 | Un comando que hace I/O | `async`, o el macro `spclient_command!` | un comando sin `async` corre en el hilo principal: treinta segundos de ventana congelada |
-| Un código de error nuevo en Rust | una frase en `API_ERRORS` (`spotify.ts`) | el usuario lee `bad_id` en vez de una frase. **Ya pasa hoy**: ver deudas |
+| Un código de error nuevo en Rust | una frase en `errors` (`i18n.ts`), **en los dos idiomas**: el tipo no compila si falta la inglesa | el usuario lee `bad_id` en vez de una frase |
 | Texto de usuario | `i18n.ts`, **los dos idiomas a la vez** | un usuario en inglés lee español (regla 5) |
 | Una lista de canciones | `trackRowKeys(tracks)` como `key` | filas perdedoras quedan montadas y pintan la lista **anterior** bajo un encabezado nuevo |
 | Un fallo de pista en Rust | `Session::is_invalid()` **antes** de declarar la pista muerta | `track_unavailable` cuando lo que pasó es que se cayó la conexión. El log miente |

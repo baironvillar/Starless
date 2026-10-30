@@ -753,13 +753,6 @@ salen de una captura:
   versión en Ajustes; una de `main` no trae ninguna de las dos. Preguntarle a
   GitHub sería peor: la respuesta dependería de que la máquina tenga conexión,
   y el canal no cambia con la red.
-- **`API_ERRORS` está en español y fuera de `i18n.ts`.** Veinte mensajes de error
-  de usuario en un solo idioma, en el archivo que la regla 5 excluye. Los dos
-  códigos que Rust emite y que no estaban en el mapa —`no_session` y `bad_id`—
-  se agregaron con el trabajo de playlists, así que ya no se muestran crudos;
-  lo que queda es que `explain()` no sabe el idioma. Es deuda conocida, está
-  anotada en el skill; cuando la toques, el movimiento natural es llevarla a
-  `i18n.ts` con sus dos idiomas.
 - **Un panel flotante no es de la fila que tapa, aunque el portal lo haga hijo
   de ella.** `MenuPanel` se dibuja con `createPortal` al `body`, pero en el
   árbol de **React** sigue siendo hijo de la fila de la canción, y los eventos

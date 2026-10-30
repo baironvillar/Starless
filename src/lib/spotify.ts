@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useMemo } from "react";
+import { errors, type Lang } from "./i18n";
 
 /**
  * The account's real data, as Spotify sends it.
@@ -1066,109 +1067,21 @@ export async function signOut(): Promise<void> {
 }
 
 /**
- * Rust error codes, so a screen can say something true instead of "algo falló".
- * Anything unlisted is reported as-is rather than swallowed: a new code showing
- * up on screen is a signal, not noise.
+ * The language `explain()` answers in. It has callers outside the tree that
+ * gets `t` (hooks, console lines), so `App` sets it once per render instead of
+ * every caller passing it in.
  */
-const API_ERRORS: Record<string, string> = {
-  unauthorised: "La sesión venció. Vuelve a entrar.",
-  // Deliberately not "your account can't access this". In development mode a 403
-  // on a playlist means Spotify will not serve its contents to a third-party app
-  // unless the account owns or collaborates on it — which has nothing to do with
-  // what the account is allowed to do. Blaming the account sends people looking
-  // for a permissions problem that is not theirs to fix.
-  forbidden: "Spotify no entrega el contenido de esta playlist a una app en desarrollo.",
-  rate_limited: "Spotify está limitando las peticiones. Espera un momento.",
-  // A failure that resolves by itself, and the one the app really does retry
-  // while the user is still looking at the screen.
-  //
-  // **It does not say whose fault it is, on purpose.** librespot raises this for
-  // a service that is down *and* for a `ConnectionRefused` on this machine — the
-  // home network went down — and the two arrive as the same kind. "Spotify está
-  // teniendo problemas" is the wrong sentence for someone whose router just
-  // rebooted: it sends them off to look for a problem they do not have, in a
-  // service they cannot go and check.
-  service_unavailable: "No se pudo llegar a Spotify en este momento. Starless sigue reintentando.",
-  not_signed_in: "Primero hay que iniciar sesión.",
-  login_expired: "La sesión venció. Vuelve a entrar.",
-  network_failed: "No se pudo hablar con Spotify.",
-  bad_response: "Spotify respondió algo que no entendemos.",
-  token_refresh_failed: "No se pudo renovar la sesión. Vuelve a entrar.",
-  command_failed: "La operación falló.",
-  session_busy: "La sesión está ocupada. Inténtalo de nuevo.",
+let errorLang: Lang = "es";
 
-  // Playback. None of these are edge cases: each one is a reason a click produces
-  // nothing, and a click that produces nothing with no explanation is the single
-  // worst failure an app can have.
-  no_player: "El reproductor todavía no está listo. Inténtalo de nuevo.",
-  // The play button with nothing loaded behind it. The app does not press it
-  // in this state — the button is disabled when there is no track — but the
-  // command can be asked anyway, and the answer has to be a sentence and not a
-  // code the user would have to decode.
-  no_track: "No hay ninguna canción cargada.",
-  audio_device_failed: "No se pudo abrir el dispositivo de audio de Windows.",
-  // The player stopped answering. Not a broken song and not a broken
-  // connection: the output device stopped consuming, librespot's sink waits
-  // for it forever, and the app noticed that the position had stopped moving
-  // and went to build another player. The app is doing something about it, so
-  // this is what it says while it does.
-  audio_stalled: "El audio se trabó. Volviendo a abrir el dispositivo de salida…",
-  // Phrased as a fact about this app, not an accusation. The event behind it has
-  // at least two very different causes — Spotify refusing to serve the track, and
-  // the decoder choking on bytes that were delivered fine — and the status carries
-  // no way to tell them apart. Saying "Spotify did not deliver this song" picks
-  // one of them and sends the user somewhere the problem is not.
-  track_unavailable: "No se pudo reproducir esta canción.",
-  // Its own code, not `track_unavailable` wearing a hat. The song was fine: the
-  // connection to Spotify was gone, so there was nobody left to ask for the key
-  // that decrypts it — and librespot, which never reconnects on its own, answers
-  // a missing key by playing the file undecrypted. The decoder then reports
-  // ciphertext as an unplayable song. Same event, opposite truth.
-  //
-  // **This is the end of the road.** The app tries to build the session again
-  // on its own, and this is what is left when that does not work: the
-  // connection is gone and it could not be brought back.
-  connection_lost:
-    "Se perdió la conexión con Spotify y no se pudo volver. Cierra y abre Starless para seguir escuchando.",
-  // Not a failure yet. The session died and the app is going to build it again
-  // — the same credentials, a new connection — and the track that failed goes
-  // back on when it is up. Saying "it was lost" here would be a lie about a
-  // thing that is still being fixed.
-  reconnecting: "Se perdió la conexión con Spotify. Volviendo a conectarse…",
-  bad_track_id: "Esa canción no tiene un identificador válido.",
-  // Not a failure. Spotify answers 404 when nobody wrote the words down, and that
-  // is a fact about the song; saying "could not read" instead would point the user
-  // at their own machine when the answer was about the track.
-  no_lyrics: "Esta canción no tiene letra.",
-  session_dropped: "Se cayó la sesión de reproducción.",
-
-  // Playlist writes. The three that can come out of an "add to playlist" are
-  // three different problems: the playlist is not in the library, the service
-  // refused the change, and the id was not an id. Saying "it failed" for all
-  // three sends the user looking in the wrong place.
-  playlist_not_found: "Esa playlist no está en tu biblioteca.",
-  add_failed: "No se pudo agregar la canción a la playlist.",
-  // The details are one write with two failures of their own: the service
-  // refused the change, or the picture did not go up. "It failed" for the two
-  // is the same message for two problems that need two different answers.
-  details_failed: "No se pudieron guardar los detalles de la playlist.",
-  upload_failed: "No se pudo subir la imagen.",
-  // The visibility is a second write, against a different list: the name and the
-  // description may already be saved when this one fails, and saying "it failed"
-  // for both would hide which of the two it was.
-  visibility_failed: "Se guardaron los detalles, pero la playlist no cambió de visibilidad.",
-  empty_name: "La playlist necesita un nombre.",
-  // These two were emitted by Rust and had no sentence here, so the user read
-  // the raw code on screen. They are the two the playlist commands can answer.
-  bad_id: "Ese identificador no es válido.",
-  no_session: "La sesión no está lista. Inténtalo de nuevo.",
-};
+export function setErrorLanguage(lang: Lang): void {
+  errorLang = lang;
+}
 
 /** Best-effort sentence for an error thrown by `invoke`. */
 export function explain(error: unknown): string {
   const raw = typeof error === "string" ? error : String(error);
   const code = raw.replace(/^.*?:\s*/, "");
-  return API_ERRORS[code] ?? code;
+  return (errors[errorLang] as Record<string, string>)[code] ?? code;
 }
 
 /**

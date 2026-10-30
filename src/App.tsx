@@ -53,6 +53,7 @@ import {
   radioMore,
   radioStart,
   SESSION_ERRORS,
+  setErrorLanguage,
   setLibrarySort,
   setLibraryView,
   sortPlaylists,
@@ -400,6 +401,7 @@ export default function App() {
   const [repeat, setRepeat] = useState<RepeatMode>("off");
   const queryClient = useQueryClient();
   const t = strings[lang];
+  setErrorLanguage(lang);
 
   // These only ever run inside `AuthGate`'s children, which means they are never
   // mounted before there is a session — so no hook needs to ask "am I allowed to
