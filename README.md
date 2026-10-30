@@ -201,7 +201,7 @@ release en borrador; sólo falta darle a *Publish release*.
 - **Windows primero.** macOS y Linux siguen el camino; falta probarlos en serio.
 - **La firma de código de los instaladores está pendiente.** SmartScreen va a
   avisar hasta que se resuelva.
-- **Medido, en una sola máquina.** Windows 11, build de release de la 0.5.6
+- **Medido, en una sola máquina.** Windows 11, build de release de la 0.5.5
   con lo de `develop`, 30 de octubre de 2026, tres arranques. La ventana aparece en unos 40 ms, la
   sesión queda conectada en 1 a 1,7 s y la biblioteca llega en 2 a 3,5 s: el
   "menos de un segundo" de `PRODUCT.md` se cumple para la ventana, no para la
@@ -406,7 +406,7 @@ leaves the release as a draft; all that is left is clicking *Publish release*.
   yet.
 - **Installer code signing is still pending.** SmartScreen will warn until that
   is resolved.
-- **Measured, on one machine.** Windows 11, a 0.5.6 release build from
+- **Measured, on one machine.** Windows 11, a 0.5.5 release build from
   `develop`, 30 October 2026, three launches. The window shows in about 40 ms, the session is
   connected in 1 to 1.7 s and the library arrives in 2 to 3.5 s: the "under a
   second" in `PRODUCT.md` holds for the window, not for the library. Private
