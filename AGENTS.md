@@ -912,6 +912,18 @@ salen de una captura:
   Lo que se devuelve es **lo de la cuenta** (dónde estabas, qué estaba abierto,
   la cola); lo que se queda es **lo de la persona** (el idioma, el orden de la
   estantería, el vidrio): una preferencia no se la lleva cerrar sesión.
+- **Traer la ventana al frente se pide desde Rust, y en Windows el foco tiene
+  precio.** Son tres cosas y las tres importan: `tao::set_focus` **no hace
+  nada** si la ventana está minimizada (hay que `unminimize()` antes);
+  `SetForegroundWindow` se le **niega** a un proceso que no tiene el foreground
+  —que durante el login lo tiene el browser— y `tao` lo resuelve con el truco
+  de la tecla ALT; y el webview **no puede** hacerlo, porque
+  `capabilities/default.json` no le da `set-focus`, `show` ni `unminimize`. El
+  backend ya tenía el handle y el patrón, así que el login avisa desde
+  `auth.rs` y `lib.rs` levanta la ventana. **El momento es el callback de
+  OAuth**, que es cuando el browser muestra "Listo. Vuelve a Starless.": desde
+  ahí en adelante el browser es lo que la persona está mirando, y dejarla
+  esperando es dejarla atrás.
 - **`.agent/` es la copia canónica** de la configuración de agentes. Los shims de
   `.claude/` y `.opencode/` que apuntaban ahí se borraron; para recuperar el
   skill en esas herramientas, `git revert 96cf93c`.
