@@ -2379,8 +2379,12 @@ pub fn jam_queue(session: &Session, session_id: &str) -> Result<Vec<Track>, Stri
         "bad_response".to_string()
     })?;
 
-    let mut out = Vec::with_capacity(uris.len());
-    for raw in uris {
+    // **La cola del jam la llena el servicio, y son cientos de canciones.**
+    // Resolver el nombre de cada una es un viaje por la red cada vez que se
+    // pregunta, así que se leen las primeras: el panel muestra ocho, y la
+    // primera es la que está sonando.
+    let mut out = Vec::with_capacity(uris.len().min(JAM_QUEUE_ITEMS));
+    for raw in uris.into_iter().take(JAM_QUEUE_ITEMS) {
         let Ok(parsed) = SpotifyUri::from_uri(&raw) else {
             continue;
         };
@@ -2399,6 +2403,13 @@ pub fn jam_queue(session: &Session, session_id: &str) -> Result<Vec<Track>, Stri
 
     Ok(out)
 }
+
+/// Cuántas canciones de la cola compartida se resuelven en nombres.
+///
+/// **La cola del jam viene sembrada con cientos de canciones**, y cada una
+/// resuelta es un viaje al servicio de metadata. El panel muestra ocho y la
+// primera es la que está sonando: con esto alcanza y sobra.
+const JAM_QUEUE_ITEMS: usize = 12;
 
 /// La revisión contra la que hay que escribir sobre el rootlist.
 ///

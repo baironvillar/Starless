@@ -1,4 +1,4 @@
-import { Play, X } from "lucide-react";
+import { Play, Users, X } from "lucide-react";
 import { motion } from "motion/react";
 import type { StringKey } from "../lib/i18n";
 import { SPRING, SPRING_SHEET } from "../lib/motion";
@@ -55,6 +55,14 @@ type QueuePanelProps = {
   barPresent: boolean;
   onPlay: (track: Track) => void;
   onClose: () => void;
+  /**
+   * Open the jam, next to this panel.
+   *
+   * **Spotify starts a Jam from the queue**, and the queue stays open: the two
+   * panels are about different things —what is playing here, and who else is
+   * listening— and neither one has to make room for the other.
+   */
+  onOpenJam: () => void;
 };
 
 /**
@@ -106,6 +114,7 @@ export function QueuePanel({
   barPresent,
   onPlay,
   onClose,
+  onOpenJam,
 }: QueuePanelProps) {
   const rowKeys = trackRowKeys(upNext);
 
@@ -121,17 +130,38 @@ export function QueuePanel({
     >
       <header className="flex shrink-0 items-center justify-between gap-2 px-4 pt-4 pb-3">
         <h2 className="truncate text-[15px] font-semibold tracking-tight">{t.queue}</h2>
-        <motion.button
-          type="button"
-          onClick={onClose}
-          whileTap={{ scale: 0.9 }}
-          transition={SPRING_SHEET}
-          aria-label={t.close}
-          title={t.close}
-          className="grid size-8 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink"
-        >
-          <X className="size-[17px]" strokeWidth={2} />
-        </motion.button>
+        <div className="flex items-center gap-1">
+          {/*
+              The Jam opens from here, and the queue stays open.
+
+              **Spotify starts a Jam from the queue**, and that is the right
+              place for it: the queue is what is being played, and a Jam is
+              about playing it with somebody else. Closing this panel to get
+              there is the wrong way round.
+          */}
+          <motion.button
+            type="button"
+            onClick={onOpenJam}
+            whileTap={{ scale: 0.9 }}
+            transition={SPRING_SHEET}
+            aria-label={t.jam}
+            title={t.jam}
+            className="grid size-8 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink"
+          >
+            <Users className="size-[17px]" strokeWidth={2} />
+          </motion.button>
+          <motion.button
+            type="button"
+            onClick={onClose}
+            whileTap={{ scale: 0.9 }}
+            transition={SPRING_SHEET}
+            aria-label={t.close}
+            title={t.close}
+            className="grid size-8 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink"
+          >
+            <X className="size-[17px]" strokeWidth={2} />
+          </motion.button>
+        </div>
       </header>
 
       {/* `pr-3` is the gap between the covers and the thumb; see the same note in

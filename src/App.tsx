@@ -40,7 +40,9 @@ import {
   type JamSession,
   jamJoin,
   jamLeave,
+  jamQueue,
   jamStart,
+  jamStatus,
   keys,
   type LibrarySort,
   type LibraryView,
@@ -146,6 +148,16 @@ const DJ_TOP_UP = 2;
  * una lista larga lo hace repetir lo que ya sonó.
  */
 const RECENT_FOR_RADIO = 5;
+
+/**
+ * Cada cuánto se pregunta por el jam.
+ *
+ * **El jam no tiene pubsub en librespot**, así que la única forma de saber
+ * que alguien se unió es preguntar. Tres segundos es lo que tarda el otro
+ * lado en contarse en el jam, y es un viaje por la red que no puede ir cada
+ * frame.
+ */
+const JAM_POLL_MS = 3000;
 
 /**
  * The fade that dissolves the edges of the content area, as a mask.
@@ -277,6 +289,34 @@ export default function App() {
   const [jamError, setJamError] = useState<string | null>(null);
 
   /**
+   * The shared queue: the songs the jam has written down.
+   *
+   * **It is not the local queue.** The local one is this app's, and it is
+   * nobody else's business; this one is the jam's, and the other side can put
+   * songs in it. It comes from the service, and it is read on its own clock.
+   */
+  const [jamSongs, setJamSongs] = useState<Track[]>([]);
+
+  /**
+   * The head of the shared queue, as of the last poll.
+   *
+   * **It is a ref and not state because it is not for drawing.** It is how the
+   * app knows the queue moved: the first poll only writes it down, and from
+   * then on a head that is not the song playing is a song the other side put
+   * there.
+   */
+  const jamHead = useRef<string | null>(null);
+
+  /**
+   * The song that is playing, for the poll to compare against.
+   *
+   * **It is a ref because the poll must not restart when the song changes.**
+   * The poll reads it, and a poll that is rebuilt every time a song starts is
+   * a poll that asks twice per song.
+   */
+  const jamPlaying = useRef<string | null>(null);
+
+  /**
    * Open a jam.
    *
    * **The button is what decides that there is a jam.** The service opens one
@@ -309,9 +349,11 @@ export default function App() {
   }, []);
 
   /**
-   * End the jam.
+   * Leave the jam.
    *
-   * **The session is deleted, not abandoned.** A jam that nobody ends stays
+   * **Leaving and closing are two different doors, and who presses it decides
+   * which one opens.** The guest leaves the session and the jam goes on; the
+   * host closes it and nobody is in it anymore. A jam that nobody closes stays
    * open on the account of whoever started it, and the next person to open one
    * finds it there.
    */
@@ -320,8 +362,10 @@ export default function App() {
     setJamBusy(true);
     setJamError(null);
     try {
-      await jamLeave(jam.session_id);
+      await jamLeave(jam.session_id, jam.is_session_owner);
       setJam(null);
+      setJamSongs([]);
+      jamHead.current = null;
     } catch (e) {
       setJamError(explain(e));
     } finally {
@@ -962,6 +1006,69 @@ export default function App() {
   // playing a moment later. The same goes for a device that stopped answering
   // — the song is fine, the sound is what is missing.
   const failedId = status?.error && !SESSION_ERRORS.has(status.error) ? status.trackId : null;
+
+  useEffect(() => {
+    jamPlaying.current = nowPlayingId;
+  }, [nowPlayingId]);
+
+  /**
+   * Keep the jam up to date.
+   *
+   * **The jam has no pubsub here.** The `dealer` of librespot does not carry
+   * it, so the only way to learn that somebody joined is to ask: the session
+   * every few seconds, and the shared queue with it.
+   *
+   * **The session door creates a session when there is none**, so it is asked
+   * only while there is one in hand — and if the answer brings another
+   * session, the one that was here is gone: the panel says so instead of
+   * adopting the new one, which would be a jam nobody opened.
+   */
+  useEffect(() => {
+    const sessionId = jam?.session_id;
+    if (!sessionId) return;
+    let alive = true;
+
+    const tick = async () => {
+      try {
+        const [session, queue] = await Promise.all([jamStatus(), jamQueue(sessionId)]);
+        if (!alive) return;
+
+        if (session.session_id !== sessionId) {
+          setJam(null);
+          setJamSongs([]);
+          jamHead.current = null;
+          return;
+        }
+
+        setJam(session);
+        setJamSongs(queue);
+
+        // **The head of the shared queue is what the other side put in it.**
+        // The first poll only writes it down: the queue starts with a seed
+        // that the service fills by itself, and jumping into that would be
+        // playing something nobody chose.
+        const head = queue[0];
+        const before = jamHead.current;
+        jamHead.current = head?.id ?? null;
+        if (head && before !== null && before !== head.id && head.id !== jamPlaying.current) {
+          playTrack(head).catch((e) => {
+            console.error("Starless: no se pudo seguir la cola del jam", explain(e));
+          });
+        }
+      } catch (e) {
+        // A jam that cannot be read right now is not a jam that is over: the
+        // next poll asks again.
+        console.warn("Starless: no se pudo leer el jam", explain(e));
+      }
+    };
+
+    const timer = setInterval(() => void tick(), JAM_POLL_MS);
+    void tick();
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [jam?.session_id]);
 
   /**
    * The queue, in the order it will be played.
@@ -2223,8 +2330,6 @@ export default function App() {
           onOpenSettings={() => setSettingsOpen(true)}
           onOpenJam={() => {
             setJamOpen((v) => !v);
-            // Mismo rincón, mismo motivo que en la cola.
-            setQueueOpen(false);
           }}
           jamActive={jam !== null}
           updateVersion={updateVersion}
@@ -2265,23 +2370,29 @@ export default function App() {
               barPresent={barPresent}
               onPlay={onPlay}
               onClose={() => setQueueOpen(false)}
+              onOpenJam={() => setJamOpen(true)}
             />
           )}
         </AnimatePresence>
 
         {/*
-            The jam, in the same corner as the queue: the two panels answer the
-            same question —what is playing, and what comes next— and one of them
-            is about other people. They cannot both be open: the corner belongs
-            to one panel at a time.
+            The jam, next to the queue and not instead of it.
+
+            **Spotify starts a Jam from the queue**, and closing the queue to
+            open the Jam is the wrong way round: the two panels answer
+            different questions —what is playing here, and who else is
+            listening— and both of them are worth having open at the same
+            time. When the queue is there, the jam docks to its left.
         */}
         <AnimatePresence>
           {jamOpen && (
             <JamPanel
               t={t}
               session={jam}
+              queue={jamSongs}
               busy={jamBusy}
               error={jamError}
+              besideQueue={queueOpen}
               onStart={() => void startJam()}
               onJoin={(token) => void joinJam(token)}
               onLeave={() => void leaveJam()}

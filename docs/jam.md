@@ -123,14 +123,39 @@ salió cada campo: casi todo es `snake_case` —`session_id`, `session_members`,
 `playbackControl`. En protobuf JSON todo saldría en camelCase, así que los
 campos en `snake_case` vienen de otra capa: el servicio serializa a mano.
 
-### La forma de las cuatro puertas
+### La forma de las cinco puertas
 
 | | |
 | --- | --- |
 | Abrir o leer la sesión | `GET /social-connect/v2/sessions/current_or_new?activate=false` |
 | Activarla | el mismo `GET`, con `activate=true` |
 | Unirse | `POST /social-connect/v2/sessions/join/<token>` **con cuerpo** |
-| Cerrarla | `DELETE /social-connect/v2/sessions/<session_id>` |
+| Salir de ella | `POST /social-connect/v2/sessions/<session_id>/leave` **con cuerpo** |
+| Borrarla | `DELETE /social-connect/v2/sessions/<session_id>` |
+
+**Salir y borrar son dos puertas, y la diferencia es quién aprieta el botón.**
+Salir es la puerta de un invitado: lo saca de la sesión y deja la sesión viva.
+Borrar es la del anfitrión: la sesión desaparece y con ella el jam entero.
+
+Esto se midió el 30 de octubre de 2026, y es la diferencia entre "el segundo
+usuario no puede salirse" y "el segundo usuario se sale":
+
+```
+POST   /social-connect/v2/sessions/<id>/leave   →  200
+GET    /social-connect/v2/sessions/<id>/leave   →  405
+DELETE /social-connect/v2/sessions/<id>/leave   →  405
+DELETE /social-connect/v2/sessions/<id>/leave?reason=USER_LEFT → 405
+POST   /social-connect/v2/sessions/<id>/leave   →  200   (con cuerpo {})
+DELETE /social-connect/v2/sessions/<id>         →  404 SESSION_NOT_FOUND
+```
+
+**El `404` de la última línea es la prueba de que la puerta funcionó**: después
+de salir, la sesión ya no existe. Y el `DELETE` sin `leave` es lo que borra la
+sesión —es la puerta del anfitrión—, así que el comando de la app hace las dos
+cosas cuando quien aprieta "salir" es el que la abrió.
+
+El `405` de `GET` y de `DELETE` sobre `…/leave` dice que la ruta existe y que el
+verbo no es ese: no es un invento, es una puerta con otro verbo.
 
 Lo que de entrada suena raro es que **abrir una sesión sea un `GET`**, y que
 esa misma lectura **la cree** si no había: `current_or_new` es "la actual o una
@@ -230,6 +255,84 @@ son dos cosas: la cola es del jam, y la semilla viene de otra lista.
 
 La respuesta entera queda en `%LOCALAPPDATA%\Starless\jam-list-sesion.bin`,
 porque son 43 KB de protobuf y el log la muestra recortada.
+
+### Escribir en la cola: lo que se intentó
+
+La cola se lee; **escribirla es lo que no está**. La puerta que el repo ya
+conoce para las playlists es `POST /playlist/v2/playlist/<id>/changes` con un
+`ListChanges`, y se probó contra la cola del jam con la revisión que trae la
+propia lectura —la revisión viene en `GetListResponse.info.revision`, y sin ella
+la escritura es un `400` a un cuerpo que el servicio acepta—:
+
+| id probado | respuesta |
+| --- | --- |
+| `<session_id>` | `400` |
+| `jam-<session_id>` | `400` |
+| `spotify:list:jam-list:<session_id>` | `400` |
+| `4uLU6hMCjMI75M1A2tKUQC` —un id que no existe— | `404` |
+
+**El `404` del id inventado es el dato**: el id de la sesión no es un id que el
+servicio no conozca, así que el `400` no es "esa lista no existe" sino "ese
+cuerpo no". Y `400` es lo que contesta playlist4 a un cuerpo que no sabe
+interpretar.
+
+Lo que se probó como cuerpo, sin que ninguno pasara: `ADD` con `add_last`, `ADD`
+sin `add_last`, `ADD` sin atributos en el item, y `ADD` con el **id del
+participante** en vez del nombre de la cuenta. Los cuatro contestaron `400` y la
+cola siguió con las mismas canciones.
+
+**Lo que falta es la forma del `ListChanges` que acepta una cola de jam**, que
+es de otro tipo que una playlist: es la lista del anfitrión, y el servicio la
+gestiona de otra manera. El candidato que queda es el *patch* de pista que
+menciona el cliente de escritorio (`jam.patch_track`), que no es un verbo HTTP
+sino un nombre de operación.
+
+## La puerta de comandos
+
+El cliente de escritorio tiene una puerta más, y existe:
+
+```
+POST /social-connect/v2/sessions/<session_id>/commands/from/<device_id>
+```
+
+El `GET` al mismo camino contesta `405` —es de escritura— y el `POST` con un
+cuerpo cualquiera contesta:
+
+```json
+{"error_type":"INVALID_CONNECT_PLAYER_COMMAND","message":"missing or empty command field"}
+```
+
+O sea que el cuerpo tiene que traer un campo **`command`**. Con `{"command":{}}`
+vuelve lo mismo, y con `{"command":{"type":"PLAY","context_uri":"spotify:track:…"}}`
+vuelve `INVALID_PLAYER_COMMAND` —"Could not parse command"—: el campo se
+encontró, pero lo que hay adentro no es un comando de reproducción.
+
+La forma que arma el cliente de escritorio está en sus strings:
+
+```
+{"command":%.*s,"connection_type":"%s","intent_id":"%s"}
+```
+
+y el comando de reproducción es un `ProxyTransferCommand` con
+`player_command_json`, `target_device_id` y `command_id`. **Falta el JSON del
+comando en sí**, y con él la otra mitad: el invitado no *recibe* comandos, los
+pide —esta puerta es de escritura—, así que aunque se manden, el otro lado
+necesita pubsub para enterarse. Y el pubsub no está en librespot.
+
+## El estado del dispositivo
+
+```
+GET /connect-state/v1/cluster  →  200
+```
+
+Devuelve el grupo de dispositivos de la cuenta **con el estado de
+reproducción**: `context_uri`, la pista, la posición, si está pausada, y la
+cola. Es la misma forma que usa el `connect-state` del cliente de escritorio.
+
+No es la puerta del jam —es la del grupo de Spotify Connect de la cuenta—, así
+que no se sabe todavía si el anfitrión de un jam aparece en el grupo del
+invitado. Sin una segunda cuenta no se puede medir, y esa es la cuenta que hace
+falta para medir el jam entero.
 
 ## Cómo se llegó
 
@@ -400,6 +503,7 @@ Las tres puertas de la UI son las tres del servicio:
 | --- | --- |
 | Empezar un jam | `GET /social-connect/v2/sessions/current_or_new?activate=true` |
 | Entrar con un código | `POST /social-connect/v2/sessions/join/<token>` |
+| Salir del jam | `POST /social-connect/v2/sessions/<session_id>/leave` |
 | Terminar el jam | `DELETE /social-connect/v2/sessions/<session_id>` |
 
 **El panel no lee la sesión al abrirse**, y es a propósito: la única puerta que
@@ -407,15 +511,23 @@ lee una sesión es la que también la crea —`current_or_new`—, así que abri
 panel dejaría un jam abierto en la cuenta de alguien que sólo quería mirar. La
 sesión se pide cuando se aprieta el botón.
 
-**Y el jam se termina, no se abandona.** Una sesión que nadie cierra queda
-abierta en la cuenta de quien la abrió, y el siguiente que abre una la
-encuentra ahí.
+**Y ahora sí se lee, cada tanto.** Con el jam abierto, el panel pregunta la
+sesión y la cola compartida cada tres segundos: **el jam no tiene pubsub en
+librespot** —el `dealer` no lo lleva—, así que preguntar es la única forma de
+saber que alguien se unió. La puerta que pregunta es la misma que crea, así que
+sólo se pregunta con una sesión en la mano: si la respuesta trae otra sesión,
+la que había ya no está y el panel lo dice en vez de adoptarla.
+
+**El jam convive con la cola.** Spotify abre un jam desde la cola, y la cola no
+se cierra: los dos paneles contestan preguntas distintas —qué suena acá y quién
+más está escuchando— y ninguno tiene que hacer lugar al otro. Cuando la cola
+está abierta, el jam se docks a su izquierda.
 
 ### Lo que la pantalla todavía no muestra
 
-- **La cola.** Se sabe leerla —su URI, su servicio y su cuerpo en protobuf— y
-  no está en el panel. Hacen falta dos cosas: decodificar el `ListEntity` que
-  contesta el servicio de listas, y resolver los ids de pista en nombres.
+- **La cola, en el panel: ya está.** Se lee, se decodifica y se resuelve en
+  nombres (`src-tauri/src/spclient/jamlist.rs` la decodifica a mano, porque el
+  proto del servicio de listas no está en librespot).
 - **La actividad de los amigos.** La lista de "quién está escuchando" es otro
   servicio, del que no se midió nada. Lo que hay hoy son los participantes del
   jam, que es otra cosa.
@@ -461,14 +573,25 @@ Honesto, porque buena parte de esto no se comprobó:
   de escritura— y la sesión que devuelve trae uno solo: falta la puerta del
   convite, y con ella la forma de compartir el jam.
 - **Escribir en la cola.** Se sabe leerla —con su URI, su servicio y su
-  cuerpo— y falta la puerta de escritura: el `jam.patch_track` del cliente
-  sugiere un *patch* sobre la pista.
+  cuerpo— y se probó escribirla: el id de la lista es el id de la sesión —un id
+  inventado contesta `404` y el de la sesión contesta `400`—, así que lo que se
+  rechaza es el **cuerpo** del `ListChanges`. Cuatro variantes de `ADD`
+  contestaron `400`. Falta la forma que acepta una cola de jam, que es de otro
+  tipo que una playlist.
+- **El formato del comando de reproducción.** La puerta existe y pide un campo
+  `command`; falta el JSON que va adentro, que es el del cliente de escritorio.
 - **Cómo se modifica una sesión.** `GET`, `POST`, `PUT` y `PATCH` sobre
   `/social-connect/v2/sessions/<id>` contestan `405`: el verbo es otro, y
   probablemente sea un `POST` con el cuerpo del proto. Los permisos
   (`queue_only_mode`, `volume_control`) no están en este host.
 - **Si el pubsub se puede implementar.** Si no, el sistema pregunta en vez de
-  recibir, y hay que decidir cada cuánto.
+  recibir, y hay que decidir cada cuánto. **La decisión ya está tomada y es
+  preguntar**: la sesión y la cola se piden cada tres segundos.
+- **Lo que falta para medirlo del todo: una segunda cuenta.** Todo lo que se
+  sabe del jam se midió con una cuenta: la que abre la sesión. Lo que pasa
+  cuando **alguien más** se une —qué ve el anfitrión, qué puede hacer el
+  invitado, si el invitado puede salirse de verdad— necesita dos cuentas y dos
+  máquinas.
 
 ## Para librespot
 
@@ -485,5 +608,9 @@ Si esto termina en un issue o un PR, lo que aporta es:
 4. Que el servicio devuelve JSON por defecto, y que `alt=protobuf` es la
    excepción.
 5. Que **abrir una sesión es un `GET`** que la crea si no había, que unirse es
-   un `POST` con cuerpo, y que cerrarla es un `DELETE` —y que las tres cosas
-   las acepta la sesión de streaming, sin nada más.
+   un `POST` con cuerpo, que **salir es un `POST` a `…/leave`** y que cerrarla
+   es un `DELETE` —y que las cuatro cosas las acepta la sesión de streaming,
+   sin nada más.
+6. Que **salir y cerrar son puertas distintas**: la primera es la del
+   invitado, la segunda la del anfitrión. Con una sola, el invitado no puede
+   salirse.

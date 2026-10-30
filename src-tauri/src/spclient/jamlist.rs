@@ -304,7 +304,9 @@ mod tests {
         let item = bytes(2, &attributes);
         let entity = bytes(2, &item);
         let response = bytes(1, &entity);
-        body.extend(response);
+        // La segunda respuesta va **dentro** de su campo: la lista de
+        // respuestas es un campo repetido, y cada una es un mensaje entero.
+        body.extend(bytes(1, &response));
 
         let tracks = tracks(&body).expect("la lista se lee");
         assert_eq!(
@@ -329,5 +331,31 @@ mod tests {
         // La URI tiene que estar en el cuerpo: es lo que identifica la lista.
         let text = String::from_utf8_lossy(&body);
         assert!(text.contains("spotify:list:jam-list:abc"));
+    }
+
+    /// El decodificador contra la respuesta real del servicio.
+    ///
+    /// **La respuesta entera quedó en `%LOCALAPPDATA%\Starless`** cuando se
+    /// midió la cola: 43 KB de protobuf que el log muestra recortada. Si el
+    /// archivo está, el decodificador se prueba contra él; si no, el test no
+    /// dice nada.
+    #[test]
+    fn the_decoder_reads_the_real_answer() {
+        let base = std::env::var("LOCALAPPDATA").unwrap_or_default();
+        let path = format!("{base}\\Starless\\jam-list-sesion.bin");
+        let Ok(bytes) = std::fs::read(&path) else {
+            return;
+        };
+
+        let songs = tracks(&bytes).expect("la respuesta real se lee");
+        assert!(!songs.is_empty(), "la cola real no está vacía");
+        assert!(
+            songs.iter().all(|uri| uri.starts_with("spotify:track:")),
+            "todas las canciones de la cola son pistas"
+        );
+
+        // Y la revisión viene en la misma respuesta: sin ella no se puede
+        // escribir sobre la lista.
+        assert!(revision(&bytes).is_some(), "la lista trae su revisión");
     }
 }
