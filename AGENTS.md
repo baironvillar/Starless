@@ -925,6 +925,14 @@ salen de una captura:
   OAuth**, que es cuando el browser muestra "Listo. Vuelve a Starless.": desde
   ahí en adelante el browser es lo que la persona está mirando, y dejarla
   esperando es dejarla atrás.
+- **El relay es el código que archiva los reportes, y la CI no corría sus
+  tests.** `relay/` se deploya a Cloudflare y es el único que sabe crear el
+  issue: un bug ahí no rompe la app, **pierde el reporte**. Y la app contesta a
+  eso abriendo el navegador, así que el síntoma es una app más lenta y no un
+  relay roto —justo el fallo que nadie va a reportar. Los tests de `report.ts`
+  existían, los de `index.ts` —el que crea el issue, agrupa los crashes
+  repetidos y corta por el límite de la hora— no: eran el camino sin probar.
+  Ahora `bun run relay:test` corre en la CI, en cada push y en cada PR.
 - **`.agent/` es la copia canónica** de la configuración de agentes. Los shims de
   `.claude/` y `.opencode/` que apuntaban ahí se borraron; para recuperar el
   skill en esas herramientas, `git revert 96cf93c`.
