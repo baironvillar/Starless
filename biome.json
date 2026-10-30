@@ -12,6 +12,7 @@
       "!**/.claude",
       "!**/.opencode",
       "!**/.wrangler",
+      "!**/.astro",
       "!**/*.css"
     ]
   },
