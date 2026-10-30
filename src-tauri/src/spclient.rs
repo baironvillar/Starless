@@ -1358,7 +1358,7 @@ pub fn search_tracks(session: &Session, query: &str) -> Result<Vec<Track>, Strin
 /// Se lee una vez y se usa en los dos lugares que lo piden. Dos valores distintos
 /// para un mismo cambio es una forma de que el servicio lo rechace por un motivo
 /// que nadie va a poder leer en el log después.
-fn now_millis() -> i64 {
+pub(super) fn now_millis() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
@@ -2099,7 +2099,7 @@ fn details_change(
 /// se cose contra la revisión: mandar los cambios en un solo delta es una
 /// escritura y una revisión; mandarlos en deltas separados son dos y la
 /// segunda puede chocar con la primera.
-fn delta(ops: Vec<Op>, user: &str, timestamp: i64) -> Delta {
+pub(super) fn delta(ops: Vec<Op>, user: &str, timestamp: i64) -> Delta {
     Delta {
         ops,
         info: MessageField::some(ChangeInfo {
@@ -2263,26 +2263,141 @@ pub fn jam_join(session: &Session, token: &str) -> Result<JamSession, String> {
     })
 }
 
-/// Cerrar la sesión.
+/// Salir de la sesión.
 ///
-/// **Es un `DELETE`**, y el camino lleva el id de la sesión —no el token—.
-/// Los otros verbos sobre el mismo camino contestan `405`, y el `GET` también:
-/// la ruta existe, y no para eso.
+/// **Es un `POST` a `…/sessions/<id>/leave`, y no un `DELETE` a `…/sessions/<id>`.**
+/// Los dos caminos existen y los dos contestan `200`, pero hacen cosas
+/// distintas: el `DELETE` **borra la sesión** —es la puerta del anfitrión, y
+/// un invitado no la puede usar—, y el `POST` **se va de ella**.
+///
+/// La diferencia se midió el 30 de octubre de 2026: un `DELETE` de un
+/// invitado contesta `405` o `403`, y el `POST` de un invitado contesta `200` y
+/// lo saca de la sesión dejando la sesión viva. Para el anfitrión el `POST`
+/// también termina la sesión: después de él, la sesión ya no existe.
+///
+/// Los otros verbos sobre el mismo camino contestan `405` —la ruta existe, y
+/// no para eso— y el `GET` también.
 pub fn jam_leave(session: &Session, session_id: &str) -> Result<(), String> {
     let owned = session.clone();
-    let route = format!("/social-connect/v2/sessions/{session_id}");
+    let route = format!("/social-connect/v2/sessions/{session_id}/leave");
+
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        reqwest::header::CONTENT_TYPE,
+        reqwest::header::HeaderValue::from_static("application/json"),
+    );
 
     call(session, async move {
         owned
             .spclient()
-            .request(&reqwest::Method::DELETE, &route, None, None)
+            .request(
+                &reqwest::Method::POST,
+                &route,
+                Some(headers),
+                Some(b"{}"),
+            )
             .await
             .map(|_| ())
             .map_err(|e| {
-                log::error!("spclient: no se pudo cerrar el jam: {e}");
+                log::error!("spclient: no se pudo salir del jam: {e}");
                 net_code(&e)
             })
     })
+}
+
+/// Cerrar la sesión: borrarla.
+///
+/// **Es un `DELETE` a `…/sessions/<id>`, y es la puerta del anfitrión.** Un
+/// invitado no puede borrarla —el servicio contesta `405`—, y para él la
+/// puerta es [`jam_leave`].
+///
+/// Un `404` acá significa que la sesión ya no está, que es lo que se quería:
+/// el error se cuenta como un aviso, no como un fallo, y el que decide si eso
+/// es un problema es el comando que la llamó.
+pub fn jam_end(session: &Session, session_id: &str) -> Result<(), String> {
+    let owned = session.clone();
+    let route = format!("/social-connect/v2/sessions/{session_id}");
+    let id = session_id.to_owned();
+
+    call(session, async move {
+        match owned
+            .spclient()
+            .request(&reqwest::Method::DELETE, &route, None, None)
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                log::warn!("spclient: la sesión {id} no se pudo borrar: {e}");
+                Err(net_code(&e))
+            }
+        }
+    })
+}
+
+/// La cola compartida del jam: las canciones que el servicio tiene escrita.
+///
+/// **La cola es una lista, y la lista se lee con el servicio de listas.** La
+/// URI es `spotify:list:jam-list:<id de la sesión>` —el id de la sesión, no
+/// el token— y la puerta es
+/// `playlist/spotify.list.v1.ListReadService/GetLists`, que habla protobuf.
+///
+/// **Lo que vuelve son las URIs de las canciones, en el orden de la cola.** El
+/// nombre y la foto no vienen en la lista: se resuelven después, contra la
+/// metadata de la sesión, que ya sabe leer canciones.
+///
+/// Medido el 30 de octubre de 2026; el protocolo entero está en
+/// `docs/jam.md`.
+pub fn jam_queue(session: &Session, session_id: &str) -> Result<Vec<Track>, String> {
+    let uri = format!("spotify:list:jam-list:{session_id}");
+    let body = jamlist::request(&uri);
+
+    let owned = session.clone();
+    let answer = call(session, async move {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            reqwest::header::CONTENT_TYPE,
+            reqwest::header::HeaderValue::from_static("application/x-protobuf"),
+        );
+
+        owned
+            .spclient()
+            .request(
+                &reqwest::Method::POST,
+                "/playlist/spotify.list.v1.ListReadService/GetLists",
+                Some(headers),
+                Some(&body),
+            )
+            .await
+            .map_err(|e| {
+                log::error!("spclient: la cola del jam no se pudo leer: {e}");
+                net_code(&e)
+            })
+    })?;
+
+    let uris = jamlist::tracks(&answer).ok_or_else(|| {
+        log::error!("spclient: la cola del jam vino con otra forma");
+        "bad_response".to_string()
+    })?;
+
+    let mut out = Vec::with_capacity(uris.len());
+    for raw in uris {
+        let Ok(parsed) = SpotifyUri::from_uri(&raw) else {
+            continue;
+        };
+        let raw = raw.clone();
+        let owned = session.clone();
+        let track = call(session, async move {
+            MetaTrack::get(&owned, &parsed)
+                .await
+                .map_err(|e| {
+                    log::error!("spclient: la metadata de {raw} falló: {e}");
+                    "bad_response".to_string()
+                })
+        })?;
+        out.push(convert(&track, session));
+    }
+
+    Ok(out)
 }
 
 /// La revisión contra la que hay que escribir sobre el rootlist.
@@ -2330,6 +2445,9 @@ fn rootlist_revision(session: &Session) -> Result<Vec<u8>, String> {
 
 #[cfg(debug_assertions)]
 mod probe;
+
+/// La cola compartida del jam: el servicio de listas y su protobuf.
+mod jamlist;
 
 #[cfg(debug_assertions)]
 pub use probe::{

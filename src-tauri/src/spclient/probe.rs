@@ -25,14 +25,14 @@ use librespot_protocol::context::Context;
 use librespot_protocol::extended_metadata::{BatchedEntityRequest, EntityRequest, ExtensionQuery};
 use librespot_protocol::extension_kind::ExtensionKind;
 use librespot_protocol::playlist4_external::{
-    Item, ItemAttributes, ItemAttributesPartialState, ListChanges, Op, SelectedListContent,
+    Add, Item, ItemAttributes, ItemAttributesPartialState, ListChanges, Op, SelectedListContent,
     UpdateItemAttributes, op,
 };
 use protobuf::{Enum, EnumOrUnknown, Message, MessageField};
 
 use super::{
-    ROOTLIST_PAGE, account, call, dj_mix, host_path, liked_tracks, playlist_tracks, playlists,
-    search_tracks, station_page,
+    ROOTLIST_PAGE, account, call, delta, dj_mix, host_path, liked_tracks, now_millis, playlist_tracks,
+    playlists, search_tracks, station_page,
 };
 
 // ---------------------------------------------------------------------------
@@ -3397,6 +3397,19 @@ pub fn run_jam_probe(app: tauri::AppHandle) {
         let join_uri = payload.as_ref().and_then(|value| find_key(value, "join_session_uri"));
         let join_url = payload.as_ref().and_then(|value| find_key(value, "join_session_url"));
 
+        // El id de un participante: es lo que identifica a alguien **dentro**
+        // de la sesión, y es lo que las puertas de miembro y de expulsión
+        // necesitan. No es el nombre de la cuenta.
+        let member_id = payload
+            .as_ref()
+            .and_then(|value| find_first_member_id(value))
+            .unwrap_or_default();
+
+        // El id del dispositivo, que el cliente de escritorio manda en la
+        // activación (`…current_or_new?activate=…&local_device_id=`) y en la
+        // puerta de comandos. librespot lo tiene a mano.
+        let device = session.device_id().to_owned();
+
         log::info!(
             "SP_JAM: session_id={session_id:?} · join_session_token={join_token:?} · join_session_uri={join_uri:?} · join_session_url={join_url:?}"
         );
@@ -3647,6 +3660,19 @@ pub fn run_jam_probe(app: tauri::AppHandle) {
                 &format!("/social-connect/v2/sessions/{id}"),
                 Some(b"{}"),
             );
+
+            // **Las puertas que el cliente de escritorio usa y esta sonda no ha
+            // medido.** Salieron de los strings del `Spotify.dll`, en el bloque
+            // del jam: `social-connect/v2/sessions/` + `…/leave?reason=`,
+            // `…/commands/from/`, y —en el cliente del partner API— `…/kick` y
+            // `…/member/`.
+            //
+            // Se miden por su forma, no por su contenido: un `404` dice que el
+            // camino no existe y un `405` que el router lo conoce pero no con
+            // ese verbo. La diferencia entre las dos cosas es lo que separa un
+            // camino inventado de uno real, y es lo único que se afirma acá.
+            jam_probe_paths(&session, id, &member_id, &device);
+            jam_probe_writes(&session, id, &device);
         }
 
         // Los permisos de la sesión, que son dos puertas con barra.
@@ -3704,8 +3730,360 @@ pub fn run_jam_probe(app: tauri::AppHandle) {
             }
         }
 
+        // Y la última puerta: la de salir. Va al final porque **salir cierra la
+        // sesión**, y midiendo antes se rompería todo lo de arriba.
+        jam_probe_leave(&session, session_id.as_deref().unwrap_or_default());
+
         log::info!("=== DIAGNOSTIC: fin de la sonda del jam ===");
     });
+}
+
+/// Las puertas del jam que el cliente de escritorio usa y que esta sonda no
+/// había medido.
+///
+/// **Salieron de los strings del `Spotify.dll`**, del bloque del jam: la puerta
+/// de comandos (`…/sessions/<id>/commands/from/<device>`), la de los
+/// participantes (`…/member/<id>`) y la de la expulsión (`…/kick`). Se miden
+/// por su forma y no por su contenido: un `404` dice que el camino no existe,
+/// un `405` que el router lo conoce pero no con ese verbo.
+///
+/// **Ninguna de estas preguntas escribe en la cuenta.** Salvo la de la salida —
+/// que va aparte, y al final— una puerta que existe y contesta `405` es un
+/// dato; una que contesta `404` es un dato también: el camino no existe.
+#[cfg(debug_assertions)]
+fn jam_probe_paths(session: &Session, session_id: &str, member_id: &str, device: &str) {
+    // La puerta de comandos: por donde el jam manda una instrucción a un
+    // dispositivo. El `device` va en el camino —`commands/from/<device>`— y
+    // dice de quién viene la instrucción.
+    jam_ask(
+        session,
+        "comandos",
+        "la puerta de comandos, con GET",
+        &reqwest::Method::GET,
+        &format!("/social-connect/v2/sessions/{session_id}/commands/from/{device}"),
+        None,
+    );
+    jam_ask(
+        session,
+        "comandos",
+        "la puerta de comandos, con POST",
+        &reqwest::Method::POST,
+        &format!("/social-connect/v2/sessions/{session_id}/commands/from/{device}"),
+        Some(b"{}"),
+    );
+
+    // Los participantes y la expulsión. La forma del camino es lo que se
+    // mide: las dos versiones, porque el cliente del partner API usa la
+    // tercera y el jam usa la segunda.
+    for route in [
+        format!("/social-connect/v2/sessions/{session_id}/members"),
+        format!("/social-connect/v2/sessions/{session_id}/member/{member_id}"),
+        format!("/social-connect/v3/sessions/{session_id}/member/{member_id}"),
+        format!("/social-connect/v2/sessions/{session_id}/kick/{member_id}"),
+        format!("/social-connect/v3/sessions/{session_id}/kick/{member_id}"),
+    ] {
+        jam_ask(
+            session,
+            "participantes",
+            "la puerta de un participante",
+            &reqwest::Method::GET,
+            &route,
+            None,
+        );
+    }
+
+    // La lectura de la sesión con el id del dispositivo local: el cliente de
+    // escritorio lo manda al activar, y contesta si la sesión recuerda
+    // cuál es el dispositivo anfitrión.
+    jam_ask(
+        session,
+        "lectura",
+        "la sesión, con el dispositivo local",
+        &reqwest::Method::GET,
+        &format!("/social-connect/v2/sessions/current_or_new?activate=false&local_device_id={device}"),
+        None,
+    );
+
+    // **La lectura por id**: la puerta que el panel necesita para no perder
+    // el ritmo. `current_or_new` crea la sesión si no hay ninguna, así que
+    // usarla para refrescar crearía un jam donde no hay ninguno. Si esta
+    // puerta existe, el panel puede preguntar por la sesión que ya tiene.
+    jam_ask(
+        session,
+        "lectura",
+        "la sesión, por id",
+        &reqwest::Method::GET,
+        &format!("/social-connect/v2/sessions/{session_id}"),
+        None,
+    );
+}
+
+/// Las escrituras: **las puertas queWRITINGen la cola compartida**.
+///
+/// La cola del jam es una lista (`spotify:list:jam-list:<id>`) y se lee con
+/// `GetLists`. Cómo se *escribe* es lo que no está medido, y hay dos candidatas
+/// que salen de lo que el repo ya sabe hacer:
+///
+/// 1. La misma puerta de playlist4 que usa el repo para crear y modificar
+///    playlists — `POST /playlist/v2/playlist/<id>/changes` con un
+///    `ListChanges`— pero con el id de la lista del jam. El cliente de
+///    escritorio tiene la cadena `jam-` al lado de `spotify:list:jam-list:`,
+///    y eso hace sospechar que el id de la lista en playlist4 es `jam-<id>`.
+/// 2. La puerta de comandos, que existe (contestó `400 missing or empty
+///    command field`) y que el cliente de escritorio llama `redirectPlayerCommand`.
+///
+/// Se miden las dos. La primera con un `ListChanges` de verdad —el mismo
+/// `ADD` con `add_last` que el repo manda a una playlist—; la segunda con el
+/// cuerpo que el cliente de escritorio arma: `{"command":%s,...}`.
+#[cfg(debug_assertions)]
+fn jam_probe_writes(session: &Session, session_id: &str, device: &str) {
+    let account = session.username().to_owned();
+    let timestamp = now_millis();
+    let track = "spotify:track:3b5E38f6Dbx28IVof4oeAA";
+
+    // **Primero la lectura, y de ella la revisión.** Una escritura sin la
+    // revisión es un `400` a un cuerpo que el servicio acepta: el cuerpo
+    // está bien, lo que no está bien es contra qué versión se escribe.
+    let uri = format!("spotify:list:jam-list:{session_id}");
+    let listed = jam_ask_typed(
+        session,
+        "cola",
+        "leer la cola del jam",
+        &reqwest::Method::POST,
+        "/playlist/spotify.list.v1.ListReadService/GetLists",
+        Some(&super::jamlist::request(&uri)),
+        "application/x-protobuf",
+    );
+
+    let revision = listed
+        .as_ref()
+        .and_then(|(_, bytes)| super::jamlist::revision(bytes))
+        .unwrap_or_default();
+    let before = listed
+        .as_ref()
+        .and_then(|(_, bytes)| super::jamlist::tracks(bytes))
+        .map(|tracks| tracks.len())
+        .unwrap_or_default();
+
+    log::info!(
+        "SP_JAM: la cola del jam tiene {before} canciones y una revisión de {} bytes",
+        revision.len()
+    );
+
+    let changes = ListChanges {
+        base_revision: Some(revision.clone()),
+        deltas: vec![delta(
+            vec![Op {
+                kind: Some(EnumOrUnknown::new(op::Kind::ADD)),
+                add: MessageField::some(Add {
+                    add_last: Some(true),
+                    items: vec![Item {
+                        uri: Some(track.to_owned()),
+                        attributes: MessageField::some(ItemAttributes {
+                            added_by: Some(account.clone()),
+                            timestamp: Some(timestamp),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }],
+            &account,
+            timestamp,
+        )],
+        want_resulting_revisions: Some(true),
+        want_sync_result: Some(true),
+        nonces: vec![1],
+        ..Default::default()
+    };
+
+    let body = changes.write_to_bytes().unwrap_or_default();
+
+    for candidate in [
+        format!("jam-{session_id}"),
+        session_id.to_owned(),
+        format!("spotify:list:jam-list:{session_id}"),
+        // Un id que no existe de ninguna manera: la **comparación**. Si el
+        // jam contestara lo mismo que este, los tres de arriba no serían una
+        // lista y el `400` no estaría hablando de la lista del jam.
+        "4uLU6hMCjMI75M1A2tKUQC".to_owned(),
+    ] {
+        let answered = jam_ask_typed(
+            session,
+            "escritura",
+            "escribir en la cola del jam",
+            &reqwest::Method::POST,
+            &format!("/playlist/v2/playlist/{candidate}/changes"),
+            Some(&body),
+            "application/x-www-form-urlencoded",
+        );
+
+        // Y después de escribir, se lee otra vez: **la única prueba de que
+        // la canción entró es que la lista la tiene.**
+        let after = jam_ask_typed(
+            session,
+            "cola",
+            "releer la cola del jam",
+            &reqwest::Method::POST,
+            "/playlist/spotify.list.v1.ListReadService/GetLists",
+            Some(&super::jamlist::request(&uri)),
+            "application/x-protobuf",
+        )
+        .and_then(|(_, bytes)| super::jamlist::tracks(&bytes))
+        .map(|tracks| tracks.len())
+        .unwrap_or_default();
+
+        let status = answered.as_ref().map(|(status, _)| *status).unwrap_or(0);
+        log::info!(
+            "SP_JAM: la escritura en `{candidate}` → {status} · la cola pasó de {before} a {after} canciones"
+        );
+    }
+
+    // La puerta de comandos, con el cuerpo que arma el cliente de escritorio:
+    // `{"command":%.*s,"connection_type":"%s","intent_id":"%s"}`.
+    for body in [
+        "{\"command\":{}}".to_owned(),
+        format!(
+            "{{\"command\":{{\"type\":\"PLAY\",\"context_uri\":\"{track}\"}},\"connection_type\":\"LOCAL\",\"intent_id\":\"jam\"}}"
+        ),
+        format!(
+            "{{\"player_command_json\":\"{{\\\"type\\\":\\\"PLAY\\\"}}\",\"target_device_id\":\"{device}\",\"command_id\":\"starless-probe\"}}"
+        ),
+    ] {
+        jam_ask(
+            session,
+            "comandos",
+            "mandar un comando a la sesión",
+            &reqwest::Method::POST,
+            &format!("/social-connect/v2/sessions/{session_id}/commands/from/{device}"),
+            Some(body.as_bytes()),
+        );
+    }
+
+    // El estado del dispositivo: si el servidor guarda el estado de este
+    // dispositivo, la puerta existe y es lo que un invitado mira para seguir
+    // al anfitrión.
+    jam_ask(
+        session,
+        "estado",
+        "el estado del dispositivo",
+        &reqwest::Method::GET,
+        &format!("/connect-state/v1/devices/{device}"),
+        None,
+    );
+    jam_ask(
+        session,
+        "estado",
+        "el grupo de dispositivos",
+        &reqwest::Method::GET,
+        "/connect-state/v1/cluster",
+        None,
+    );
+
+    // El grupo de dispositivos se guarda entero: son casi cuarenta mil bytes y
+    // el log los corta. Lo que importa es si trae el estado de reproducción
+    // —el contexto, la canción y dónde va— y eso no se lee de una línea
+    // recortada.
+    if let Some((status, bytes)) = jam_ask(
+        session,
+        "estado",
+        "el grupo de dispositivos, completo",
+        &reqwest::Method::GET,
+        "/connect-state/v1/cluster",
+        None,
+    ) {
+        let path = jam_scratch_path("connect-cluster.json");
+        std::fs::write(&path, &bytes).ok();
+        log::info!(
+            "SP_JAM: el grupo de dispositivos quedó en {path} ({status}, {} bytes)",
+            bytes.len()
+        );
+    }
+}
+
+/// La puerta de salida, que es la última porque **puede cerrar la sesión**.
+///
+/// Se mide sobre una sesión nueva, así que lo de arriba no se rompe. Y al
+/// final se cierra lo que quede: una sesión de jam viva se le ve a la persona
+/// que la está probando, y eso es ruido, no un resultado.
+#[cfg(debug_assertions)]
+fn jam_probe_leave(session: &Session, session_id: &str) {
+    log::info!(
+        "SP_JAM: la puerta de salida se mide sobre una sesión nueva (la de {session_id} ya se cerró)"
+    );
+
+    let fresh = jam_ask(
+        session,
+        "salir",
+        "una sesión nueva para medir la salida",
+        &reqwest::Method::GET,
+        "/social-connect/v2/sessions/current_or_new?activate=true",
+        None,
+    );
+
+    let Some(id) = fresh
+        .as_ref()
+        .and_then(|(_, bytes)| serde_json::from_slice::<serde_json::Value>(bytes).ok())
+        .and_then(|value| find_key(&value, "session_id"))
+    else {
+        log::error!("SP_JAM: no se pudo abrir una sesión para medir la salida");
+        return;
+    };
+
+    // Las cuatro formas que se pueden pensar, con el motivo que el cliente
+    // de escritorio manda en la query (`…/leave?reason=`).
+    jam_ask(
+        session,
+        "salir",
+        "salir de la sesión, con GET",
+        &reqwest::Method::GET,
+        &format!("/social-connect/v2/sessions/{id}/leave"),
+        None,
+    );
+    jam_ask(
+        session,
+        "salir",
+        "salir de la sesión, con DELETE",
+        &reqwest::Method::DELETE,
+        &format!("/social-connect/v2/sessions/{id}/leave"),
+        None,
+    );
+    jam_ask(
+        session,
+        "salir",
+        "salir de la sesión, con DELETE y motivo",
+        &reqwest::Method::DELETE,
+        &format!("/social-connect/v2/sessions/{id}/leave?reason=USER_LEFT"),
+        None,
+    );
+    jam_ask(
+        session,
+        "salir",
+        "salir de la sesión, con POST y cuerpo",
+        &reqwest::Method::POST,
+        &format!("/social-connect/v2/sessions/{id}/leave"),
+        Some(b"{}"),
+    );
+    jam_ask(
+        session,
+        "salir",
+        "salir de la sesión, en la versión 3",
+        &reqwest::Method::DELETE,
+        &format!("/social-connect/v3/sessions/{id}/leave?reason=USER_LEFT"),
+        None,
+    );
+
+    // Lo que quede vivo se cierra, para no dejar nada abierto en la cuenta.
+    jam_ask(
+        session,
+        "cerrar",
+        "cerrar la sesión de la medición de salida",
+        &reqwest::Method::DELETE,
+        &format!("/social-connect/v2/sessions/{id}"),
+        None,
+    );
 }
 
 /// Una pregunta a la puerta del jam, y lo que contestó.
@@ -3995,6 +4373,24 @@ fn describe_strings(bytes: &[u8]) -> String {
 fn jam_scratch_path(name: &str) -> String {
     let base = std::env::var("LOCALAPPDATA").unwrap_or_default();
     format!("{base}\\Starless\\{name}")
+}
+
+/// El id del primer participante de la sesión.
+///
+/// **No es el nombre de la cuenta**: es el id que el servicio le da a cada
+/// persona *dentro* de la sesión, y es lo que las puertas de miembro y de
+/// expulsión necesitan.
+#[cfg(debug_assertions)]
+fn find_first_member_id(value: &serde_json::Value) -> Option<String> {
+    let members = match value {
+        serde_json::Value::Object(map) => map.get("session_members")?,
+        _ => return None,
+    };
+
+    let members = members.as_array()?;
+    let first = members.first()?;
+
+    first.get("id")?.as_str().map(|id| id.to_owned())
 }
 
 /// Busca un campo por nombre, a cualquier nivel del JSON.
