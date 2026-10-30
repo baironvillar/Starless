@@ -50,6 +50,9 @@ librespot-protocol = "0.8"
 # `parse_from_bytes` lives on this trait, not on the generated type. Without it in
 # scope the decoder exists and the compiler says it does not.
 protobuf = "3"
+# Las tandas de metadata de una playlist, a la vez. Ya está en el árbol por
+# librespot, así que nombrarla no cuesta compilación.
+futures-util = "0.3"
 
 # La voz del DJ: el audio llega del servicio de Spotify y hay que decodificarlo
 # a PCM antes de que pueda entrar al mismo stream que la música.

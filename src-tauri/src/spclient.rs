@@ -33,6 +33,7 @@ use std::future::Future;
 use std::sync::mpsc;
 use std::time::Duration;
 
+use futures_util::{stream, StreamExt, TryStreamExt};
 use librespot_core::error::ErrorKind;
 use librespot_core::{FileId, Session, SpotifyId, SpotifyUri};
 use librespot_metadata::{Lyrics as MetaLyrics, Metadata, Track as MetaTrack};
@@ -141,6 +142,9 @@ fn net_code(error: &librespot_core::error::Error) -> String {
 /// filas, mientras que cinco pedidos de cuarenta muestran las primeras páginas
 /// y las siguientes llegan igual.
 const DETAILS_BATCH: usize = 50;
+
+/// Cuántas tandas de [`details`] pueden estar en el aire a la vez.
+const DETAILS_IN_FLIGHT: usize = 8;
 
 /// La URL de una portada, sin pedirla.
 ///
@@ -379,50 +383,66 @@ fn context_uris(context: &Context) -> Vec<String> {
 /// otro orden del que se pidió —o no responder con una pista que sí pidió— y
 /// emparejar por posición asigna la portada de una canción a otra sin que nada
 /// falle. Cada entrada trae su `entity_uri` justamente para eso.
+///
+/// **Las tandas van a la vez, no una detrás de otra.** Una playlist de mil
+/// canciones son veinte tandas, y en fila eran veinte viajes al servidor antes
+/// de dibujar una sola fila. El orden no importa —el resultado es un mapa por
+/// URI— y el tope es para no abrir veinte pedidos contra el mismo servicio.
 async fn details(owned: Session, uris: Vec<String>) -> Result<HashMap<String, Track>, String> {
-    let mut out = HashMap::new();
+    // Tandas propias y no prestadas: con un préstamo la promesa no es `Send`.
+    let batches = stream::iter(uris.chunks(DETAILS_BATCH).map(<[String]>::to_vec))
+        .map(|chunk| details_batch(owned.clone(), chunk))
+        .buffer_unordered(DETAILS_IN_FLIGHT);
+    batches
+        .try_fold(HashMap::new(), |mut out, batch| async move {
+            out.extend(batch);
+            Ok(out)
+        })
+        .await
+}
 
-    for chunk in uris.chunks(DETAILS_BATCH) {
-        let request = BatchedEntityRequest {
-            entity_request: chunk
-                .iter()
-                .map(|uri| EntityRequest {
-                    entity_uri: format!("spotify:track:{uri}"),
-                    query: vec![ExtensionQuery {
-                        extension_kind: EnumOrUnknown::new(ExtensionKind::TRACK_V4),
-                        ..Default::default()
-                    }],
+/// Una tanda de [`details`]: hasta [`DETAILS_BATCH`] pistas en un pedido.
+async fn details_batch(owned: Session, chunk: Vec<String>) -> Result<Vec<(String, Track)>, String> {
+    let mut out = Vec::new();
+    let request = BatchedEntityRequest {
+        entity_request: chunk
+            .iter()
+            .map(|uri| EntityRequest {
+                entity_uri: format!("spotify:track:{uri}"),
+                query: vec![ExtensionQuery {
+                    extension_kind: EnumOrUnknown::new(ExtensionKind::TRACK_V4),
                     ..Default::default()
-                })
-                .collect(),
-            ..Default::default()
-        };
+                }],
+                ..Default::default()
+            })
+            .collect(),
+        ..Default::default()
+    };
 
-        let response = owned
-            .spclient()
-            .get_extended_metadata(request)
-            .await
-            .map_err(|e| {
-                log::error!("spclient: la metadata en lote falló: {e}");
-                net_code(&e)
-            })?;
+    let response = owned
+        .spclient()
+        .get_extended_metadata(request)
+        .await
+        .map_err(|e| {
+            log::error!("spclient: la metadata en lote falló: {e}");
+            net_code(&e)
+        })?;
 
-        for array in response.extended_metadata {
-            for entry in array.extension_data {
-                let Some(payload) = entry.extension_data.as_ref() else {
-                    continue;
-                };
-                let Ok(message) = TrackMessage::parse_from_bytes(&payload.value) else {
-                    continue;
-                };
-                let Ok(uri) = SpotifyUri::from_uri(&entry.entity_uri) else {
-                    continue;
-                };
-                // One bad track must not cost the other forty-nine: a row without
-                // a title still plays, a missing row does not exist.
-                if let Ok(track) = MetaTrack::parse(&message, &uri) {
-                    out.insert(bare_id(&entry.entity_uri), convert(&track, &owned));
-                }
+    for array in response.extended_metadata {
+        for entry in array.extension_data {
+            let Some(payload) = entry.extension_data.as_ref() else {
+                continue;
+            };
+            let Ok(message) = TrackMessage::parse_from_bytes(&payload.value) else {
+                continue;
+            };
+            let Ok(uri) = SpotifyUri::from_uri(&entry.entity_uri) else {
+                continue;
+            };
+            // One bad track must not cost the other forty-nine: a row without
+            // a title still plays, a missing row does not exist.
+            if let Ok(track) = MetaTrack::parse(&message, &uri) {
+                out.push((bare_id(&entry.entity_uri), convert(&track, &owned)));
             }
         }
     }
