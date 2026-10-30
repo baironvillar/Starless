@@ -412,6 +412,19 @@ fn truncate(text: &str) -> String {
 /// that ships, and the release workflow sets it from a repository variable.
 const RELAY: Option<&str> = option_env!("STARLESS_REPORT_RELAY");
 
+/// The address to report to, or `None` when this build has nowhere to report.
+///
+/// **An empty address is not an address.** The release workflow hands over a
+/// repository variable, and a variable that does not exist arrives as an
+/// empty string: `option_env!` gives that as `Some("")`, which is not the
+/// same as `None`. The app would then post to `/report` —a URL without a
+/// host— and blame the relay for not answering, when the truth is that there
+/// is no relay to answer. Every local build has this shape, and every build
+/// made before the variable existed has it too.
+fn relay_address(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|address| !address.is_empty())
+}
+
 /// What the relay is sent.
 #[derive(Serialize)]
 struct RelayPayload<'a> {
@@ -606,7 +619,7 @@ pub fn submit(
     let body = build(kind, message, attach_log, account);
     let title = title(kind);
 
-    let Some(relay) = RELAY else {
+    let Some(relay) = relay_address(RELAY) else {
         log::info!("reporte ({kind:?}) sin relay en este build: se abre el navegador");
         return Ok(browser_outcome(kind, &title, &body));
     };
@@ -789,6 +802,22 @@ pub fn simulate_crash() -> Result<(), String> {
 mod tests {
     use super::*;
     use crate::settings::Settings;
+
+    /// A repository variable that does not exist arrives as an empty string,
+    /// and `option_env!` cannot tell that from a variable that exists and is
+    /// empty. The address has to be checked where it is used, because a build
+    /// without one is every local build and every build made before the
+    /// variable existed.
+    #[test]
+    fn an_empty_relay_address_is_not_an_address() {
+        assert_eq!(relay_address(None), None);
+        assert_eq!(relay_address(Some("")), None);
+        assert_eq!(relay_address(Some("   ")), None);
+        assert_eq!(
+            relay_address(Some("https://relay.test")),
+            Some("https://relay.test")
+        );
+    }
 
     #[test]
     fn the_same_panic_has_the_same_signature_across_runs() {

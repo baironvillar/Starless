@@ -933,6 +933,15 @@ salen de una captura:
   existían, los de `index.ts` —el que crea el issue, agrupa los crashes
   repetidos y corta por el límite de la hora— no: eran el camino sin probar.
   Ahora `bun run relay:test` corre en la CI, en cada push y en cada PR.
+- **Una variable de Actions que no existe llega como cadena vacía, y
+  `option_env!` no la distingue de una que existe y está vacía.**
+  `STARLESS_REPORT_RELAY` se pasa al build desde una variable del repositorio:
+  si no existe, el workflow la pasa igual y el binario recibe `Some("")`, que
+  no es lo mismo que `None`. La app posteaba entonces a `/report` —una URL
+  sin host— y culpaba al relay de no contestar, cuando lo que pasa es que no
+  hay relay. **Toda build local tiene esa forma**, y toda build hecha antes
+  de que la variable existiera también. La dirección se chequea donde se usa,
+  no donde se lee.
 - **`.agent/` es la copia canónica** de la configuración de agentes. Los shims de
   `.claude/` y `.opencode/` que apuntaban ahí se borraron; para recuperar el
   skill en esas herramientas, `git revert 96cf93c`.
