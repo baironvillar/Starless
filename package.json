@@ -20,6 +20,7 @@
     "logo:invert": "bun run scripts/logo.ts --invert",
     "typecheck": "tsc --noEmit && tsc --noEmit -p relay",
     "relay:test": "bun test relay",
+    "test": "bun test",
     "relay:deploy": "bunx wrangler deploy --config relay/wrangler.toml",
     "version": "bun run scripts/version.ts get",
     "version:bump": "bun run scripts/version.ts bump",

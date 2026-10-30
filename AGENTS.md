@@ -950,7 +950,17 @@ en ningún proto ni en ninguna issue:
   relay roto —justo el fallo que nadie va a reportar. Los tests de `report.ts`
   existían, los de `index.ts` —el que crea el issue, agrupa los crashes
   repetidos y corta por el límite de la hora— no: eran el camino sin probar.
-  Ahora `bun run relay:test` corre en la CI, en cada push y en cada PR.
+  Ahora `bun run test` corre en la CI, en cada push y en cada PR: los del
+  relay y los de la app.
+- **Una canción agregada a la cola con nada sonando era la cola entera.**
+  `onAddToQueue` armaba `[track]` cuando no había cola: la lista de la pantalla
+  se caía de la cola en ese momento, y **después de esa canción no había nada**.
+  Lo que pasó en vivo fue peor de lo que se veía: la canción terminó, la app no
+  encontró nada detrás y **arrancó la radio** —el log mostró `radio: arrancó con
+  50 canciones`—, así que la app seguía con música y lo que había seguido era
+  otra cosa. Ahora la cola es la lista de la pantalla **más** lo que el usuario
+  le puso, y la regla vive en `src/lib/queue.ts`, que tiene tests: la cola del
+  DJ no se toca, y una canción repetida sigue siendo dos canciones.
 - **Una variable de Actions que no existe llega como cadena vacía, y
   `option_env!` no la distingue de una que existe y está vacía.**
   `STARLESS_REPORT_RELAY` se pasa al build desde una variable del repositorio:
