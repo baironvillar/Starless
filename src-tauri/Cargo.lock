@@ -4776,6 +4776,7 @@ dependencies = [
  "cpal",
  "dirs 6.0.0",
  "env_logger",
+ "futures-util",
  "librespot-connect",
  "librespot-core",
  "librespot-metadata",
