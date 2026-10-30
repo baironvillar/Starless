@@ -621,6 +621,23 @@ export function isLibraryView(value: string): value is LibraryView {
   return (LIBRARY_VIEWS as readonly string[]).includes(value);
 }
 
+/** The orders a playlist's songs can be shown in; `custom` is the playlist's own. */
+export const PLAYLIST_ORDERS = ["custom", "title", "added", "artist", "album"] as const;
+export type PlaylistOrder = (typeof PLAYLIST_ORDERS)[number];
+
+/** How tall a row of a playlist is. */
+export const TRACK_LIST_VIEWS = ["list", "compact"] as const;
+export type TrackListView = (typeof TRACK_LIST_VIEWS)[number];
+
+/** How every playlist is read: one order, its direction, and the row height. */
+export type TrackListPrefs = { order: PlaylistOrder; descending: boolean; view: TrackListView };
+
+export const DEFAULT_TRACK_LIST_PREFS: TrackListPrefs = {
+  order: "custom",
+  descending: false,
+  view: "list",
+};
+
 /** Whoever made it, or `null` when the playlist does not say. */
 export function playlistCreator(playlist: Playlist): string | null {
   return playlist.owner?.display_name ?? null;
@@ -719,6 +736,46 @@ export async function setLibraryView(view: LibraryView): Promise<void> {
     return;
   }
   return invoke<void>("set_library_view", { view });
+}
+
+const TRACK_ORDER_KEY = "starless:track-order";
+const TRACK_VIEW_KEY = "starless:track-view";
+
+/**
+ * The order and the view a playlist opens in. Rust keeps the order as
+ * `<order>-<asc|desc>` and refuses one it does not know; this side checks the
+ * same shape again before it reaches a `switch`, like `librarySort`.
+ */
+export async function trackListPrefs(): Promise<TrackListPrefs> {
+  const [rawOrder, rawView] = hasBackend()
+    ? await Promise.all([invoke<string>("track_order"), invoke<string>("track_view")])
+    : [window.localStorage.getItem(TRACK_ORDER_KEY), window.localStorage.getItem(TRACK_VIEW_KEY)];
+  const [order, direction] = (rawOrder ?? "").split("-");
+  const known = (PLAYLIST_ORDERS as readonly string[]).includes(order);
+  return {
+    order: known ? (order as PlaylistOrder) : DEFAULT_TRACK_LIST_PREFS.order,
+    descending: known && direction === "desc",
+    view: (TRACK_LIST_VIEWS as readonly string[]).includes(rawView ?? "")
+      ? (rawView as TrackListView)
+      : DEFAULT_TRACK_LIST_PREFS.view,
+  };
+}
+
+export async function setTrackOrder(order: PlaylistOrder, descending: boolean): Promise<void> {
+  const value = `${order}-${descending ? "desc" : "asc"}`;
+  if (!hasBackend()) {
+    window.localStorage.setItem(TRACK_ORDER_KEY, value);
+    return;
+  }
+  return invoke<void>("set_track_order", { order: value });
+}
+
+export async function setTrackView(view: TrackListView): Promise<void> {
+  if (!hasBackend()) {
+    window.localStorage.setItem(TRACK_VIEW_KEY, view);
+    return;
+  }
+  return invoke<void>("set_track_view", { view });
 }
 
 /**

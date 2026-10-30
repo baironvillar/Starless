@@ -1623,6 +1623,28 @@ fn set_library_view(view: String) {
     settings::save_library_view(&view);
 }
 
+/// How a playlist's songs are ordered, as `<order>-<asc|desc>`. Same reasoning
+/// as `library_sort`: the default is answered here, in one place.
+#[tauri::command]
+fn track_order() -> String {
+    settings::saved_track_order().to_string()
+}
+
+#[tauri::command]
+fn set_track_order(order: String) {
+    settings::save_track_order(&order);
+}
+
+#[tauri::command]
+fn track_view() -> String {
+    settings::saved_track_view().to_string()
+}
+
+#[tauri::command]
+fn set_track_view(view: String) {
+    settings::save_track_view(&view);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -1821,6 +1843,10 @@ pub fn run() {
             set_library_sort,
             library_view,
             set_library_view,
+            track_order,
+            set_track_order,
+            track_view,
+            set_track_view,
             previous_session_crashed,
             announce_clean_exit,
             log_frontend_error,
