@@ -5113,54 +5113,57 @@ pub fn run_jam_state_probe(app: tauri::AppHandle) {
         // muestra la estación y no la cola que eligió la persona, y una
         // canción que se suma a la cola no le llega al otro lado.
         //
-        // **Las dos canciones no están en el contexto y van sin `uid`.** Si
-        // aparecen en la cola compartida, el servicio las acepta; si no, hay
-        // que publicarlas con el `uid` que él da.
+        // **Van dos: una del contexto, con su `uid`, y otra que no está en él,
+        // sin `uid`.** La del contexto es el control: si aparece, el estado se
+        // publica y las "pistas que siguen" llegan a la cola compartida. Si la
+        // otra no aparece, lo que falta es el `uid` —o que la pista sea del
+        // contexto—.
         //
         // **La app deja de publicar mientras esto corre.** Si publicara, pisaría
         // lo que la sonda acaba de publicar y la lectura sería de otra cosa.
         if let Some(estado) = app.try_state::<crate::playback::PlaybackState>() {
             estado.pause_publish();
         }
-        let propias = [
-            ("spotify:track:6QFCMUUq1T2Vf5sFUXcuQ7", "Beauty And A Beat"),
-            ("spotify:track:42qNWdLKCI41S4uzfamhFM", "Duvet"),
-        ];
-        let con_cola = super::state::Snapshot {
+        let control = snapshot.next.first().cloned();
+        let nueva = super::state::Track {
+            uri: "spotify:track:6QFCMUUq1T2Vf5sFUXcuQ7".to_string(),
+            uid: String::new(),
+            gid: Vec::new(),
+        };
+        let mut con_cola = super::state::Snapshot {
             context_uri: snapshot.context_uri.clone(),
             context_url: snapshot.context_url.clone(),
             track: snapshot.track.clone(),
-            next: propias
-                .iter()
-                .map(|(uri, _)| super::state::Track {
-                    uri: uri.to_string(),
-                    uid: String::new(),
-                    gid: Vec::new(),
-                })
-                .collect(),
+            next: Vec::new(),
             position_ms: 0,
             duration_ms: 0,
             playing: true,
         };
+        if let Some(control) = control.clone() {
+            con_cola.next.push(control);
+        }
+        con_cola.next.push(nueva.clone());
         match super::state::publish(&session, &con_cola) {
             Ok(()) => log::info!(
-                "SP_JAM_STATE: publiqué una cola propia de {} canciones",
-                propias.len()
+                "SP_JAM_STATE: publiqué {} pistas que siguen (una del contexto con uid y una sin uid)",
+                con_cola.next.len()
             ),
             Err(error) => log::error!("SP_JAM_STATE: la cola propia no se publicó: {error}"),
         }
-        std::thread::sleep(std::time::Duration::from_secs(4));
+        // **Quince segundos.** El servicio arma la lista del jam por su lado, y
+        // cuatro segundos no alcanzan: la lectura mide el estado de la lista, no
+        // el del `PUT`.
+        std::thread::sleep(std::time::Duration::from_secs(15));
         match super::jam_queue_items(&session, &session_id) {
             Ok(items) => {
-                let detalle: Vec<String> = propias
+                let control_uri = control.as_ref().map(|c| c.uri.clone()).unwrap_or_default();
+                let veces_control = items.iter().filter(|(item, _)| item == &control_uri).count();
+                let veces_nueva = items
                     .iter()
-                    .map(|(uri, nombre)| {
-                        let veces = items.iter().filter(|(item, _)| item == uri).count();
-                        format!("{nombre}: {veces}")
-                    })
-                    .collect();
+                    .filter(|(item, _)| item == &nueva.uri)
+                    .count();
                 log::info!(
-                    "SP_JAM_STATE: la cola tiene {} canciones · propias {detalle:?}",
+                    "SP_JAM_STATE: la cola tiene {} canciones · la del contexto aparece {veces_control} · la que no está en el contexto aparece {veces_nueva}",
                     items.len()
                 );
             }
