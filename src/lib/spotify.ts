@@ -501,6 +501,35 @@ export function onDjVoice(handler: (event: DjVoiceEvent) => void): Promise<Unlis
 }
 
 /**
+ * A command that came from the other side of the jam.
+ *
+ * **It is not a click: it is the phone pressing "next".** The command travels
+ * from the phone through the service to the device that is playing, and the
+ * backend translates it before it comes down here. That is why the names are
+ * the ones of the player and not the ones of the buttons.
+ */
+export type JamCommand = {
+  /**
+   * What to do: `skip_next`, `skip_prev`, `pause`, `play`, `seek_to` or
+   * `add_to_queue`.
+   */
+  endpoint: string;
+  /** The song, with its data, when the command carried one. */
+  track: Track | null;
+  /** The id of the song, even when its data could not be resolved. */
+  track_id: string | null;
+  /** Where to jump, in milliseconds, when the command is a `seek_to`. */
+  position_ms: number | null;
+};
+
+/**
+ * Subscribe to the commands the other side of the jam sends.
+ */
+export function onJamCommand(handler: (command: JamCommand) => void): Promise<UnlistenFn> {
+  return listen<JamCommand>("jam://command", (event) => handler(event.payload));
+}
+
+/**
  * Subscribe to the music's pulse: 0 between beats, up to 1 on a kick, about
  * thirty times a second while something sounds (see `beat.rs`).
  *

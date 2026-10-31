@@ -21,6 +21,7 @@ use librespot_playback::{
     mixer::VolumeGetter,
     player::{Player, PlayerEvent},
 };
+use futures_util::StreamExt;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -40,6 +41,157 @@ const POSITION_INTERVAL_MS: u64 = 500;
 /// anything the eye compares between two frames, and slow enough that the
 /// webview's thread is free for the pointer that is asking.
 const STATUS_ECHO_MS: u64 = 100;
+
+/// El tema por el que el backend manda los comandos del player.
+const COMMAND_TOPIC: &str = "hm://connect-state/v1/player/command";
+
+/// Lo que el otro lado mandó, en la forma que el webview la entiende.
+#[derive(Serialize, Clone, Debug)]
+pub struct RemoteCommand {
+    /// Qué hay que hacer: `skip_next`, `skip_prev`, `pause`, `play`,
+    /// `seek_to` o `add_to_queue`.
+    pub endpoint: String,
+    /// La canción del comando, con sus datos, si la hubo.
+    pub track: Option<crate::models::Track>,
+    /// La id de la canción del comando, aunque no se hayan podido resolver sus
+    /// datos.
+    pub track_id: Option<String>,
+    /// A qué milisegundo saltar, si el comando es un `seek_to`.
+    pub position_ms: Option<u32>,
+}
+
+/// Escucha los comandos que manda el otro lado del jam.
+///
+/// **El camino de vuelta.** El comando que manda el celu —saltar, pausar,
+/// agregar una canción— no llega por una puerta HTTP: llega al `dealer`, como
+/// un *request* del backend, y lo tiene que contestar el dispositivo al que va
+/// dirigido. Sin escucharlo, el celu aprieta "siguiente" y no pasa nada.
+///
+/// **Son requests y no mensajes**, y esa es toda la diferencia: un mensaje se
+/// mira y listo; un request además *exige* respuesta, y el que no contesta
+/// deja esperando al otro lado. Por eso va con `handle_for` y no con
+/// `listen_for`.
+///
+/// **El comando no se aplica acá.** La cola es del frontend —es la lista que
+/// el usuario ve—, así que el comando baja como un evento y lo aplica el
+/// webview.
+pub fn watch_commands(app: AppHandle) {
+    std::thread::spawn(move || {
+        let Some(session_state) = app.try_state::<crate::SessionState>() else {
+            return;
+        };
+        let session = match session_state.ready() {
+            Ok(session) => session,
+            Err(_) => return,
+        };
+
+        // **El handler tiene que estar antes de que llegue el comando**: un
+        // request que no tiene a quién contestarle se pierde con un aviso en
+        // el log. Y el `dealer` puede todavía estar levantándose.
+        let mut intentos = 0;
+        let stream = loop {
+            match session.dealer().handle_for(COMMAND_TOPIC) {
+                Ok(stream) => break stream,
+                Err(error) => {
+                    intentos += 1;
+                    if intentos > 40 {
+                        log::error!("playback: no se pudieron escuchar los comandos: {error}");
+                        return;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                }
+            }
+        };
+
+        let para_el_bucle = session.clone();
+        session.spawn(async move {
+            let mut stream = stream;
+            while let Some((request, reply)) = stream.next().await {
+                let command = translate(&para_el_bucle, &request.command).await;
+                log::info!(
+                    "playback: el otro lado mandó {} (de {}){}",
+                    command.endpoint,
+                    request.sent_by_device_id,
+                    match &command.track {
+                        Some(track) => format!(" · {} {}", track.name, track.id),
+                        None => String::new(),
+                    }
+                );
+                let _ = app.emit("jam://command", &command);
+                let _ = reply.send(librespot_core::dealer::manager::Reply::Success);
+            }
+        });
+    });
+}
+
+/// Traduce el comando del `dealer` a lo que el webview entiende.
+async fn translate(
+    session: &Session,
+    command: &librespot_core::dealer::protocol::request::Command,
+) -> RemoteCommand {
+    use librespot_core::dealer::protocol::request::Command;
+
+    let nada = RemoteCommand {
+        endpoint: String::new(),
+        track: None,
+        track_id: None,
+        position_ms: None,
+    };
+
+    match command {
+        Command::SkipNext(_) => RemoteCommand {
+            endpoint: "skip_next".to_string(),
+            ..nada
+        },
+        Command::SkipPrev(_) => RemoteCommand {
+            endpoint: "skip_prev".to_string(),
+            ..nada
+        },
+        Command::Pause(_) => RemoteCommand {
+            endpoint: "pause".to_string(),
+            ..nada
+        },
+        Command::Play(_) | Command::Resume(_) => RemoteCommand {
+            endpoint: "play".to_string(),
+            ..nada
+        },
+        Command::SeekTo(seek) => RemoteCommand {
+            endpoint: "seek_to".to_string(),
+            position_ms: Some(seek.position),
+            ..nada
+        },
+        Command::AddToQueue(agregar) => {
+            // **La pista viene como `ContextTrack`**: la URI y el uid. El id
+            // sale de la URI, y los datos de la canción se piden al servicio:
+            // sin ellos el frontend no puede ponerla en la cola.
+            let id = agregar
+                .track
+                .uri
+                .rsplit(':')
+                .next()
+                .unwrap_or_default()
+                .to_string();
+            let track = resolve(session, &id).await;
+            RemoteCommand {
+                endpoint: "add_to_queue".to_string(),
+                track,
+                track_id: Some(id),
+                ..nada
+            }
+        }
+        other => RemoteCommand {
+            endpoint: format!("desconocido: {other}"),
+            ..nada
+        },
+    }
+}
+
+/// Los datos de una canción, para que el frontend pueda ponerla en la cola.
+async fn resolve(session: &Session, id: &str) -> Option<crate::models::Track> {
+    let uri = SpotifyUri::from_uri(&format!("spotify:track:{id}")).ok()?;
+    let meta = MetaTrack::get(session, &uri).await.ok()?;
+    Some(crate::spclient::convert(&meta, session))
+}
 
 const MAX_VOLUME: u16 = 65535;
 

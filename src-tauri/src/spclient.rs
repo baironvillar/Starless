@@ -323,7 +323,12 @@ fn playlist_covers(session: &Session, ids: &[String]) -> HashMap<String, Vec<Str
 ///
 /// La popularity viene a cero desde febrero de 2026 en las apps nuevas; acá se
 /// informa lo que venga, que es lo que hay.
-fn convert(track: &MetaTrack, session: &Session) -> Track {
+/// La canción del metadata, en la forma que el frontend la ve.
+///
+/// **Pública porque el camino de vuelta del jam la necesita**: cuando el otro
+/// lado manda una canción para la cola, hay que resolverla y mandarle al
+/// webview una canción entera, no una URI.
+pub(crate) fn convert(track: &MetaTrack, session: &Session) -> Track {
     let album = &track.album;
     let cover = album
         .covers

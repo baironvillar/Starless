@@ -14,8 +14,6 @@
 //! `spclient.rs`, cerrado por `#[cfg(debug_assertions)]`: en release este archivo
 //! ni siquiera existe.
 
-use futures_util::StreamExt;
-use librespot_core::dealer::protocol::PayloadValue;
 use librespot_core::version::{SPOTIFY_MOBILE_VERSION, SPOTIFY_SEMANTIC_VERSION};
 use librespot_core::{Session, SpotifyId, SpotifyUri};
 use librespot_metadata::{Metadata, Track as MetaTrack};
@@ -5000,12 +4998,9 @@ pub fn run_jam_state_probe(app: tauri::AppHandle) {
 
         log::info!("=== DIAGNOSTIC: el estado del player ===");
 
-        // 0. Los comandos del otro lado, **antes** de abrir el `dealer`.
-        //
-        // **Sin esto el teléfono no puede mandar nada**: los comandos del
-        // player llegan empujados por el `dealer`, y si no hay nadie escuchando
-        // el tema, se pierden con un aviso en el log y nada más.
-        jam_probe_commands(&session);
+        // **Los comandos del otro lado los escucha la app**, no esta sonda: el
+        // `dealer` tiene un handler por tema, y la sonda se quedaría con los
+        // comandos y la app no vería ninguno.
 
         // 0 bis. El `connection id`.
         //
@@ -5156,49 +5151,6 @@ pub fn run_jam_state_probe(app: tauri::AppHandle) {
                 }
                 Err(error) => log::error!("SP_JAM_STATE: la cola no se pudo leer: {error}"),
             }
-        }
-    });
-}
-
-/// Los comandos que el otro lado manda.
-///
-/// **El backend empuja los comandos del player por el `dealer`**, y sin
-/// escucharlos el teléfono puede pedirle a Starless que salte la canción y no
-/// pasa nada.
-#[cfg(debug_assertions)]
-fn jam_probe_commands(session: &Session) {
-    let owned = session.clone();
-
-    // **La suscripción va antes que la conexión del dealer**, y por eso se
-    // reintenta: si el websocket todavía no está, no hay constructor al que
-    // suscribirse y el comando se pierde.
-    let mut intentos = 0;
-    let subscription = loop {
-        match owned.dealer().add_listen_for("hm://connect-state/v1/player/command") {
-            Ok(subscription) => break subscription,
-            Err(error) => {
-                intentos += 1;
-                if intentos > 30 {
-                    log::error!("SP_JAM_STATE: no se pudieron escuchar los comandos: {error}");
-                    return;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(500));
-            }
-        }
-    };
-
-    owned.spawn(async move {
-        let mut stream = subscription.map(|message| {
-            let cuerpo = match &message.payload {
-                PayloadValue::Json(texto) => texto.clone(),
-                PayloadValue::Raw(bytes) => String::from_utf8_lossy(bytes).to_string(),
-                PayloadValue::Empty => "(vacío)".to_string(),
-            };
-            Ok::<(String, String), librespot_core::Error>((message.uri.clone(), cuerpo))
-        });
-
-        while let Some(Ok((uri, cuerpo))) = stream.next().await {
-            log::info!("SP_JAM_STATE: comando del player en {uri} · {cuerpo}");
         }
     });
 }

@@ -460,6 +460,18 @@ pausar— llega al `dealer` del anfitrión**, no al revés. Sin escucharlo, el
 celu aprieta "siguiente" y no pasa nada, y el log dice solamente
 `No handler for message_ident: hm://connect-state/v1/player/command`.
 
+**Son requests y no mensajes, y esa es toda la diferencia.** Un mensaje se mira
+y listo; un request además *exige* respuesta, y el que no contesta deja
+esperando al otro lado. Por eso el comando va con `handle_for` y no con
+`listen_for`. El cuerpo es JSON con el `endpoint` —`skip_next`, `pause`,
+`add_to_queue`— y librespot ya sabe parsearlo: `dealer::protocol::request::Command`.
+
+**Medido el 31 de octubre de 2026**, con el jam abierto y el mismo celu:
+
+```
+playback: el otro lado mandó add_to_queue (de social-connect-1d5fab5f…) · Beauty And A Beat 6QFCMUUq1T2Vf5sFUXcuQ7
+```
+
 **El `dealer` también es el pubsub del jam.** Por él llegan los avisos de que
 alguien se unió —`social-connect/v2/session_update`—, que por HTTP no existen:
 la puerta `social-connect/v2/session_update` contesta `404` y el mensaje existe.

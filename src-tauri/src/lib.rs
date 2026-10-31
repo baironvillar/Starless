@@ -1875,6 +1875,12 @@ pub fn run() {
             // publicaba ninguno. Ver `playback::publish_state`.
             playback::publish_state(handle.clone());
 
+            // **Los comandos que manda el otro lado del jam.**
+            //
+            // Llegan por el `dealer`, como requests del backend, y los contesta
+            // el dispositivo al que van dirigidos. Ver `playback::watch_commands`.
+            playback::watch_commands(handle.clone());
+
             // **La conexión, cortada a propósito.**
             //
             // Una sesión que se muere sola no se puede reproducir cuando se

@@ -60,6 +60,7 @@ import {
   listCount,
   menuOpacity,
   onDjVoice,
+  onJamCommand,
   onPlaybackStatus,
   PLAYLIST_STALE_MS,
   type PlaybackStatus,
@@ -70,6 +71,7 @@ import {
   radioMore,
   radioStart,
   SESSION_ERRORS,
+  seekPlayback,
   setErrorLanguage,
   setLibrarySort,
   setLibraryView,
@@ -2285,6 +2287,50 @@ export default function App() {
     },
     [queue, visibleTracks, moveTo],
   );
+
+  /**
+   * Los comandos del otro lado del jam.
+   *
+   * **No son clics: es el celu apretando "siguiente".** El comando sale del
+   * teléfono, pasa por el servicio y llega al backend, que lo traduce y lo baja
+   * acá. Por eso los nombres son los del player y no los de los botones.
+   *
+   * **La cola es de acá y no del backend.** La lista que el usuario ve es la
+   * que el jam comparte, así que el comando se aplica sobre ella: lo que
+   * salta es la canción que sigue en la cola, no una de Starless.
+   */
+  useEffect(() => {
+    const unlisten = onJamCommand((command) => {
+      if (command.endpoint === "skip_next") {
+        advance();
+        return;
+      }
+      if (command.endpoint === "skip_prev") {
+        const at = queueAtRef.current - 1;
+        const track = visibleTracks[at];
+        if (track) playDirect(track, at);
+        return;
+      }
+      if (command.endpoint === "pause") {
+        if (status?.playing) void togglePlayback().catch(() => {});
+        return;
+      }
+      if (command.endpoint === "play") {
+        if (!status?.playing) void togglePlayback().catch(() => {});
+        return;
+      }
+      if (command.endpoint === "seek_to" && command.position_ms != null) {
+        void seekPlayback(command.position_ms).catch(() => {});
+        return;
+      }
+      if (command.endpoint === "add_to_queue" && command.track) {
+        onAddToQueue(command.track);
+      }
+    });
+    return () => {
+      unlisten.then((off) => off());
+    };
+  }, [advance, playDirect, onAddToQueue, status?.playing, visibleTracks]);
 
   /**
    * La playlist entera a la cola, y no lo que el filtro dejó a la vista.
