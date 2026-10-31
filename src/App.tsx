@@ -2654,25 +2654,30 @@ export default function App() {
           } ${queueOpen ? "right-[280px]" : "right-9"}`}
         >
           {/*
-            The heading belongs to the list, and there are three screens that bring
-            their own: the words, the playlist and the artist. It used to stay for
+            The heading belongs to the list, and there are four screens that bring
+            their own: the words, the playlist, the artist, and Home, whose
+            greeting is its title. It used to stay for
             the lyrics anyway — the playlist's name up here, the song's name
             underneath in the panel, and between them a subtitle counting the songs
             of a playlist nobody could see.
           */}
-          {!lyricsOpen && !playlistScreen && !likedScreen && !detail && (
-            <motion.header
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={SPRING}
-              className="mb-5"
-            >
-              <h1 className="truncate text-[30px] leading-tight font-semibold tracking-tight">
-                {headerTitle}
-              </h1>
-              <p className="tabular mt-1 truncate text-[13px] text-ink-muted">{headerSubtitle}</p>
-            </motion.header>
-          )}
+          {!lyricsOpen &&
+            !playlistScreen &&
+            !likedScreen &&
+            !detail &&
+            !(isHome && !showResults) && (
+              <motion.header
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={SPRING}
+                className="mb-5"
+              >
+                <h1 className="truncate text-[30px] leading-tight font-semibold tracking-tight">
+                  {headerTitle}
+                </h1>
+                <p className="tabular mt-1 truncate text-[13px] text-ink-muted">{headerSubtitle}</p>
+              </motion.header>
+            )}
 
           {lyricsOpen ? (
             /*
