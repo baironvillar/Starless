@@ -384,6 +384,22 @@ export default function App() {
   const jamPlaying = useRef<string | null>(null);
 
   /**
+   * The id the service gave each song, by URI.
+   *
+   * **The service does not recognize a song by its URI.** It recognizes it by the
+   * `uid` it assigned inside a context, and a song published without that id does
+   * not enter the shared queue —the service resolves it to whatever is playing
+   * instead. The ids come from the service: from the command the other side sends,
+   * and from the shared queue it wrote.
+   *
+   * **It is state and not a ref because the queue has to be published again when
+   * one shows up.** A song that learns its id after it was already queued would
+   * stay out of the shared queue: the published queue is still the one without
+   * ids, and the service does not recognize the song.
+   */
+  const [jamUids, setJamUids] = useState<Record<string, string>>({});
+
+  /**
    * El jam que hay en la cuenta, si lo hay.
    *
    * **El panel lo pregunta y no lo da por hecho.** La puerta que responde si
@@ -1423,12 +1439,23 @@ export default function App() {
    * publica es el contexto de autoplay —la estación que armó el servicio— y
    * una canción que se suma a la cola no le llega nunca al otro lado.
    *
-   * **Van las URIs, no las pistas.** El nombre y la portada no viajan en el
-   * estado del player: el otro lado los pide con el id.
+   * **Van las URIs y los ids, no las pistas.** El nombre y la portada no
+   * viajan en el estado del player: el otro lado los pide con el id. Y el
+   * `uid` —el identificador que le dio el servicio— es lo que hace que la
+   * canción entre en la cola compartida: sin él, el servicio no la reconoce.
    */
+  const publishTracks = useMemo(
+    () =>
+      upNext.slice(0, 50).map((track) => {
+        const uri = `spotify:track:${track.id}`;
+        return { uri, uid: jamUids[uri] ?? "" };
+      }),
+    [upNext, jamUids],
+  );
+
   useEffect(() => {
-    void setPublishQueue(upNext.slice(0, 50).map((track) => `spotify:track:${track.id}`));
-  }, [upNext]);
+    void setPublishQueue(publishTracks);
+  }, [publishTracks]);
 
   /**
    * How many songs of the station's page are still ahead.
@@ -2544,6 +2571,20 @@ export default function App() {
    */
   useEffect(() => {
     const unlisten = onJamCommand((command) => {
+      /**
+       * El `uid` de la canción del comando se anota.
+       *
+       * **Es el identificador que le dio el servicio**, y es lo único que hace
+       * que esa canción entre en la cola compartida: publicada sin él, el
+       * servicio no la reconoce y la resuelve por la que está sonando. La cola
+       * se vuelve a publicar cuando aparece uno nuevo.
+       */
+      const uid = command.track_uid;
+      if (uid && command.track_id) {
+        const uri = `spotify:track:${command.track_id}`;
+        setJamUids((prev) => (prev[uri] === uid ? prev : { ...prev, [uri]: uid }));
+      }
+
       if (command.endpoint === "skip_next") {
         /**
          * El teléfono saltó a una canción concreta.

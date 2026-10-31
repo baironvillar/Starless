@@ -31,14 +31,14 @@ use librespot_core::Session;
 use librespot_core::error::Error;
 use librespot_protocol::autoplay_context_request::AutoplayContextRequest;
 use librespot_protocol::connect::{
-    Capabilities, Device, DeviceInfo, MemberType, PutStateReason, PutStateRequest,
+    Capabilities, Cluster, Device, DeviceInfo, MemberType, PutStateReason, PutStateRequest,
 };
 use librespot_protocol::context::Context;
 use librespot_protocol::devices::DeviceType;
 use librespot_protocol::player::{
     ContextIndex, ContextPlayerOptions, PlayOrigin, PlayerState, ProvidedTrack, Suppressions,
 };
-use protobuf::{EnumOrUnknown, MessageField};
+use protobuf::{EnumOrUnknown, Message, MessageField};
 
 use super::call;
 
@@ -92,7 +92,14 @@ pub struct Snapshot {
 /// servicio sigue viendo al último dispositivo que publicó, que es el del
 /// teléfono: el jam abre, tiene participantes, y la cola compartida muestra las
 /// canciones de otro device.
-pub fn publish(session: &Session, snapshot: &Snapshot) -> Result<(), String> {
+///
+/// **La respuesta son los ids que le puso el servicio.** Lo que contesta el
+/// `PUT` es el `Cluster` de la cuenta: la copia que el servicio guardó de este
+/// player, con el `uid` que le dio a cada pista. Publicar una pista sin id y
+/// después leerlo de la respuesta es la forma de saber el id: **el servicio es
+/// el que lo da**, y sin él ni el comando ni la cola compartida reconocen la
+/// pista.
+pub fn publish(session: &Session, snapshot: &Snapshot) -> Result<Vec<(String, String)>, String> {
     let request = build(session, snapshot);
     let owned = session.clone();
 
@@ -103,12 +110,37 @@ pub fn publish(session: &Session, snapshot: &Snapshot) -> Result<(), String> {
             .await
             .map(|body| {
                 log::info!("spclient: el estado del player se publicó ({body:?})");
+                ids_de_la_respuesta(&body)
             })
             .map_err(|e| {
                 log::error!("spclient: el estado del player no se publicó: {e}");
                 e.to_string()
             })
     })
+}
+
+/// Los ids que el servicio le puso a las pistas publicadas.
+///
+/// **Vienen de la respuesta, y no de lo que se publicó.** Lo que se publica son
+/// URIs; el `uid` lo agrega el servicio, que es el que sabe qué pista es cuál
+/// dentro del contexto. Si la respuesta no se entiende, no hay ids: no es un
+/// error, es un ids que no se conoce.
+fn ids_de_la_respuesta(cuerpo: &[u8]) -> Vec<(String, String)> {
+    let Ok(cluster) = Cluster::parse_from_bytes(cuerpo) else {
+        log::warn!("spclient: la respuesta del estado vino con otra forma");
+        return Vec::new();
+    };
+    let Some(estado) = cluster.player_state.as_ref() else {
+        return Vec::new();
+    };
+
+    let mut ids = Vec::new();
+    for pista in estado.next_tracks.iter() {
+        if !pista.uid.is_empty() {
+            ids.push((pista.uri.clone(), pista.uid.clone()));
+        }
+    }
+    ids
 }
 
 /// Escucha el `connection id` que el servicio asigna a esta conexión.

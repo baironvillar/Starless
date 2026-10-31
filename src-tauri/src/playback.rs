@@ -9,6 +9,7 @@
 //! Opening an output device before the user has asked for anything is a rude
 //! thing for an app to do at launch.
 
+use std::collections::HashMap;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
@@ -49,13 +50,20 @@ const COMMAND_TOPIC: &str = "hm://connect-state/v1/player/command";
 #[derive(Serialize, Clone, Debug)]
 pub struct RemoteCommand {
     /// Qué hay que hacer: `skip_next`, `skip_prev`, `pause`, `play`,
-    /// `seek_to` o `add_to_queue`.
+    /// `resume`, `seek_to` o `add_to_queue`.
     pub endpoint: String,
     /// La canción del comando, con sus datos, si la hubo.
     pub track: Option<crate::models::Track>,
     /// La id de la canción del comando, aunque no se hayan podido resolver sus
     /// datos.
     pub track_id: Option<String>,
+    /// El identificador que el servicio le dio a la canción.
+    ///
+    /// **Es lo que hace que la canción entre en la cola compartida.** El
+    /// servicio guarda las pistas de la cola con el identificador que él les
+    /// da, y una pista sin él no llega a la cola que el otro lado ve. El
+    /// comando lo trae, porque el comando es del servicio.
+    pub track_uid: Option<String>,
     /// A qué milisegundo saltar, si el comando es un `seek_to`.
     pub position_ms: Option<u32>,
 }
@@ -117,6 +125,24 @@ pub fn watch_commands(app: AppHandle) {
                         None => String::new(),
                     }
                 );
+                // **El `uid` de la pista, aparte.** Es lo que decide si la
+                // canción entra en la cola compartida, y un comando sin él es
+                // media respuesta: sin el identificador no se sabe si la
+                // canción quedó en la cola o afuera.
+                if let Some(uid) = &command.track_uid {
+                    log::info!(
+                        "playback: la canción del comando tiene el uid {}",
+                        if uid.is_empty() { "(vacío)" } else { uid }
+                    );
+                }
+                // **El id se anota.** El comando es del servicio, así que el `uid`
+                // que trae es del servicio: es el único que puede volver a
+                // publicar esa canción en la cola compartida.
+                if let (Some(id), Some(uid)) = (&command.track_id, &command.track_uid) {
+                    if let Some(uids) = app.try_state::<TrackUids>() {
+                        uids.remember(&format!("spotify:track:{id}"), uid);
+                    }
+                }
                 let _ = app.emit("jam://command", &command);
                 let _ = reply.send(librespot_core::dealer::manager::Reply::Success);
             }
@@ -135,6 +161,7 @@ async fn translate(
         endpoint: String::new(),
         track: None,
         track_id: None,
+        track_uid: None,
         position_ms: None,
     };
 
@@ -150,6 +177,7 @@ async fn translate(
             if let Some(track) = &saltar.track {
                 let id = track.uri.rsplit(':').next().unwrap_or_default().to_string();
                 comando.track_id = Some(id.clone());
+                comando.track_uid = Some(track.uid.clone());
                 comando.track = resolve(session, &id).await;
             }
             comando
@@ -169,10 +197,8 @@ async fn translate(
             // puede ser una pista. Sin esto, "play" es "seguí con lo que
             // estés sonando" y el teléfono aprieta una canción y Starless
             // sigue con la otra.
-            let uri = play
-                .options
-                .skip_to
-                .as_ref()
+            let salto = play.options.skip_to.as_ref();
+            let uri = salto
                 .and_then(|salto| salto.track_uri.clone())
                 .or_else(|| play.context.uri.clone())
                 .filter(|uri| uri.starts_with("spotify:track:"));
@@ -183,6 +209,7 @@ async fn translate(
             if let Some(uri) = uri {
                 let id = uri.rsplit(':').next().unwrap_or_default().to_string();
                 comando.track_id = Some(id.clone());
+                comando.track_uid = salto.and_then(|salto| salto.track_uid.clone());
                 comando.track = resolve(session, &id).await;
             }
             comando
@@ -215,6 +242,10 @@ async fn translate(
                 endpoint: "add_to_queue".to_string(),
                 track,
                 track_id: Some(id),
+                // **El `uid` viaja con el comando.** Es el identificador que el
+                // servicio le dio a la pista, y es lo que hace que la pista
+                // entre en la cola compartida en vez de quedarse afuera.
+                track_uid: Some(agregar.track.uid.clone()),
                 ..nada
             }
         }
@@ -271,6 +302,47 @@ impl PublishQueue {
             Err(poisoned) => poisoned.into_inner(),
         };
         *cola = tracks;
+    }
+}
+
+/// Los identificadores que el servicio le dio a las pistas.
+///
+/// **El `uid` es la identidad de una pista dentro de un contexto.** El servicio
+/// no reconoce una pista por su URI: la reconoce por el id que él le dio cuando
+/// la metió en un contexto. Sin ese id, una pista no entra en la cola compartida
+/// —medido el 31 de octubre de 2026: mandando sólo la URI, el servicio resolvió
+/// la pista que estaba sonando y la lista compartida no cambió—.
+///
+/// **Los ids se anotan de tres lugares**, y los tres son el servicio talking:
+/// el comando que manda el otro lado, la cola compartida que el servicio tiene
+/// escrita y el contexto de autoplay que el servicio armó.
+#[derive(Default)]
+pub struct TrackUids(Mutex<HashMap<String, String>>);
+
+impl TrackUids {
+    /// Anota el identificador de una pista.
+    ///
+    /// **Un id vacío no se anota.** El servicio deja el `uid` vacío cuando la
+    /// pista no es parte de ningún contexto —la que está sonando, por ejemplo—,
+    /// y anotar ese vacío taparía el id bueno con uno que no sirve.
+    pub fn remember(&self, uri: &str, uid: &str) {
+        if uri.is_empty() || uid.is_empty() {
+            return;
+        }
+        let mut ids = match self.0.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        ids.insert(uri.to_owned(), uid.to_owned());
+    }
+
+    /// El identificador de una pista, si se lo conocemos.
+    pub fn get(&self, uri: &str) -> Option<String> {
+        let ids = match self.0.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        ids.get(uri).cloned()
     }
 }
 
@@ -377,6 +449,17 @@ pub fn publish_state(app: AppHandle) {
                 }
             }
 
+            // **Los ids del contexto se anotan antes de cambiarlo.** El contexto
+            // de autoplay viene con el `uid` de cada pista, y es el único lugar
+            // donde aparecen sin que nadie los mande: una pista que el usuario
+            // elige no está en ese contexto, pero la que el servicio armó sí, y
+            // publicarla sin id no la deja entrar en la cola compartida.
+            if let Some(uids) = app.try_state::<TrackUids>() {
+                for track in &snapshot.next {
+                    uids.remember(&track.uri, &track.uid);
+                }
+            }
+
             // **Lo que sigue es la cola de la app.** El contexto de autoplay
             // queda de respaldo: es la estación que armó el servicio, y no es
             // lo que la persona eligió.
@@ -385,10 +468,23 @@ pub fn publish_state(app: AppHandle) {
                 snapshot.next = cola;
             }
 
-            if let Err(error) = crate::spclient::state::publish(&session, &snapshot) {
-                log::error!("playback: el estado del player no se publicó: {error}");
-            }
-        }
+            // **Los ids que el servicio le puso se anotan.** La respuesta del
+            // `PUT` es el `Cluster` del servicio, y ahí está el `uid` de cada
+            // pista publicada: el servicio es el que lo da, y es lo único que
+            // hace que la pista entre en la cola compartida y que el comando
+            // por ella apunte a la pista correcta.
+            match crate::spclient::state::publish(&session, &snapshot) {
+                Ok(ids) => {
+                    if let Some(uids) = app.try_state::<TrackUids>() {
+                        for (uri, uid) in ids {
+                            uids.remember(&uri, &uid);
+                        }
+                    }
+                }
+                Err(error) => {
+                    log::error!("playback: el estado del player no se publicó: {error}");
+                }
+            }        }
     });
 }
 
@@ -408,12 +504,28 @@ pub fn publish_queue(app: &AppHandle) -> Vec<crate::spclient::state::Track> {
         .try_state::<PublishQueue>()
         .and_then(|state| state.0.lock().ok().map(|cola| cola.clone()))
         .unwrap_or_default();
+    let uids = app.try_state::<TrackUids>();
     pending
         .into_iter()
-        .map(|(uri, uid)| crate::spclient::state::Track {
-            uri,
-            uid,
-            gid: Vec::new(),
+        .map(|(uri, uid)| {
+            // **El id que falta se busca.** La app manda la cola con lo que
+            // sabe, y lo que sabe es la URI; el identificador lo tiene el
+            // servicio, y ya lo vimos en el comando del otro lado o en la cola
+            // compartida que él escribe. Publicar sin él es publicar a ciegas:
+            // el servicio no reconoce la pista y la cola compartida no la
+            // muestra.
+            let uid = if uid.is_empty() {
+                uids.as_ref()
+                    .and_then(|uids| uids.get(&uri))
+                    .unwrap_or_default()
+            } else {
+                uid
+            };
+            crate::spclient::state::Track {
+                uri,
+                uid,
+                gid: Vec::new(),
+            }
         })
         .collect()
 }

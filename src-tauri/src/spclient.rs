@@ -2445,6 +2445,22 @@ pub fn jam_end(session: &Session, session_id: &str) -> Result<(), String> {
 /// Medido el 30 de octubre de 2026; el protocolo entero está en
 /// `docs/jam.md`.
 pub fn jam_queue(session: &Session, session_id: &str) -> Result<Vec<Track>, String> {
+    Ok(jam_queue_with_uids(session, session_id)?
+        .into_iter()
+        .map(|(track, _)| track)
+        .collect())
+}
+
+/// La cola compartida del jam, con el `uid` de cada canción.
+///
+/// **El `uid` es el identificador que el servicio le dio a la pista dentro del
+/// contexto.** Es el id del item de la lista, y es lo único que permite volver
+/// a publicar esa pista en la cola compartida: el servicio no la reconoce por
+/// la URI.
+pub fn jam_queue_with_uids(
+    session: &Session,
+    session_id: &str,
+) -> Result<Vec<(Track, String)>, String> {
     let uri = format!("spotify:list:jam-list:{session_id}");
     let body = jamlist::request(&uri);
 
@@ -2471,8 +2487,8 @@ pub fn jam_queue(session: &Session, session_id: &str) -> Result<Vec<Track>, Stri
             })
     })?;
 
-    let uris = match jamlist::tracks(&answer) {
-        Some(uris) => uris,
+    let items = match jamlist::tracks_with_ids(&answer) {
+        Some(items) => items,
         // **La cola que todavía no está no es un error.**
         //
         // El servicio contesta `Not Found` cuando el jam no tiene cola —la
@@ -2503,15 +2519,19 @@ pub fn jam_queue(session: &Session, session_id: &str) -> Result<Vec<Track>, Stri
     // cuáles son las primeras.
     log::info!(
         "spclient: la cola compartida tiene {} canciones · las primeras {:?}",
-        uris.len(),
-        uris.iter().take(4).collect::<Vec<_>>()
+        items.len(),
+        items
+            .iter()
+            .take(4)
+            .map(|(uri, uid)| format!("{uri}#{uid}"))
+            .collect::<Vec<_>>()
     );
 
     // **La cola del jam la llena el servicio, y son cientos de canciones.**
     // Resolver el nombre de cada una es un viaje por la red cada vez que se
     // pregunta, así que se leen las primeras: el panel muestra ocho, y la
     // primera es la que está sonando.
-    let uris: Vec<String> = uris.into_iter().take(JAM_QUEUE_ITEMS).collect();
+    let items: Vec<(String, String)> = items.into_iter().take(JAM_QUEUE_ITEMS).collect();
 
     // **Las que ya se resolvieron no se vuelven a resolver.**
     //
@@ -2527,10 +2547,10 @@ pub fn jam_queue(session: &Session, session_id: &str) -> Result<Vec<Track>, Stri
         let guard = jam_track_cache()
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        uris.iter().map(|raw| guard.get(raw).cloned()).collect()
+        items.iter().map(|(raw, _)| guard.get(raw).cloned()).collect()
     };
 
-    for (index, raw) in uris.iter().enumerate() {
+    for (index, (raw, _uid)) in items.iter().enumerate() {
         if out[index].is_some() {
             continue;
         }
@@ -2556,7 +2576,14 @@ pub fn jam_queue(session: &Session, session_id: &str) -> Result<Vec<Track>, Stri
         out[index] = Some(track);
     }
 
-    Ok(out.into_iter().flatten().collect())
+    // **Cada canción se va con su `uid`.** El id del item de la lista es el
+    // identificador que el servicio le dio a la pista, y es lo que permite
+    // volver a publicarla en la cola compartida.
+    Ok(items
+        .iter()
+        .zip(out.into_iter())
+        .filter_map(|((_, uid), track)| track.map(|track| (track, uid.clone())))
+        .collect())
 }
 
 /// Las canciones de la cola del jam que ya tienen nombre.

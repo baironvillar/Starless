@@ -496,12 +496,13 @@ export async function jamAddToQueue(sessionId: string, trackId: string): Promise
  * Jam writes: it is what the host's player publishes. So whatever this app
  * plays next is what the other person sees in the Jam.
  *
- * **The URIs are enough.** The player state carries the id of the song and the
- * id the service gave it; the name and the cover are asked for separately, by
- * the other side, with the id.
+ * **Each song goes with the id the service gave it.** The service does not
+ * recognize a song by its URI: it recognizes it by the `uid` it assigned inside
+ * a context. A song published without that id does not enter the shared queue —
+ * the service resolves it to whatever is playing instead.
  */
-export async function setPublishQueue(uris: string[]): Promise<void> {
-  return invoke<void>("set_publish_queue", { tracks: uris });
+export async function setPublishQueue(tracks: { uri: string; uid: string }[]): Promise<void> {
+  return invoke<void>("set_publish_queue", { tracks });
 }
 
 /**
@@ -545,6 +546,14 @@ export type JamCommand = {
   track: Track | null;
   /** The id of the song, even when its data could not be resolved. */
   track_id: string | null;
+  /**
+   * The id the service gave the song inside the context.
+   *
+   * **This is what puts the song in the shared queue.** The service does not
+   * recognize a song by its URI, so a song that goes into the shared queue
+   * without this id is a song the service cannot point at.
+   */
+  track_uid: string | null;
   /** Where to jump, in milliseconds, when the command is a `seek_to`. */
   position_ms: number | null;
 };

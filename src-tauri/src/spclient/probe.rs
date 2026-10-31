@@ -5041,7 +5041,10 @@ pub fn run_jam_state_probe(app: tauri::AppHandle) {
 
         // 2. Publicarlo. **Esto es lo que no estaba.**
         match super::state::publish(&session, &snapshot) {
-            Ok(()) => log::info!("SP_JAM_STATE: el estado se publicó"),
+            Ok(ids) => log::info!(
+                "SP_JAM_STATE: el estado se publicó · el servicio puso {} ids",
+                ids.len()
+            ),
             Err(error) => log::error!("SP_JAM_STATE: el estado no se publicó: {error}"),
         }
 
@@ -5144,9 +5147,10 @@ pub fn run_jam_state_probe(app: tauri::AppHandle) {
         }
         con_cola.next.push(nueva.clone());
         match super::state::publish(&session, &con_cola) {
-            Ok(()) => log::info!(
-                "SP_JAM_STATE: publiqué {} pistas que siguen (una del contexto con uid y una sin uid)",
-                con_cola.next.len()
+            Ok(ids) => log::info!(
+                "SP_JAM_STATE: publiqué {} pistas que siguen (una del contexto con uid y una sin uid) · el servicio puso {} ids",
+                con_cola.next.len(),
+                ids.len()
             ),
             Err(error) => log::error!("SP_JAM_STATE: la cola propia no se publicó: {error}"),
         }

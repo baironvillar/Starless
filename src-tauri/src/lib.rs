@@ -1043,12 +1043,26 @@ async fn jam_current(app: AppHandle) -> Result<Option<JamSession>, String> {
 async fn jam_queue(app: AppHandle, session_id: String) -> Result<Vec<Track>, String> {
     let session = ready_session(&app).await?;
 
-    tauri::async_runtime::spawn_blocking(move || spclient::jam_queue(&session, &session_id))
-        .await
-        .map_err(|e| {
-            eprintln!("Starless [command_failed]: {e}");
-            "command_failed".to_string()
-        })?
+    let cola = tauri::async_runtime::spawn_blocking(move || {
+        spclient::jam_queue_with_uids(&session, &session_id)
+    })
+    .await
+    .map_err(|e| {
+        eprintln!("Starless [command_failed]: {e}");
+        "command_failed".to_string()
+    })??;
+
+    // **Los ids de la cola compartida se anotan.** La lista que escribió el
+    // servicio trae el `uid` de cada pista —el id del item—, y ese
+    // identificador es lo que permite volver a publicar esa pista en la cola
+    // compartida y mandar el comando por ella.
+    if let Some(uids) = app.try_state::<playback::TrackUids>() {
+        for (track, uid) in &cola {
+            uids.remember(&format!("spotify:track:{}", track.id), uid);
+        }
+    }
+
+    Ok(cola.into_iter().map(|(track, _)| track).collect())
 }
 
 /// Salir del jam.
@@ -1120,14 +1134,39 @@ async fn jam_add_to_queue(
 ) -> Result<(), String> {
     let session = ready_session(&app).await?;
 
+    // **El comando va con el `uid` cuando lo hay.** El comando del player lleva
+    // la pista como un `ContextTrack { uri, uid, gid, metadata }`, y mandando
+    // sólo la URI el servicio resuelve otra pista: la que está sonando. El id
+    // lo tiene el servicio, y ya lo vimos en el comando del otro lado o en la
+    // cola compartida que él escribe.
+    let uid = app
+        .try_state::<playback::TrackUids>()
+        .and_then(|uids| uids.get(&format!("spotify:track:{track_id}")));
+    if uid.is_some() {
+        log::info!("jam: la canción {track_id} va con su uid");
+    }
+
     tauri::async_runtime::spawn_blocking(move || {
-        spclient::jam_add_to_queue(&session, &session_id, &track_id)
+        spclient::jam_add_to_queue_with_uid(&session, &session_id, &track_id, uid.as_deref())
     })
     .await
     .map_err(|e| {
         eprintln!("Starless [command_failed]: {e}");
         "command_failed".to_string()
     })?
+}
+
+/// Una pista de la cola que la app va a publicar.
+///
+/// **El `uid` es lo que decide si la pista llega a la cola compartida.** El
+/// servicio guarda las pistas de la cola con el identificador que él les da,
+/// y una pista sin él no entra en la lista que el otro lado ve.
+#[derive(serde::Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct PublishTrack {
+    uri: String,
+    #[serde(default)]
+    uid: String,
 }
 
 /// La cola de la app, para el estado del player.
@@ -1142,13 +1181,19 @@ async fn jam_add_to_queue(
 /// eligió la persona ni qué se agregó después; lo único que hace es guardarlo
 /// para el hilo que publica.
 #[tauri::command]
-fn set_publish_queue(app: AppHandle, tracks: Vec<String>) {
-    app.state::<playback::PublishQueue>().set(
-        tracks
-            .into_iter()
-            .map(|uri| (uri, String::new()))
-            .collect(),
-    );
+fn set_publish_queue(app: AppHandle, tracks: Vec<PublishTrack>) {
+    // **Los ids que trae la cola se anotan.** La app puede saber el `uid` de
+    // una canción —si la mandó el otro lado o si estaba en la cola compartida—,
+    // y ese identificador sirve para todo lo que viene después: publicarlo y
+    // mandar el comando por esa canción.
+    if let Some(uids) = app.try_state::<playback::TrackUids>() {
+        for track in &tracks {
+            uids.remember(&track.uri, &track.uid);
+        }
+    }
+
+    app.state::<playback::PublishQueue>()
+        .set(tracks.into_iter().map(|track| (track.uri, track.uid)).collect());
 }
 
 // El DJ: las canciones que Spotify le fabricó a la cuenta, y lo que dice al
@@ -1914,6 +1959,7 @@ pub fn run() {
         .manage(SessionState::default())
         .manage(PlaybackState::default())
         .manage(playback::PublishQueue::default())
+        .manage(playback::TrackUids::default())
         .manage(DjState::default())
         .manage(RadioState::default())
         .setup(|app| {
