@@ -289,16 +289,18 @@ pub fn snapshot_for(session: &Session, track_uri: &str, duration_ms: u64) -> Opt
     let tracks = context_tracks(&context);
     let current = track_uri.to_owned();
 
-    // **La canción que suena va con su id, si el context lo trae.** El `uid` es
+    // **La canción que suena va con su id, si se lo sabemos.** El `uid` es
     // lo que permite que un comando apunte a esta pista y no a otra, y lo que
     // le falta al que mira del otro lado para poder resolverla. El context
     // puede traerla —la primera fila del tramo es la canción que suena— o no:
-    // si no la trae, se publica sin id y se anota en el log, porque eso es un
-    // dato y no una falla.
+    // si no la trae, se busca en el registro, donde están los ids de las
+    // listas que la app ya leyó —la biblioteca es un context—.
     let uid_de_la_actual = tracks
         .iter()
         .find(|candidate| candidate.uri == current)
         .map(|candidate| candidate.uid.clone())
+        .filter(|uid| !uid.is_empty())
+        .or_else(|| crate::playback::track_uids().get(&current))
         .unwrap_or_default();
     if uid_de_la_actual.is_empty() {
         log::info!("spclient: el contexto no trae la canción que suena con id");
