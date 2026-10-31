@@ -1,4 +1,4 @@
-import { Play, Plus, Users, X } from "lucide-react";
+import { Play, Users, X } from "lucide-react";
 import { motion } from "motion/react";
 import { useRef } from "react";
 import type { StringKey } from "../lib/i18n";
@@ -169,9 +169,10 @@ export function QueuePanel({
    *
    * **With a jam open it is the jam's queue.** El jam es una cola compartida:
    * lo que suma el otro lado aparece acá, y lo que se suma acá llega allá.
-   * Sin jam, es la cola de la app.
+   * Sin jam —o con una cola compartida que todavía no llegó— es la cola de la
+   * app: un panel vacío en vez de la lista es un panel que no dice nada.
    */
-  const list = jamOpen && jamSongs ? jamSongs : upNext;
+  const list = jamOpen && jamSongs && jamSongs.length > 0 ? jamSongs : upNext;
   const rowKeys = trackRowKeys(list);
   const nextRef = useRef<HTMLUListElement>(null);
   const { first, last, pitch } = useRowWindow(nextRef, list.length);
@@ -263,7 +264,6 @@ export function QueuePanel({
                     position={first + offset + 1}
                     onPlay={onPlay}
                     row={first + offset}
-                    jamOpen={jamOpen}
                     onAddToQueue={onAddToQueue}
                     onOpenArtist={onOpenArtist}
                     onOpenAlbum={onOpenAlbum}
@@ -397,7 +397,6 @@ function QueueRow({
   track,
   position,
   onPlay,
-  jamOpen,
   onAddToQueue,
   onOpenArtist,
   onOpenAlbum,
@@ -408,7 +407,6 @@ function QueueRow({
   track: Track;
   position?: number;
   onPlay: (track: Track, row: number) => void;
-  jamOpen?: boolean;
   onAddToQueue?: (track: Track) => void;
   onOpenArtist?: (artist: Artist) => void;
   onOpenAlbum?: (album: Album) => void;
@@ -430,14 +428,14 @@ function QueueRow({
           the play button inside it.
 
           **A button inside a button is not a thing** —the browser swallows the
-          inner one and the click lands on the outer— and the plus needs to be
+          inner one and the click lands on the outer— and the menu needs to be
           its own control, with its own label.
       */}
-      <div className="group flex w-full items-center gap-1 rounded-[14px] px-2 py-2 text-left transition-colors duration-200 hover:bg-white/6">
+      <div className="group relative flex w-full items-center gap-1 rounded-[14px] px-2 py-2 text-left transition-colors duration-200 hover:bg-white/6">
         <button
           type="button"
           onClick={() => onPlay(track, row)}
-          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+          className="flex min-w-0 flex-1 items-center gap-3 pr-0 text-left transition-[padding] duration-150 group-hover:pr-9"
         >
           {position !== undefined ? (
             <span className="tabular w-3 shrink-0 text-[12px] text-ink-faint">{position}</span>
@@ -457,42 +455,39 @@ function QueueRow({
             <span className="block truncate text-[12px] text-ink-muted">{trackArtists(track)}</span>
           </span>
 
-          <span className="tabular shrink-0 text-[12px] text-ink-faint">
+          {/*
+              The duration makes way for the menu.
+
+              **Es lo que hace el cliente oficial**: al pasar el mouse, la
+              fila deja de mostrar cuánto dura y muestra qué se puede hacer
+              con ella.
+          */}
+          <span className="tabular shrink-0 text-[12px] text-ink-faint transition-opacity duration-150 group-hover:opacity-0">
             {formatDuration(track.duration_ms)}
           </span>
         </button>
 
         {/*
-            The two extras of the row, and neither is there until the pointer
-            arrives.
+            The menu of the row, and it is not there until the pointer arrives.
 
             **Una fila con un botón siempre puesto es una fila que pregunta.**
-            El plus y los tres puntos sólo existen al pasar el mouse: la lista
-            se lee, y el que quiere operar la fila la busca.
+            Y un botón escondido que deja un hueco es peor: la lista se ve
+            como si le faltara algo en todas las filas, y los títulos quedan
+            cortados antes de tiempo. Por eso el menú va **encima** del
+            lugar del botón, y la fila le abre lugar al pasar el mouse: la
+            canción se corre un poco y aparece el botón.
         */}
-        {jamOpen && onAddToQueue ? (
-          <motion.button
-            type="button"
-            onClick={() => onAddToQueue(track)}
-            whileTap={{ scale: 0.9 }}
-            transition={SPRING}
-            aria-label={t.addToQueue}
-            title={t.addToQueue}
-            className="grid size-7 shrink-0 place-items-center rounded-pill text-ink-muted opacity-0 transition-[opacity,color] duration-150 hover:bg-white/10 hover:text-ink focus-visible:opacity-100 group-hover:opacity-100"
-          >
-            <Plus className="size-4" strokeWidth={2.2} />
-          </motion.button>
-        ) : null}
-
         {onAddToQueue ? (
-          <TrackMenu
-            t={t}
-            track={track}
-            onOpenArtist={onOpenArtist}
-            onOpenAlbum={onOpenAlbum}
-            onAddToQueue={onAddToQueue}
-            onNewPlaylist={onNewPlaylist}
-          />
+          <div className="absolute right-2 top-1/2 -translate-y-1/2">
+            <TrackMenu
+              t={t}
+              track={track}
+              onOpenArtist={onOpenArtist}
+              onOpenAlbum={onOpenAlbum}
+              onAddToQueue={onAddToQueue}
+              onNewPlaylist={onNewPlaylist}
+            />
+          </div>
         ) : null}
       </div>
     </motion.li>

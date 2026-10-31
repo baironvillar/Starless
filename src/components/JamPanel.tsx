@@ -1,6 +1,7 @@
 import { Check, Copy, Users, X } from "lucide-react";
 import { motion } from "motion/react";
 import { useState } from "react";
+import QRCode from "react-qr-code";
 import { copyText } from "../lib/clipboard";
 import type { StringKey } from "../lib/i18n";
 import { SPRING, SPRING_SHEET } from "../lib/motion";
@@ -175,10 +176,16 @@ export function JamPanel({
 }
 
 /**
- * The jam that is open: the code, and who is in it.
+ * The jam that is open: the invitation, and who is in it.
  *
- * **The code is the whole invitation.** There is no page to open and no link to
- * follow: the guest's door takes the code, so the code is what gets shared.
+ * **The invitation is a QR.** En el cliente oficial el jam no se entra con un
+ * código escrito: el que invita muestra un QR y el otro lo escanea con la
+ * cámara del teléfono, que abre la app. El código escrito no es una puerta que
+ * el celular tenga: es lo que dice la sesión.
+ *
+ * **El QR lleva la URI que da el servicio** —`spotify:socialsession:<token>`—,
+ * que es la forma que la propia app de Spotify sabe abrir. El código queda
+ * debajo, porque un segundo Starless —que no tiene cámara— lo puede escribir.
  *
  * **The queue is not here.** It is in the queue panel, which is where a queue
  * belongs: this panel answers *who else is listening*, and the other one answers
@@ -200,6 +207,9 @@ function OpenJam({
   onLeave: () => void;
 }) {
   const code = session.join_session_token ?? "";
+  // **La URI es la invitación.** Es lo que el servicio da con la sesión, y es
+  // lo que la app del teléfono sabe abrir cuando la cámara la lee.
+  const uri = session.join_session_uri ?? (code ? `spotify:socialsession:${code}` : "");
   // **The host closes the jam and the guest leaves it.** Two words for two
   // doors: the guest's door takes them out of the session and the jam goes
   // on, and the host's takes the jam down for everybody.
@@ -207,8 +217,36 @@ function OpenJam({
 
   return (
     <>
-      <section className="rounded-[16px] bg-white/6 p-3.5">
-        <h3 className="pb-1 text-[12px] font-semibold tracking-wide uppercase text-ink-faint">
+      {uri ? (
+        <section className="rounded-[16px] bg-white/6 p-3.5">
+          <h3 className="pb-2 text-[12px] font-semibold tracking-wide uppercase text-ink-faint">
+            {t.jamInvite}
+          </h3>
+          {/*
+              The QR, on a white ground.
+
+              **El código es de correr y el lector lo tiene que leer.** Un QR
+              sobre el vidrio oscuro de la app no lo lee ninguna cámara: la
+              cámara necesita contraste, y el fondo tiene que ser claro.
+          */}
+          <div className="mx-auto w-fit rounded-[14px] bg-white p-2.5">
+            <QRCode
+              value={uri}
+              size={148}
+              bgColor="#ffffff"
+              fgColor="#101014"
+              level="M"
+              aria-label={t.jamInvite}
+            />
+          </div>
+          <p className="pt-2 text-center text-[11.5px] leading-relaxed text-ink-faint">
+            {t.jamInviteHint}
+          </p>
+        </section>
+      ) : null}
+
+      <section>
+        <h3 className="pb-1.5 text-[12px] font-semibold tracking-wide uppercase text-ink-faint">
           {t.jamCode}
         </h3>
         <div className="flex items-center gap-2">
