@@ -45,7 +45,8 @@ type LibrarySidebarProps = {
    * the window's own inset: that space is the library's, not empty ground.
    */
   barPresent: boolean;
-  onToggleCollapsed: () => void;
+  /** Absent on a narrow window, where the riel is the only shape there is room for. */
+  onToggleCollapsed?: () => void;
   /** The order the list below is in. The list arrives sorted, not sorted here. */
   sort: LibrarySort;
   onSortChange: (sort: LibrarySort) => void;
@@ -156,19 +157,21 @@ export function LibrarySidebar({
               {t.navLibrary}
             </h2>
           )}
-          <button
-            type="button"
-            onClick={onToggleCollapsed}
-            aria-label={collapsed ? t.expandLibrary : t.collapseLibrary}
-            title={collapsed ? t.expandLibrary : t.collapseLibrary}
-            className="grid size-8 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/8 hover:text-ink"
-          >
-            {collapsed ? (
-              <PanelLeftOpen className="size-4" strokeWidth={2} />
-            ) : (
-              <PanelLeftClose className="size-4" strokeWidth={2} />
-            )}
-          </button>
+          {onToggleCollapsed && (
+            <button
+              type="button"
+              onClick={onToggleCollapsed}
+              aria-label={collapsed ? t.expandLibrary : t.collapseLibrary}
+              title={collapsed ? t.expandLibrary : t.collapseLibrary}
+              className="grid size-8 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/8 hover:text-ink"
+            >
+              {collapsed ? (
+                <PanelLeftOpen className="size-4" strokeWidth={2} />
+              ) : (
+                <PanelLeftClose className="size-4" strokeWidth={2} />
+              )}
+            </button>
+          )}
         </div>
 
         {/*

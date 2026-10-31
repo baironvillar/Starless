@@ -23,6 +23,13 @@ import { UpdateAlert } from "./components/UpdateAlert";
 import { type Lang, type StringKey, strings } from "./lib/i18n";
 import { SPRING } from "./lib/motion";
 import {
+  placeOfSong,
+  queueWithAdded,
+  queueWithListAdded,
+  rowPlace,
+  upNextTracks,
+} from "./lib/queue";
+import {
   type Album,
   type Artist,
   accentColor,
@@ -228,6 +235,20 @@ function shuffleFrom<T extends { id: string }>(items: T[], currentId?: string | 
   return current ? [current, ...order] : order;
 }
 
+/** Narrow enough that an open library squeezes the content; see `railOnly`. */
+const NARROW_QUERY = "(max-width: 999px)";
+
+function useNarrowWindow(): boolean {
+  const [narrow, setNarrow] = useState(() => matchMedia(NARROW_QUERY).matches);
+  useEffect(() => {
+    const query = matchMedia(NARROW_QUERY);
+    const onChange = () => setNarrow(query.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+  return narrow;
+}
+
 export default function App() {
   const [lang, setLang] = useState<Lang>("es");
   const [active, setActive] = useState<StringKey>("navHome");
@@ -238,6 +259,16 @@ export default function App() {
    * already carries it, and the name is in the header over the list it opens.
    */
   const [libraryCollapsed, setLibraryCollapsed] = useState(true);
+  /**
+   * Below this width the library is the riel, whatever was chosen.
+   *
+   * **The content needs the pixels more than the names do.** At 900 px an open
+   * library and the queue leave a 340 px column in the middle, and the lyrics
+   * are a reading column. The choice is kept, not overwritten: widen the window
+   * and the library comes back the way it was.
+   */
+  const narrow = useNarrowWindow();
+  const railOnly = libraryCollapsed || narrow;
   /**
    * The queue is there from the start, the way the library is.
    *
@@ -996,6 +1027,22 @@ export default function App() {
   );
 
   /**
+   * Play one song from the queue panel, and cut the queue where the panel says.
+   *
+   * **The cut is at the place, not at the song.** The panel knows which row was
+   * clicked; looking the song up by its id finds the *first* copy, and a queue can
+   * have the same song twice —one account here has a playlist of fifty items and
+   * forty-six different ids—. From there "what comes next" is a song from the
+   * past, and the panel lies about what is coming.
+   */
+  const onPlayFromQueue = useCallback(
+    (track: Track, row: number) => {
+      onPlay(track, rowPlace(queueAt, row));
+    },
+    [onPlay, queueAt],
+  );
+
+  /**
    * Play from a list that is not a playlist, and decide the order now.
    *
    * A playlist is a statement about order, so opening one and playing from it
@@ -1129,17 +1176,10 @@ export default function App() {
    * played is still called "what comes next", and the app walks the queue
    * backwards.
    */
-  const upNext = useMemo(() => {
-    const at = queueAt;
-    // **Antes de que suene nada no hay "a continuación".** El panel muestra lo
-    // que viene después de la canción que está sonando, y si no está sonando
-    // ninguna no hay después: lo que se ve en pantalla es el contenido de la
-    // pantalla, no una cola. Una app recién abierta con ocho canciones bajo
-    // "a continuación" es una cola que se inventó sola, y el usuario tiene
-    // razón: nadie la pidió.
-    if (at < 0) return queueOverride ?? [];
-    return visibleTracks.slice(at + 1);
-  }, [queueAt, visibleTracks, queueOverride]);
+  const upNext = useMemo(
+    () => upNextTracks(queueAt, visibleTracks, queueOverride),
+    [queueAt, visibleTracks, queueOverride],
+  );
 
   /**
    * How many songs of the station's page are still ahead.
@@ -1422,11 +1462,7 @@ export default function App() {
    * primera canción.
    */
   const placeOf = useCallback(
-    (songId: string) => {
-      const remembered = queueAtRef.current;
-      if (remembered >= 0 && visibleTracks[remembered]?.id === songId) return remembered;
-      return visibleTracks.findIndex((item) => item.id === songId);
-    },
+    (songId: string) => placeOfSong(queueAtRef.current, visibleTracks, songId),
     [visibleTracks],
   );
 
@@ -2183,25 +2219,41 @@ export default function App() {
    * list would be a second source of truth for what plays next, which is the
    * drift this whole design exists to prevent.
    *
-   * **And when there is no queue, the song IS the queue.** Adding one song to a
-   * list of eight that nobody asked for is not adding a song: it is turning
-   * whatever the screen happens to be showing into a queue, and the panel would
-   * then show eight songs the user never put there.
+   * **And when there is no queue, the song is the beginning of one — and the list
+   * on screen stays behind it.**
+   *
+   * A queue with no room for anything else is a dead end: the user puts a song in
+   * it, plays it, and the queue is over. That is what it used to do — the added
+   * song *was* the queue — and it cost the list: the playlist the user was
+   * looking at disappeared from the queue the moment one song was added, and
+   * after that song there was nothing. The screen said one thing and the player
+   * did another.
+   *
+   * So the song goes first and the list follows it. The queue is the list on
+   * screen plus what the user put in it, and it is the same list either way: one
+   * source, no drift. The song the user chose plays first, and the playlist
+   * continues after it — which is what "I put it in the queue" means when
+   * nothing was playing.
    *
    * A duplicate is not deduplicated. A queue is not a set — somebody who adds the
    * same song twice meant to hear it twice, and quietly dropping the second is
    * the app disagreeing with a decision that was made on purpose.
    */
-  const onAddToQueue = useCallback((track: Track) => {
-    // La cola del DJ sigue siendo la cola del DJ: agregar una canción no
-    // borra las frases que la trajeron, ni la convierte en una lista.
-    setQueue((current) => ({
-      tracks: current ? [...current.tracks, track] : [track],
-      lines: current?.lines ?? {},
-      source: current?.source ?? "list",
-      context: current?.context ?? null,
-    }));
-  }, []);
+  const onAddToQueue = useCallback(
+    (track: Track) => {
+      // La cola del DJ sigue siendo la cola del DJ: agregar una canción no
+      // borra las frases que la trajeron, ni la convierte en una lista.
+      const edit = queueWithAdded(queue?.tracks ?? null, track, visibleTracks, queueAtRef.current);
+      setQueue({
+        tracks: edit.tracks,
+        lines: queue?.lines ?? {},
+        source: queue?.source ?? "list",
+        context: queue?.context ?? null,
+      });
+      moveTo(edit.at);
+    },
+    [queue, visibleTracks, moveTo],
+  );
 
   /**
    * La playlist entera a la cola, y no lo que el filtro dejó a la vista.
@@ -2215,15 +2267,20 @@ export default function App() {
    * la misma canción quiso oírla dos veces, y descartarla en silencio es la
    * app contradiciendo una decisión que se tomó a propósito.
    */
-  const onAddListToQueue = useCallback((tracks: Track[]) => {
-    if (tracks.length === 0) return;
-    setQueue((current) => ({
-      tracks: current ? [...current.tracks, ...tracks] : [...tracks],
-      lines: current?.lines ?? {},
-      source: current?.source ?? "list",
-      context: current?.context ?? null,
-    }));
-  }, []);
+  const onAddListToQueue = useCallback(
+    (tracks: Track[]) => {
+      if (tracks.length === 0) return;
+      const edit = queueWithListAdded(queue?.tracks ?? null, tracks, queueAtRef.current);
+      setQueue({
+        tracks: edit.tracks,
+        lines: queue?.lines ?? {},
+        source: queue?.source ?? "list",
+        context: queue?.context ?? null,
+      });
+      moveTo(edit.at);
+    },
+    [queue, moveTo],
+  );
 
   /**
    * Open an artist or an album, and come back from one.
@@ -2388,9 +2445,9 @@ export default function App() {
               likedCount={liked.data?.length ?? null}
               error={Boolean(playlists.error ?? account.error) && !playlists.isLoading}
               activeId={activeItem}
-              collapsed={libraryCollapsed}
+              collapsed={railOnly}
               barPresent={barPresent}
-              onToggleCollapsed={() => setLibraryCollapsed((v) => !v)}
+              onToggleCollapsed={narrow ? undefined : () => setLibraryCollapsed((v) => !v)}
               sort={sortOrder}
               onSortChange={changeSort}
               view={shelfView}
@@ -2412,7 +2469,7 @@ export default function App() {
               dj={djVoice}
               station={queue?.source === "dj"}
               barPresent={barPresent}
-              onPlay={onPlay}
+              onPlay={onPlayFromQueue}
               onClose={() => setQueueOpen(false)}
               onOpenJam={() => setJamOpen(true)}
               jamOpen={jam !== null}
@@ -2486,7 +2543,7 @@ export default function App() {
           // gap — and without it the last column of cards ended up touching the
           // thumb, which read as one object instead of two.
           className={`absolute top-[104px] ${barPresent ? "bottom-[144px]" : "bottom-5"} overflow-x-hidden overflow-y-auto pr-3 transition-[left,right,bottom] duration-300 ease-[var(--ease-glass)] ${
-            libraryOpen ? (libraryCollapsed ? "left-[112px]" : "left-[280px]") : "left-9"
+            libraryOpen ? (railOnly ? "left-[112px]" : "left-[280px]") : "left-9"
           } ${queueOpen ? "right-[280px]" : "right-9"}`}
         >
           {/*

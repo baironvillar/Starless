@@ -1,5 +1,6 @@
 import { Play, Plus, Users, X } from "lucide-react";
 import { motion } from "motion/react";
+import { useRef } from "react";
 import type { StringKey } from "../lib/i18n";
 import { SPRING, SPRING_SHEET } from "../lib/motion";
 import {
@@ -10,6 +11,7 @@ import {
   trackArtists,
   trackRowKeys,
 } from "../lib/spotify";
+import { useRowWindow } from "../lib/useRowWindow";
 import { DjArtwork } from "./DjArtwork";
 
 type QueuePanelProps = {
@@ -53,7 +55,14 @@ type QueuePanelProps = {
    * the window's own inset: that space is the queue's, not empty ground.
    */
   barPresent: boolean;
-  onPlay: (track: Track) => void;
+  /**
+   * Play a song from the panel, and say which row it was.
+   *
+   * **The row's place, not the song.** The queue can hold the same song twice,
+   * and looking it up by its id finds the first copy —the one that already
+   * played—. The panel knows the place, so it says it.
+   */
+  onPlay: (track: Track, row: number) => void;
   onClose: () => void;
   /**
    * Open the jam, next to this panel.
@@ -129,6 +138,8 @@ export function QueuePanel({
   onAddToJam,
 }: QueuePanelProps) {
   const rowKeys = trackRowKeys(upNext);
+  const nextRef = useRef<HTMLUListElement>(null);
+  const { first, last, pitch } = useRowWindow(nextRef, upNext.length);
 
   return (
     <motion.aside
@@ -205,19 +216,26 @@ export function QueuePanel({
             so what comes is not decided yet.
         */}
         {!station && (
-          <Section label={t.queueNextUp}>
+          <Section label={t.queueNextUp} listRef={nextRef}>
             {upNext.length > 0 ? (
-              upNext.map((track, index) => (
-                <QueueRow
-                  key={rowKeys[index]}
-                  t={t}
-                  track={track}
-                  position={index + 1}
-                  onPlay={onPlay}
-                  jamOpen={jamOpen}
-                  onAddToJam={onAddToJam}
-                />
-              ))
+              <>
+                {first > 0 && <li style={{ height: first * pitch }} aria-hidden />}
+                {upNext.slice(first, last).map((track, offset) => (
+                  <QueueRow
+                    key={rowKeys[first + offset]}
+                    t={t}
+                    track={track}
+                    position={first + offset + 1}
+                    onPlay={onPlay}
+                    row={first + offset}
+                    jamOpen={jamOpen}
+                    onAddToJam={onAddToJam}
+                  />
+                ))}
+                {last < upNext.length && (
+                  <li style={{ height: (upNext.length - last) * pitch }} aria-hidden />
+                )}
+              </>
             ) : (
               <Empty t={t} />
             )}
@@ -228,13 +246,23 @@ export function QueuePanel({
   );
 }
 
-function Section({ label, children }: { label: string; children: React.ReactNode }) {
+function Section({
+  label,
+  children,
+  listRef,
+}: {
+  label: string;
+  children: React.ReactNode;
+  listRef?: React.Ref<HTMLUListElement>;
+}) {
   return (
     <section>
       <h3 className="px-2 pb-1.5 text-[12px] font-semibold tracking-wide uppercase text-ink-faint">
         {label}
       </h3>
-      <ul className="flex flex-col gap-0.5">{children}</ul>
+      <ul ref={listRef} className="flex flex-col gap-0.5">
+        {children}
+      </ul>
     </section>
   );
 }
@@ -323,6 +351,9 @@ function NowPlaying({ track }: { track: Track }) {
   );
 }
 
+/** About as many rows as the panel shows when it opens. */
+const ENTRANCE_ROWS = 14;
+
 function QueueRow({
   t,
   track,
@@ -330,17 +361,23 @@ function QueueRow({
   onPlay,
   jamOpen,
   onAddToJam,
+  row,
 }: {
   t: Record<StringKey, string>;
   track: Track;
   position?: number;
-  onPlay: (track: Track) => void;
+  onPlay: (track: Track, row: number) => void;
   jamOpen?: boolean;
   onAddToJam?: (track: Track) => void;
+  row: number;
 }) {
   return (
     <motion.li
-      initial={{ opacity: 0, x: 8 }}
+      data-row
+      // Only the rows the panel opens onto slide in. With a long playlist every
+      // row had its own spring, hundreds at once, and opening the queue dropped
+      // to 25 fps for rows nobody could see yet.
+      initial={(position ?? 0) <= ENTRANCE_ROWS ? { opacity: 0, x: 8 } : false}
       animate={{ opacity: 1, x: 0 }}
       transition={{ ...SPRING, delay: 0.02 * (position ?? 0) }}
     >
@@ -355,7 +392,7 @@ function QueueRow({
       <div className="group flex w-full items-center gap-1 rounded-[14px] px-2 py-2 text-left transition-colors duration-200 hover:bg-white/6">
         <button
           type="button"
-          onClick={() => onPlay(track)}
+          onClick={() => onPlay(track, row)}
           className="flex min-w-0 flex-1 items-center gap-3 text-left"
         >
           {position !== undefined ? (

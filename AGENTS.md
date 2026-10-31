@@ -950,7 +950,26 @@ en ningún proto ni en ninguna issue:
   relay roto —justo el fallo que nadie va a reportar. Los tests de `report.ts`
   existían, los de `index.ts` —el que crea el issue, agrupa los crashes
   repetidos y corta por el límite de la hora— no: eran el camino sin probar.
-  Ahora `bun run relay:test` corre en la CI, en cada push y en cada PR.
+  Ahora `bun run test` corre en la CI, en cada push y en cada PR: los del
+  relay y los de la app.
+- **Una canción agregada a la cola con nada sonando era la cola entera.**
+  `onAddToQueue` armaba `[track]` cuando no había cola: la lista de la pantalla
+  se caía de la cola en ese momento, y **después de esa canción no había nada**.
+  Lo que pasó en vivo fue peor de lo que se veía: la canción terminó, la app no
+  encontró nada detrás y **arrancó la radio** —el log mostró `radio: arrancó con
+  50 canciones`—, así que la app seguía con música y lo que había seguido era
+  otra cosa. Ahora la cola es la lista de la pantalla **más** lo que el usuario
+  le puso, y la regla vive en `src/lib/queue.ts`, que tiene tests.
+- **Poner una canción en la cola es ponerla en un lugar, y ese lugar es el de
+  después de la que está sonando.** No es "agregar al final": una canción que
+  el usuario está esperando al final de una cola de treinta queda esperando
+  media hora. Y **reemplaza la copia que ya estaba**: la canción salió de la
+  pantalla, así que si la cola ya la tenía, la copia vieja sale y la nueva queda
+  en el lugar de al lado. Las dos cosas se notaron en vivo, en este orden: la
+  canción quedaba al final, y después quedaba **dos veces** en el panel. La cola
+  decía una cosa y el panel mostraba otra, dos veces.
+  **Y la canción que está sonando no se agrega ni se saca**: es el cursor, y
+  sin cursor no hay dónde insertar nada.
 - **Una variable de Actions que no existe llega como cadena vacía, y
   `option_env!` no la distingue de una que existe y está vacía.**
   `STARLESS_REPORT_RELAY` se pasa al build desde una variable del repositorio:
@@ -960,6 +979,18 @@ en ningún proto ni en ninguna issue:
   hay relay. **Toda build local tiene esa forma**, y toda build hecha antes
   de que la variable existiera también. La dirección se chequea donde se usa,
   no donde se lee.
+- **Una animación que no es `transform` ni `opacity` cuesta el layout entero, y
+  una lista larga lo multiplica.** Medido en la app con un contador de cuadros: el
+  ecualizador de la fila que suena animaba `height` en un bucle infinito, y
+  mientras hubiera música la app iba a 30 fps; la barra de progreso animaba
+  `width` y `left` en cada tic. Ahora son `scaleY`, `scaleX` y `x`. Y una lista
+  de mil canciones dibujaba las mil filas en cada render de `App` —el volumen,
+  la posición, un menú—: 300 a 700 ms con la ventana congelada. `useRowWindow`
+  dibuja sólo las filas cerca de la pantalla y lo hace dentro del mismo evento
+  de scroll (`flushSync`): diferido al cuadro siguiente, un scroll rápido le
+  ganaba y la lista se veía llenarse de a poco. **Si animas algo, que sea un
+  transform; si agregas una lista que puede ser larga, pásala por
+  `useRowWindow`.**
 - **`.agent/` es la copia canónica** de la configuración de agentes. Los shims de
   `.claude/` y `.opencode/` que apuntaban ahí se borraron; para recuperar el
   skill en esas herramientas, `git revert 96cf93c`.

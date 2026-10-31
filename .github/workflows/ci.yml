@@ -50,8 +50,14 @@ jobs:
       # to that is to open the browser, so the failure looks like a slower
       # app and not like a broken relay. Its tests were written and then
       # nobody ran them, because there was no job that ran them.
-      - name: Relay tests
-        run: bun run relay:test
+      #
+      # The queue is the same kind of thing: the rules that decide what plays
+      # next are pure functions in `src/lib/queue.ts`, and a rule nobody checks
+      # is a rule that breaks in a release. One job runs both — the relay's
+      # tests and the app's — because a test that no job runs is a test that
+      # breaks alone.
+      - name: Tests
+        run: bun run test
 
       - name: Build
         run: bun run build
