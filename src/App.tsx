@@ -44,6 +44,7 @@ import {
   djMore,
   djSpeak,
   explain,
+  historyKey,
   isDjCard,
   type JamSession,
   jamAddToQueue,
@@ -58,17 +59,20 @@ import {
   librarySort,
   libraryView,
   listCount,
+  MIN_LISTENED_MS,
   menuOpacity,
   onDjVoice,
   onPlaybackStatus,
   PLAYLIST_STALE_MS,
   type PlaybackStatus,
+  type PlayContext,
   type Playlist,
   playerStatus,
   playTrack,
   type RadioContext,
   radioMore,
   radioStart,
+  recordPlay,
   SESSION_ERRORS,
   setErrorLanguage,
   setLibrarySort,
@@ -80,8 +84,10 @@ import {
   type TrackListPrefs,
   togglePlayback,
   trackArtists,
+  trackFromPlay,
   trackListPrefs,
   useAccount,
+  useHomeStats,
   useLikedTracks,
   useLyrics,
   usePlaylists,
@@ -756,6 +762,17 @@ export default function App() {
   const [queue, setQueue] = useState<Queue | null>(null);
   const queueOverride = queue?.tracks ?? null;
   /**
+   * Which list the history should say a song came from.
+   *
+   * **Not the radio's context.** The radio needs a playlist or a song to seed
+   * from, and the saved songs are neither, so their queue carries no context.
+   * Home's "Sigue escuchando" still wants to say "Canciones que te gustan",
+   * so the history keeps its own note, set wherever a queue is set.
+   */
+  const historySource = useRef<PlayContext | null>(null);
+  /** Whether the saved songs are the list on screen: kept current further down. */
+  const likedOnScreen = useRef(false);
+  /**
    * The one door into the queue.
    *
    * Everything that sets a queue goes through here, so the lines that came
@@ -768,6 +785,12 @@ export default function App() {
       // era de la cola anterior, y seguir usándolo haría saltar la app a una
       // canción que ya no está donde estaba.
       moveTo(-1);
+      historySource.current =
+        context?.kind === "playlist"
+          ? { kind: "playlist", id: context.id }
+          : likedOnScreen.current
+            ? { kind: "playlist", id: "liked" }
+            : null;
       setQueue(tracks ? { tracks, lines: {}, source: "list", context } : null);
     },
     [moveTo],
@@ -1096,6 +1119,69 @@ export default function App() {
   }, [nowPlayingId]);
 
   /**
+   * The listening history, on this machine only (`history.rs`).
+   *
+   * A song is written when its turn ends — another song starts, it finishes, or
+   * the window closes — and only if it was *heard* for 30 seconds: the clock
+   * runs while `playing` is true, so a paused song does not keep counting and a
+   * skip does not count at all.
+   */
+  const homeStats = useHomeStats();
+  const listening = useRef<{
+    track: Track;
+    context: PlayContext | null;
+    heardMs: number;
+    since: number | null;
+  } | null>(null);
+  const flushListening = useCallback(() => {
+    const turn = listening.current;
+    if (!turn) return;
+    listening.current = null;
+    const heard = turn.heardMs + (turn.since === null ? 0 : Date.now() - turn.since);
+    if (heard < MIN_LISTENED_MS) return;
+    const { track } = turn;
+    recordPlay({
+      at: Date.now(),
+      track_id: track.id,
+      name: track.name,
+      artists: track.artists,
+      album_id: track.album?.id ?? null,
+      album_name: track.album?.name ?? null,
+      image: track.album?.images[0]?.url ?? null,
+      duration_ms: track.duration_ms ?? 0,
+      listened_ms: Math.round(track.duration_ms ? Math.min(heard, track.duration_ms) : heard),
+      context: turn.context,
+    })
+      .then(() => queryClient.invalidateQueries({ queryKey: historyKey }))
+      .catch(() => {});
+  }, [queryClient]);
+
+  useEffect(() => {
+    const id = status?.trackId ?? null;
+    if (listening.current && listening.current.track.id !== id) flushListening();
+    if (!id) return;
+    if (!listening.current) {
+      const track =
+        queue?.tracks.find((item) => item.id === id) ??
+        (loadedTrack?.id === id ? loadedTrack : null);
+      if (!track) return;
+      listening.current = { track, context: historySource.current, heardMs: 0, since: null };
+    }
+    const turn = listening.current;
+    if (status?.playing && turn.since === null) turn.since = Date.now();
+    if (!status?.playing && turn.since !== null) {
+      turn.heardMs += Date.now() - turn.since;
+      turn.since = null;
+    }
+    if (status?.finished) flushListening();
+  }, [status?.trackId, status?.playing, status?.finished, queue, loadedTrack, flushListening]);
+
+  useEffect(() => {
+    window.addEventListener("beforeunload", flushListening);
+    return () => window.removeEventListener("beforeunload", flushListening);
+  }, [flushListening]);
+
+  /**
    * Keep the jam up to date.
    *
    * **The jam has no pubsub here.** The `dealer` of librespot does not carry
@@ -1401,6 +1487,7 @@ export default function App() {
       // reproducir: la frase que estaba diciendo era para otra canción.
       djPending.current = null;
       setDjVoice(null);
+      historySource.current = null;
       asked.current = track.id;
       intent.current += 1;
       setLoadedTrack(track);
@@ -2032,6 +2119,7 @@ export default function App() {
     screenError,
     leaveResults,
   } = useSearch(playRadio);
+  likedOnScreen.current = isLiked && !isHome && !detail && !showResults;
 
   /**
    * The area starts at the top of whatever it is now showing.
@@ -2612,6 +2700,17 @@ export default function App() {
               onPlayDj={onPlayDj}
               djBusy={djBusy}
               djUnavailable={djUnavailable}
+              stats={homeStats.data ?? null}
+              userName={account.data?.display_name ?? null}
+              onPlayTrack={(play) => playRadio(trackFromPlay(play))}
+              onOpenArtist={openArtist}
+              onOpenLiked={() => {
+                setActiveItem("liked");
+                setActive("navLibrary");
+                setQueueOverride(null);
+                setLyricsOpen(false);
+                setDetail(null);
+              }}
               onOpenPlaylist={(playlist) => {
                 setActiveItem(playlist.id);
                 setActive("navLibrary");

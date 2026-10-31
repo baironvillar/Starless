@@ -8,6 +8,7 @@
 mod auth;
 mod beat;
 mod crossfade;
+mod history;
 // Named `selftest`, never `diagnostic`: the `diagnostic` crate provides the
 // `#[diagnostic::on_unimplemented]` attribute that `#[tauri::command]` expands
 // to, and a local module of the same name shadows it at the crate root — which
@@ -1708,6 +1709,40 @@ fn set_menu_opacity(opacity: u8) {
     settings::save_menu_opacity(opacity);
 }
 
+// --- Listening history (on this machine only) ------------------------------
+
+/// One song, heard. `history` drops it when it was a skip or history is off.
+#[tauri::command]
+fn record_play(play: history::Play) {
+    history::record(&play);
+}
+
+/// Home's history sections. `tz_offset_min` is the webview's `getTimezoneOffset()`,
+/// so "today" and "this week" are the person's and not UTC's.
+#[tauri::command]
+fn home_stats(tz_offset_min: i32) -> history::HomeStats {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    history::home_stats(now, tz_offset_min)
+}
+
+#[tauri::command]
+fn history_enabled() -> bool {
+    settings::saved_history_enabled()
+}
+
+#[tauri::command]
+fn set_history_enabled(enabled: bool) {
+    settings::save_history_enabled(enabled);
+}
+
+#[tauri::command]
+fn clear_history() {
+    history::clear();
+}
+
 /// How many seconds two songs overlap when one ends on its own; 0 is off.
 #[tauri::command]
 fn crossfade_seconds() -> u8 {
@@ -1990,6 +2025,11 @@ pub fn run() {
             set_menu_opacity,
             crossfade_seconds,
             set_crossfade_seconds,
+            record_play,
+            home_stats,
+            history_enabled,
+            set_history_enabled,
+            clear_history,
             accent,
             set_accent,
             library_sort,

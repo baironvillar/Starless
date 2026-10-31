@@ -59,6 +59,12 @@ pub struct Settings {
     #[serde(default)]
     pub crossfade_seconds: Option<u8>,
 
+    /// Whether Home's history is kept on this machine (`history.rs`). On unless
+    /// the person turned it off: it never leaves the disk, so it is not the
+    /// telemetry PRODUCT.md rules out, and Home is mostly empty without it.
+    #[serde(default)]
+    pub history_enabled: Option<bool>,
+
     /// The accent colour the user picked, as `#rrggbb`, or `None` for the one
     /// DESIGN.md ships.
     ///
@@ -350,6 +356,19 @@ pub fn saved_menu_opacity() -> u8 {
         .menu_opacity
         .unwrap_or(DEFAULT_MENU_OPACITY)
         .clamp(MENU_OPACITY_MIN, MENU_OPACITY_MAX)
+}
+
+/// Remember whether the history is kept.
+pub fn save_history_enabled(enabled: bool) {
+    if load().history_enabled == Some(enabled) {
+        return;
+    }
+    update(|settings| settings.history_enabled = Some(enabled));
+}
+
+/// Whether the history is kept: on until the person says otherwise.
+pub fn saved_history_enabled() -> bool {
+    load().history_enabled.unwrap_or(true)
 }
 
 /// The chosen crossfade in seconds, or 0 — off — when it was never chosen.

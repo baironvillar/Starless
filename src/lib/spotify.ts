@@ -617,6 +617,103 @@ export async function crossfadeSeconds(): Promise<number> {
   return invoke<number>("crossfade_seconds");
 }
 
+/**
+ * What the person listened to, kept on this machine (`history.rs`).
+ *
+ * Not telemetry: it never leaves the disk. It is what lets Home say "most
+ * played" and "keep listening", which Spotify no longer offers to this app.
+ */
+export type PlayContext = { kind: "playlist"; id: string };
+
+export type Play = {
+  at: number;
+  track_id: string;
+  name: string;
+  artists: Artist[];
+  album_id: string | null;
+  album_name: string | null;
+  image: string | null;
+  duration_ms: number;
+  listened_ms: number;
+  context: PlayContext | null;
+};
+
+export type HomeStats = {
+  has_history: boolean;
+  top_tracks: { play: Play; plays: number }[];
+  top_artists: { id: string; name: string; plays: number; image: string | null }[];
+  recent: Play[];
+  /** Monday first, in the person's time. */
+  week_minutes: number[];
+  today_index: number;
+  streak_days: number;
+};
+
+/** Under this a song was skipped, and `history.rs` drops it too. */
+export const MIN_LISTENED_MS = 30_000;
+
+const EMPTY_STATS: HomeStats = {
+  has_history: false,
+  top_tracks: [],
+  top_artists: [],
+  recent: [],
+  week_minutes: [0, 0, 0, 0, 0, 0, 0],
+  today_index: (new Date().getDay() + 6) % 7,
+  streak_days: 0,
+};
+
+export const historyKey = ["home-stats"] as const;
+
+export async function recordPlay(play: Play): Promise<void> {
+  if (!hasBackend() || play.listened_ms < MIN_LISTENED_MS) return;
+  return invoke<void>("record_play", { play });
+}
+
+export function useHomeStats() {
+  return useQuery({
+    queryKey: historyKey,
+    queryFn: () =>
+      hasBackend()
+        ? invoke<HomeStats>("home_stats", { tzOffsetMin: new Date().getTimezoneOffset() })
+        : Promise.resolve(EMPTY_STATS),
+    staleTime: 60_000,
+  });
+}
+
+export async function historyEnabled(): Promise<boolean> {
+  if (!hasBackend()) return false;
+  return invoke<boolean>("history_enabled");
+}
+
+export async function setHistoryEnabled(enabled: boolean): Promise<void> {
+  if (!hasBackend()) return;
+  return invoke<void>("set_history_enabled", { enabled });
+}
+
+export async function clearHistory(): Promise<void> {
+  if (!hasBackend()) return;
+  return invoke<void>("clear_history");
+}
+
+/** A play, back into a track the player and the queue understand. */
+export function trackFromPlay(play: Play): Track {
+  return {
+    id: play.track_id,
+    name: play.name,
+    duration_ms: play.duration_ms || null,
+    artists: play.artists,
+    album: play.album_id
+      ? {
+          id: play.album_id,
+          name: play.album_name ?? "",
+          images: play.image ? [{ url: play.image }] : [],
+        }
+      : null,
+    popularity: null,
+    added_at: null,
+  };
+}
+
 export async function setCrossfadeSeconds(seconds: number): Promise<void> {
   if (!hasBackend()) return;
   const value = Math.min(CROSSFADE_MAX, Math.max(0, Math.round(seconds)));
