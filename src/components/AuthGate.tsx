@@ -349,12 +349,7 @@ export function AuthGate({
                 transition={SPRING_GATE}
                 className="glass flex w-full max-w-[460px] flex-col items-center gap-6 rounded-card px-9 py-10 text-center"
               >
-                <div
-                  className="size-16 rounded-pill"
-                  style={{
-                    background: "linear-gradient(140deg, #f4f5f7, #4a4d54)",
-                  }}
-                />
+                <img src="/starless-glass.svg" alt="" className="size-16" draggable={false} />
 
                 <div>
                   <p className="text-[12px] font-semibold tracking-wide uppercase text-ink-faint">
@@ -453,14 +448,15 @@ export function AuthGate({
  */
 function Restoring({ t }: { t: Record<StringKey, string> }) {
   return (
-    <motion.div
+    <motion.img
       role="status"
       aria-label={t.loading}
+      src="/starless-glass.svg"
+      draggable={false}
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={SPRING_GATE}
-      className="size-16 rounded-pill"
-      style={{ background: "linear-gradient(140deg, #f4f5f7, #4a4d54)" }}
+      className="size-16"
     />
   );
 }
