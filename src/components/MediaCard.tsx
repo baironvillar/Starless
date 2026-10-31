@@ -146,7 +146,7 @@ export function MediaCard({
         ) : null}
 
         {/*
-          A lime disc floating on a bright cover loses its edge, so it carries its
+          An accent disc floating on a bright cover loses its edge, so it carries its
           own shadow rather than relying on the artwork behind it.
         */}
         {onPlay && (

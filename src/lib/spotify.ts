@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { useMemo } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import { errors, type Lang } from "./i18n";
 
 /**
@@ -646,6 +646,103 @@ export async function crossfadeSeconds(): Promise<number> {
   return invoke<number>("crossfade_seconds");
 }
 
+/**
+ * What the person listened to, kept on this machine (`history.rs`).
+ *
+ * Not telemetry: it never leaves the disk. It is what lets Home say "most
+ * played" and "keep listening", which Spotify no longer offers to this app.
+ */
+export type PlayContext = { kind: "playlist"; id: string };
+
+export type Play = {
+  at: number;
+  track_id: string;
+  name: string;
+  artists: Artist[];
+  album_id: string | null;
+  album_name: string | null;
+  image: string | null;
+  duration_ms: number;
+  listened_ms: number;
+  context: PlayContext | null;
+};
+
+export type HomeStats = {
+  has_history: boolean;
+  top_tracks: { play: Play; plays: number }[];
+  top_artists: { id: string; name: string; plays: number; image: string | null }[];
+  recent: Play[];
+  /** Monday first, in the person's time. */
+  week_minutes: number[];
+  today_index: number;
+  streak_days: number;
+};
+
+/** Under this a song was skipped, and `history.rs` drops it too. */
+export const MIN_LISTENED_MS = 30_000;
+
+const EMPTY_STATS: HomeStats = {
+  has_history: false,
+  top_tracks: [],
+  top_artists: [],
+  recent: [],
+  week_minutes: [0, 0, 0, 0, 0, 0, 0],
+  today_index: (new Date().getDay() + 6) % 7,
+  streak_days: 0,
+};
+
+export const historyKey = ["home-stats"] as const;
+
+export async function recordPlay(play: Play): Promise<void> {
+  if (!hasBackend() || play.listened_ms < MIN_LISTENED_MS) return;
+  return invoke<void>("record_play", { play });
+}
+
+export function useHomeStats() {
+  return useQuery({
+    queryKey: historyKey,
+    queryFn: () =>
+      hasBackend()
+        ? invoke<HomeStats>("home_stats", { tzOffsetMin: new Date().getTimezoneOffset() })
+        : Promise.resolve(EMPTY_STATS),
+    staleTime: 60_000,
+  });
+}
+
+export async function historyEnabled(): Promise<boolean> {
+  if (!hasBackend()) return false;
+  return invoke<boolean>("history_enabled");
+}
+
+export async function setHistoryEnabled(enabled: boolean): Promise<void> {
+  if (!hasBackend()) return;
+  return invoke<void>("set_history_enabled", { enabled });
+}
+
+export async function clearHistory(): Promise<void> {
+  if (!hasBackend()) return;
+  return invoke<void>("clear_history");
+}
+
+/** A play, back into a track the player and the queue understand. */
+export function trackFromPlay(play: Play): Track {
+  return {
+    id: play.track_id,
+    name: play.name,
+    duration_ms: play.duration_ms || null,
+    artists: play.artists,
+    album: play.album_id
+      ? {
+          id: play.album_id,
+          name: play.album_name ?? "",
+          images: play.image ? [{ url: play.image }] : [],
+        }
+      : null,
+    popularity: null,
+    added_at: null,
+  };
+}
+
 export async function setCrossfadeSeconds(seconds: number): Promise<void> {
   if (!hasBackend()) return;
   const value = Math.min(CROSSFADE_MAX, Math.max(0, Math.round(seconds)));
@@ -655,6 +752,88 @@ export async function setCrossfadeSeconds(seconds: number): Promise<void> {
 /** Drive the CSS variable every overlay reads. No-op before the first paint matters. */
 export function applyMenuOpacity(opacity: number): void {
   document.documentElement.style.setProperty("--menu-alpha", String(clampOpacity(opacity) / 100));
+}
+
+/**
+ * The background effects. Mirrors `settings::EFFECTS`, the shipped value first.
+ *
+ * They live in a tiny store and not in `App`'s state: the bloom, the pointer
+ * light and the volume read them from three places, and the settings panel
+ * writes them while all three are on screen — a store is what lets a change
+ * answer at once without re-rendering the whole app for it.
+ */
+export const EFFECTS = {
+  glow: ["on", "off"],
+  beat: ["strong", "soft", "off"],
+  bloom: ["normal", "soft", "off"],
+  motion: ["on", "off"],
+} as const;
+
+export type EffectName = keyof typeof EFFECTS;
+export type Effects = { [K in EffectName]: (typeof EFFECTS)[K][number] };
+
+const EFFECTS_KEY = "starless:effects";
+
+export const EFFECTS_DEFAULT: Effects = {
+  glow: "on",
+  beat: "strong",
+  bloom: "normal",
+  motion: "on",
+};
+
+/** Everything still: what the quiet mode switch writes. */
+export const EFFECTS_QUIET: Effects = { glow: "off", beat: "off", bloom: "off", motion: "off" };
+
+/** Keep only what this build knows, the same gate Rust keeps. */
+function knownEffects(raw: Record<string, unknown>): Effects {
+  const out = { ...EFFECTS_DEFAULT };
+  for (const name of Object.keys(EFFECTS) as EffectName[]) {
+    const value = raw[name];
+    if ((EFFECTS[name] as readonly unknown[]).includes(value)) {
+      (out as Record<EffectName, unknown>)[name] = value;
+    }
+  }
+  return out;
+}
+
+let currentEffects = EFFECTS_DEFAULT;
+const effectListeners = new Set<() => void>();
+
+export function applyEffects(next: Effects): void {
+  currentEffects = next;
+  // The CSS half of `motion`: index.css stops every transition and keyframe
+  // under this attribute, the same rule the system's reduced motion gets.
+  document.documentElement.toggleAttribute("data-still", next.motion === "off");
+  for (const listener of effectListeners) listener();
+}
+
+export function useEffectsSettings(): Effects {
+  return useSyncExternalStore(
+    (listener) => {
+      effectListeners.add(listener);
+      return () => effectListeners.delete(listener);
+    },
+    () => currentEffects,
+  );
+}
+
+export async function effects(): Promise<Effects> {
+  if (!hasBackend()) {
+    try {
+      return knownEffects(JSON.parse(window.localStorage.getItem(EFFECTS_KEY) ?? "{}"));
+    } catch {
+      return EFFECTS_DEFAULT;
+    }
+  }
+  return knownEffects(await invoke<Record<string, string>>("effects"));
+}
+
+export async function setEffect<K extends EffectName>(name: K, value: Effects[K]): Promise<void> {
+  if (!hasBackend()) {
+    window.localStorage.setItem(EFFECTS_KEY, JSON.stringify({ ...currentEffects, [name]: value }));
+    return;
+  }
+  return invoke<void>("set_effect", { name, value });
 }
 
 /**
@@ -668,7 +847,7 @@ export function applyMenuOpacity(opacity: number): void {
 const ACCENT_KEY = "starless:accent";
 
 /** The colour DESIGN.md ships. Also what "back to default" writes. */
-export const ACCENT_DEFAULT = "#c8ccd4";
+export const ACCENT_DEFAULT = "#ff5a36";
 
 export function isHexColor(value: string): boolean {
   return /^#[0-9a-f]{6}$/i.test(value);
@@ -698,7 +877,7 @@ export async function setAccentColor(color: string): Promise<void> {
  *
  * The accent itself is the user's. `--color-accent-soft` is the tint the focus
  * outline uses, mixed toward white by the same ratio the shipped pair has
- * (chrome #c8ccd4 → frost #f4f5f7, close enough to the 0.22 mix) so the focus
+ * (Ember #ff5a36 → #ff7e62, the 0.22 mix) so the focus
  * ring keeps its relationship to the accent instead of being the one leftover
  * colour on screen after a repaint.
  *
@@ -724,7 +903,7 @@ export function applyAccentColor(color: string | null): void {
   const value = color.toLowerCase();
   root.setProperty("--color-accent", value);
   root.setProperty("--color-accent-soft", mixToward(value, 0.22));
-  root.setProperty("--color-on-accent", isDark(value) ? "#f4f5f7" : "#08080a");
+  root.setProperty("--color-on-accent", isDark(value) ? "#edeae3" : "#0b0b0f");
 }
 
 /** `amount` of white mixed into `hex`, as `#rrggbb`. */
@@ -742,14 +921,15 @@ function mixToward(hex: string, amount: number): string {
 /**
  * WCAG relative luminance, and the reason `--color-on-accent` exists.
  *
- * The threshold is 0.45 and not the 0.5 of a contrast formula: the filled
- * surfaces here are large and saturated, and a mid-tone accent at exactly 0.5
- * still reads better with the dark label than with the light one.
+ * The threshold is 0.17: the luminance at which Void and Bone give the same
+ * contrast. It used to be 0.45, which was harmless while the default was a pale
+ * chrome, and put a 2.6:1 Bone label on Ember — the default since the new
+ * identity — where Void gives 6.3:1.
  */
 function isDark(hex: string): boolean {
   const [r, g, b] = [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16) / 255);
   const linear = [r, g, b].map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
-  return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2] < 0.45;
+  return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2] < 0.17;
 }
 
 /**

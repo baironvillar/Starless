@@ -15,7 +15,7 @@ Two constraints sharpen it, and both come from PRODUCT.md rather than from taste
 
 ## Shape
 
-Three floating layers over a black ground lit by a frost bloom, and no more.
+Three floating layers over a black ground lit by a grey bloom, and no more.
 
 | Layer | Role | Radius |
 |---|---|---|
@@ -31,46 +31,68 @@ Floating means inset from the window edges: 20px on every side. The corner radiu
 
 The top bar is a three-column grid, `1fr auto 1fr`, so the search stays optically centred however wide navigation grows. Both side columns are `min-w-0 overflow-hidden`: without that they push their contents *through* the centre column instead of yielding to it. The row sheds items by breakpoint — library pills at `lg`, device and overflow at `xl`, the language toggle at `sm` — rather than ever overlapping.
 
+## Brand
+
+The mark is **"wave over equalizer"**: a ring, eight bars that fade from light grey to almost black — the sound going out into silence — and a sine wave that draws an S over them. **It has no stars, and nothing in Starless ever should**: the name is a night without them. It replaced a fading star, which said the opposite of the name.
+
+The mark is grey only. Ember lives in the interface, never in the logo.
+
+| File | Use |
+|---|---|
+| `public/starless-glass.svg` | The main mark, liquid glass. Splash, sign-in, the landing hero — anything ≥ 64px |
+| `public/starless.svg` | Flat grey on dark. Favicon, tray, anything < 64px, where the glass filters blur into nothing |
+| `public/starless-light.svg` / `starless-dev.svg` | Inverted grey for light grounds; the development build's mark |
+| `public/starless-mono.svg` | One ink, `currentColor` |
+
+All of them, and every app icon in `src-tauri/icons`, come out of `scripts/logo.ts` (`bun run logo`, and `bun run logo:invert` for `icons-dev`). The approved originals and the canvas they were chosen on are in `brand-kit/`, beside the repo. Geometry, on a 100×100 viewBox: ring r=43 stroke 5; bars 5 wide at x = 19.5 + 8n, heights 30 52 62 52 38 26 16 8, centred on y=50; wave `M16 50 C 27 20, 39 20, 50 50 S 73 80, 84 50`, stroke 7, round caps.
+
+The wordmark is lowercase "starless" in Syne 700, −0.03em, silver gradient (`.sl-wordmark` on the landing).
+
 ## Colour
 
-Achromatic, taken from the landing (`site/DESIGN.md`) so the site and the app read as one product: near-black ground, cool frost for type, chrome for the one action colour. No hue lives in the chrome; colour appears only in the album art and in the reserved state marks.
+"A night without stars": deep blacks, one warm light. The same tokens as the landing (`site/DESIGN.md`) and `brand-kit/tokens.css`. Roughly 60% Void, 22% Night, 10% Bone, the rest accents.
 
 | Token | Value | Use |
 |---|---|---|
-| `--ink-ground` | `#08080A` | Behind everything (the landing's Speaker Black) |
-| `--ink` | `#F4F5F7` | Primary text (Frost) |
-| `--ink-muted` | `#9A9EA8` | Secondary text, timecodes (Mute) |
-| `--ink-faint` | `#8F939C` | Tertiary text. Must stay at or above `#8F939C` — see Contrast below |
-| `--accent` | `#C8CCD4` | Primary actions, active nav, progress fill (Chrome). The user can still pick another in Settings |
-| `--accent-live` | `#FF5A36` | Currently playing. Reserved |
-| `--accent-ok` | `#3DDC97` | Played, confirmed |
-| `--accent-warn` | `#FFB020` | Failed to load |
+| `--color-ground` | `#0B0B0F` | Void. Behind everything |
+| `--color-night` | `#15151B` | Night. Surfaces, the glass base |
+| `--color-eclipse` | `#24242C` | Eclipse. Borders, tracks, elevation |
+| `--color-ink` | `#EDEAE3` | Bone. Primary text |
+| `--color-ink-muted` | `#9A97A0` | Smoke. Secondary text, timecodes |
+| `--color-ink-faint` | `#8C8992` | Tertiary text. Must stay at or above this — see Contrast below |
+| `--color-accent` | `#FF5A36` | Ember. Play, active nav, progress fill, the primary button. ≤ 10% of the screen. The user can still pick another in Settings |
+| `--color-on-accent` | `#0B0B0F` | The label on an Ember fill. Void, not Bone: Bone on Ember is 2.6:1 |
+| `--color-live` | `#FF5A36` | Currently playing. Ember, and stays Ember when the user changes the accent |
+| `--color-ok` | `#3DD6C4` | Tide. Played, downloaded, confirmed |
+| `--color-warn` | `#F5B83D` | Amber. Failed to load |
 
-**The palette used to be warm and acidic** (a lime accent over an orange-and-green bloom), chosen after a violet bloom was rejected by the impeccable detector as `ai-color-palette`. It was replaced by the landing's achromatic ramp so the app looks like the page that sells it. Violet stays out.
+Ash `#B8381A` is Ember on a light ground, where Ember fails contrast for text. Ultraviolet `#7C6CFF` is the secondary accent of the brand and is offered as an accent preset, not used by the chrome.
 
-`--accent-live` is reserved. It appears on exactly one thing at a time: the track currently sounding. Reusing it for a hovered button or a selected tab is the fastest way to lose the signal the whole design is built on.
+**The palette has been lime, then achromatic chrome, and both are gone.** The lime `#C9F73C` over `#0A0A12` was the old identity; the chrome `#C8CCD4` on `#08080A` was a stopgap that matched the landing. Neither should come back.
+
+The accent and the live mark share Ember by default, and that is accepted rather than overlooked: the play button and the row that is sounding are the same idea. What stays reserved is the *shape* of the live mark — the breathing dot in the track list — and it is never reused for hover or selection.
 
 ## Contrast
 
-The detector caught `--ink-faint` at 2.7:1 against the ground and 3.4:1 against glass. WCAG AA wants 4.5:1 for body text.
-
-The floor is now `#8F939C`: 6.5:1 on the ground and 5.5:1 on graphite `#1C1D21`, the opaque end of the glass base. **Any new tertiary text token must be checked against `#08080A` and against `#1C1D21`, not against a screenshot.** Never tint a text token toward the accent to make it feel integrated; that is exactly how contrast quietly disappears.
+WCAG AA wants 4.5:1 for body text. `--color-ink-faint` `#8C8992` gives 5.7:1 on Void and 5.3:1 on Night `#15151B`, the opaque end of the glass base. **Any new tertiary text token must be checked against `#0B0B0F` and against `#15151B`, not against a screenshot.** Never tint a text token toward the accent to make it feel integrated; that is exactly how contrast quietly disappears.
 
 ## Type
 
-`Funnel Sans` for UI and `Funnel Display` for `h1`/`h2` titles, the landing's pair. Timecodes stay in Funnel Sans with tabular figures (`.tabular`), so a countdown never shifts; the system monospace is left only for raw logs and codes. Not Inter: the detector flags it as `overused-font`. Manrope, the earlier choice, was dropped so the app and the site share one voice.
+`Syne` (700/800, −0.02em) for `h1`/`h2` and the wordmark, `DM Sans` for everything else, `DM Mono` for numbers — timecodes, counts, the version (`.tabular`, with tabular figures, so a countdown never shifts). The landing uses the same three. Not Inter: the detector flags it as `overused-font`.
 
-## A frost bloom, never a coloured one
+## A grey bloom, never a coloured one
 
-Behind everything sits a static bloom of white light on black: three radials in frost and chrome, brightest at the top centre. It gives the glass something to show through without bringing hue back, the same way the landing gets colour only from reflected light. It is fixed (a per-album tint once pushed violet through the whole interface) and never animates.
-**One light follows the pointer** (`CursorGlow.tsx`): a 900px pool of frost at 16% that drifts after the mouse on a soft spring. It is the one exception to the static backdrop, asked for by the user. It costs a blur re-sample on the glass while the pointer moves, so it moves only by `transform`, only with the pointer, and is not drawn with reduced motion. If the app drops below 60fps, this is the first thing to cut.
+Behind everything sits a static bloom of pale light on black: three radials in Bone and silver, brightest at the top centre. It gives the glass something to show through without bringing hue back, the same way the landing gets colour only from reflected light. It is fixed (a per-album tint once pushed violet through the whole interface) and never animates.
+**One light follows the pointer** (`CursorGlow.tsx`): a 900px pool of Bone at 16% that drifts after the mouse on a soft spring. It is the one exception to the static backdrop, asked for by the user. It costs a blur re-sample on the glass while the pointer moves, so it moves only by `transform`, only with the pointer, and is not drawn with reduced motion. If the app drops below 60fps, this is the first thing to cut.
+
+**The person can take the movement back.** Settings → Personalisation has the pointer light (on/off), the pulse on the volume (with waves, soft, off), the bloom (normal, soft at half, off) and the interface animations (on/off: off forces Motion's reduced motion through `MotionConfig` and stops every CSS transition and keyframe under `:root[data-still]`, the same rule the system's reduced motion gets). **Quiet mode** sits above them: it is not a stored setting, it is on when all four are off, and switching it writes all four — off, or back to the shipped values. The shipped values are the ones described here; `settings::EFFECTS` lists them, first value first.
 
 ## The glass recipe
 
 A glass surface is three stacked things, never one. Omitting the middle layer is what turns translucency into unreadable.
 
 ```
-1. base       rgba(28,29,33,0.46)   ← graphite; the bars (`glass`) sit mostly over the bloom, so they go below the 0.5 floor for more see-through. Menus and sheets keep their own alpha
+1. base       rgba(21,21,27,0.46)   ← Night; the bars (`glass`) sit mostly over the bloom, so they go below the 0.5 floor for more see-through. Menus and sheets keep their own alpha
 2. blur       blur(24px) saturate(180%)
 3. lift       0 24px 48px -12px rgba(0,0,0,0.6)
 ```

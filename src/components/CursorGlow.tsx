@@ -44,7 +44,7 @@ export function CursorGlow() {
         marginTop: -SIZE / 2,
         x: sx,
         y: sy,
-        background: "radial-gradient(closest-side, rgb(244 245 247 / 0.16), transparent)",
+        background: "radial-gradient(closest-side, rgb(237 234 227 / 0.16), transparent)",
       }}
     />
   );
