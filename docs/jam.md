@@ -375,6 +375,41 @@ que la llena la llena con un comando como este. Por eso la reproducción cruza
 de un lado al otro sin pubsub: no es que uno mande al otro, es que los dos miran
 la misma lista.
 
+### La cola del jam es la cola del anfitrión, y Starless no tiene cola
+
+Esto se midió el 30 de octubre de 2026, con la sesión activa y sin nada
+sonando:
+
+| | |
+| --- | --- |
+| la cola del jam, antes del comando | `200` · `Not Found` · 0 canciones |
+| el comando `add_to_queue` | `200` · `{"status":"RECOVERED"}` |
+| la cola del jam, después del comando | `200` · `Not Found` · 0 canciones |
+
+**El comando entra y la cola sigue sin existir.** La cola del jam no es una lista
+que el servicio arme: es **la cola del player del anfitrión**, y el servicio la
+publica. Cuando el anfitrión es el cliente de escritorio —que tiene contexto y
+cola— la cola del jam existe: se la midió con 300 canciones y su `list-uri`
+apuntando a la lista de contexto del anfitrión.
+
+**Starless no tiene cola de player.** El `Player` de librespot 0.8 carga
+pistas —`load(track_id)`— y no tiene contexto ni cola: `librespot-playback`
+no expone esas dos cosas. La app por lo tanto reproduce de a una, y el
+servicio no tiene de dónde tomar la cola del jam.
+
+Eso deja dos casos, y son distintos:
+
+- **El anfitrión es otra cosa** —el cliente de escritorio, el celu—: la cola
+  existe, se lee, y el comando del invitado la llena. **Es el caso que
+  funciona.**
+- **El anfitrión es Starless**: no hay cola compartida, y el invitado ve una
+  lista vacía. La cola del jam no se puede crear desde acá: el comando entra y
+  no aparece.
+
+Lo que **no** se midió es el caso del invitado con el anfitrión en el cliente
+de escritorio: que el comando llegue al player del anfitrión y que la cola de
+éste crezca. Eso necesita dos cuentas.
+
 ## El estado del dispositivo
 
 ```
@@ -538,9 +573,10 @@ que el servicio devuelve.
 `playlist/spotify.list.v1.ListReadService/GetLists` —también del cliente de
 escritorio—. Se midió que **existe, que es `POST` y que habla protobuf**; el
 `GET` contesta `405`, y el JSON se lo come y contesta el mensaje de que faltan
-los campos pedidos. Lo que falta es **escribir**: leer la cola se sabe, y
-agregar una canción es un `PATCH` —el cliente tiene un `jam.patch_track`— que
-todavía no se encontró.
+los campos pedidos. **Escribir se resolvió por otra puerta** —la de comandos,
+con un `add_to_queue`—, pero **lo que se escribe es la cola del player del
+anfitrión**, y el player de librespot no tiene cola: ver
+[La cola del jam es la cola del anfitrión](#la-cola-del-jam-es-la-cola-del-anfitrión-y-starless-no-tiene-cola).
 
 ## La pantalla
 
@@ -584,6 +620,10 @@ está abierta, el jam se docks a su izquierda.
 - **La cola, en el panel: ya está.** Se lee, se decodifica y se resuelve en
   nombres (`src-tauri/src/spclient/jamlist.rs` la decodifica a mano, porque el
   proto del servicio de listas no está en librespot).
+- **Meter una canción en la cola: ya está.** Con el jam abierto, la cola de la
+  app y el menú de cada canción tienen un botón que manda el `add_to_queue` a
+  la sesión. El botón **no está en la canción que está sonando**: esa ya está
+  en la cola del jam, y volver a agregarla sería agregarla dos veces.
 - **La actividad de los amigos.** La lista de "quién está escuchando" es otro
   servicio, del que no se midió nada. Lo que hay hoy son los participantes del
   jam, que es otra cosa.
@@ -598,6 +638,7 @@ puede usar esa puerta**.
 | --- | --- |
 | `STARLESS_SP_JAM=1` | mide las rutas: status y cuerpo de cada una, y **prueba las funciones de la app** |
 | `STARLESS_SP_JAM_CREATE=1` | además activa la sesión |
+| `STARLESS_SP_JAM_QUEUE=1` | **sólo** la cola: leerla, mandar el comando y volver a leerla |
 
 **La sonda mide dos cosas.** Todo lo de abajo habla con `reqwest` y trae el
 cuerpo de todas las respuestas —que es lo que hace falta para *medir*—, pero lo
@@ -634,7 +675,10 @@ Honesto, porque buena parte de esto no se comprobó:
   no por el comando.
 - **Si el comando que manda el invitado llega a la cola del anfitrión.** El
   servicio contesta `200` con `{"status":"RECOVERED"}`, que dice que el comando
-  entró, pero no dice **qué hizo**: eso necesita dos cuentas.
+  entró, pero no dice **qué hizo**: eso necesita dos cuentas. Lo que sí se midió
+  es que, con Starless de anfitrión, la cola del jam **no existe** —ni antes ni
+  después del comando—, porque esa cola es la del player del anfitrión y el
+  player de librespot no tiene cola.
 - **Cómo se modifica una sesión.** `GET`, `POST`, `PUT` y `PATCH` sobre
   `/social-connect/v2/sessions/<id>` contestan `405`: el verbo es otro, y
   probablemente sea un `POST` con el cuerpo del proto. Los permisos
@@ -675,3 +719,7 @@ Si esto termina en un issue o un PR, lo que aporta es:
    говори de otra cosa—. Y que la cola **no se escribe por playlist4**: el
    `400` de `…/playlist/<id>/changes` es por el **id**, que no tiene la forma
    que playlist4 acepta.
+8. Que **la cola del jam es la cola del player del anfitrión**, no una lista
+   del servicio: con Starless de anfitrión no existe —el `Player` de librespot
+   carga pistas y no tiene contexto ni cola—, y el comando del invitado la
+   llena cuando el anfitrión es otro cliente.
