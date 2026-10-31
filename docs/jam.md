@@ -459,6 +459,61 @@ de publicar y la lectura sería de otra cosa—, y vuelve a publicar después.
 La primera canción de la cola compartida es la que Starless dice que está
 sonando, y las otras cincuenta son su contexto.
 
+### El `uid` decide qué canción entra en la cola compartida
+
+**Medido el 31 de octubre de 2026**, con el celu adentro del jam y la app
+publicando. La sonda leyó la cola compartida cada cinco segundos:
+
+```
+SP_JAM_STATE: vuelta 7 · la cola tiene 100 canciones · 0 de Starless
+```
+
+**Cien canciones y ninguna de Starless.** Las cien eran del celu, y el servicio
+las había armado solo. Lo que la app publicaba en ese momento estaba en el
+`cluster` que contesta el `PUT`, y se lee con `scripts/read-publish.py`:
+
+```
+--- 2026-10-31T21:33:01.260 / 2809 bytes
+    device activo: Starless
+    la cola del servicio tiene 56 pistas
+      2pEFdzM7w44y8sXh4Ka2Mn  uid (vacío) (la que suena)
+      32btEE0qdRSp3pGcL64qsG  uid (vacío)      ← la que mandó el celu
+      0NN2SZpMqGNgqP8PYgizv5  uid (vacío)      ← la que mandó el celu
+      3qh4Rk0Sfn8fcuiIotXQiR  uid (vacío)
+      ...
+```
+
+Las dos canciones que el celu había sumado estaban en lo publicado —la app las
+suma a su cola cuando llega el comando— pero **sin `uid`**, y las cien que el
+servicio tenía en la cola compartida eran las del celu. La diferencia entre las
+dos listas no es qué canciones son: es que **las del celu tenían `uid` y las de
+Starless no**.
+
+**El `uid` es el id del item, y el id del item es el `uid` de la pista dentro del
+contexto.** En la cola compartida —`spotify:list:jam-list:<id>`— cada item tiene
+un id (`Item.id`, campo 1) que no es la URI: es el identificador que el servicio
+le dio a esa pista. En el comando del player la pista es un
+`ContextTrack { uri, uid, gid, metadata }`, y **mandando sólo la URI el servicio
+resuelve otra pista: la que está sonando**. Por eso el comando del jam lleva el
+`uid` cuando se lo conoce.
+
+**De dónde salen los ids.** Del servicio, siempre, y por tres caminos:
+
+| de dónde | qué trae |
+| --- | --- |
+| el comando que manda el otro lado | el `uid` de la pista del comando |
+| la cola compartida que el servicio escribió | el id de cada item |
+| el `cluster` que contesta el `PUT` | el `uid` de cada pista publicada |
+
+**La respuesta del `PUT` es el `cluster`**, no un acknowledgement: es la copia que
+el servicio guardó del player, con el estado que el servicio ve. Es la forma de
+saber qué publicó la app y qué quedó reconocido.
+
+**Y el servicio no reconoce una pista por su URI.** Una pista publicada sin
+`uid` no entra en la cola compartida: el servicio no la puede apuntar. Por eso
+Starless lleva un registro `uri → uid`, lo publica con la cola, y lo manda en el
+comando de agregar cuando lo conoce.
+
 ### Lo que empuja el `dealer`
 
 Con el `dealer` abierto aparecen dos temas que antes nadie escuchaba:
@@ -919,7 +974,9 @@ Honesto, porque buena parte de esto no se comprobó:
   el [arnés](#el-arnés-el-jam-con-los-dos-lados). Con una sola cuenta y
   Starless de anfitrión, la cola del jam **existe** y es la de Starless —51
   canciones, la primera la que está sonando—, y el comando `add_to_queue` entra
-  con `SUCCESS`.
+  con `SUCCESS`. **Lo que falta es que las canciones de Starless entren en la
+  cola compartida con el `uid` que el servicio les dio**: sin él, el servicio no
+  las reconoce, y la cola compartida sigue siendo la del otro lado.
 - **Cómo se modifica una sesión.** `GET`, `POST`, `PUT` y `PATCH` sobre
   `/social-connect/v2/sessions/<id>` contestan `405`: el verbo es otro, y
   probablemente sea un `POST` con el cuerpo del proto. Los permisos
