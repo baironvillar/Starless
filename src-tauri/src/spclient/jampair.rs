@@ -60,6 +60,11 @@ fn watch_seconds() -> u64 {
         .unwrap_or(180)
 }
 
+/// La pista que el arnés empuja a la cola mientras mira.
+///
+/// **Una que cualquiera reconozca**: si aparece en el celu, el comando llegó.
+const PUSH: &str = "0VjIjW4GlUZAMYd2vXMi3b";
+
 /// El modo de mirar: el anfitrión solo, mirando.
 /// 
 /// **El código va al log, porque es lo que la otra persona tiene que pegar.**
@@ -91,6 +96,7 @@ pub fn watch(app: tauri::AppHandle) {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(watch_seconds());
         let mut antes_miembros: Option<usize> = None;
         let mut antes_cola: Option<usize> = None;
+        let mut vueltas = 0_u32;
 
         while std::time::Instant::now() < deadline {
             // **Cada cuánto se pregunta importa tanto como qué se pregunta.**
@@ -99,6 +105,20 @@ pub fn watch(app: tauri::AppHandle) {
             // que acá se pregunta cada cinco y la cola se lee **una** vez por
             // vuelta.
             std::thread::sleep(std::time::Duration::from_secs(5));
+            vueltas += 1;
+
+            // **Cada treinta segundos, el anfitrión empuja una canción.**
+            //
+            // La pregunta es si el comando llega a la cola compartida: el
+            // servicio lo acepta con `RECOVERED`, pero eso dice que *entró*,
+            // no que la lista lo tomó. Y si la lista no lo toma, el cruce de
+            // canciones no existe — y entonces hay que buscar otra puerta.
+            if vueltas % 6 == 0 {
+                match jam_add_to_queue(&host, &session_id, PUSH) {
+                    Ok(()) => log::info!("SP_JAM_WATCH: mandé {PUSH} a la cola compartida"),
+                    Err(error) => log::error!("SP_JAM_WATCH: el comando no entró: {error}"),
+                }
+            }
 
             let Ok(poll) = jam_session(&host, false) else {
                 log::error!("SP_JAM_WATCH: la puerta no contestó");

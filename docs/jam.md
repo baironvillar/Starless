@@ -748,6 +748,34 @@ nombres de las primeras cinco. Si la cola crece, el otro lado está llenando la
 cola compartida y el jam cruza; si no crece y los participantes aparecen, el
 cruce falla en la cola y no en la sesión.
 
+## Lo que se midió con el arnés
+
+El 31 de octubre de 2026, con el arnés mirando y el otro lado en el teléfono.
+Cuatro cosas que cambian lo que dice el resto de este documento:
+
+1. **La cola compartida sí existe con Starless de anfitrión.** Tiene las
+   canciones que la cuenta está sonando —y **son las del otro dispositivo**:
+   con el celu sonando, la cola de Starless cambió de `FATAL`, `wtfff.`,
+   `Mi Amiga` a `FLAITEERA`, `LEER TUS PENSAMIENTOS`, `Sentimiento Mágico`.
+   Lo que se había medido como "no existe" estaba mal: se midió **apenas abrir
+   el jam**, y la lista la siembra el servicio después. **La cola del jam no es
+   un invento del player del anfitrión: es el contexto de la cuenta.**
+2. **El servicio contesta dos palabras y la app conocía una.** `RECOVERED` es lo
+   que contesta cuando el comando entra; `SUCCESS` es lo que contesta cuando el
+   comando **se aplicó** —medido el 31-10-2026 con la sesión ya andando—. La
+   app sólo aceptaba `RECOVERED`, así que contestaba "rechazado" con el
+   comando aplicado: **el que empujaba una canción veía un error y la canción
+   entraba igual.**
+3. **Preguntar cada tres segundos hace que el servicio corte la tanda.** Con
+   la app preguntando y la sonda preguntando, aparece un `429` a los treinta
+   segundos. A cinco segundos no aparece. El canal de avisos del cliente de
+   escritorio —`social-connect/v2/session_update`, que el proto describe con
+   `SessionUpdate { session, reason }` y motivos como `USER_JOINED`— es
+   justamente la puerta que falta usar.
+4. **El invitado no aparece en la lista de participantes.** Con la misma
+   cuenta en dos dispositivos, la sesión sigue trayendo un solo miembro —el
+   anfitrión—, aunque el otro dispositivo esté sonando y la cola cambie.
+
 ## Lo que falta
 
 Honesto, porque buena parte de esto no se comprobó:

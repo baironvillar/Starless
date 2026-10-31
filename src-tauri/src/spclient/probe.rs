@@ -3353,6 +3353,18 @@ pub fn jam_queue_requested() -> bool {
         .unwrap_or(false)
 }
 
+/// La medición de la puerta de avisos: `STARLESS_SP_JAM_UPDATES=1`.
+///
+/// **Va sola, como la de la cola.** La sonda completa hace cien pedidos
+/// seguidos y el servicio corta la tanda con un `429` a partir de la sesenta;
+/// esta mide ocho, y tiene que llegar.
+#[cfg(debug_assertions)]
+pub fn jam_updates_requested() -> bool {
+    std::env::var("STARLESS_SP_JAM_UPDATES")
+        .map(|value| value != "0" && !value.is_empty())
+        .unwrap_or(false)
+}
+
 /// El jam, medido.
 ///
 /// **La primera llamada crea la sesión, y no es culpa de la sonda.** El
@@ -3398,6 +3410,24 @@ pub fn run_jam_probe(app: tauri::AppHandle) {
                 jam_probe_queue_only(&session, &session_id, &app);
             } else {
                 log::error!("SP_JAM: no hay sesión para medir la cola");
+            }
+
+            log::info!("=== DIAGNOSTIC: fin de la sonda del jam ===");
+            return;
+        }
+
+        // **La puerta de avisos, sola.** Son ocho pedidos y miden la puerta que
+        // el cliente de escritorio usa para saber quién se une.
+        if jam_updates_requested() {
+            let session_id = app_session
+                .as_ref()
+                .map(|found| found.session_id.clone())
+                .unwrap_or_default();
+
+            if session_id.is_empty() {
+                log::error!("SP_JAM: no hay sesión para medir la puerta de avisos");
+            } else {
+                jam_probe_updates(&session, &session_id);
             }
 
             log::info!("=== DIAGNOSTIC: fin de la sonda del jam ===");
@@ -4506,6 +4536,122 @@ fn jam_probe_leave(session: &Session, session_id: &str) {
         &format!("/social-connect/v2/sessions/{id}"),
         None,
     );
+}
+
+/// La puerta de avisos del jam: `social-connect/v2/session_update`.
+///
+/// **El proto la describe y el cliente la usa; Starless no.** `social_connect_v2.proto`
+/// —volcado del `Spotify.dll`— tiene `SessionUpdate { session, reason }`, y
+/// el motivo es lo que dice **qué pasó**: `USER_JOINED`, `USER_LEFT`,
+/// `ACTIVE_DEVICE_CHANGED`, `SESSION_MEMBER_UPDATED`… Es el canal de avisos
+/// del jam, y la app no lo usa: pregunta cada tres segundos, que es
+/// exactamente por lo que el servicio le corta la tanda con un `429`.
+///
+/// La pregunta es si la puerta existe para una sesión de streaming, y qué
+/// contesta.
+#[cfg(debug_assertions)]
+fn jam_probe_updates(session: &Session, session_id: &str) {
+    log::info!("=== DIAGNOSTIC: la puerta de avisos del jam ===");
+
+    let con_id = format!("{{\"session_id\":\"{session_id}\"}}");
+
+    jam_ask(
+        session,
+        "aviso",
+        "la puerta de avisos, con GET",
+        &reqwest::Method::GET,
+        "/social-connect/v2/session_update",
+        None,
+    );
+    jam_ask(
+        session,
+        "aviso",
+        "la puerta de avisos, con POST y sin cuerpo",
+        &reqwest::Method::POST,
+        "/social-connect/v2/session_update",
+        None,
+    );
+    jam_ask(
+        session,
+        "aviso",
+        "la puerta de avisos, con POST y cuerpo vacío",
+        &reqwest::Method::POST,
+        "/social-connect/v2/session_update",
+        Some(b"{}"),
+    );
+    jam_ask(
+        session,
+        "aviso",
+        "la puerta de avisos, con POST y el id de la sesión",
+        &reqwest::Method::POST,
+        "/social-connect/v2/session_update",
+        Some(con_id.as_bytes()),
+    );
+    jam_ask(
+        session,
+        "aviso",
+        "la puerta de avisos, con GET y el id en la query",
+        &reqwest::Method::GET,
+        &format!("/social-connect/v2/session_update?session_id={session_id}"),
+        None,
+    );
+    jam_ask(
+        session,
+        "aviso",
+        "la puerta de avisos, adentro de la sesión",
+        &reqwest::Method::POST,
+        &format!("/social-connect/v2/sessions/{session_id}/session_update"),
+        Some(b"{}"),
+    );
+
+    // **La sesión actual, en protobuf.**
+    //
+    // El JSON que se lee ahora trae `session_members`. El protobuf puede
+    // traer más —o menos—, y la diferencia entre las dos respuestas es
+    // justamente lo que hay que ver: si el JSON no trae a los invitados y el
+    // protobuf sí, el arreglo es leerlo de otra forma.
+    for (label, route) in [
+        ("la sesión actual en JSON", "/social-connect/v2/sessions/current"),
+        ("la sesión actual en protobuf", "/social-connect/v2/sessions/current?alt=protobuf"),
+    ] {
+        if let Some((status, body)) = jam_ask_typed(
+            session,
+            "aviso",
+            label,
+            &reqwest::Method::GET,
+            route,
+            None,
+            "application/json",
+        ) {
+            log::info!(
+                "SP_JAM: [aviso] {label}: {status} · {} bytes",
+                body.len()
+            );
+            log::info!("SP_JAM: [aviso] {label}: {}", jam_legible(&body));
+        }
+    }
+}
+
+/// Un cuerpo binario, en algo que se pueda leer en el log.
+///
+/// **Los strings del protobuf se leen tal cual**: los ids de los miembros y
+/// los nombres están ahí, en UTF-8, y lo que se busca es verlos. Los bytes
+/// sueltos se vuelven un punto.
+#[cfg(debug_assertions)]
+fn jam_legible(body: &[u8]) -> String {
+    let mut out = String::new();
+    for byte in body {
+        match byte {
+            0x20..=0x7e => out.push(*byte as char),
+            b'\n' | b'\r' | b'\t' => out.push(' '),
+            _ => out.push('·'),
+        }
+        if out.chars().count() >= 1200 {
+            out.push('…');
+            break;
+        }
+    }
+    out
 }
 
 /// Una pregunta a la puerta del jam, y lo que contestó.

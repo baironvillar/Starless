@@ -2493,7 +2493,20 @@ pub fn jam_add_to_queue(session: &Session, session_id: &str, track_id: &str) -> 
         .and_then(|v| v.get("status").and_then(|s| s.as_str()).map(str::to_owned));
 
     match status.as_deref() {
-        Some("RECOVERED") => Ok(()),
+        // **El servicio contesta dos palabras y la app conocía una.**
+        //
+        // `RECOVERED` es lo que contesta cuando el comando entra; `SUCCESS` es
+        // lo que contesta cuando el comando **se aplicó**. Medido el 31 de
+        // octubre de 2026: el mismo `add_to_queue` respondía `RECOVERED` con la
+        // sesión recién abierta y `SUCCESS` con la sesión ya andando — y la
+        // app, que sólo aceptaba la primera, contestaba "jam_command_rejected"
+        // con el comando **aplicado**. Un error que dice que falló lo que
+        // funcionó: el que empujaba una canción al jam veía un error y la
+        // canción entraba igual.
+        //
+        // Los dos son aciertos. `DEVICE_NOT_FOUND` —lo que contesta `pause`
+        // cuando no hay a quién mandárselo— sí es un error de verdad.
+        Some("RECOVERED") | Some("SUCCESS") => Ok(()),
         Some(other) => {
             log::warn!("spclient: el jam contestó {other} al comando de agregar");
             Err("jam_command_rejected".to_string())
