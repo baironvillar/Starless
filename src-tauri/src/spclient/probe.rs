@@ -17,6 +17,7 @@
 use librespot_core::version::{SPOTIFY_MOBILE_VERSION, SPOTIFY_SEMANTIC_VERSION};
 use librespot_core::{Session, SpotifyId, SpotifyUri};
 use librespot_metadata::{Metadata, Track as MetaTrack};
+use tauri::Manager;
 use librespot_protocol::autoplay_context_request::AutoplayContextRequest;
 use librespot_protocol::clienttoken_http::{
     ClientTokenRequest, ClientTokenRequestType, ClientTokenResponse, ClientTokenResponseType,
@@ -3394,7 +3395,7 @@ pub fn run_jam_probe(app: tauri::AppHandle) {
                 .unwrap_or_default();
 
             if !session_id.is_empty() {
-                jam_probe_queue_only(&session, &session_id);
+                jam_probe_queue_only(&session, &session_id, &app);
             } else {
                 log::error!("SP_JAM: no hay sesión para medir la cola");
             }
@@ -3730,7 +3731,7 @@ pub fn run_jam_probe(app: tauri::AppHandle) {
             // camino inventado de uno real, y es lo único que se afirma acá.
             jam_probe_paths(&session, id, &member_id, &device);
             jam_probe_writes(&session, id, &device);
-            jam_probe_queue_write(&session, id, &device);
+            jam_probe_queue_write(&session, id, &device, &app);
         }
 
         // Los permisos de la sesión, que son dos puertas con barra.
@@ -4084,7 +4085,12 @@ fn jam_probe_writes(session: &Session, session_id: &str, device: &str) {
 /// método existe y el cuerpo no es el suyo —que es el dato bueno, porque el
 /// error dice qué falta—; y un `200` es que el método se accepts.
 #[cfg(debug_assertions)]
-fn jam_probe_queue_write(session: &Session, session_id: &str, device: &str) {
+fn jam_probe_queue_write(
+    session: &Session,
+    session_id: &str,
+    device: &str,
+    app: &tauri::AppHandle,
+) {
     let track = "spotify:track:3b5E38f6Dbx28IVof4oeAA";
 
     // **1. La puerta de comandos del jam, con la forma que el servicio
@@ -4250,7 +4256,7 @@ fn jam_probe_queue_write(session: &Session, session_id: &str, device: &str) {
     // de la app: el mismo comando, pero armado por el código que quedó y no a
     // mano. Si esta contesta bien, lo que se midió arriba es lo que la app
     // manda.
-    jam_probe_queue_only(session, session_id);
+    jam_probe_queue_only(session, session_id, app);
 }
 
 /// La medición de la cola: **leer, mandar el comando, volver a leer**.
@@ -4258,12 +4264,32 @@ fn jam_probe_queue_write(session: &Session, session_id: &str, device: &str) {
 /// La comparación es lo que dice si el comando sirvió: que la cola haya
 /// cambiado, o que haya **aparecido** —que es lo que pasa si el servicio la
 /// crea cuando alguien mete una canción—.
+///
+/// Y antes de eso hay una prueba más: **que el anfitrión esté sonando**. La
+/// cola del jam es la cola del player del anfitrión, y un player que no está
+/// sonando no tiene cola. Con algo sonando, la cola del jam tendría que estar.
 #[cfg(debug_assertions)]
-fn jam_probe_queue_only(session: &Session, session_id: &str) {
+fn jam_probe_queue_only(
+    session: &Session,
+    session_id: &str,
+    app: &tauri::AppHandle,
+) {
     let before = jam_queue_tracks(session, session_id);
     log::info!(
-        "SP_JAM: [cola] antes del comando: {} canciones",
+        "SP_JAM: [cola] antes de nada: {} canciones",
         before.as_ref().map(|c| c.len()).unwrap_or(0)
+    );
+
+    // **La prueba: que el anfitrión esté sonando.** Con el volumen en cero,
+    // porque esto es una medición y no un concierto.
+    let saved_volume = crate::settings::saved_volume();
+    jam_probe_play(session, app, "3b5E38f6Dbx28IVof4oeAA");
+    std::thread::sleep(std::time::Duration::from_secs(15));
+
+    let playing = jam_queue_tracks(session, session_id);
+    log::info!(
+        "SP_JAM: [cola] con el anfitrión sonando: {} canciones",
+        playing.as_ref().map(|c| c.len()).unwrap_or(0)
     );
 
     match super::jam_add_to_queue(session, session_id, "3b5E38f6Dbx28IVof4oeAA") {
@@ -4284,32 +4310,90 @@ fn jam_probe_queue_only(session: &Session, session_id: &str) {
         after.as_ref().map(|c| c.len()).unwrap_or(0)
     );
 
-    match (&before, &after) {
+    // El volumen del usuario vuelve a ser el que era.
+    if let Some(volume) = saved_volume {
+        if let Some(state) = app.try_state::<crate::playback::PlaybackState>() {
+            crate::playback::set_volume(&state, volume);
+        }
+    }
+
+    match (&playing, &after) {
         (None, Some(after)) => log::info!(
-            "SP_JAM: [cola] la cola APARECIÓ: el comando la creó con {} canciones",
+            "SP_JAM: [cola] la cola APARECIÓ con el comando: {} canciones",
             after.len()
         ),
-        (Some(before), Some(after)) => {
-            if before.len() == after.len() && before == after {
+        (Some(playing), Some(after)) => {
+            if playing.len() == after.len() && playing == after {
                 log::info!("SP_JAM: [cola] la cola NO cambió: el comando entró y no la llenó");
             } else {
                 log::info!(
                     "SP_JAM: [cola] la cola cambió: {} → {} canciones",
-                    before.len(),
+                    playing.len(),
                     after.len()
                 );
-                if let Some(added) = after.iter().find(|uri| !before.contains(uri)) {
+                if let Some(added) = after.iter().find(|uri| !playing.contains(uri)) {
                     log::info!("SP_JAM: [cola] la canción nueva es {added}");
                 }
             }
         }
-        (Some(before), None) => log::info!(
+        (Some(playing), None) => log::info!(
             "SP_JAM: [cola] la cola desapareció: {} → nada",
-            before.len()
+            playing.len()
         ),
         (None, None) => {
-            log::info!("SP_JAM: [cola] la cola no existe antes ni después del comando")
+            log::info!("SP_JAM: [cola] la cola no existe ni con el anfitrión sonando ni después del comando")
         }
+    }
+}
+
+/// Que el anfitrión esté "sonando" de verdad, **con el volumen en cero**.
+///
+/// **Son dos cosas, y las dos hacen falta.** La primera es la **radio**: la
+/// app la pide al servicio cuando el usuario elige una canción de una
+/// búsqueda, y esa llamada es la que le dice al servicio *qué contexto está
+/// sonando* —con el lente de autoplay encima—. La segunda es la canción, que
+/// el player reproduce.
+///
+/// **El player de librespot no tiene contexto**: `librespot-playback` no
+/// publica ninguno, y `load(track_id)` es una pista suelta. El contexto lo
+/// publica la radio, y por eso la cola del jam —que es el contexto del
+/// anfitrión más su autoplay— existe con una radio y no existe con una pista.
+///
+/// El volumen lo pone en cero el que llama —y lo vuelve a poner—: la
+/// medición necesita que el player esté sonando, no que se escuche.
+#[cfg(debug_assertions)]
+fn jam_probe_play(session: &Session, app: &tauri::AppHandle, track_id: &str) {
+    let Some(state) = app.try_state::<crate::playback::PlaybackState>() else {
+        log::error!("SP_JAM: no hay estado de reproducción para la prueba");
+        return;
+    };
+
+    crate::playback::set_volume(&state, 0);
+
+    // **La radio**: la llamada que publica el contexto del anfitrión.
+    let context = format!("spotify:track:{track_id}");
+    probe_autoplay(session, &context, &[]);
+
+    let owned = session.clone();
+    // La vida de la referencia: el futuro tiene que ser `'static`, y el id
+    // viene prestado.
+    let id = track_id.to_owned();
+    let duration = call(session, async move {
+        let uri = format!("spotify:track:{id}");
+        let Ok(parsed) = SpotifyUri::from_uri(&uri) else {
+            return Err("bad_track_id".to_string());
+        };
+        MetaTrack::get(&owned, &parsed)
+            .await
+            .map(|track| track.duration.max(0) as u32)
+            .map_err(|e| e.to_string())
+    })
+    .unwrap_or(0);
+
+    crate::playback::ensure_player(app, session);
+    match crate::playback::play(&state, track_id, 0, duration) {
+        Ok(()) => log::info!("SP_JAM: la prueba suena {track_id} ({duration} ms)"),
+        Err(e) => log::error!("SP_JAM: la prueba no pudo sonar: {e}"),
     }
 }
 

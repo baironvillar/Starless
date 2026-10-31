@@ -377,12 +377,13 @@ la misma lista.
 
 ### La cola del jam es la cola del anfitrión, y Starless no tiene cola
 
-Esto se midió el 30 de octubre de 2026, con la sesión activa y sin nada
-sonando:
+Esto se midió el 30 de octubre de 2026, con la sesión activa:
 
 | | |
 | --- | --- |
-| la cola del jam, antes del comando | `200` · `Not Found` · 0 canciones |
+| la cola del jam, con el jam recién activado | `200` · `Not Found` · 0 canciones |
+| la cola del jam, con una canción sonando | `200` · `Not Found` · 0 canciones |
+| la cola del jam, con la radio sonando | `200` · `Not Found` · 0 canciones |
 | el comando `add_to_queue` | `200` · `{"status":"RECOVERED"}` |
 | la cola del jam, después del comando | `200` · `Not Found` · 0 canciones |
 
@@ -393,9 +394,11 @@ cola— la cola del jam existe: se la midió con 300 canciones y su `list-uri`
 apuntando a la lista de contexto del anfitrión.
 
 **Starless no tiene cola de player.** El `Player` de librespot 0.8 carga
-pistas —`load(track_id)`— y no tiene contexto ni cola: `librespot-playback`
-no expone esas dos cosas. La app por lo tanto reproduce de a una, y el
-servicio no tiene de dónde tomar la cola del jam.
+pistas —`load(track_id)`— y no tiene contexto ni cola: `librespot-playback` no
+publica ninguna de las dos cosas, y `load` es una pista suelta. La radio de la
+app tampoco alcanza: la radio le pide al servicio el contenido de un contexto
+—con el lente de autoplay— y eso es una lista de canciones, no la cola de un
+player.
 
 Eso deja dos casos, y son distintos:
 
