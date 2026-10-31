@@ -2489,20 +2489,23 @@ export default function App() {
   /**
    * Agregar una canción a la cola que está a la vista.
    *
-   * **Con un jam abierto, la cola es la del jam.** La canción se manda a la
-   * sesión —con el comando del player— y los dos la escuchan: la cola del jam
-   * no es una lista de esta app, es la de los dos. Sin jam, la canción va a la
-   * cola de la app, que es la de siempre.
+   * **La canción va a la cola de la app, siempre.** Con un jam abierto, esa
+   * cola se publica como estado del player, y la cola compartida del jam es
+   * justamente lo que se publica: lo que suma esta app, lo ve el otro lado.
+   *
+   * **Y además se manda el comando del jam.** El comando es lo que llega al
+   * player del anfitrión cuando el anfitrión es otro dispositivo: la cola
+   * publicada es la de Starless, y sin el comando la otra persona no se
+   * entera. Con Starless de anfitrión, el comando no cambia nada —el player
+   * de librespot no tiene cola— y la canción llega igual por la publicación.
    *
    * **Por eso el botón se llama "agregar a la cola" y no "agregar al jam".**
    * El jam no es una cola aparte: es la cola, con dos personas.
    */
   const onAddToQueue = useCallback(
     (track: Track) => {
-      if (!jam) {
-        addToLocalQueue(track);
-        return;
-      }
+      addToLocalQueue(track);
+      if (!jam) return;
       void addToJam(track);
     },
     [jam, addToJam, addToLocalQueue],

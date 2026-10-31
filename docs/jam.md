@@ -429,11 +429,24 @@ librespot— con el contexto, la pista, las que siguen y la posición.
   `add_listen_for` contesta `no hay constructor` y el id nunca llega. Esa es una
   carrera, y se pierde una de cada dos veces.
 
-**Lo que se publica no es la cola de la app**: es el contexto que arma el
-servicio para la canción que suena —con el lente de autoplay—, que es
-exactamente lo que publica el cliente oficial. La diferencia con el cliente de
-escritorio es que el contexto de una canción suelta no incluye la canción: la
-pista que suena va aparte, y las del contexto son las que siguen.
+**Lo que se publica es la cola de la app, no el contexto.** Antes se publicaba
+el contexto que arma el servicio para la canción que suena —con el lente de
+autoplay—, que es la estación y no la cola que eligió la persona: una canción
+que se suma a la cola no le llegaba nunca al otro lado. Ahora la app le pasa su
+cola al backend —las URIs de lo que va a sonar después— y el backend la publica
+como las pistas que siguen. **El contexto queda de respaldo** para una app que
+no tiene nada en la cola.
+
+La diferencia con el cliente de escritorio es que el contexto de una canción
+suelta no incluye la canción: la pista que suena va aparte, y las del contexto
+son las que siguen.
+
+**Falta medir si el servicio acepta unas "pistas que siguen" que no son del
+contexto, y sin `uid`.** La sonda lo pregunta en el paso 6 de
+`STARLESS_SP_JAM_STATE`: publica dos canciones que no están en el contexto, sin
+`uid`, y cuenta cuántas de las dos aparecen en la cola compartida. La app deja
+de publicar mientras la sonda mide —si publicara, pisaría lo que la sonda acaba
+de publicar y la lectura sería de otra cosa—, y vuelve a publicar después.
 
 **Medido el 31 de octubre de 2026**, con el mismo jam y el mismo celu:
 
@@ -669,17 +682,24 @@ lee una sesión es la que también la crea —`current_or_new`—, así que abri
 panel dejaría un jam abierto en la cuenta de alguien que sólo quería mirar. La
 sesión se pide cuando se aprieta el botón.
 
-**Y ahora sí se lee, cada tanto.** Con el jam abierto, el panel pregunta la
-sesión y la cola compartida cada tres segundos: **el jam no tiene pubsub en
+**Y ahora sí se lee, cada tanto.** La app pregunta si hay jam con la puerta que
+**no crea** —`current?alt=protobuf`—, así que abrir la app no abre un jam en la
+cuenta de alguien que sólo quería mirar. Con el jam abierto, el panel pregunta
+la sesión y la cola compartida cada tres segundos: **el jam no tiene pubsub en
 librespot** —el `dealer` no lo lleva—, así que preguntar es la única forma de
-saber que alguien se unió. La puerta que pregunta es la misma que crea, así que
-sólo se pregunta con una sesión en la mano: si la respuesta trae otra sesión,
-la que había ya no está y el panel lo dice en vez de adoptarla.
+saber que alguien se unió.
 
 **El jam convive con la cola.** Spotify abre un jam desde la cola, y la cola no
 se cierra: los dos paneles contestan preguntas distintas —qué suena acá y quién
 más está escuchando— y ninguno tiene que hacer lugar al otro. Cuando la cola
 está abierta, el jam se docks a su izquierda.
+
+**La cola compartida vive en el panel de la cola, no en el del jam.** El panel
+del jam contesta *quién más está escuchando*; el de la cola contesta *qué sigue*,
+y una lista de canciones en un modal de dos personas se ve fea. Con el jam
+abierto, el panel de la cola muestra la cola compartida en vez de la local: el
+jam comparte la cola, y por eso **"agregar a la cola" suma para los dos** y por
+eso la fila se llama así y no "agregar al jam".
 
 ### Lo que la pantalla todavía no muestra
 
@@ -693,6 +713,12 @@ está abierta, el jam se docks a su izquierda.
 - **La actividad de los amigos.** La lista de "quién está escuchando" es otro
   servicio, del que no se midió nada. Lo que hay hoy son los participantes del
   jam, que es otra cosa.
+- **El menú de tres puntos, como el del cliente.** Las entradas que el cliente
+  oficial tiene y Starless no puede hacer —radio por canción, créditos, el
+  temporizador, el perfil de gusto, "quitar de esta playlist"— no están: un
+  menú con filas que no hacen nada se lee como roto. Las que sí están van en el
+  orden del cliente: agregar a la playlist, agregar a la cola, ir al artista, ir
+  al álbum, compartir.
 
 ## La sonda
 
