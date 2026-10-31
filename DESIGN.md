@@ -107,7 +107,7 @@ Motion is what separates "designed" from "assembled", and it is one of the three
 - The bar enters **with the music**: fade and rise 16px, ~320ms. It is not on screen before the first song — an empty bar is the shape of an absence — and it never re-enters on navigation.
 - The bar leaves the way it came: the same fade, the same 16px, downward. The window gives the bar its room at the same time, so the two are one movement and not two gestures. The library, the rail and the queue stop 20px above the window's edge when there is no bar, and at 144px — where the bar begins — when there is one.
 - Track change: nothing in the chrome moves. A track change only updates the artwork swatch and the running-time column.
-- Nothing animates on a loop, with exactly one exception: the now-playing mark in the track list breathes slowly. It is the only thing on screen allowed to move indefinitely, and it is 8px across. An app open all day must otherwise be able to sit completely still.
+- Nothing animates on a loop, with two exceptions, and both only while music sounds: the now-playing mark in the track list breathes slowly, and the volume thumb beats with the music — a glow that swells with the pulse and a ring that leaves it on each kick. The pulse is measured in Rust where the sample is heard (`beat.rs`), never guessed from a tempo, and reaches the bar as a motion value, not React state. Paused, muted or with reduced motion, both are still: an app open all day must otherwise be able to sit completely still.
 
 ## Signature move
 

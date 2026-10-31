@@ -343,6 +343,7 @@ fn build_player(app: &AppHandle, state: &PlaybackState, session: &Session) {
     // el mínimo mientras el DJ habla a todo volumen —el sonido estaba, la
     // pantalla mentía—.
     let _ = app.emit("player://status", state.status());
+    crate::beat::start(app);
 
     forward_events(app.clone(), player, state.generation.load(Ordering::Relaxed));
 }

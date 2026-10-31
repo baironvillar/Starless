@@ -1,6 +1,21 @@
-import { motion } from "motion/react";
-import { useEffect, useState } from "react";
+import {
+  animate,
+  type MotionValue,
+  motion,
+  useMotionValue,
+  useMotionValueEvent,
+  useReducedMotion,
+  useTransform,
+} from "motion/react";
+import { useEffect, useRef, useState } from "react";
 import { SPRING } from "../lib/motion";
+
+/** How many waves can be in the air at once. A fourth kick reuses the oldest ring. */
+const WAVES = 3;
+/** A kick: the pulse crossing this on the way up. */
+const KICK = 0.6;
+/** No two waves closer than this, or a roll on the kick reads as a flicker. */
+const MIN_GAP_MS = 180;
 
 /**
  * No animation at all.
@@ -41,6 +56,12 @@ type SmoothSliderProps = {
   tone?: "ink" | "accent";
   /** The width, as a utility class: the slider fills it. */
   className?: string;
+  /**
+   * The music's pulse (0–1), when the slider should beat with it: the thumb
+   * glows with it and a wave leaves the thumb on every kick. Only the volume
+   * passes it.
+   */
+  pulse?: MotionValue<number>;
 };
 
 /**
@@ -76,9 +97,37 @@ export function SmoothSlider({
   onChange,
   tone = "accent",
   className = "w-[180px]",
+  pulse,
 }: SmoothSliderProps) {
   const [hovered, setHovered] = useState(false);
   const [held, setHeld] = useState(false);
+
+  // Hooks cannot be conditional, so a slider without a pulse beats with a zero.
+  const silent = useMotionValue(0);
+  const beat = !disabled && pulse ? pulse : silent;
+  const glowScale = useTransform(beat, [0, 1], [1, 2.4]);
+  const glowOpacity = useTransform(beat, [0, 1], [0, 0.45]);
+  const reduced = useReducedMotion();
+  const waves = useRef<(HTMLSpanElement | null)[]>([]);
+  const next = useRef(0);
+  const lastKick = useRef({ value: 0, at: 0 });
+  useMotionValueEvent(beat, "change", (value) => {
+    const last = lastKick.current;
+    const now = performance.now();
+    if (!reduced && last.value < KICK && value >= KICK && now - last.at > MIN_GAP_MS) {
+      const ring = waves.current[next.current];
+      next.current = (next.current + 1) % WAVES;
+      last.at = now;
+      // transform and opacity only, like everything else that moves here.
+      if (ring)
+        animate(
+          ring,
+          { scale: [1, 3.6], opacity: [0.6, 0] },
+          { duration: 0.7, ease: [0.23, 1, 0.32, 1] },
+        );
+    }
+    last.value = value;
+  });
 
   /**
    * The value the person is asking for, while they are asking for it.
@@ -165,6 +214,21 @@ export function SmoothSlider({
         // is the control itself, and it is where the mouse is.
         transition={held ? INSTANT : SPRING}
       >
+        {/* The beat: a glow that swells with the pulse, and the waves a kick sends out. */}
+        <motion.span
+          className="absolute size-3 -translate-x-1/2 rounded-pill bg-ink"
+          style={{ scale: glowScale, opacity: glowOpacity }}
+        />
+        {Array.from({ length: WAVES }, (_, i) => (
+          <span
+            // biome-ignore lint/suspicious/noArrayIndexKey: a fixed pool of identical rings, never reordered.
+            key={i}
+            ref={(el) => {
+              waves.current[i] = el;
+            }}
+            className="absolute size-3 -translate-x-1/2 rounded-pill border border-ink opacity-0"
+          />
+        ))}
         {/* A frost halo that opens under the hand and widens while held. */}
         <motion.span
           className="absolute size-3 -translate-x-1/2 rounded-pill bg-ink/20"
