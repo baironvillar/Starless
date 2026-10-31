@@ -74,7 +74,7 @@ type SettingsPanelProps = {
  * a preset that made a button unreadable would be a preset that ships a bug. The
  * shipped chrome comes first and is also how the section gets its default back.
  */
-const ACCENT_PRESETS = ["#c8ccd4", "#3ddc97", "#4cc9f0", "#7aa2ff", "#c08bff", "#ff8fb1"];
+const ACCENT_PRESETS = ["#ff5a36", "#7c6cff", "#3dd6c4", "#f5b83d", "#c4c1c8", "#ff8fb1"];
 
 /**
  * How long the hand has to be still before the opacity is applied for real.
@@ -996,7 +996,7 @@ function Select({
         className="min-w-[164px] appearance-none rounded-pill border border-white/14 bg-white/6 py-2.5 pr-10 pl-4 text-[13px] font-medium outline-none transition-colors duration-200 hover:bg-white/10"
       >
         {options.map((o) => (
-          <option key={o.value} value={o.value} className="bg-[#1c1d21]">
+          <option key={o.value} value={o.value} className="bg-[#15151b]">
             {o.label}
           </option>
         ))}

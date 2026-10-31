@@ -2390,9 +2390,9 @@ export default function App() {
         className="pointer-events-none absolute inset-0"
         style={{
           background: [
-            "radial-gradient(90% 70% at 50% -6%, rgb(244 245 247 / 0.24) 0%, transparent 64%)",
-            "radial-gradient(70% 70% at 104% 108%, rgb(200 204 212 / 0.18) 0%, transparent 60%)",
-            "radial-gradient(60% 60% at -6% 96%, rgb(244 245 247 / 0.10) 0%, transparent 60%)",
+            "radial-gradient(90% 70% at 50% -6%, rgb(237 234 227 / 0.24) 0%, transparent 64%)",
+            "radial-gradient(70% 70% at 104% 108%, rgb(196 193 200 / 0.18) 0%, transparent 60%)",
+            "radial-gradient(60% 60% at -6% 96%, rgb(237 234 227 / 0.10) 0%, transparent 60%)",
           ].join(", "),
         }}
       />

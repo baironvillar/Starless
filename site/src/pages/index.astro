@@ -5,17 +5,30 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Starless</title>
 <meta name="description" content="Un cliente de escritorio liviano y no oficial para tu cuenta Premium. Para Windows." />
+<link rel="icon" type="image/svg+xml" href="starless.svg" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Funnel+Display:wght@400;500;600&family=Funnel+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;500;600&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
 <style is:global>
   :root {
-    --ground: #08080a;
-    --graphite: #1c1d21;
-    --chrome: #c8ccd4;
-    --frost: #f4f5f7;
-    --mute: #9a9ea8;
-    --line: rgb(244 245 247 / 0.1);
+    /* "A night without stars": brand-kit/tokens.css, shared with the app. */
+    --ground: #0b0b0f;   /* Void */
+    --night: #15151b;    /* Night: surfaces */
+    --eclipse: #24242c;  /* Eclipse: tracks */
+    --chrome: #c4c1c8;   /* the download key's flat fallback */
+    --frost: #edeae3;    /* Bone: primary text, the logo */
+    --body: #c4c1c8;     /* running text */
+    --mute: #9a97a0;     /* Smoke */
+    --ember: #ff5a36;    /* the one warm light; UI only, never the mark */
+    --line: rgb(237 234 227 / 0.1);
+    --sl-glass-fill: rgba(255, 255, 255, 0.06);
+    --sl-glass-border: rgba(255, 255, 255, 0.16);
+    --sl-glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    --sl-glass-shadow: 0 30px 60px rgba(0, 0, 0, 0.5);
+    --sl-glass-blur: blur(24px) saturate(140%);
+    --font-display: "Syne", "DM Sans", system-ui, sans-serif;
+    --font-body: "DM Sans", system-ui, sans-serif;
+    --font-mono: "DM Mono", ui-monospace, monospace;
     --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
     --gutter: clamp(20px, 4vw, 56px);
     color-scheme: dark;
@@ -23,14 +36,17 @@
   * { box-sizing: border-box; margin: 0; }
   ::selection { background: var(--frost); color: var(--ground); }
   :focus-visible { outline: 2px solid var(--frost); outline-offset: 3px; border-radius: 4px; }
-  html { scrollbar-color: #2a2b31 var(--ground); }
+  html { scrollbar-color: var(--eclipse) var(--ground); }
   @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
   html, body { overflow-x: clip; }
-  body { position: relative; background: var(--ground); color: var(--frost); font-family: "Funnel Sans", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  body { position: relative; background: var(--ground); color: var(--frost); font-family: var(--font-body); -webkit-font-smoothing: antialiased; }
   p { text-wrap: pretty; }
-  h1, h2, h3 { text-wrap: balance; font-family: "Funnel Display", "Funnel Sans", sans-serif; font-weight: 500; letter-spacing: -0.02em; }
+  h1, h2, h3 { text-wrap: balance; font-family: var(--font-display); font-weight: 700; letter-spacing: -0.02em; }
   a { color: inherit; }
-  .nums { font-variant-numeric: tabular-nums; }
+  .nums { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  /* Liquid glass and the silver wordmark, as in brand-kit/tokens.css. */
+  .sl-glass { background: var(--sl-glass-fill); border: 1px solid var(--sl-glass-border); box-shadow: var(--sl-glass-highlight), var(--sl-glass-shadow); backdrop-filter: var(--sl-glass-blur); -webkit-backdrop-filter: var(--sl-glass-blur); }
+  .sl-wordmark { font-family: var(--font-display); font-weight: 700; letter-spacing: -0.03em; background: linear-gradient(180deg, #ffffff 0%, #dad7dd 55%, #8c8992 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
   .wrap { width: min(1200px, calc(100% - 2 * var(--gutter))); margin: 0 auto; }
 
   /* The one chrome object on the page. Its face is rendered into the canvas
@@ -44,7 +60,7 @@
   /* The rings: one set of circles around the pool, one further out per section. */
   #rings { position: absolute; z-index: 0; left: 0; top: 0; width: 100%; pointer-events: none; }
   #rings circle { fill: none; stroke: var(--line); vector-effect: non-scaling-stroke; }
-  #rings .wave { stroke: rgb(244 245 247 / 0.5); opacity: 0; transform-box: fill-box; transform-origin: center; }
+  #rings .wave { stroke: rgb(237 234 227 / 0.5); opacity: 0; transform-box: fill-box; transform-origin: center; }
 
   /* The pool */
   .hero { position: relative; z-index: 1; min-height: 100svh; display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
@@ -53,22 +69,28 @@
   .top { position: relative; z-index: 2; display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 26px var(--gutter); font-size: 14px; color: var(--mute); }
   .top nav { display: flex; gap: 26px; }
   .top a { text-decoration: none; transition: color 200ms; }
+  .brand { display: inline-flex; align-items: center; gap: 10px; }
+  .brand img { width: 28px; height: 28px; }
+  .brand .sl-wordmark { font-size: 22px; line-height: 1; }
   .top a:hover { color: var(--frost); }
   .pitch { position: relative; z-index: 2; align-self: center; padding: 0 var(--gutter) 120px; max-width: 34rem; }
-  .pitch h1 { font-size: clamp(56px, 6.6vw, 96px); line-height: 0.92; font-weight: 600; letter-spacing: -0.04em; }
-  .pitch p { margin-top: 22px; font-size: clamp(17px, 1.4vw, 20px); line-height: 1.55; color: #cfd2d8; max-width: 26rem; }
+  /* The mark on its glass plate, like the app icon: the hero is the logo. */
+  .plate { width: clamp(112px, 11vw, 168px); aspect-ratio: 1; border-radius: 22.5%; display: grid; place-items: center; margin-bottom: 30px; }
+  .plate img { width: 76%; height: 76%; }
+  .pitch h1 { font-size: clamp(64px, 7.4vw, 112px); line-height: 0.95; padding-bottom: 0.06em; }
+  .pitch p { margin-top: 22px; font-size: clamp(17px, 1.4vw, 20px); line-height: 1.55; color: var(--body); max-width: 26rem; }
   .pitch .key { margin-top: 30px; }
   .pitch .fine { margin-top: 14px; font-size: 13px; color: var(--mute); }
 
   section.ring { position: relative; padding: clamp(96px, 14vh, 160px) 0; }
   .ring h2 { font-size: clamp(36px, 4.6vw, 72px); line-height: 1; }
-  .lede { margin-top: 18px; font-size: 18px; line-height: 1.6; color: #cfd2d8; max-width: 34rem; }
+  .lede { margin-top: 18px; font-size: 18px; line-height: 1.6; color: var(--body); max-width: 34rem; }
 
   .promises { margin-top: 56px; }
   .promise { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 40px; padding: 30px 0; border-top: 1px solid var(--line); }
   .promise:last-child { border-bottom: 1px solid var(--line); }
   .promise h3 { font-size: clamp(24px, 2.4vw, 34px); line-height: 1.1; }
-  .promise p { font-size: 17px; line-height: 1.65; color: #cfd2d8; }
+  .promise p { font-size: 17px; line-height: 1.65; color: var(--body); }
 
   /* The screens: one window with its pictures stacked, and the list of what
      each one is. Without scroll timelines only the first picture shows. */
@@ -76,9 +98,9 @@
   .steps { list-style: none; padding: 0; border-top: 1px solid var(--line); }
   .steps li { padding: 18px 0; border-bottom: 1px solid var(--line); }
   .steps h3 { font-size: 21px; }
-  .steps p { margin-top: 6px; color: #cfd2d8; font-size: 15px; line-height: 1.55; }
-  .window { position: relative; aspect-ratio: 16 / 9; border-radius: 14px; overflow: hidden; background: #0f1013; box-shadow: 0 0 0 1px var(--line), 0 30px 80px rgb(0 0 0 / 0.5); }
-  .shot { position: absolute; inset: 0; display: grid; place-items: center; color: var(--mute); font-size: 13px; background: #0f1013; }
+  .steps p { margin-top: 6px; color: var(--body); font-size: 15px; line-height: 1.55; }
+  .window { position: relative; aspect-ratio: 16 / 9; border-radius: 14px; overflow: hidden; background: var(--night); box-shadow: 0 0 0 1px var(--line), 0 30px 80px rgb(0 0 0 / 0.5); }
+  .shot { position: absolute; inset: 0; display: grid; place-items: center; color: var(--mute); font-size: 13px; background: var(--night); }
   .shot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: top left; }
   .shot + .shot { opacity: 0; }
 
@@ -87,8 +109,8 @@
   .dj-mark { width: clamp(140px, 20vw, 260px); height: auto; color: var(--frost); }
   .dj-mark circle { fill: none; stroke: currentColor; stroke-width: 13; stroke-linecap: round; stroke-dasharray: 212 27; stroke-dashoffset: 166; }
   .dj-who { font-size: 13px; color: var(--mute); }
-  .dj-line { margin-top: 14px; font-family: "Funnel Display", "Funnel Sans", sans-serif; font-size: clamp(24px, 2.6vw, 38px); line-height: 1.25; letter-spacing: -0.015em; max-width: 30ch; }
-  .dj-next { margin-top: 22px; font-size: 15px; color: #cfd2d8; }
+  .dj-line { margin-top: 14px; font-family: var(--font-display); font-weight: 600; font-size: clamp(24px, 2.6vw, 38px); line-height: 1.25; letter-spacing: -0.015em; max-width: 30ch; }
+  .dj-next { margin-top: 22px; font-size: 15px; color: var(--body); }
 
   /* What it doesn't do: each one is crossed out on the page. */
   .nots { list-style: none; padding: 0; margin-top: 48px; border-top: 1px solid var(--line); }
@@ -97,7 +119,7 @@
   /* A hard-edged line, not a gradient for looks: it is the strike itself, and
      drawn as a background it can grow from the left across a wrapped title. */
   .nots h3 span { background: linear-gradient(var(--frost), var(--frost)) 0 58% / 100% 2px no-repeat; }
-  .nots p { font-size: 16px; line-height: 1.6; color: #cfd2d8; }
+  .nots p { font-size: 16px; line-height: 1.6; color: var(--body); }
 
   /* The crossfade: two songs on one axis, the ending one above, the next one
      below, and the overlap the slider sets. */
@@ -107,17 +129,17 @@
   .mix-wave rect { transition: y 360ms var(--ease-out), height 360ms var(--ease-out); }
   .mix-wave .a { fill: var(--frost); }
   .mix-wave .b { fill: var(--chrome); opacity: 0.55; }
-  .mix-wave .zone { fill: rgb(244 245 247 / 0.05); transition: x 360ms var(--ease-out), width 360ms var(--ease-out); }
+  .mix-wave .zone { fill: rgb(237 234 227 / 0.05); transition: x 360ms var(--ease-out), width 360ms var(--ease-out); }
   .mix-a, .mix-b { position: absolute; font-size: 13px; color: var(--mute); }
   .mix-a { top: 6px; left: 0; }
   .mix-b { bottom: 6px; right: 0; }
-  .playhead { position: absolute; top: 28px; bottom: 28px; left: 0; width: 1px; background: rgb(244 245 247 / 0.7); display: none; }
+  .playhead { position: absolute; top: 28px; bottom: 28px; left: 0; width: 1px; background: rgb(237 234 227 / 0.7); display: none; }
   .mix-ctl { margin-top: 24px; display: flex; gap: 18px; align-items: center; font-size: 14px; color: var(--mute); }
   .mix-ctl input { flex: 1; max-width: 360px; height: 24px; margin: 0; appearance: none; background: none; cursor: pointer; }
-  .mix-ctl input::-webkit-slider-runnable-track { height: 2px; background: #2f3036; border-radius: 2px; }
+  .mix-ctl input::-webkit-slider-runnable-track { height: 2px; background: var(--eclipse); border-radius: 2px; }
   .mix-ctl input::-webkit-slider-thumb { appearance: none; width: 16px; height: 16px; margin-top: -7px; border-radius: 50%; background: var(--frost); transition: scale 160ms var(--ease-out); }
   .mix-ctl input:active::-webkit-slider-thumb { scale: 1.2; }
-  .mix-ctl input::-moz-range-track { height: 2px; background: #2f3036; border-radius: 2px; }
+  .mix-ctl input::-moz-range-track { height: 2px; background: var(--eclipse); border-radius: 2px; }
   .mix-ctl input::-moz-range-thumb { width: 16px; height: 16px; border: 0; border-radius: 50%; background: var(--frost); }
   .mix-ctl output { min-width: 4ch; color: var(--frost); font-weight: 600; }
 
@@ -125,32 +147,34 @@
 
   .tracks { list-style: none; padding: 0; margin-top: 48px; border-top: 1px solid var(--line); }
   .tracks li { display: grid; grid-template-columns: 40px minmax(0, 1fr) minmax(0, 1.2fr) 90px; gap: 20px; align-items: baseline; padding: 20px 8px; border-bottom: 1px solid var(--line); transition: background-color 200ms var(--ease-out); }
-  .tracks li:hover { background: rgb(244 245 247 / 0.04); }
+  .tracks li:hover { background: rgb(237 234 227 / 0.04); }
   .tracks .n { color: var(--mute); font-size: 14px; text-align: right; }
   .tracks h3 { font-size: 21px; }
-  .tracks p { color: #cfd2d8; font-size: 16px; line-height: 1.55; }
+  .tracks p { color: var(--body); font-size: 16px; line-height: 1.55; }
   .tracks .v { text-align: right; color: var(--mute); font-size: 13px; }
   .tracks .soon { color: var(--frost); }
   /* The meter only exists where the scroll can light it. */
   .eq { display: none; }
   #rings circle:not(.wave) { transition: stroke 700ms var(--ease-out); }
-  #rings circle.lit { stroke: rgb(244 245 247 / 0.3); }
+  #rings circle.lit { stroke: rgb(237 234 227 / 0.3); }
 
   .before { margin-top: 48px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; }
-  .lead { align-self: start; padding-top: 20px; border-top: 1px solid rgb(244 245 247 / 0.45); }
+  .lead { align-self: start; padding-top: 20px; border-top: 1px solid rgb(237 234 227 / 0.45); }
   .lead h3 { font-size: 26px; }
-  .lead p, .lead ol { margin-top: 10px; font-size: 16px; line-height: 1.65; color: #cfd2d8; }
+  .lead p, .lead ol { margin-top: 10px; font-size: 16px; line-height: 1.65; color: var(--body); }
   .lead ol { padding-left: 20px; }
   .lead b { color: var(--frost); font-weight: 600; }
   .fact { padding: 20px 0; border-top: 1px solid var(--line); }
   .fact:last-child { border-bottom: 1px solid var(--line); }
   .fact h3 { font-size: 19px; }
-  .fact p { margin-top: 6px; font-size: 16px; line-height: 1.6; color: #cfd2d8; }
+  .fact p { margin-top: 6px; font-size: 16px; line-height: 1.6; color: var(--body); }
 
   footer { position: relative; padding: 72px var(--gutter) 150px; display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; font-size: 14px; color: var(--mute); }
 
   /* The player */
-  .player { position: fixed; z-index: 10; left: 50%; bottom: 16px; translate: -50% 0; width: min(760px, calc(100% - 24px)); background: var(--graphite); border-radius: 18px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 10px 10px 10px 12px; box-shadow: 0 20px 50px rgb(0 0 0 / 0.55), 0 0 0 1px var(--line); }
+  .player { position: fixed; z-index: 10; left: 50%; bottom: 16px; translate: -50% 0; width: min(760px, calc(100% - 24px)); border-radius: 18px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 10px 10px 10px 12px; }
+  /* Glass over the page, with a Night base under it so the title stays legible over running text. */
+  .player.sl-glass { background: rgb(21 21 27 / 0.62); }
   .dot { width: 42px; height: 42px; display: block; }
   .now { min-width: 0; }
   .line { position: relative; height: 20px; overflow: hidden; }
@@ -158,8 +182,8 @@
   .line span.out { transform: translateY(-100%); opacity: 0; }
   .line span.in { transform: translateY(100%); opacity: 0; }
   .now small { display: block; font-size: 12px; color: var(--mute); margin-top: 1px; }
-  .bar { height: 2px; background: #2f3036; margin-top: 8px; border-radius: 2px; overflow: hidden; }
-  .bar i { display: block; height: 100%; background: var(--frost); transform-origin: left; transform: scaleX(0); }
+  .bar { height: 2px; background: var(--eclipse); margin-top: 8px; border-radius: 2px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--ember); transform-origin: left; transform: scaleX(0); }
   .player .key { padding: 12px 18px; font-size: 14px; }
 
   /* Sections crossfade like tracks: the one leaving fades down as the next
@@ -204,7 +228,7 @@
         transform-origin: left; animation: draw linear both; animation-timeline: --row; animation-range: entry 0% entry 100%;
       }
       .tracks li::after, .nots li::after { top: auto; bottom: -1px; }
-      .lead::before { background: rgb(244 245 247 / 0.45); }
+      .lead::before { background: rgb(237 234 227 / 0.45); }
       .promise h3, .fact h3, .lead h3 { animation: slide linear both; animation-timeline: --row; animation-range: entry 20% entry 100%; }
       .promise p, .fact p, .lead p, .nots p { animation: rise linear both; animation-timeline: --row; animation-range: entry 40% cover 45%; }
       .lead li { animation: rise linear both; animation-timeline: --row; }
@@ -318,12 +342,13 @@
   <section class="hero" id="inicio" data-track="Starless">
     <canvas id="ferro" aria-hidden="true"></canvas>
     <header class="top">
-      <span class="nums">Starless <span data-version>0.5.5</span></span>
+      <span class="brand"><img src="starless.svg" alt="" width="28" height="28" /><span class="sl-wordmark">starless</span><span class="nums"><span data-version>0.5.5</span></span></span>
       <nav aria-label="Secciones"><a href="#que-hace">Qué hace</a><a href="#antes">Antes de instalar</a><a href="https://github.com/baironvillar/Starless">GitHub</a></nav>
     </header>
     <div class="stage" aria-hidden="true"></div>
     <div class="pitch">
-      <h1>Starless</h1>
+      <div class="plate sl-glass"><img src="starless-glass.svg" alt="" width="128" height="128" /></div>
+      <h1 class="sl-wordmark">starless</h1>
       <p>Un cliente de escritorio liviano y no oficial para tu cuenta Premium. Suena directo y no le cuenta a nadie lo que escuchas.</p>
       <a class="key" href="https://github.com/baironvillar/Starless/releases/download/v0.5.5/Starless_0.5.5_x64.msi" data-msi>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0l-5-5m5 5l5-5M5 20h14"/></svg>
@@ -454,7 +479,7 @@
   <span>MIT · <a href="https://github.com/baironvillar/Starless">GitHub</a></span>
 </footer>
 
-<div class="player" role="region" aria-label="Reproductor y descarga">
+<div class="player sl-glass" role="region" aria-label="Reproductor y descarga">
   <canvas class="dot" id="dot" width="84" height="84" aria-hidden="true"></canvas>
   <div class="now">
     <div class="line"><span id="title-now">Starless</span></div>
@@ -528,7 +553,7 @@ vec3 floorAt(vec2 q) {
     ring += exp(-abs(r - rr) * uRadius * 0.55) * (1.0 - t) * 0.09;
   }
   float shadow = exp(-max(r - 1.0, 0.0) * 4.0) * 0.7;
-  return vec3(0.031, 0.031, 0.039) * (1.0 - shadow) + vec3(0.85, 0.88, 0.95) * ring;
+  return vec3(0.043, 0.043, 0.059) * (1.0 - shadow) + vec3(0.93, 0.92, 0.89) * ring;
 }
 
 void main() {
@@ -586,7 +611,7 @@ void main() {
     col = vec3(0.008, 0.009, 0.011)
         + vec3(0.96, 0.97, 1.0) * (spec + soft + fres)
         + vec3(0.9, 0.92, 0.96) * strips
-        + vec3(0.5, 0.58, 0.72) * cool;
+        + vec3(0.6, 0.59, 0.63) * cool;
   }
   gl_FragColor = vec4(col, 1.0);
 }
@@ -637,7 +662,7 @@ void main() {
   float fres = pow(1.0 - max(dot(n, v), 0.0), 3.0) * 0.5;
   vec3 col = vec3(0.008, 0.009, 0.011)
       + vec3(0.96, 0.97, 1.0) * (spec + soft + fres)
-      + vec3(0.5, 0.58, 0.72) * cool;
+      + vec3(0.6, 0.59, 0.63) * cool;
   gl_FragColor = vec4(col * cover, cover);
 }
 </script>
@@ -732,7 +757,7 @@ void main() {
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     };
   } else {
-    canvas.style.background = "radial-gradient(circle at 66% 50%, #121316 0 22%, transparent 22.3%)";
+    canvas.style.background = "radial-gradient(circle at 66% 50%, #15151b 0 22%, transparent 22.3%)";
   }
 
   // The player's art is a drop of the same liquid, so the bar keeps the beat
