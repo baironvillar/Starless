@@ -202,6 +202,39 @@ const MAX_VOLUME: u16 = 65535;
 /// cinco segundos es la diferencia entre "va conmigo" y "va un rato atrasado".
 const PUBLISH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
 
+/// La cola de la app: lo que va a sonar después de la de ahora.
+///
+/// **Esta cola es la cola compartida del jam.** El servicio arma la cola del
+/// jam con lo que publica el player del anfitrión, así que lo que se publica
+/// como "lo que sigue" es lo que los dos van a escuchar. Antes se publicaba el
+/// contexto de autoplay —la estación que armó el servicio—, que no es la cola
+/// que eligió el usuario: una canción que se suma a la cola no le llegaba al
+/// otro lado.
+///
+/// **Son URIs y uids, no pistas.** Lo que viaja es el id de la canción y el
+/// identificador que le dio el servicio; el nombre y la portada no hacen falta,
+/// porque el otro lado los pide con el id.
+///
+/// **La escribe el frontend.** La cola vive en la app, no en el backend: el
+/// backend no sabe qué eligió la persona ni qué se agregó después.
+#[derive(Default)]
+pub struct PublishQueue(Mutex<Vec<(String, String)>>);
+
+impl PublishQueue {
+    /// Guarda la cola que va a sonar después de la de ahora.
+    ///
+    /// **Se reemplaza entera, no se le agrega.** La cola que se publica es la
+    /// cola que hay: si la app quitó una canción, esa canción tiene que dejar
+    /// de estar en lo que el otro lado ve.
+    pub fn set(&self, tracks: Vec<(String, String)>) {
+        let mut cola = match self.0.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        *cola = tracks;
+    }
+}
+
 /// El hilo que le dice a Spotify qué está sonando.
 ///
 /// **Por qué existe.** La cola compartida del jam no es una lista que escribe
@@ -264,6 +297,10 @@ pub fn publish_state(app: AppHandle) {
             let Some(state) = app.try_state::<PlaybackState>() else {
                 return;
             };
+            // **Una medición está midiendo: la app no publica encima.**
+            if state.publish_paused.load(Ordering::Relaxed) {
+                continue;
+            }
             let status = state.status();
 
             match status.track_id.clone() {
@@ -301,11 +338,45 @@ pub fn publish_state(app: AppHandle) {
                 }
             }
 
+            // **Lo que sigue es la cola de la app.** El contexto de autoplay
+            // queda de respaldo: es la estación que armó el servicio, y no es
+            // lo que la persona eligió.
+            let cola = publish_queue(&app);
+            if !cola.is_empty() {
+                snapshot.next = cola;
+            }
+
             if let Err(error) = crate::spclient::state::publish(&session, &snapshot) {
                 log::error!("playback: el estado del player no se publicó: {error}");
             }
         }
     });
+}
+
+/// La cola que va a sonar después de la de ahora, tal como la ve la app.
+///
+/// **Es la cola del usuario, no la del servicio.** El contexto de autoplay es
+/// la estación que armó Spotify; la cola es lo que la persona eligió y lo que
+/// se agregó después. Publicar una y no la otra hacía que la cola compartida
+/// del jam mostrara la estación, y que una canción sumada a la cola no le
+/// llegara nunca al otro lado.
+///
+/// **Si la app no tiene cola, se publica el contexto.** Una app recién abierta
+/// no tiene nada que publicar, y publicar la estación es mejor que publicar
+/// una lista vacía.
+pub fn publish_queue(app: &AppHandle) -> Vec<crate::spclient::state::Track> {
+    let pending = app
+        .try_state::<PublishQueue>()
+        .and_then(|state| state.0.lock().ok().map(|cola| cola.clone()))
+        .unwrap_or_default();
+    pending
+        .into_iter()
+        .map(|(uri, uid)| crate::spclient::state::Track {
+            uri,
+            uid,
+            gid: Vec::new(),
+        })
+        .collect()
 }
 
 /// How long the player can stay quiet before the app stops believing it.
@@ -448,6 +519,29 @@ pub struct PlaybackState {
     /// that plays: the song somebody asked for is not the song that happened
     /// to fail.
     requested: Mutex<Option<(String, u32)>>,
+    /// Whether the publishing of the state is on hold.
+    ///
+    /// **Es lo que usa la sonda del jam.** La app publica su estado cada cinco
+    /// segundos, y si lo hiciera durante la medición pisaría lo que la sonda
+    /// acaba de publicar: la pregunta que se está midiendo se quedaría sin
+    /// respuesta.
+    publish_paused: AtomicBool,
+}
+
+impl PlaybackState {
+    /// Deja de publicar el estado del player.
+    ///
+    /// **Es para las mediciones, y no para la app.** La sonda publica lo suyo
+    /// y lee lo que el servicio guarda; si la app publicara encima, la lectura
+    /// sería de otra cosa.
+    pub fn pause_publish(&self) {
+        self.publish_paused.store(true, Ordering::Relaxed);
+    }
+
+    /// Vuelve a publicar el estado del player.
+    pub fn resume_publish(&self) {
+        self.publish_paused.store(false, Ordering::Relaxed);
+    }
 }
 
 impl PlaybackState {

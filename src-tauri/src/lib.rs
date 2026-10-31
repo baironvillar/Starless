@@ -1113,6 +1113,27 @@ async fn jam_add_to_queue(
     })?
 }
 
+/// La cola de la app, para el estado del player.
+///
+/// **La cola compartida del jam es esta cola.** El servicio arma la cola del
+/// jam con lo que publica el player del anfitrión: lo que se publica como "lo
+/// que sigue" es lo que los dos van a escuchar. Antes se publicaba el contexto
+/// de autoplay —la estación que armó el servicio—, y una canción que se
+/// sumaba a la cola no le llegaba nunca al otro lado.
+///
+/// **La escribe el frontend porque la cola vive ahí.** El backend no sabe qué
+/// eligió la persona ni qué se agregó después; lo único que hace es guardarlo
+/// para el hilo que publica.
+#[tauri::command]
+fn set_publish_queue(app: AppHandle, tracks: Vec<String>) {
+    app.state::<playback::PublishQueue>().set(
+        tracks
+            .into_iter()
+            .map(|uri| (uri, String::new()))
+            .collect(),
+    );
+}
+
 // El DJ: las canciones que Spotify le fabricó a la cuenta, y lo que dice al
 // empezar.
 //
@@ -1875,6 +1896,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(SessionState::default())
         .manage(PlaybackState::default())
+        .manage(playback::PublishQueue::default())
         .manage(DjState::default())
         .manage(RadioState::default())
         .setup(|app| {
@@ -2077,6 +2099,7 @@ pub fn run() {
             jam_queue,
             jam_leave,
             jam_add_to_queue,
+            set_publish_queue,
             radio_start,
             radio_more,
             player_status,

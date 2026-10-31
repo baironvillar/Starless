@@ -5104,6 +5104,72 @@ pub fn run_jam_state_probe(app: tauri::AppHandle) {
             Err(error) => log::error!("SP_JAM_STATE: la cola no se pudo leer: {error}"),
         }
 
+        // 6. La cola de la app, publicada como estado del player.
+        //
+        // **La pregunta es si el servicio acepta unas "next tracks" que no son
+        // del contexto.** La cola compartida del jam es el estado que publica
+        // el anfitrión: mientras lo que se publique sea el contexto de
+        // autoplay —la estación que armó el servicio—, la cola compartida
+        // muestra la estación y no la cola que eligió la persona, y una
+        // canción que se suma a la cola no le llega al otro lado.
+        //
+        // **Las dos canciones no están en el contexto y van sin `uid`.** Si
+        // aparecen en la cola compartida, el servicio las acepta; si no, hay
+        // que publicarlas con el `uid` que él da.
+        //
+        // **La app deja de publicar mientras esto corre.** Si publicara, pisaría
+        // lo que la sonda acaba de publicar y la lectura sería de otra cosa.
+        if let Some(estado) = app.try_state::<crate::playback::PlaybackState>() {
+            estado.pause_publish();
+        }
+        let propias = [
+            ("spotify:track:6QFCMUUq1T2Vf5sFUXcuQ7", "Beauty And A Beat"),
+            ("spotify:track:42qNWdLKCI41S4uzfamhFM", "Duvet"),
+        ];
+        let con_cola = super::state::Snapshot {
+            context_uri: snapshot.context_uri.clone(),
+            context_url: snapshot.context_url.clone(),
+            track: snapshot.track.clone(),
+            next: propias
+                .iter()
+                .map(|(uri, _)| super::state::Track {
+                    uri: uri.to_string(),
+                    uid: String::new(),
+                    gid: Vec::new(),
+                })
+                .collect(),
+            position_ms: 0,
+            duration_ms: 0,
+            playing: true,
+        };
+        match super::state::publish(&session, &con_cola) {
+            Ok(()) => log::info!(
+                "SP_JAM_STATE: publiqué una cola propia de {} canciones",
+                propias.len()
+            ),
+            Err(error) => log::error!("SP_JAM_STATE: la cola propia no se publicó: {error}"),
+        }
+        std::thread::sleep(std::time::Duration::from_secs(4));
+        match super::jam_queue_items(&session, &session_id) {
+            Ok(items) => {
+                let detalle: Vec<String> = propias
+                    .iter()
+                    .map(|(uri, nombre)| {
+                        let veces = items.iter().filter(|(item, _)| item == uri).count();
+                        format!("{nombre}: {veces}")
+                    })
+                    .collect();
+                log::info!(
+                    "SP_JAM_STATE: la cola tiene {} canciones · propias {detalle:?}",
+                    items.len()
+                );
+            }
+            Err(error) => log::error!("SP_JAM_STATE: la cola no se pudo leer: {error}"),
+        }
+        if let Some(estado) = app.try_state::<crate::playback::PlaybackState>() {
+            estado.resume_publish();
+        }
+
         // 7. Los comandos del otro lado.
         //
         // **El backend empuja los comandos del player por el `dealer`.** Es lo

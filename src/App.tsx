@@ -83,6 +83,7 @@ import {
   setErrorLanguage,
   setLibrarySort,
   setLibraryView,
+  setPublishQueue,
   setTrackOrder,
   setTrackView,
   sortPlaylists,
@@ -1392,6 +1393,22 @@ export default function App() {
     const current = status?.trackId ?? loadedTrack?.id ?? null;
     return head && head.id === current ? jamSongs.slice(1) : jamSongs;
   }, [jamSongs, status?.trackId, loadedTrack?.id]);
+
+  /**
+   * La cola de la app, para el estado del player.
+   *
+   * **La cola compartida del jam es esta cola.** El servicio arma la cola del
+   * jam con lo que publica el player del anfitrión, así que lo que se publica
+   * como "lo que sigue" es lo que los dos van a escuchar. Sin esto, lo que se
+   * publica es el contexto de autoplay —la estación que armó el servicio— y
+   * una canción que se suma a la cola no le llega nunca al otro lado.
+   *
+   * **Van las URIs, no las pistas.** El nombre y la portada no viajan en el
+   * estado del player: el otro lado los pide con el id.
+   */
+  useEffect(() => {
+    void setPublishQueue(upNext.slice(0, 50).map((track) => `spotify:track:${track.id}`));
+  }, [upNext]);
 
   /**
    * How many songs of the station's page are still ahead.

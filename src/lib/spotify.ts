@@ -490,6 +490,21 @@ export async function jamAddToQueue(sessionId: string, trackId: string): Promise
 }
 
 /**
+ * The queue that is coming, so the service knows what this player will play.
+ *
+ * **The shared queue of a Jam is this queue.** The Jam's queue is not a list the
+ * Jam writes: it is what the host's player publishes. So whatever this app
+ * plays next is what the other person sees in the Jam.
+ *
+ * **The URIs are enough.** The player state carries the id of the song and the
+ * id the service gave it; the name and the cover are asked for separately, by
+ * the other side, with the id.
+ */
+export async function setPublishQueue(uris: string[]): Promise<void> {
+  return invoke<void>("set_publish_queue", { tracks: uris });
+}
+
+/**
  * Subscribe to playback events.
  *
  * Called from an effect, not from a hook body: the listener outlives any single
