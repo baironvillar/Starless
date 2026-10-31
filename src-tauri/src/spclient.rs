@@ -2417,25 +2417,64 @@ pub fn jam_queue(session: &Session, session_id: &str) -> Result<Vec<Track>, Stri
     // Resolver el nombre de cada una es un viaje por la red cada vez que se
     // pregunta, así que se leen las primeras: el panel muestra ocho, y la
     // primera es la que está sonando.
-    let mut out = Vec::with_capacity(uris.len().min(JAM_QUEUE_ITEMS));
-    for raw in uris.into_iter().take(JAM_QUEUE_ITEMS) {
-        let Ok(parsed) = SpotifyUri::from_uri(&raw) else {
+    let uris: Vec<String> = uris.into_iter().take(JAM_QUEUE_ITEMS).collect();
+
+    // **Las que ya se resolvieron no se vuelven a resolver.**
+    //
+    // El panel pregunta la cola cada tres segundos, y cada canción necesita su
+    // metadata: doce búsquedas por vuelta, cuatrocientas por minuto —y el
+    // servicio corta la tanda con un `429`—. El nombre de una canción no
+    // cambia, así que la metadata se pide una vez y se guarda.
+    //
+    // **El orden se respeta igual.** La primera canción de la cola es la que
+    // está sonando, y el caché no puede cambiar eso: por eso las posiciones
+    // se guardan y se llenan después.
+    let mut out: Vec<Option<Track>> = {
+        let guard = jam_track_cache()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        uris.iter().map(|raw| guard.get(raw).cloned()).collect()
+    };
+
+    for (index, raw) in uris.iter().enumerate() {
+        if out[index].is_some() {
+            continue;
+        }
+        let Ok(parsed) = SpotifyUri::from_uri(raw) else {
             continue;
         };
-        let raw = raw.clone();
+        let key = raw.clone();
+        let value = raw.clone();
         let owned = session.clone();
         let track = call(session, async move {
             MetaTrack::get(&owned, &parsed)
                 .await
                 .map_err(|e| {
-                    log::error!("spclient: la metadata de {raw} falló: {e}");
+                    log::error!("spclient: la metadata de {value} falló: {e}");
                     "bad_response".to_string()
                 })
         })?;
-        out.push(convert(&track, session));
+        let track = convert(&track, session);
+        let mut guard = jam_track_cache()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        guard.insert(key, track.clone());
+        out[index] = Some(track);
     }
 
-    Ok(out)
+    Ok(out.into_iter().flatten().collect())
+}
+
+/// Las canciones de la cola del jam que ya tienen nombre.
+///
+/// **El caché de la cola.** La cola se lee cada tres segundos y resolver el
+/// nombre de cada canción es un viaje por la red: sin esto, el panel del jam
+/// hace cientos de búsquedas por minuto y el servicio corta la tanda con un
+/// `429` —que después la app reporta como un error del jam, y no lo es—.
+fn jam_track_cache() -> &'static std::sync::Mutex<HashMap<String, Track>> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<HashMap<String, Track>>> =
+        std::sync::OnceLock::new();
+    CACHE.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
 /// Agregar una canción a la cola compartida del jam.
