@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Check,
   ChevronDown,
@@ -23,11 +24,14 @@ import {
   applyEffects,
   applyMenuOpacity,
   CROSSFADE_MAX,
+  clearHistory,
   crossfadeSeconds,
   EFFECTS_DEFAULT,
   EFFECTS_QUIET,
   type EffectName,
   type Effects,
+  historyEnabled,
+  historyKey,
   MENU_OPACITY_DEFAULT,
   MENU_OPACITY_MAX,
   MENU_OPACITY_MIN,
@@ -35,6 +39,7 @@ import {
   setAccentColor,
   setCrossfadeSeconds,
   setEffect,
+  setHistoryEnabled,
   setMenuOpacity,
   signOut,
   type Account as UserAccount,
@@ -389,6 +394,31 @@ function Audio({ t }: { t: Record<StringKey, string> }) {
     void setCrossfadeSeconds(value).catch(() => {});
   };
 
+  const queryClient = useQueryClient();
+  const [keepHistory, setKeepHistory] = useState<boolean | null>(null);
+  const [cleared, setCleared] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    void historyEnabled()
+      .then((value) => {
+        if (alive) setKeepHistory(value);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const changeHistory = (on: boolean) => {
+    setKeepHistory(on);
+    void setHistoryEnabled(on).catch(() => {});
+  };
+  const wipeHistory = () => {
+    setCleared(true);
+    void clearHistory()
+      .then(() => queryClient.invalidateQueries({ queryKey: historyKey }))
+      .catch(() => setCleared(false));
+  };
+
   return (
     <div className="max-w-[620px]">
       <Group>
@@ -432,6 +462,33 @@ function Audio({ t }: { t: Record<StringKey, string> }) {
           </span>
         </Row>
       </Group>
+
+      {/*
+        The history Home reads (`history.rs`). On this machine only, and the
+        person's to switch off or wipe: it is not telemetry because it never
+        leaves the disk, and that is only true while it is theirs to delete.
+      */}
+      <div className="mt-9">
+        <Group>
+          <Row label={t.historySetting} hint={t.historySettingHint}>
+            <Toggle
+              checked={keepHistory ?? false}
+              onChange={changeHistory}
+              label={t.historySetting}
+            />
+          </Row>
+          <Row label={t.clearHistory} hint={cleared ? t.historyCleared : undefined}>
+            <button
+              type="button"
+              onClick={wipeHistory}
+              disabled={cleared}
+              className="h-9 rounded-pill bg-white/8 px-4 text-[13px] font-semibold transition-colors duration-200 hover:bg-white/12 disabled:opacity-50"
+            >
+              {t.clearHistory}
+            </button>
+          </Row>
+        </Group>
+      </div>
     </div>
   );
 }
