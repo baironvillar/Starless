@@ -266,6 +266,11 @@ export const strings = {
     bloomNormal: "Normal",
     bloomSoft: "Suave",
     effectOff: "Apagado",
+    uiMotion: "Animaciones de la interfaz",
+    uiMotionHint:
+      "Paneles, barra y botones se mueven al abrir y al pulsar. Apagadas, todo cambia al instante.",
+    quietMode: "Modo quieto",
+    quietModeHint: "Apaga todos los efectos de una vez. Al desactivarlo vuelven los de fábrica.",
     sectionDiagnostics: "Diagnóstico",
     close: "Cerrar",
 
@@ -663,6 +668,11 @@ export const strings = {
     bloomNormal: "Normal",
     bloomSoft: "Soft",
     effectOff: "Off",
+    uiMotion: "Interface animations",
+    uiMotionHint:
+      "Panels, the bar and buttons move as they open and as you press them. Off, everything changes at once.",
+    quietMode: "Quiet mode",
+    quietModeHint: "Turns every effect off at once. Turning it off brings the shipped ones back.",
     sectionDiagnostics: "Diagnostics",
     close: "Close",
 

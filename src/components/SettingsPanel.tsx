@@ -24,6 +24,8 @@ import {
   applyMenuOpacity,
   CROSSFADE_MAX,
   crossfadeSeconds,
+  EFFECTS_DEFAULT,
+  EFFECTS_QUIET,
   type EffectName,
   type Effects,
   MENU_OPACITY_DEFAULT,
@@ -669,6 +671,19 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
     applyEffects({ ...effect, [name]: value });
     void setEffect(name, value).catch(() => {});
   };
+  const quiet = (Object.keys(EFFECTS_QUIET) as EffectName[]).every(
+    (name) => effect[name] === EFFECTS_QUIET[name],
+  );
+  const changeAllEffects = (next: Effects) => {
+    applyEffects(next);
+    // One after another: each save reads and rewrites settings.json, and four
+    // at once could each overwrite the others with the file as it found it.
+    void (async () => {
+      for (const name of Object.keys(next) as EffectName[]) {
+        await setEffect(name, next[name]).catch(() => {});
+      }
+    })();
+  };
 
   return (
     <div className="max-w-[620px]">
@@ -785,11 +800,20 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
 
       {/*
         The movement under the glass, each one a thing to take back: the light
-        that trails the pointer, the pulse on the volume and the bloom. Applied
-        the moment it is picked, because all three are on screen behind this panel.
+        that trails the pointer, the pulse on the volume, the bloom and the
+        interface's own animation. Applied the moment it is picked, because all
+        of them are on screen behind this panel. Quiet mode is not a fifth
+        setting: it is on when the other four are off, and writes all four.
       */}
       <div className="mt-9">
         <Group>
+          <Row label={t.quietMode} hint={t.quietModeHint}>
+            <Toggle
+              checked={quiet}
+              onChange={(on) => changeAllEffects(on ? EFFECTS_QUIET : EFFECTS_DEFAULT)}
+              label={t.quietMode}
+            />
+          </Row>
           <Row label={t.pointerGlow} hint={t.pointerGlowHint}>
             <Toggle
               checked={effect.glow === "on"}
@@ -817,6 +841,13 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
                 { value: "soft", label: t.bloomSoft },
                 { value: "off", label: t.effectOff },
               ]}
+            />
+          </Row>
+          <Row label={t.uiMotion} hint={t.uiMotionHint}>
+            <Toggle
+              checked={effect.motion === "on"}
+              onChange={(on) => changeEffect("motion", on ? "on" : "off")}
+              label={t.uiMotion}
             />
           </Row>
         </Group>
