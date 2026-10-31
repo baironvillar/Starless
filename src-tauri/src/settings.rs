@@ -19,6 +19,7 @@
 //! starting is not one. A first run has no file; a file truncated by a power cut
 //! has no volume. Both answers are "whatever the default is", and the app opens.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -95,6 +96,12 @@ pub struct Settings {
     /// List or compact, as one of [`TRACK_VIEWS`].
     #[serde(default)]
     pub track_view: Option<String>,
+
+    /// The background effects, by name: one of [`EFFECTS`] each. A map and not
+    /// three fields because the three are one gate — a name and a value this
+    /// build knows — and a fourth effect should not need a fourth copy of it.
+    #[serde(default)]
+    pub effects: BTreeMap<String, String>,
 }
 
 /// Read-modify-write, so the day a third field appears this keeps working
@@ -331,6 +338,50 @@ pub fn saved_track_view() -> &'static str {
     known_or_default(load().track_view.as_deref(), &TRACK_VIEWS, DEFAULT_TRACK_VIEW)
 }
 
+/// Every effect and the values it takes, **the shipped one first**.
+///
+/// `glow` is the light that follows the pointer, `beat` the pulse on the volume
+/// (`soft` halves it, which also keeps it under the kick that sends a wave) and
+/// `bloom` the frost light behind the glass. They are the movement DESIGN.md
+/// allows under the glass, so whoever finds it too much can take it back.
+/// `motion` is the interface's own: springs, entrances and press feedback.
+pub const EFFECTS: [(&str, &[&str]); 4] = [
+    ("glow", &["on", "off"]),
+    ("beat", &["strong", "soft", "off"]),
+    ("bloom", &["normal", "soft", "off"]),
+    ("motion", &["on", "off"]),
+];
+
+/// Remember one effect. Same gate as `save_library_sort`: an unknown name or
+/// value is refused, because it would reach the frontend as a case with no match.
+pub fn save_effect(name: &str, value: &str) {
+    let Some((name, values)) = EFFECTS.iter().find(|(known, _)| *known == name) else {
+        log::warn!("efecto ignorado, no es un efecto conocido: {name}");
+        return;
+    };
+    if !values.contains(&value) {
+        log::warn!("valor de efecto ignorado: {name}={value}");
+        return;
+    }
+    if load().effects.get(*name).map(String::as_str) == Some(value) {
+        return;
+    }
+    update(|settings| {
+        settings.effects.insert(name.to_string(), value.to_string());
+    });
+}
+
+/// Every effect with its value, the shipped one where nothing valid was saved.
+pub fn saved_effects() -> BTreeMap<&'static str, &'static str> {
+    let saved = load().effects;
+    EFFECTS
+        .iter()
+        .map(|(name, values)| {
+            (*name, known_or_default(saved.get(*name).map(String::as_str), values, values[0]))
+        })
+        .collect()
+}
+
 /// The saved value when it is one this build knows, and the default when it is not.
 ///
 /// A hand-edited file is as likely as a bad write, and an order this build does not
@@ -382,9 +433,20 @@ pub fn saved_crossfade_seconds() -> u8 {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_hex_color, known_or_default, DEFAULT_LIBRARY_SORT, DEFAULT_TRACK_ORDER, LIBRARY_SORTS,
-        LIBRARY_VIEWS, TRACK_ORDERS,
+        is_hex_color, known_or_default, DEFAULT_LIBRARY_SORT, DEFAULT_TRACK_ORDER, EFFECTS,
+        LIBRARY_SORTS, LIBRARY_VIEWS, TRACK_ORDERS,
     };
+
+    /// The frontend reads the first value as the shipped one and switches on the
+    /// rest, so every effect needs one, and no two effects can share a name.
+    #[test]
+    fn every_effect_has_a_default_and_a_name_of_its_own() {
+        for (i, (name, values)) in EFFECTS.iter().enumerate() {
+            assert!(!values.is_empty(), "{name} sin valores");
+            assert!(EFFECTS[i + 1..].iter().all(|(other, _)| other != name), "{name} repetido");
+        }
+        assert_eq!(known_or_default(Some("loud"), EFFECTS[1].1, EFFECTS[1].1[0]), "strong");
+    }
 
     /// The accent is the one setting whose value is written onto `:root`, so the
     /// gate that keeps it a colour is the test that matters. A `settings.json` is

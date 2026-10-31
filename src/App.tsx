@@ -36,6 +36,7 @@ import {
   accentColor,
   addToPlaylist,
   applyAccentColor,
+  applyEffects,
   applyMenuOpacity,
   createPlaylist as createPlaylistCall,
   DEFAULT_TRACK_LIST_PREFS,
@@ -43,6 +44,7 @@ import {
   djMix,
   djMore,
   djSpeak,
+  effects,
   explain,
   historyKey,
   isDjCard,
@@ -87,6 +89,7 @@ import {
   trackFromPlay,
   trackListPrefs,
   useAccount,
+  useEffectsSettings,
   useHomeStats,
   useLikedTracks,
   useLyrics,
@@ -256,7 +259,11 @@ function useNarrowWindow(): boolean {
   return narrow;
 }
 
+/** "Suave" is half the frost, not a dimmer bloom of its own: same light, less of it. */
+const BLOOM_OPACITY = { normal: 1, soft: 0.5, off: 0 } as const;
+
 export default function App() {
+  const effect = useEffectsSettings();
   const [lang, setLang] = useState<Lang>("es");
   const [active, setActive] = useState<StringKey>("navHome");
   const [libraryOpen, setLibraryOpen] = useState(true);
@@ -587,6 +594,20 @@ export default function App() {
       // Swallowed on purpose: a read that fails leaves the CSS default standing,
       // which is the opaque menu. Nothing here is worth an unhandled rejection in
       // the console of the one build that has no backend to ask.
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // The effects, at startup for the same reason: the bloom is the first thing
+  // on screen, and drawing the shipped one before the saved one is a flash.
+  useEffect(() => {
+    let alive = true;
+    void effects()
+      .then((value) => {
+        if (alive) applyEffects(value);
+      })
       .catch(() => {});
     return () => {
       alive = false;
@@ -2475,16 +2496,17 @@ export default function App() {
         repaints the blur every frame — see DESIGN.md.
       */}
       <div
-        className="pointer-events-none absolute inset-0"
+        className="pointer-events-none absolute inset-0 transition-opacity duration-300"
         style={{
+          opacity: BLOOM_OPACITY[effect.bloom],
           background: [
-            "radial-gradient(90% 70% at 50% -6%, rgb(244 245 247 / 0.24) 0%, transparent 64%)",
-            "radial-gradient(70% 70% at 104% 108%, rgb(200 204 212 / 0.18) 0%, transparent 60%)",
-            "radial-gradient(60% 60% at -6% 96%, rgb(244 245 247 / 0.10) 0%, transparent 60%)",
+            "radial-gradient(90% 70% at 50% -6%, rgb(237 234 227 / 0.24) 0%, transparent 64%)",
+            "radial-gradient(70% 70% at 104% 108%, rgb(196 193 200 / 0.18) 0%, transparent 60%)",
+            "radial-gradient(60% 60% at -6% 96%, rgb(237 234 227 / 0.10) 0%, transparent 60%)",
           ].join(", "),
         }}
       />
-      <CursorGlow />
+      {effect.glow === "on" && <CursorGlow />}
 
       <AuthGate t={t} onReport={() => setFeedbackOpen(true)} onSignedOut={resetView}>
         <TopBar

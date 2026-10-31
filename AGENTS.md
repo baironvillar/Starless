@@ -45,8 +45,8 @@ prueba de que esto se cumple: una build de release **no se puede** hacer sin esa
 clave, y esa clave hay que pedirla.
 
 **`bun run app` lleva `--config src-tauri/tauri.dev.conf.json`**, que sólo cambia
-`bundle.icon` para usar `icons-dev/`. El ícono de desarrollo es el mismo dibujo con
-los dos colores al revés —fondo lima, estrella oscura— y existe por una razón
+`bundle.icon` para usar `icons-dev/`. El ícono de desarrollo es el mismo dibujo en
+su versión clara —fondo Hueso, marca en grises invertidos— y existe por una razón
 concreta: dos copias con el mismo nombre en la misma máquina son la forma más
 rápida de depurar el proceso equivocado. `scripts/logo.ts` escribe los invertidos
 **en otra carpeta**, nunca encima de `icons/`: pisar los de la release dejaría la

@@ -1820,6 +1820,18 @@ fn set_track_view(view: String) {
     settings::save_track_view(&view);
 }
 
+/// The background effects, every one with its value. See `settings::EFFECTS`.
+#[tauri::command]
+fn effects() -> std::collections::BTreeMap<&'static str, &'static str> {
+    settings::saved_effects()
+}
+
+/// `settings` refuses any effect or value this build does not know.
+#[tauri::command]
+fn set_effect(name: String, value: String) {
+    settings::save_effect(&name, &value);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -2040,6 +2052,8 @@ pub fn run() {
             set_track_order,
             track_view,
             set_track_view,
+            effects,
+            set_effect,
             previous_session_crashed,
             announce_clean_exit,
             log_frontend_error,

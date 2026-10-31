@@ -21,10 +21,15 @@ import {
   ACCENT_DEFAULT,
   accentColor,
   applyAccentColor,
+  applyEffects,
   applyMenuOpacity,
   CROSSFADE_MAX,
   clearHistory,
   crossfadeSeconds,
+  EFFECTS_DEFAULT,
+  EFFECTS_QUIET,
+  type EffectName,
+  type Effects,
   historyEnabled,
   historyKey,
   MENU_OPACITY_DEFAULT,
@@ -33,10 +38,12 @@ import {
   menuOpacity,
   setAccentColor,
   setCrossfadeSeconds,
+  setEffect,
   setHistoryEnabled,
   setMenuOpacity,
   signOut,
   type Account as UserAccount,
+  useEffectsSettings,
 } from "../lib/spotify";
 import {
   checkForUpdate,
@@ -79,7 +86,7 @@ type SettingsPanelProps = {
  * a preset that made a button unreadable would be a preset that ships a bug. The
  * shipped chrome comes first and is also how the section gets its default back.
  */
-const ACCENT_PRESETS = ["#c8ccd4", "#3ddc97", "#4cc9f0", "#7aa2ff", "#c08bff", "#ff8fb1"];
+const ACCENT_PRESETS = ["#ff5a36", "#7c6cff", "#3dd6c4", "#f5b83d", "#c4c1c8", "#ff8fb1"];
 
 /**
  * How long the hand has to be still before the opacity is applied for real.
@@ -716,6 +723,25 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
   // marks nothing, and the row looks like it forgot what it is showing.
   const isCustom = accent !== null && !ACCENT_PRESETS.includes(accent);
 
+  const effect = useEffectsSettings();
+  const changeEffect = <K extends EffectName>(name: K, value: Effects[K]) => {
+    applyEffects({ ...effect, [name]: value });
+    void setEffect(name, value).catch(() => {});
+  };
+  const quiet = (Object.keys(EFFECTS_QUIET) as EffectName[]).every(
+    (name) => effect[name] === EFFECTS_QUIET[name],
+  );
+  const changeAllEffects = (next: Effects) => {
+    applyEffects(next);
+    // One after another: each save reads and rewrites settings.json, and four
+    // at once could each overwrite the others with the file as it found it.
+    void (async () => {
+      for (const name of Object.keys(next) as EffectName[]) {
+        await setEffect(name, next[name]).catch(() => {});
+      }
+    })();
+  };
+
   return (
     <div className="max-w-[620px]">
       <Group>
@@ -825,6 +851,61 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
                 )}
               </span>
             </span>
+          </Row>
+        </Group>
+      </div>
+
+      {/*
+        The movement under the glass, each one a thing to take back: the light
+        that trails the pointer, the pulse on the volume, the bloom and the
+        interface's own animation. Applied the moment it is picked, because all
+        of them are on screen behind this panel. Quiet mode is not a fifth
+        setting: it is on when the other four are off, and writes all four.
+      */}
+      <div className="mt-9">
+        <Group>
+          <Row label={t.quietMode} hint={t.quietModeHint}>
+            <Toggle
+              checked={quiet}
+              onChange={(on) => changeAllEffects(on ? EFFECTS_QUIET : EFFECTS_DEFAULT)}
+              label={t.quietMode}
+            />
+          </Row>
+          <Row label={t.pointerGlow} hint={t.pointerGlowHint}>
+            <Toggle
+              checked={effect.glow === "on"}
+              onChange={(on) => changeEffect("glow", on ? "on" : "off")}
+              label={t.pointerGlow}
+            />
+          </Row>
+          <Row label={t.beatPulse} hint={t.beatPulseHint}>
+            <Select
+              value={effect.beat}
+              onChange={(value) => changeEffect("beat", value as Effects["beat"])}
+              options={[
+                { value: "strong", label: t.beatStrong },
+                { value: "soft", label: t.beatSoft },
+                { value: "off", label: t.effectOff },
+              ]}
+            />
+          </Row>
+          <Row label={t.bloomLight} hint={t.bloomLightHint}>
+            <Select
+              value={effect.bloom}
+              onChange={(value) => changeEffect("bloom", value as Effects["bloom"])}
+              options={[
+                { value: "normal", label: t.bloomNormal },
+                { value: "soft", label: t.bloomSoft },
+                { value: "off", label: t.effectOff },
+              ]}
+            />
+          </Row>
+          <Row label={t.uiMotion} hint={t.uiMotionHint}>
+            <Toggle
+              checked={effect.motion === "on"}
+              onChange={(on) => changeEffect("motion", on ? "on" : "off")}
+              label={t.uiMotion}
+            />
           </Row>
         </Group>
       </div>
@@ -1053,7 +1134,7 @@ function Select({
         className="min-w-[164px] appearance-none rounded-pill border border-white/14 bg-white/6 py-2.5 pr-10 pl-4 text-[13px] font-medium outline-none transition-colors duration-200 hover:bg-white/10"
       >
         {options.map((o) => (
-          <option key={o.value} value={o.value} className="bg-[#1c1d21]">
+          <option key={o.value} value={o.value} className="bg-[#15151b]">
             {o.label}
           </option>
         ))}
