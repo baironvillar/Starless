@@ -1,10 +1,11 @@
-import { Heart, Lock, Play as PlayIcon, Radio } from "lucide-react";
+import { Lock, Play as PlayIcon, Radio } from "lucide-react";
 import { motion } from "motion/react";
 import { useState } from "react";
 import type { StringKey } from "../lib/i18n";
 import { SPRING } from "../lib/motion";
 import { type Artist, type HomeStats, isDjCard, type Play, type Playlist } from "../lib/spotify";
 import { DjArtwork } from "./DjArtwork";
+import { LikedCover } from "./LikedCover";
 import { cardImage, MediaCard } from "./MediaCard";
 
 type HomeScreenProps = {
@@ -162,9 +163,7 @@ export function HomeScreen({
         </h1>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <QuickTile title={t.likedSongs} onOpen={onOpenLiked}>
-            <span className="grid size-full place-items-center bg-accent text-on-accent">
-              <Heart className="size-6 fill-current" strokeWidth={2} />
-            </span>
+            <LikedCover />
           </QuickTile>
           {dj && (
             <QuickTile
@@ -226,11 +225,7 @@ export function HomeScreen({
                     key={`liked-${play.track_id}`}
                     title={t.likedSongs}
                     subtitle={subtitle}
-                    art={
-                      <span className="grid size-full place-items-center bg-accent text-on-accent">
-                        <Heart className="size-10 fill-current" strokeWidth={2} />
-                      </span>
-                    }
+                    art={<LikedCover />}
                     playLabel={t.openPlaylist}
                     onOpen={onOpenLiked}
                   />
