@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="512" height="512" role="img" aria-label="Starless">
+  <title>Starless</title>
+  <circle cx="50" cy="50" r="43" fill="none" stroke="#706E77" stroke-width="5"/>
+  <rect x="19.5" y="35" width="5" height="30" rx="2.5" fill="#24242C"/>
+  <rect x="27.5" y="24" width="5" height="52" rx="2.5" fill="#3A3941"/>
+  <rect x="35.5" y="19" width="5" height="62" rx="2.5" fill="#55535C"/>
+  <rect x="43.5" y="24" width="5" height="52" rx="2.5" fill="#706E77"/>
+  <rect x="51.5" y="31" width="5" height="38" rx="2.5" fill="#8C8992"/>
+  <rect x="59.5" y="37" width="5" height="26" rx="2.5" fill="#A8A5AD"/>
+  <rect x="67.5" y="42" width="5" height="16" rx="2.5" fill="#C4C1C8"/>
+  <rect x="75.5" y="46" width="5" height="8" rx="2.5" fill="#DAD7DD"/>
+  <path d="M16 50 C 27 20, 39 20, 50 50 S 73 80, 84 50" fill="none" stroke="#EDEAE3" stroke-width="14" stroke-linecap="round"/>
+  <path d="M16 50 C 27 20, 39 20, 50 50 S 73 80, 84 50" fill="none" stroke="#0B0B0F" stroke-width="7" stroke-linecap="round"/>
+</svg>

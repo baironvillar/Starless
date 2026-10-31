@@ -6,31 +6,34 @@
  */
 
 @theme {
-  /* Colour. The landing's achromatic ramp: no hue in the chrome, only in the reserved state marks. */
-  --color-ground: #08080a;
-  --color-ink: #f4f5f7;
-  --color-ink-muted: #9a9ea8;
-  --color-ink-faint: #8f939c;
+  /* Colour. "A night without stars": deep blacks and one warm light (brand-kit/tokens.css). */
+  --color-ground: #0b0b0f; /* Void */
+  --color-night: #15151b; /* Night — surfaces */
+  --color-eclipse: #24242c; /* Eclipse — borders, tracks */
+  --color-ink: #edeae3; /* Bone */
+  --color-ink-muted: #9a97a0; /* Smoke */
+  --color-ink-faint: #8c8992;
 
-  /* Chrome, the landing's one action colour. */
-  --color-accent: #c8ccd4;
-  --color-accent-soft: #f4f5f7;
+  /* Ember, the one action colour. ≤ 10% of the screen. */
+  --color-accent: #ff5a36;
+  --color-accent-soft: #ff7e62;
   /* The label that sits on top of a filled accent surface. A token, not a
    * literal, because the accent is the user's to change and a dark one with a
    * dark label is a button nobody can read. `applyAccentColor` overwrites all
    * three at runtime when there is a colour to apply. */
-  --color-on-accent: #08080a;
+  --color-on-accent: #0b0b0f;
   --color-live: #ff5a36;
-  --color-warn: #ffb020;
+  --color-ok: #3dd6c4; /* Tide */
+  --color-warn: #f5b83d; /* Amber */
 
   /* Radius. Corner radius on a floating surface is what tells the eye it is detached. */
   --radius-card: 20px;
   --radius-pill: 999px;
 
-  --font-sans: "Funnel Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Funnel Display", "Funnel Sans", ui-sans-serif, sans-serif;
-  /* Only for raw logs and codes; figures in the UI use Funnel Sans with `tnum`. */
-  --font-mono: ui-monospace, monospace;
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Syne", "DM Sans", ui-sans-serif, sans-serif;
+  /* Numbers: timecodes, counts, the version. Also raw logs and codes. */
+  --font-mono: "DM Mono", ui-monospace, monospace;
 
   /* A single spacing rhythm. Everything snaps to 4px. */
   --spacing: 0.25rem;
@@ -89,7 +92,7 @@
  */
 @utility glass {
   /* 0.46, under the 0.5 floor on purpose: behind the bars is mostly the frost bloom, and the user asked for more see-through. */
-  background-color: rgb(28 29 33 / 0.46);
+  background-color: rgb(21 21 27 / 0.46);
   backdrop-filter: blur(24px) saturate(180%);
   box-shadow: 0 24px 48px -12px rgb(0 0 0 / 0.6);
   contain: paint;
@@ -110,7 +113,7 @@
  * depth, a collision. That is why the sheet's floor is the user's to cross.
  */
 @utility glass-overlay {
-  background-color: rgb(28 29 33 / var(--menu-alpha, 0.55));
+  background-color: rgb(21 21 27 / var(--menu-alpha, 0.55));
   backdrop-filter: blur(24px) saturate(180%);
   box-shadow: 0 24px 48px -12px rgb(0 0 0 / 0.6);
   contain: paint;
@@ -141,8 +144,8 @@
   border: 1px solid rgb(255 255 255 / 0.14);
   background-image:
     linear-gradient(
-      rgb(28 29 33 / var(--legend-alpha, var(--menu-alpha, 0.55))),
-      rgb(28 29 33 / var(--legend-alpha, var(--menu-alpha, 0.55)))
+      rgb(21 21 27 / var(--legend-alpha, var(--menu-alpha, 0.55))),
+      rgb(21 21 27 / var(--legend-alpha, var(--menu-alpha, 0.55)))
     ),
     repeating-linear-gradient(
       115deg,
@@ -166,7 +169,7 @@
  * them was ever adjustable.
  */
 @utility glass-sheet {
-  background-color: rgb(28 29 33 / var(--menu-alpha, 0.55));
+  background-color: rgb(21 21 27 / var(--menu-alpha, 0.55));
   backdrop-filter: blur(24px) saturate(180%);
   box-shadow: 0 24px 48px -12px rgb(0 0 0 / 0.6);
   contain: paint;
@@ -302,21 +305,22 @@
     user-select: none;
   }
 
-  /* Timecodes are data, not prose — they stay selectable and use tabular figures
-     so a countdown never shifts the layout as digits change. */
+  /* Timecodes are data, not prose — they stay selectable and set in DM Mono with
+     tabular figures so a countdown never shifts the layout as digits change. */
   .tabular {
+    font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
     font-feature-settings: "tnum";
   }
 
-  /* Titles in Funnel Display, as on the landing; h3 is the uppercase label and stays sans. */
+  /* Titles in Syne, as on the landing; h3 is the uppercase label and stays sans. */
   h1,
   h2 {
     font-family: var(--font-display);
   }
 
   ::selection {
-    background-color: rgb(244 245 247 / 0.25);
+    background-color: rgb(237 234 227 / 0.25);
   }
 
   /* Visible focus is required: a glass UI hides default outlines against the blur. */

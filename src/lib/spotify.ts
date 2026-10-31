@@ -721,7 +721,7 @@ export async function setEffect<K extends EffectName>(name: K, value: Effects[K]
 const ACCENT_KEY = "starless:accent";
 
 /** The colour DESIGN.md ships. Also what "back to default" writes. */
-export const ACCENT_DEFAULT = "#c8ccd4";
+export const ACCENT_DEFAULT = "#ff5a36";
 
 export function isHexColor(value: string): boolean {
   return /^#[0-9a-f]{6}$/i.test(value);
@@ -751,7 +751,7 @@ export async function setAccentColor(color: string): Promise<void> {
  *
  * The accent itself is the user's. `--color-accent-soft` is the tint the focus
  * outline uses, mixed toward white by the same ratio the shipped pair has
- * (chrome #c8ccd4 → frost #f4f5f7, close enough to the 0.22 mix) so the focus
+ * (Ember #ff5a36 → #ff7e62, the 0.22 mix) so the focus
  * ring keeps its relationship to the accent instead of being the one leftover
  * colour on screen after a repaint.
  *
@@ -777,7 +777,7 @@ export function applyAccentColor(color: string | null): void {
   const value = color.toLowerCase();
   root.setProperty("--color-accent", value);
   root.setProperty("--color-accent-soft", mixToward(value, 0.22));
-  root.setProperty("--color-on-accent", isDark(value) ? "#f4f5f7" : "#08080a");
+  root.setProperty("--color-on-accent", isDark(value) ? "#edeae3" : "#0b0b0f");
 }
 
 /** `amount` of white mixed into `hex`, as `#rrggbb`. */
@@ -795,14 +795,15 @@ function mixToward(hex: string, amount: number): string {
 /**
  * WCAG relative luminance, and the reason `--color-on-accent` exists.
  *
- * The threshold is 0.45 and not the 0.5 of a contrast formula: the filled
- * surfaces here are large and saturated, and a mid-tone accent at exactly 0.5
- * still reads better with the dark label than with the light one.
+ * The threshold is 0.17: the luminance at which Void and Bone give the same
+ * contrast. It used to be 0.45, which was harmless while the default was a pale
+ * chrome, and put a 2.6:1 Bone label on Ember — the default since the new
+ * identity — where Void gives 6.3:1.
  */
 function isDark(hex: string): boolean {
   const [r, g, b] = [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16) / 255);
   const linear = [r, g, b].map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
-  return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2] < 0.45;
+  return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2] < 0.17;
 }
 
 /**
