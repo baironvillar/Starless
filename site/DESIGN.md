@@ -5,6 +5,7 @@ colors:
   ground: "#0b0b0f"
   night: "#15151b"
   chrome: "#c4c1c8"
+  glass: "rgb(255 255 255 / 0.14)"
   frost: "#edeae3"
   body: "#c4c1c8"
   mute: "#9a97a0"
@@ -66,14 +67,14 @@ spacing:
   block: "48px"
 components:
   download-key:
-    backgroundColor: "{colors.chrome}"
-    textColor: "{colors.ground}"
+    backgroundColor: "{colors.glass}"
+    textColor: "{colors.frost}"
     typography: "{typography.action}"
     rounded: "{rounded.capsule}"
     padding: "15px 24px"
   download-key-compact:
-    backgroundColor: "{colors.chrome}"
-    textColor: "{colors.ground}"
+    backgroundColor: "{colors.glass}"
+    textColor: "{colors.frost}"
     rounded: "{rounded.capsule}"
     padding: "12px 18px"
   player-bar:
@@ -112,13 +113,13 @@ The page is a still room with one thing moving in it: a pool of black ferrofluid
 
 Order comes from rings, not boxes. Concentric hairline circles centred on the pool pass through the top edge of every section, so reading down the page is travelling outward from the speaker; each section change sends a wave from one ring to the next. Content sits on the ground between hairlines, never in cards, never behind glass.
 
-Colour is withheld on purpose. Void for the ground, glass over Night for the one floating surface, Bone for type, and polished chrome for the single action. The one hue is Ember, on the player's progress fill and nothing else; everything else is reflected light. The user rejected a colourful, retro, giant-condensed world before this one; this system is the answer to that rejection.
+Colour is withheld on purpose. Void for the ground, glass over Night for the one floating surface, Bone for type, and frosted glass with an Ember light under it for the single action. Ember is the one hue: under the download keys and on the player's progress fill, nothing else; everything else is reflected light. The user rejected a colourful, retro, giant-condensed world before this one; this system is the answer to that rejection.
 
 **Key Characteristics:**
 - One moving object (the pool); everything else still.
 - Concentric rings as the page's structure; one ring per section.
 - Grey palette; one warm light (Ember) on the progress fill; otherwise hue only as reflected light.
-- One chrome object, the download key, rendered as a real reflection.
+- One action, the download key: frosted glass with an ember breathing under it.
 - Hairline rules instead of containers.
 - A fixed player bar that treats each section as a track.
 
@@ -127,12 +128,13 @@ Colour is withheld on purpose. Void for the ground, glass over Night for the one
 A grey ramp from Void to Bone, faintly warm, with one accent: Ember.
 
 ### Primary
-- **Polished Chrome** (chrome): the download key and nothing else. Its flat value is only the fallback; the shipped face is painted per pixel as a reflection (bright ceiling over the label, a crisp dark horizon below it, a grey room underneath, a softbox strip on the straight face only).
+- **Ember under glass**: the download key and nothing else. A capsule of frosted glass (white 14% to 4%, white 18% border, `blur(16px) saturate(160%)`) with a blurred Ember light beneath it.
+- **Silver** (chrome, `#C4C1C8`): the second song in the crossfade figure.
 
 ### Neutral
-- **Void** (ground, `#0B0B0F`): the page, the room around the pool, and the shader's floor colour. Also the text colour on chrome.
+- **Void** (ground, `#0B0B0F`): the page, the room around the pool, and the shader's floor colour.
 - **Night** (night, `#15151B`): the base under the player's glass, the window frame, the pool's fallback.
-- **Ember** (ember, `#FF5A36`): the player's progress fill. The only fill with hue; never in the logo, never a second place on the page.
+- **Ember** (ember, `#FF5A36`): the light under the download keys and the player's progress fill. The only hue on the page; never in the logo, never anywhere else.
 - **Bone** (frost, `#EDEAE3`): headings, the active player title, focus outline, selection.
 - **Body** (body, `#C4C1C8`): reading copy in paragraphs, ledes and lists; one step under frost so headings lead.
 - **Smoke** (mute, `#9A97A0`): metadata, nav links at rest, version numbers, fine print, captions.
@@ -140,9 +142,9 @@ A grey ramp from Void to Bone, faintly warm, with one accent: Ember.
 - **Groove** (track): the empty progress track under the player title.
 
 ### Named Rules
-**The Reflected Light Rule.** Apart from Ember on the progress fill, no hue is applied as a fill, accent, or text colour. Colour appears only where the shader or the key computes reflected light. The shader's lights were moved from cool blue to the brand's grey with the new identity.
+**The Reflected Light Rule.** Apart from Ember under the keys and on the progress fill, no hue is applied as a fill, accent, or text colour. Colour appears only where the shader computes reflected light. The shader's lights were moved from cool blue to the brand's grey with the new identity.
 
-**The One Chrome Rule.** Chrome belongs to the download action alone. A second chrome object on a page dilutes the only thing the eye should reach for after the pool.
+**The One Ember Rule.** The light under the glass belongs to the download action alone. A second glowing object on the page dilutes the only thing the eye should reach for after the pool.
 
 ## Typography
 
@@ -176,7 +178,7 @@ At 860px and below the pool moves above the words (centred at 50% across, 34% do
 
 ## Elevation & Depth
 
-Flat ground; depth is rendered, not stacked. The pool's depth comes from the oblique raymarch and its own lighting, the key's from its per-pixel reflection. The page itself is one plane of hairlines on black. There are two glass surfaces: the fixed player bar and the hero's logo plate.
+Flat ground; depth is rendered, not stacked. The pool's depth comes from the oblique raymarch and its own lighting, the key's from the light diffused through its glass. The page itself is one plane of hairlines on black. The glass surfaces are the fixed player bar, the hero's logo plate and the download keys.
 
 ### Shadow Vocabulary
 - **Glass** (`.sl-glass`: white 6% fill, white 16% border, `inset 0 1px 0` white 30% highlight, `0 30px 60px` black 50%, `blur(24px) saturate(140%)`): the player bar (over a Night base at 62%, so its title stays legible over running text) and the hero's logo plate.
@@ -191,9 +193,9 @@ Circles and capsules echo the speaker: the pool, the rings, the player's round b
 ## Components
 
 ### Buttons
-- **Download key:** a chrome capsule (999px), Void label at 600 with a 17px stroked download arrow, padding 15px 24px; the compact player variant is 12px 18px at 14px, and icon-only (12px 14px) at 860px and below.
-- **Face:** painted into a canvas behind the label at device pixel ratio up to 2, as a reflection of the pool's room; the flat chrome colour shows only before paint or without canvas.
-- **Hover / Focus:** the softbox strip slides across the face over 320ms (ease-out cubic) and the pool's energy surges; pressing scales to 0.97 over 160ms. Focus is a 2px frost outline offset 3px.
+- **Download key:** a frosted-glass capsule (999px), Bone label at 600 with a 17px stroked download arrow, padding 15px 24px; the compact player variant is 12px 18px at 14px, and icon-only (12px 14px) at 860px and below. Edge: `inset 0 1px 0` white 40% on top, a faint Ember `inset 0 -8px 18px` at the bottom, and a `0 14px 34px` black 50% drop.
+- **Ember under the glass (`::before`):** a radial Ember light at the bottom of the capsule, blurred 10px and spilling a little past the edge. At rest it sits low (6px down, 80% wide) at 45% opacity and breathes with the pool's kick (`--beat`, set every frame from the same 112 BPM pulse).
+- **Hover / Focus:** the ember rises and grows (opacity to 85%, scale 1.05, 320–420ms ease-out) and follows the pointer across the key (`--mx`); a white specular line crosses the face over 800ms (`::after`); the arrow drops 2px; the border warms; the pool's energy surges. Pressing scales to 0.97 over 160ms. Focus is a 2px frost outline offset 3px. Reduced motion: no transitions, no beat.
 
 ### Navigation
 - **Style:** a top line of 14px mute links, 26px apart, with the grey mark, the wordmark and the version (DM Mono) at left. Hover shifts to frost over 200ms. On phones only the last link remains.
@@ -220,21 +222,21 @@ Circles and capsules echo the speaker: the pool, the rings, the player's round b
 ### Do:
 - **Do** keep the pool the only continuously moving thing on a page; everything else moves only in answer to the visitor.
 - **Do** separate content with frost hairlines at 10% and let new sections sit on a new ring.
-- **Do** use ease-out cubic-bezier(0.23, 1, 0.32, 1) for every transition: 420ms for the title roll, 1400ms for the ring wave, 320ms for the key's slide.
+- **Do** use ease-out cubic-bezier(0.23, 1, 0.32, 1) for every transition: 420ms for the title roll, 1400ms for the ring wave, 320–420ms for the ember under the key, 800ms for its specular line.
 - **Do** set every number in tabular figures.
 - **Do** keep reading copy in body colour and metadata in mute, with headlines in frost.
-- **Do** render light (liquid, chrome) computationally so it reads as reflection, at dpr 1 for the full-screen shader.
+- **Do** render the liquid's light computationally so it reads as reflection, at dpr 1 for the full-screen shader.
 
 ### Don't:
 - **Don't** introduce any hue besides Ember on the progress fill; colour otherwise comes only from reflected light.
 - **Don't** put a star anywhere, and don't colour the logo.
 - **Don't** put reading content in cards or behind glass; the product's own window is the only framed object.
-- **Don't** use gradients as decoration; gradients exist only where they render the liquid's or the chrome's light.
-- **Don't** add a second chrome object, or glass beyond the player and the logo plate.
+- **Don't** use gradients as decoration; they exist only where they render light: the liquid, the glass, the ember, the silver wordmark.
+- **Don't** add a second glowing object, or glass beyond the player, the logo plate and the download keys.
 - **Don't** use condensed widths or giant poster type beyond the hero wordmark.
 
 <!-- OPEN ITEMS (not part of the system):
-- The app section holds a labelled sample window, waiting for the user's real screenshot; its placeholder greys are not tokens.
+- The app section's window shows real captures in `public/shots/`. `1-biblioteca` and `3-cola` were retaken with the new identity; `2-playlist` and `4-ajustes` still show the old pink look and need retaking.
 - Fonts load from Google Fonts; the Astro build could self-host Syne, DM Sans and DM Mono.
 Direction: .impeccable/surfaces/index-html.md, seed:493bf2d1c9f053b5 -->
 
