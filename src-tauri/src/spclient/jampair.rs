@@ -93,7 +93,12 @@ pub fn watch(app: tauri::AppHandle) {
         let mut antes_cola: Option<usize> = None;
 
         while std::time::Instant::now() < deadline {
-            std::thread::sleep(std::time::Duration::from_secs(3));
+            // **Cada cuánto se pregunta importa tanto como qué se pregunta.**
+            // El servicio corta la tanda con un `429` —medido: a los tres
+            // segundos, con la app preguntando al mismo tiempo, se corta— así
+            // que acá se pregunta cada cinco y la cola se lee **una** vez por
+            // vuelta.
+            std::thread::sleep(std::time::Duration::from_secs(5));
 
             let Ok(poll) = jam_session(&host, false) else {
                 log::error!("SP_JAM_WATCH: la puerta no contestó");
@@ -108,31 +113,31 @@ pub fn watch(app: tauri::AppHandle) {
             }
 
             let miembros = poll.session_members.len();
-            let cola = jam_queue(&host, &session_id).map(|q| q.len()).unwrap_or(0);
+            let cola = match jam_queue(&host, &session_id) {
+                Ok(queue) => {
+                    // **Lo que cambia se dice; lo que no cambia no.** Un log por
+                    // cada vuelta con lo mismo es ruido, y el ruido esconde el
+                    // momento en que el otro lado entró.
+                    if antes_cola != Some(queue.len()) {
+                        antes_cola = Some(queue.len());
+                        let nombres: Vec<&str> =
+                            queue.iter().take(5).map(|track| track.name.as_str()).collect();
+                        log::info!("SP_JAM_WATCH: la cola tiene {} canciones: {nombres:?}", queue.len());
+                    }
+                    queue.len()
+                }
+                Err(error) => {
+                    log::error!("SP_JAM_WATCH: la cola no se pudo leer: {error}");
+                    antes_cola = None;
+                    0
+                }
+            };
 
-            // **Lo que cambia se dice; lo que no cambia no.** Un log por cada
-            // tres segundos con lo mismo es ruido, y el ruido esconde el
-            // momento en que el otro lado entró.
             if antes_miembros != Some(miembros) {
                 log::info!(
                     "SP_JAM_WATCH: {miembros} participante(s) · cola con {cola} canciones"
                 );
                 antes_miembros = Some(miembros);
-            }
-
-            // **La cola es lo que dice si el otro lado controla el jam.** Una
-            // lista con canciones es una lista que el otro lado llenó, y sus
-            // nombres dicen cuáles.
-            if antes_cola != Some(cola) {
-                antes_cola = Some(cola);
-                match jam_queue(&host, &session_id) {
-                    Ok(queue) => {
-                        let nombres: Vec<&str> =
-                            queue.iter().take(5).map(|track| track.name.as_str()).collect();
-                        log::info!("SP_JAM_WATCH: la cola tiene {cola} canciones: {nombres:?}");
-                    }
-                    Err(error) => log::error!("SP_JAM_WATCH: no se pudo leer la cola: {error}"),
-                }
             }
         }
 
