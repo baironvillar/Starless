@@ -2394,10 +2394,24 @@ pub fn jam_queue(session: &Session, session_id: &str) -> Result<Vec<Track>, Stri
             })
     })?;
 
-    let uris = jamlist::tracks(&answer).ok_or_else(|| {
-        log::error!("spclient: la cola del jam vino con otra forma");
-        "bad_response".to_string()
-    })?;
+    let uris = match jamlist::tracks(&answer) {
+        Some(uris) => uris,
+        // **La cola que todavía no está no es un error.**
+        //
+        // El servicio contesta `Not Found` cuando el jam no tiene cola —la
+        // lista la siembra después de que alguien se une—, y eso se ve igual
+        // que una lista vacía en la pantalla. Lo que no puede ser es un error:
+        // el panel dice "la cola está vacía" y el log no grita cada tres
+        // segundos.
+        None if jamlist::not_found(&answer) => {
+            log::info!("spclient: la cola del jam todavía no está");
+            Vec::new()
+        }
+        None => {
+            log::error!("spclient: la cola del jam vino con otra forma");
+            return Err("bad_response".to_string());
+        }
+    };
 
     // **La cola del jam la llena el servicio, y son cientos de canciones.**
     // Resolver el nombre de cada una es un viaje por la red cada vez que se

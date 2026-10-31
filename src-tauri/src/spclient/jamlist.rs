@@ -209,6 +209,20 @@ fn info_revision(body: &[u8]) -> Option<Vec<u8>> {
     None
 }
 
+/// La respuesta del servicio cuando la lista **no existe**.
+///
+/// **No es una lista vacía: es una lista que todavía no está.** El servicio
+/// contesta un `Status` con el texto `Not Found` adentro —21 bytes, medido— y
+/// la app lo reportaba como "la cola vino con otra forma", que miente: lo que
+/// vino fue una respuesta, y lo que dice es que no hay cola.
+///
+/// La diferencia importa porque las dos cosas se ven igual en la pantalla si
+/// no se distinguen: una cola vacía es un estado normal y una cola que no se
+/// pudo leer es un error.
+pub(super) fn not_found(body: &[u8]) -> bool {
+    body.windows(9).any(|window| window == b"Not Found")
+}
+
 /// Un lector de protobuf.
 ///
 /// **A mano, porque el crate no tiene el proto de este servicio.** Nunca tira
@@ -322,6 +336,21 @@ mod tests {
     fn a_response_that_is_not_a_list_is_not_an_empty_list() {
         assert!(tracks(&[0x08, 0x01]).is_none());
         assert!(tracks(&[]).is_none());
+    }
+
+    /// La respuesta del servicio cuando la lista no existe.
+    ///
+    /// **Son los 21 bytes queContestó el servicio el 31 de octubre de 2026**:
+    /// un `Status` con el texto adentro.
+    #[test]
+    fn a_list_that_does_not_exist_says_so() {
+        let body = [
+            0x0a, 0x13, 0x12, 0x11, 0x0a, 0x0f, 0x12, 0x02, 0x08, 0x01, 0x32, 0x09, b'N', b'o',
+            b't', b' ', b'F', b'o', b'u', b'n', b'd',
+        ];
+        assert!(not_found(&body));
+        assert!(!not_found(&sample()));
+        assert!(!not_found(&[]));
     }
 
     #[test]
