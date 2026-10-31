@@ -134,8 +134,23 @@ pub fn watch(app: tauri::AppHandle) {
             };
 
             if antes_miembros != Some(miembros) {
+                // **Quiénes, no sólo cuántos.** El nombre del miembro es lo que
+                // dice si el otro lado entró de verdad o si el servicio está
+                // contando a la misma cuenta una sola vez.
+                let gente: Vec<String> = poll
+                    .session_members
+                    .iter()
+                    .map(|member| {
+                        format!(
+                            "{} ({})",
+                            member.display_name.as_deref().unwrap_or(member.id.as_str()),
+                            member.id
+                        )
+                    })
+                    .collect();
                 log::info!(
-                    "SP_JAM_WATCH: {miembros} participante(s) · cola con {cola} canciones"
+                    "SP_JAM_WATCH: {miembros} participante(s) · cola con {cola} canciones · {gente:?} · dueño={}",
+                    poll.is_session_owner
                 );
                 antes_miembros = Some(miembros);
             }
