@@ -3334,6 +3334,24 @@ pub fn jam_create_requested() -> bool {
         .unwrap_or(false)
 }
 
+/// La medición corta: **¿la cola del jam aparece cuando alguien mete una
+/// canción?**
+///
+/// Son tres pedidos —leer la cola, mandar el comando, volver a leerla— y
+/// nada más. Existe por una razón concreta: la sonda completa hace cien
+/// pedidos seguidos y el servicio contesta `429` a partir de la sesenta, así
+/// que la medición que importa llega a la puerta demasiado tarde. Con una
+/// sesión activa y sin canción sonando, la cola no existe —el servicio
+/// contesta `Not Found`—, y la pregunta es si el comando la crea.
+///
+/// `STARLESS_SP_JAM_QUEUE=1` corre esto y nada más.
+#[cfg(debug_assertions)]
+pub fn jam_queue_requested() -> bool {
+    std::env::var("STARLESS_SP_JAM_QUEUE")
+        .map(|value| value != "0" && !value.is_empty())
+        .unwrap_or(false)
+}
+
 /// El jam, medido.
 ///
 /// **La primera llamada crea la sesión, y no es culpa de la sonda.** El
@@ -3365,6 +3383,25 @@ pub fn run_jam_probe(app: tauri::AppHandle) {
         // tienen que funcionar, y la que no se puede ver desde el log es
         // justamente la segunda.
         let app_session = super::jam_session(&session, true);
+
+        // **La medición corta va primero y sola**: son tres pedidos, y con la
+        // sonda completa el servicio corta la tanda con un `429` antes de
+        // llegar.
+        if jam_queue_requested() {
+            let session_id = app_session
+                .as_ref()
+                .map(|found| found.session_id.clone())
+                .unwrap_or_default();
+
+            if !session_id.is_empty() {
+                jam_probe_queue_only(&session, &session_id);
+            } else {
+                log::error!("SP_JAM: no hay sesión para medir la cola");
+            }
+
+            log::info!("=== DIAGNOSTIC: fin de la sonda del jam ===");
+            return;
+        }
 
         match &app_session {
             Ok(found) => log::info!(
@@ -4213,6 +4250,16 @@ fn jam_probe_queue_write(session: &Session, session_id: &str, device: &str) {
     // de la app: el mismo comando, pero armado por el código que quedó y no a
     // mano. Si esta contesta bien, lo que se midió arriba es lo que la app
     // manda.
+    jam_probe_queue_only(session, session_id);
+}
+
+/// La medición de la cola: **leer, mandar el comando, volver a leer**.
+///
+/// La comparación es lo que dice si el comando sirvió: que la cola haya
+/// cambiado, o que haya **aparecido** —que es lo que pasa si el servicio la
+/// crea cuando alguien mete una canción—.
+#[cfg(debug_assertions)]
+fn jam_probe_queue_only(session: &Session, session_id: &str) {
     let before = jam_queue_tracks(session, session_id);
     log::info!(
         "SP_JAM: [cola] antes del comando: {} canciones",
@@ -4226,11 +4273,11 @@ fn jam_probe_queue_write(session: &Session, session_id: &str, device: &str) {
         Err(e) => log::error!("SP_JAM: [comandos] la función de la app no pudo agregar: {e}"),
     }
 
-    // **Y la pregunta que decide si la función sirve**: ¿la cola del jam
-    // cambió? El comando puede entrar y no hacer nada —el servicio lo acepta
-    // y lo aplica al device que puede, que puede no ser el del jam—, y la
-    // diferencia entre "entró" y "sirvió" está en la cola.
+    // **Un momento antes de volver a leer.** La cola del jam la escribe el
+    // servicio, no el comando: el comando entra y el servicio lo aplica
+    // después.
     std::thread::sleep(std::time::Duration::from_secs(3));
+
     let after = jam_queue_tracks(session, session_id);
     log::info!(
         "SP_JAM: [cola] después del comando: {} canciones",
@@ -4238,6 +4285,10 @@ fn jam_probe_queue_write(session: &Session, session_id: &str, device: &str) {
     );
 
     match (&before, &after) {
+        (None, Some(after)) => log::info!(
+            "SP_JAM: [cola] la cola APARECIÓ: el comando la creó con {} canciones",
+            after.len()
+        ),
         (Some(before), Some(after)) => {
             if before.len() == after.len() && before == after {
                 log::info!("SP_JAM: [cola] la cola NO cambió: el comando entró y no la llenó");
@@ -4252,7 +4303,13 @@ fn jam_probe_queue_write(session: &Session, session_id: &str, device: &str) {
                 }
             }
         }
-        _ => log::info!("SP_JAM: [cola] no se pudo comparar: la cola no se pudo leer"),
+        (Some(before), None) => log::info!(
+            "SP_JAM: [cola] la cola desapareció: {} → nada",
+            before.len()
+        ),
+        (None, None) => {
+            log::info!("SP_JAM: [cola] la cola no existe antes ni después del comando")
+        }
     }
 }
 
