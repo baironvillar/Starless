@@ -20,18 +20,25 @@ import {
   ACCENT_DEFAULT,
   accentColor,
   applyAccentColor,
+  applyEffects,
   applyMenuOpacity,
   CROSSFADE_MAX,
   crossfadeSeconds,
+  EFFECTS_DEFAULT,
+  EFFECTS_QUIET,
+  type EffectName,
+  type Effects,
   MENU_OPACITY_DEFAULT,
   MENU_OPACITY_MAX,
   MENU_OPACITY_MIN,
   menuOpacity,
   setAccentColor,
   setCrossfadeSeconds,
+  setEffect,
   setMenuOpacity,
   signOut,
   type Account as UserAccount,
+  useEffectsSettings,
 } from "../lib/spotify";
 import {
   checkForUpdate,
@@ -659,6 +666,25 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
   // marks nothing, and the row looks like it forgot what it is showing.
   const isCustom = accent !== null && !ACCENT_PRESETS.includes(accent);
 
+  const effect = useEffectsSettings();
+  const changeEffect = <K extends EffectName>(name: K, value: Effects[K]) => {
+    applyEffects({ ...effect, [name]: value });
+    void setEffect(name, value).catch(() => {});
+  };
+  const quiet = (Object.keys(EFFECTS_QUIET) as EffectName[]).every(
+    (name) => effect[name] === EFFECTS_QUIET[name],
+  );
+  const changeAllEffects = (next: Effects) => {
+    applyEffects(next);
+    // One after another: each save reads and rewrites settings.json, and four
+    // at once could each overwrite the others with the file as it found it.
+    void (async () => {
+      for (const name of Object.keys(next) as EffectName[]) {
+        await setEffect(name, next[name]).catch(() => {});
+      }
+    })();
+  };
+
   return (
     <div className="max-w-[620px]">
       <Group>
@@ -768,6 +794,61 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
                 )}
               </span>
             </span>
+          </Row>
+        </Group>
+      </div>
+
+      {/*
+        The movement under the glass, each one a thing to take back: the light
+        that trails the pointer, the pulse on the volume, the bloom and the
+        interface's own animation. Applied the moment it is picked, because all
+        of them are on screen behind this panel. Quiet mode is not a fifth
+        setting: it is on when the other four are off, and writes all four.
+      */}
+      <div className="mt-9">
+        <Group>
+          <Row label={t.quietMode} hint={t.quietModeHint}>
+            <Toggle
+              checked={quiet}
+              onChange={(on) => changeAllEffects(on ? EFFECTS_QUIET : EFFECTS_DEFAULT)}
+              label={t.quietMode}
+            />
+          </Row>
+          <Row label={t.pointerGlow} hint={t.pointerGlowHint}>
+            <Toggle
+              checked={effect.glow === "on"}
+              onChange={(on) => changeEffect("glow", on ? "on" : "off")}
+              label={t.pointerGlow}
+            />
+          </Row>
+          <Row label={t.beatPulse} hint={t.beatPulseHint}>
+            <Select
+              value={effect.beat}
+              onChange={(value) => changeEffect("beat", value as Effects["beat"])}
+              options={[
+                { value: "strong", label: t.beatStrong },
+                { value: "soft", label: t.beatSoft },
+                { value: "off", label: t.effectOff },
+              ]}
+            />
+          </Row>
+          <Row label={t.bloomLight} hint={t.bloomLightHint}>
+            <Select
+              value={effect.bloom}
+              onChange={(value) => changeEffect("bloom", value as Effects["bloom"])}
+              options={[
+                { value: "normal", label: t.bloomNormal },
+                { value: "soft", label: t.bloomSoft },
+                { value: "off", label: t.effectOff },
+              ]}
+            />
+          </Row>
+          <Row label={t.uiMotion} hint={t.uiMotionHint}>
+            <Toggle
+              checked={effect.motion === "on"}
+              onChange={(on) => changeEffect("motion", on ? "on" : "off")}
+              label={t.uiMotion}
+            />
           </Row>
         </Group>
       </div>
@@ -1009,14 +1090,28 @@ function Select({
   );
 }
 
-function Toggle() {
-  const [on, setOn] = useState(false);
+/** Uncontrolled unless `checked` is passed: the audio and account rows are still placeholders. */
+function Toggle({
+  checked,
+  onChange,
+  label,
+}: {
+  checked?: boolean;
+  onChange?: (on: boolean) => void;
+  label?: string;
+} = {}) {
+  const [own, setOwn] = useState(false);
+  const on = checked ?? own;
   return (
     <motion.button
       type="button"
       role="switch"
       aria-checked={on}
-      onClick={() => setOn((v) => !v)}
+      aria-label={label}
+      onClick={() => {
+        setOwn(!on);
+        onChange?.(!on);
+      }}
       whileTap={{ scale: 0.94 }}
       transition={SPRING}
       className={`relative h-6 w-11 rounded-pill transition-colors duration-200 ${

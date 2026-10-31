@@ -85,6 +85,8 @@ WCAG AA wants 4.5:1 for body text. `--color-ink-faint` `#8C8992` gives 5.7:1 on 
 Behind everything sits a static bloom of pale light on black: three radials in Bone and silver, brightest at the top centre. It gives the glass something to show through without bringing hue back, the same way the landing gets colour only from reflected light. It is fixed (a per-album tint once pushed violet through the whole interface) and never animates.
 **One light follows the pointer** (`CursorGlow.tsx`): a 900px pool of Bone at 16% that drifts after the mouse on a soft spring. It is the one exception to the static backdrop, asked for by the user. It costs a blur re-sample on the glass while the pointer moves, so it moves only by `transform`, only with the pointer, and is not drawn with reduced motion. If the app drops below 60fps, this is the first thing to cut.
 
+**The person can take the movement back.** Settings → Personalisation has the pointer light (on/off), the pulse on the volume (with waves, soft, off), the bloom (normal, soft at half, off) and the interface animations (on/off: off forces Motion's reduced motion through `MotionConfig` and stops every CSS transition and keyframe under `:root[data-still]`, the same rule the system's reduced motion gets). **Quiet mode** sits above them: it is not a stored setting, it is on when all four are off, and switching it writes all four — off, or back to the shipped values. The shipped values are the ones described here; `settings::EFFECTS` lists them, first value first.
+
 ## The glass recipe
 
 A glass surface is three stacked things, never one. Omitting the middle layer is what turns translucency into unreadable.

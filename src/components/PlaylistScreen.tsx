@@ -2,7 +2,6 @@ import {
   ArrowDown,
   ArrowUp,
   Check,
-  Heart,
   List,
   Menu,
   Pause,
@@ -28,6 +27,7 @@ import {
   type TrackListPrefs,
   trackArtists,
 } from "../lib/spotify";
+import { LikedCover } from "./LikedCover";
 import { MenuPanel } from "./MenuPanel";
 import { PlaylistDetailsDialog } from "./PlaylistDetailsDialog";
 import { PlaylistMenu } from "./PlaylistMenu";
@@ -556,16 +556,16 @@ export function PlaylistScreen({
 }
 
 /**
- * Liked Songs' face: the accent square with the heart, at the playlist's size.
+ * Liked Songs' face: `LikedCover`, at the playlist's size.
  *
- * The same square the rail already draws for it. Spotify sends no cover for
+ * The same drawing the rail already shows for it. Spotify sends no cover for
  * Liked Songs, and a mosaic of its first four songs would make it look like one
  * more playlist — which is the one thing the rail took care that it is not.
  */
 function LikedArtwork() {
   return (
-    <span className="grid size-[180px] shrink-0 place-items-center rounded-[14px] bg-accent text-on-accent shadow-lg lg:size-[232px]">
-      <Heart className="size-16 fill-current lg:size-20" strokeWidth={2} />
+    <span className="size-[180px] shrink-0 overflow-hidden rounded-[14px] shadow-lg lg:size-[232px]">
+      <LikedCover />
     </span>
   );
 }

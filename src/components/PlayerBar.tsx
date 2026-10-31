@@ -27,6 +27,7 @@ import {
   type Track,
   togglePlayback,
   trackArtists,
+  useEffectsSettings,
 } from "../lib/spotify";
 import { DjArtwork, DjMark } from "./DjArtwork";
 import { SmoothSlider } from "./SmoothSlider";
@@ -291,13 +292,17 @@ export function PlayerBar({
 
   // The music's pulse, for the waves on the volume. A motion value and not
   // state: it changes thirty times a second and must not re-render the bar.
+  // "Suave" halves it, which also keeps it under the kick that sends a wave:
+  // the thumb still breathes with the song, and nothing leaves it.
   const pulse = useMotionValue(0);
+  const { beat } = useEffectsSettings();
   useEffect(() => {
-    const unlisten = onBeat((value) => pulse.set(value));
+    const gain = beat === "soft" ? 0.5 : 1;
+    const unlisten = onBeat((value) => pulse.set(value * gain));
     return () => {
       void unlisten?.then((stop) => stop());
     };
-  }, [pulse]);
+  }, [pulse, beat]);
 
   const busy = loading;
   /**
@@ -621,7 +626,7 @@ export function PlayerBar({
             disabled={idle}
             onChange={(value) => void setVolume(value).catch(() => {})}
             label={t.volume}
-            pulse={muted ? undefined : pulse}
+            pulse={muted || beat === "off" ? undefined : pulse}
           />
         </div>
       </div>

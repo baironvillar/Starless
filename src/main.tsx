@@ -1,8 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MotionConfig } from "motion/react";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
+import { useEffectsSettings } from "./lib/spotify";
 
 /**
  * Failures that are a moment, not a verdict.
@@ -53,10 +55,23 @@ const queryClient = new QueryClient({
   },
 });
 
+/**
+ * "Animaciones de la interfaz" off is Motion's reduced motion, forced: springs,
+ * entrances and press feedback jump to their end. "user" leaves it to the system.
+ */
+function Root() {
+  const { motion } = useEffectsSettings();
+  return (
+    <MotionConfig reducedMotion={motion === "off" ? "always" : "user"}>
+      <App />
+    </MotionConfig>
+  );
+}
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <Root />
     </QueryClientProvider>
   </React.StrictMode>,
 );
