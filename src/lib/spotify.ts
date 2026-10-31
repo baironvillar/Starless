@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { useMemo } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import { errors, type Lang } from "./i18n";
 
 /**
@@ -626,6 +626,76 @@ export async function setCrossfadeSeconds(seconds: number): Promise<void> {
 /** Drive the CSS variable every overlay reads. No-op before the first paint matters. */
 export function applyMenuOpacity(opacity: number): void {
   document.documentElement.style.setProperty("--menu-alpha", String(clampOpacity(opacity) / 100));
+}
+
+/**
+ * The background effects. Mirrors `settings::EFFECTS`, the shipped value first.
+ *
+ * They live in a tiny store and not in `App`'s state: the bloom, the pointer
+ * light and the volume read them from three places, and the settings panel
+ * writes them while all three are on screen — a store is what lets a change
+ * answer at once without re-rendering the whole app for it.
+ */
+export const EFFECTS = {
+  glow: ["on", "off"],
+  beat: ["strong", "soft", "off"],
+  bloom: ["normal", "soft", "off"],
+} as const;
+
+export type EffectName = keyof typeof EFFECTS;
+export type Effects = { [K in EffectName]: (typeof EFFECTS)[K][number] };
+
+const EFFECTS_KEY = "starless:effects";
+
+const EFFECTS_DEFAULT: Effects = { glow: "on", beat: "strong", bloom: "normal" };
+
+/** Keep only what this build knows, the same gate Rust keeps. */
+function knownEffects(raw: Record<string, unknown>): Effects {
+  const out = { ...EFFECTS_DEFAULT };
+  for (const name of Object.keys(EFFECTS) as EffectName[]) {
+    const value = raw[name];
+    if ((EFFECTS[name] as readonly unknown[]).includes(value)) {
+      (out as Record<EffectName, unknown>)[name] = value;
+    }
+  }
+  return out;
+}
+
+let currentEffects = EFFECTS_DEFAULT;
+const effectListeners = new Set<() => void>();
+
+export function applyEffects(next: Effects): void {
+  currentEffects = next;
+  for (const listener of effectListeners) listener();
+}
+
+export function useEffectsSettings(): Effects {
+  return useSyncExternalStore(
+    (listener) => {
+      effectListeners.add(listener);
+      return () => effectListeners.delete(listener);
+    },
+    () => currentEffects,
+  );
+}
+
+export async function effects(): Promise<Effects> {
+  if (!hasBackend()) {
+    try {
+      return knownEffects(JSON.parse(window.localStorage.getItem(EFFECTS_KEY) ?? "{}"));
+    } catch {
+      return EFFECTS_DEFAULT;
+    }
+  }
+  return knownEffects(await invoke<Record<string, string>>("effects"));
+}
+
+export async function setEffect<K extends EffectName>(name: K, value: Effects[K]): Promise<void> {
+  if (!hasBackend()) {
+    window.localStorage.setItem(EFFECTS_KEY, JSON.stringify({ ...currentEffects, [name]: value }));
+    return;
+  }
+  return invoke<void>("set_effect", { name, value });
 }
 
 /**
