@@ -2250,6 +2250,52 @@ pub fn jam_session(session: &Session, activate: bool) -> Result<JamSession, Stri
     })
 }
 
+/// El jam que hay en la cuenta, si hay uno.
+///
+/// **La primera puerta no crea nada, y por eso va primera.**
+///
+/// `current_or_new` crea una sesión si no había ninguna, y el panel no puede
+/// dejar un jam abierto en la cuenta de alguien que sólo miró. La puerta que
+/// sí dice si hay jam sin crearlo es `current?alt=protobuf`: contesta `404`
+/// cuando no hay ninguno y `200` con la sesión cuando lo hay.
+///
+/// **La segunda puerta es la de los datos**, en JSON, que es donde están el
+/// código para compartir el jam y los participantes.
+///
+/// **Una sesión que no está activa no es un jam.** El servicio crea una sesión
+/// inactiva cuando no había ninguna, y esa no se muestra: el jam es el que está
+/// `active`.
+pub fn jam_current(session: &Session) -> Result<Option<JamSession>, String> {
+    let owned = session.clone();
+    let hay = call(session, async move {
+        match owned
+            .spclient()
+            .request(
+                &reqwest::Method::GET,
+                "/social-connect/v2/sessions/current?alt=protobuf",
+                None,
+                None,
+            )
+            .await
+        {
+            Ok(_) => Ok(true),
+            // Un `404` es la respuesta normal cuando no hay jam: no es un error.
+            Err(error) if error.kind == ErrorKind::NotFound => Ok(false),
+            Err(error) => {
+                log::error!("spclient: no se pudo preguntar si hay jam: {error}");
+                Err(error.to_string())
+            }
+        }
+    })?;
+
+    if !hay {
+        return Ok(None);
+    }
+
+    let jam = jam_session(session, false)?;
+    Ok(if jam.active { Some(jam) } else { None })
+}
+
 /// Entrar a una sesión con su código.
 ///
 /// **Es un `POST` con cuerpo.** El `GET` al mismo camino contesta `405` —la

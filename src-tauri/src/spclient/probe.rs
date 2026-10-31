@@ -5131,7 +5131,7 @@ pub fn run_jam_state_probe(app: tauri::AppHandle) {
                     let anfitrion = find_key(&json, "host_device_info")
                         .unwrap_or_else(|| "?".to_string());
                     if vuelta == 1 {
-                        log::info!("SP_JAM_STATE: la sesión entera es {json}");
+                        jam_probe_doors(&session, &session_id);
                     }
                     log::info!(
                         "SP_JAM_STATE: vuelta {vuelta} · anfitrión={anfitrion} · miembros={} · dueño={}",
@@ -5153,6 +5153,46 @@ pub fn run_jam_state_probe(app: tauri::AppHandle) {
             }
         }
     });
+}
+
+/// Las dos puertas que Guilden leer la sesión del jam.
+///
+/// **La que el panel necesita es la que no crea.** `current_or_new` crea una
+/// sesión si no hay ninguna, y el panel no puede dejar un jam abierto en la
+/// cuenta de alguien que sólo miró. La otra —`current?alt=protobuf`— es la
+/// que usa el cliente de escritorio y se mide aquí para saber si existe.
+#[cfg(debug_assertions)]
+fn jam_probe_doors(session: &Session, session_id: &str) {
+    for (nombre, ruta) in [
+        (
+            "current_or_new?activate=false",
+            "/social-connect/v2/sessions/current_or_new?activate=false",
+        ),
+        (
+            "current?alt=protobuf",
+            "/social-connect/v2/sessions/current?alt=protobuf",
+        ),
+        ("sessions/<id>", "/social-connect/v2/sessions/{session_id}"),
+    ] {
+        let ruta = ruta.replace("{session_id}", session_id);
+        match jam_ask(
+            session,
+            "estado",
+            nombre,
+            &reqwest::Method::GET,
+            &ruta,
+            None,
+        ) {
+            Some((status, body)) => {
+                let texto = String::from_utf8_lossy(&body);
+                let recorte: String = texto.chars().take(600).collect();
+                let deuna: String = texto.replace(['\n', '\r'], " ");
+                log::info!("SP_JAM_STATE: {nombre} → {status} · {deuna}");
+                let _ = recorte;
+            }
+            None => log::error!("SP_JAM_STATE: {nombre} no contestó"),
+        }
+    }
 }
 
 /// El cluster: qué dispositivos ve el servicio y cuál manda.

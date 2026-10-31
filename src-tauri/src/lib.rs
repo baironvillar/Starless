@@ -1018,6 +1018,23 @@ async fn jam_status(app: AppHandle) -> Result<JamSession, String> {
         })?
 }
 
+/// El jam que hay en la cuenta, si hay uno.
+///
+/// **No abre ninguno.** La puerta que contesta si hay jam es la que no crea
+/// uno —`current?alt=protobuf`—, y la de los datos es la que sí crea. El panel
+/// la usa al abrirse, así que el jam aparece solo cuando ya estaba.
+#[tauri::command]
+async fn jam_current(app: AppHandle) -> Result<Option<JamSession>, String> {
+    let session = ready_session(&app).await?;
+
+    tauri::async_runtime::spawn_blocking(move || spclient::jam_current(&session))
+        .await
+        .map_err(|e| {
+            eprintln!("Starless [command_failed]: {e}");
+            "command_failed".to_string()
+        })?
+}
+
 /// La cola compartida del jam: las canciones que el servicio tiene escrita.
 ///
 /// **La cola es una lista**, y se lee por el servicio de listas —que habla
@@ -2056,6 +2073,7 @@ pub fn run() {
             jam_start,
             jam_join,
             jam_status,
+            jam_current,
             jam_queue,
             jam_leave,
             jam_add_to_queue,

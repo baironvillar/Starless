@@ -50,6 +50,7 @@ import {
   isDjCard,
   type JamSession,
   jamAddToQueue,
+  jamCurrent,
   jamJoin,
   jamLeave,
   jamQueue,
@@ -379,6 +380,38 @@ export default function App() {
    * a poll that asks twice per song.
    */
   const jamPlaying = useRef<string | null>(null);
+
+  /**
+   * El jam que hay en la cuenta, si lo hay.
+   *
+   * **El panel lo pregunta y no lo da por hecho.** La puerta que responde si
+   * hay jam es la que no crea ninguno —la otra crea una sesión si no había
+   * ninguna—, así que preguntar es seguro: un jam que ya estaba, aparece, y
+   * una cuenta sin jam sigue sin jam.
+   *
+   * **Se pregunta dos veces: al abrir la app y al abrir el panel.** La primera
+   * es para que la barra de arriba sepa si hay jam; la segunda, porque entre
+   * una y otra otro dispositivo pudo abrirlo.
+   */
+  const askJam = useCallback(async () => {
+    try {
+      const found = await jamCurrent();
+      if (found) setJam(found);
+    } catch (e) {
+      // **Un jam que no se puede leer no es un jam.** El panel sigue ofreciendo
+      // empezar uno, que es lo que hay que ofrecer.
+      setJamError(explain(e));
+    }
+  }, []);
+
+  useEffect(() => {
+    void askJam();
+  }, [askJam]);
+
+  useEffect(() => {
+    if (!jamOpen) return;
+    void askJam();
+  }, [jamOpen, askJam]);
 
   /**
    * Open a jam.

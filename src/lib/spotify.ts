@@ -436,6 +436,18 @@ export async function jamStatus(): Promise<JamSession> {
 }
 
 /**
+ * The jam that is on the account, if there is one.
+ *
+ * **It does not open a jam.** The door that says whether there is one is the
+ * one that creates none, and the panel asks it when it opens: a jam that
+ * somebody else opened has to show up here, and the person who only wanted to
+ * look must not end up with a jam open on their account.
+ */
+export async function jamCurrent(): Promise<JamSession | null> {
+  return invoke<JamSession | null>("jam_current");
+}
+
+/**
  * The shared queue: the songs the service has written down.
  *
  * **The queue is a list, not a playlist**, and it comes from the list
