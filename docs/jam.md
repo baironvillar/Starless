@@ -514,6 +514,38 @@ saber qué publicó la app y qué quedó reconocido.
 Starless lleva un registro `uri → uid`, lo publica con la cola, y lo manda en el
 comando de agregar cuando lo conoce.
 
+### La cola compartida es lo que publica el anfitrión, y el servicio lo borra
+
+**Medido el 31 de octubre de 2026**, con dos personas en el jam. El servicio
+arma la cola compartida con lo que el último device publica, y **deja afuera las
+pistas que no puede identificar**:
+
+```
+23:15:39  el otro lado mandó play
+23:15:40  la cola compartida tiene 618 canciones     ← las del invitado
+23:15:46  el otro lado mandó play · Flatline
+23:15:48  la cola compartida tiene 1 canciones       ← las de Starless
+```
+
+Las 618 eran del invitado, que publica con `uid`. Las de Starless eran 36
+—la lista del DJ— y ninguna tenía id, así que el servicio no pudo apuntar
+ninguna y quedó sólo la que estaba sonando.
+
+**El comando del invitado llega sin id.** Es el mismo bug del otro lado:
+
+```
+playback: el otro lado mandó add_to_queue (de social-connect-b312…) · Duvet 4
+playback: la canción del comando tiene el uid (vacío)
+```
+
+El `skip_next` del invitado, en cambio, sí lo trae —`DJ Got Us Fallin' uid
+19447afdddbb490e`—, y por eso "saltar" sí funciona y "agregar a la cola" no. El
+servicio no resolvió la pista del `add_to_queue` y la reenvió como vino.
+
+**Y el `uid` hay que pedirlo.** El servicio lo da en el contexto de la pista
+(`/context-resolve/v1/spotify:track:<id>`), y en ningún otro lado: mandando sólo
+la URI, el servicio resuelve la pista que está sonando.
+
 ### Lo que empuja el `dealer`
 
 Con el `dealer` abierto aparecen dos temas que antes nadie escuchaba:

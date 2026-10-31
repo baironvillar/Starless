@@ -242,6 +242,42 @@ pub fn autoplay_context(session: &Session, track_uri: &str) -> Option<Context> {
     .ok()
 }
 
+/// El identificador que el servicio le dio a una pista.
+///
+/// **La pista no se reconoce por su URI.** El `uid` es su identidad dentro de
+/// un contexto, y el servicio lo da en el contexto de la pista: no hay otro
+/// lugar donde se pueda pedir. Se pregunta una vez por pista y queda anotado.
+pub fn uid_de_la_pista(session: &Session, track_uri: &str) -> Option<String> {
+    let id = track_uri
+        .rsplit(':')
+        .next()
+        .unwrap_or(track_uri)
+        .to_owned();
+    let uri = format!("spotify:track:{id}");
+    let owned = session.clone();
+
+    let pistas = call(session, async move {
+        owned
+            .spclient()
+            .get_context(&uri)
+            .await
+            .map(|context| super::context_pistas(&context))
+            .map_err(|e| {
+                log::error!("spclient: el contexto de {uri} no vino: {e}");
+                e.to_string()
+            })
+    })
+    .ok()?;
+
+    let uid = pistas
+        .iter()
+        .find(|(pista, _)| *pista == id)
+        .map(|(_, uid)| uid.clone())
+        .filter(|uid| !uid.is_empty())?;
+    log::info!("spclient: {id} tiene el id {uid}");
+    Some(uid)
+}
+
 /// El snapshot de una canción, con el contexto que le corresponde.
 ///
 /// **La canción que está sonando no es parte del contexto.** El contexto es lo
@@ -253,11 +289,29 @@ pub fn snapshot_for(session: &Session, track_uri: &str, duration_ms: u64) -> Opt
     let tracks = context_tracks(&context);
     let current = track_uri.to_owned();
 
+    // **La canción que suena va con su id, si el context lo trae.** El `uid` es
+    // lo que permite que un comando apunte a esta pista y no a otra, y lo que
+    // le falta al que mira del otro lado para poder resolverla. El context
+    // puede traerla —la primera fila del tramo es la canción que suena— o no:
+    // si no la trae, se publica sin id y se anota en el log, porque eso es un
+    // dato y no una falla.
+    let uid_de_la_actual = tracks
+        .iter()
+        .find(|candidate| candidate.uri == current)
+        .map(|candidate| candidate.uid.clone())
+        .unwrap_or_default();
+    if uid_de_la_actual.is_empty() {
+        log::info!("spclient: el contexto no trae la canción que suena con id");
+    } else {
+        log::info!("spclient: la canción que suena va con el id {uid_de_la_actual}");
+    }
+
     Some(Snapshot {
         context_uri: current.clone(),
         context_url: format!("context://{current}?spotify-apply-lenses=autoplay"),
         track: Track {
             uri: current.clone(),
+            uid: uid_de_la_actual,
             ..Default::default()
         },
         next: tracks

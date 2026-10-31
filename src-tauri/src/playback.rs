@@ -115,7 +115,22 @@ pub fn watch_commands(app: AppHandle) {
         session.spawn(async move {
             let mut stream = stream;
             while let Some((request, reply)) = stream.next().await {
-                let command = translate(&para_el_bucle, &request.command).await;
+                let mut command = translate(&para_el_bucle, &request.command).await;
+                // **El id de la pista, si el comando no lo trajo.** El comando
+                // `add_to_queue` del otro lado llega sin id: el servicio no lo
+                // resolvió, y sin id la canción no entra en la cola
+                // compartida. Se pregunta el contexto de la pista —el único
+                // lugar donde el servicio da el id— y se anota.
+                if command.track_uid.as_deref().unwrap_or_default().is_empty() {
+                    if let Some(id) = &command.track_id {
+                        let uri = format!("spotify:track:{id}");
+                        if let Some(uid) = crate::spclient::state::uid_de_la_pista(&para_el_bucle, &uri)
+                        {
+                            track_uids().remember(&uri, &uid);
+                            command.track_uid = Some(uid);
+                        }
+                    }
+                }
                 log::info!(
                     "playback: el otro lado mandó {} (de {}){}",
                     command.endpoint,
@@ -139,9 +154,7 @@ pub fn watch_commands(app: AppHandle) {
                 // que trae es del servicio: es el único que puede volver a
                 // publicar esa canción en la cola compartida.
                 if let (Some(id), Some(uid)) = (&command.track_id, &command.track_uid) {
-                    if let Some(uids) = app.try_state::<TrackUids>() {
-                        uids.remember(&format!("spotify:track:{id}"), uid);
-                    }
+                    track_uids().remember(&format!("spotify:track:{id}"), uid);
                 }
                 let _ = app.emit("jam://command", &command);
                 let _ = reply.send(librespot_core::dealer::manager::Reply::Success);
@@ -316,8 +329,20 @@ impl PublishQueue {
 /// **Los ids se anotan de tres lugares**, y los tres son el servicio talking:
 /// el comando que manda el otro lado, la cola compartida que el servicio tiene
 /// escrita y el contexto de autoplay que el servicio armó.
-#[derive(Default)]
+///
+/// **Es uno solo para toda la app, y no un estado de Tauri.** Lo anotan lecturas
+/// que no tienen la manija de la app —la biblioteca, que es un contexto—, y
+/// esas lecturas no la reciben: un estado por app obligaría a pasarla por medio
+/// de todo el módulo `spclient`.
 pub struct TrackUids(Mutex<HashMap<String, String>>);
+
+static TRACK_UIDS: std::sync::LazyLock<TrackUids> =
+    std::sync::LazyLock::new(|| TrackUids(Mutex::new(HashMap::new())));
+
+/// Los ids que se conocen, para toda la app.
+pub fn track_uids() -> &'static TrackUids {
+    &TRACK_UIDS
+}
 
 impl TrackUids {
     /// Anota el identificador de una pista.
@@ -454,10 +479,8 @@ pub fn publish_state(app: AppHandle) {
             // donde aparecen sin que nadie los mande: una pista que el usuario
             // elige no está en ese contexto, pero la que el servicio armó sí, y
             // publicarla sin id no la deja entrar en la cola compartida.
-            if let Some(uids) = app.try_state::<TrackUids>() {
-                for track in &snapshot.next {
-                    uids.remember(&track.uri, &track.uid);
-                }
+            for track in &snapshot.next {
+                track_uids().remember(&track.uri, &track.uid);
             }
 
             // **Lo que sigue es la cola de la app.** El contexto de autoplay
@@ -504,7 +527,6 @@ pub fn publish_queue(app: &AppHandle) -> Vec<crate::spclient::state::Track> {
         .try_state::<PublishQueue>()
         .and_then(|state| state.0.lock().ok().map(|cola| cola.clone()))
         .unwrap_or_default();
-    let uids = app.try_state::<TrackUids>();
     pending
         .into_iter()
         .map(|(uri, uid)| {
@@ -515,9 +537,7 @@ pub fn publish_queue(app: &AppHandle) -> Vec<crate::spclient::state::Track> {
             // el servicio no reconoce la pista y la cola compartida no la
             // muestra.
             let uid = if uid.is_empty() {
-                uids.as_ref()
-                    .and_then(|uids| uids.get(&uri))
-                    .unwrap_or_default()
+                track_uids().get(&uri).unwrap_or_default()
             } else {
                 uid
             };

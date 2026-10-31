@@ -367,18 +367,25 @@ pub(crate) fn convert(track: &MetaTrack, session: &Session) -> Track {
 /// Un context trae una o más páginas y cada una trae pistas con su URI. No se
 /// sigue `next_page_url` todavía: si un context viene truncado, eso se ve en el
 /// log de la sonda y se mide antes de escribir el código que lo recorre.
-fn context_uris(context: &Context) -> Vec<String> {
+/// Las pistas de un context con el `uid` que el servicio les dio.
+///
+/// **El `uid` es la identidad de la pista dentro del context.** Es lo que
+/// permite publicarla en la cola compartida del jam: el servicio no reconoce
+/// una pista por su URI, la reconoce por este id.
+fn context_pistas(context: &Context) -> Vec<(String, String)> {
     for page in &context.pages {
         if page.next_page_url.as_deref().is_some_and(|url| !url.is_empty()) {
-            log::warn!("spclient: el context trae página siguiente y no se está seguindo");
+            log::warn!("spclient: el context trae página siguiente y no se está siguiendo");
         }
     }
     context
         .pages
         .iter()
         .flat_map(|page| page.tracks.iter())
-        .filter_map(|track| track.uri.clone())
-        .map(|uri| bare_id(&uri))
+        .filter_map(|track| {
+            let uri = track.uri.clone()?;
+            Some((bare_id(&uri), track.uid.clone().unwrap_or_default()))
+        })
         .collect()
 }
 
@@ -524,19 +531,29 @@ fn hydrate_rows(session: &Session, rows: Vec<(String, Option<i64>)>) -> Result<V
 /// reproducción, que sí la trae, sí la muestra.
 fn context_tracks(session: &Session, uri: String) -> Result<Vec<Track>, String> {
     let owned = session.clone();
-    let uris = call(session, async move {
+    let pistas = call(session, async move {
         owned
             .spclient()
             .get_context(&uri)
             .await
-            .map(|context| context_uris(&context))
+            .map(|context| context_pistas(&context))
             .map_err(|e| {
                 log::error!("spclient: get_context falló: {e}");
                 net_code(&e)
             })
     })?;
 
-    hydrate(session, uris.into_iter().map(|uri| (uri, None)).collect())
+    // **Los ids que trajo el context se anotan.** Son la identidad de cada
+    // pista dentro de ese context, y sin ellos la pista no entra en la cola
+    // compartida del jam: el servicio no la reconoce por la URI.
+    for (uri, uid) in &pistas {
+        crate::playback::track_uids().remember(uri, uid);
+    }
+
+    hydrate(
+        session,
+        pistas.into_iter().map(|(uri, _)| (uri, None)).collect(),
+    )
 }
 
 // ---------------------------------------------------------------------------

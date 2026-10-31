@@ -1056,10 +1056,8 @@ async fn jam_queue(app: AppHandle, session_id: String) -> Result<Vec<Track>, Str
     // servicio trae el `uid` de cada pista —el id del item—, y ese
     // identificador es lo que permite volver a publicar esa pista en la cola
     // compartida y mandar el comando por ella.
-    if let Some(uids) = app.try_state::<playback::TrackUids>() {
-        for (track, uid) in &cola {
-            uids.remember(&format!("spotify:track:{}", track.id), uid);
-        }
+    for (track, uid) in &cola {
+        playback::track_uids().remember(&format!("spotify:track:{}", track.id), uid);
     }
 
     Ok(cola.into_iter().map(|(track, _)| track).collect())
@@ -1138,11 +1136,24 @@ async fn jam_add_to_queue(
     // la pista como un `ContextTrack { uri, uid, gid, metadata }`, y mandando
     // sólo la URI el servicio resuelve otra pista: la que está sonando. El id
     // lo tiene el servicio, y ya lo vimos en el comando del otro lado o en la
-    // cola compartida que él escribe.
-    let uid = app
-        .try_state::<playback::TrackUids>()
-        .and_then(|uids| uids.get(&format!("spotify:track:{track_id}")));
-    if uid.is_some() {
+    // cola compartida que él escribe. Cuando no se lo conoce, se pregunta: el
+    // contexto de la pista es el único lugar donde el servicio lo da.
+    let uri = format!("spotify:track:{track_id}");
+    let uid = match playback::track_uids().get(&uri) {
+        Some(uid) => Some(uid),
+        None => {
+            let session = session.clone();
+            let uri = uri.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                spclient::state::uid_de_la_pista(&session, &uri)
+            })
+            .await
+            .ok()
+            .flatten()
+        }
+    };
+    if let Some(uid) = &uid {
+        playback::track_uids().remember(&uri, uid);
         log::info!("jam: la canción {track_id} va con su uid");
     }
 
@@ -1186,7 +1197,7 @@ fn set_publish_queue(app: AppHandle, tracks: Vec<PublishTrack>) {
     // una canción —si la mandó el otro lado o si estaba en la cola compartida—,
     // y ese identificador sirve para todo lo que viene después: publicarlo y
     // mandar el comando por esa canción.
-    if let Some(uids) = app.try_state::<playback::TrackUids>() {
+    if let Some(uids) = Some(playback::track_uids()) {
         for track in &tracks {
             uids.remember(&track.uri, &track.uid);
         }
@@ -1959,7 +1970,6 @@ pub fn run() {
         .manage(SessionState::default())
         .manage(PlaybackState::default())
         .manage(playback::PublishQueue::default())
-        .manage(playback::TrackUids::default())
         .manage(DjState::default())
         .manage(RadioState::default())
         .setup(|app| {
