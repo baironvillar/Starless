@@ -89,7 +89,11 @@ export function JamPanel({
       transition={SPRING_SHEET}
       role="dialog"
       aria-label={t.jamActivity}
-      className={`glass-sheet pointer-events-auto absolute top-[104px] ${besideQueue ? "right-[260px]" : "right-5"} z-30 flex w-[300px] flex-col overflow-hidden rounded-card`}
+      // **El hueco son los veinte píxeles de siempre.** Al lado de la cola, el
+      // panel arrancaba justo donde termina ella —240 de ancho más 20 de
+      // margen— y los dos vidrios quedaban pegados. La app separa cada
+      // superficie con veinte, y este no era el único que se olvidaba.
+      className={`glass-sheet pointer-events-auto absolute top-[104px] ${besideQueue ? "right-[280px]" : "right-5"} z-30 flex w-[300px] flex-col overflow-hidden rounded-card`}
     >
       <header className="flex shrink-0 items-center justify-between gap-2 px-4 pt-4 pb-3">
         <h2 className="truncate text-[15px] font-semibold tracking-tight">{t.jamActivity}</h2>
