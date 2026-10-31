@@ -38,6 +38,112 @@ pub fn requested() -> bool {
         .unwrap_or(false)
 }
 
+/// El modo de mirar: `STARLESS_SP_JAM_WATCH=1`.
+///
+/// **Un solo lado, y del otro lado está el cliente oficial o un teléfono.**
+/// El arnés abre el jam, dice el código y después mira: cada tres segundos
+/// pregunta cuántos participantes hay y cuántas canciones tiene la cola. Sirve
+/// para medir el otro lado cuando el otro lado es una persona con la app
+/// instalada, que es el caso que el par de cuentas no puede cubrir.
+pub fn watch_requested() -> bool {
+    std::env::var("STARLESS_SP_JAM_WATCH")
+        .map(|value| value != "0" && !value.is_empty())
+        .unwrap_or(false)
+}
+
+/// Cuánto se mira, en segundos.
+fn watch_seconds() -> u64 {
+    std::env::var("STARLESS_SP_JAM_WATCH_SECONDS")
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .filter(|seconds| *seconds > 0)
+        .unwrap_or(180)
+}
+
+/// El modo de mirar: el anfitrión solo, mirando.
+/// 
+/// **El código va al log, porque es lo que la otra persona tiene que pegar.**
+pub fn watch(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(host) = crate::selftest::wait_for_session(&app) else {
+            log::error!("SP_JAM_WATCH: la sesión no llegó a conectar");
+            return;
+        };
+
+        let session = match jam_session(&host, true) {
+            Ok(session) => session,
+            Err(error) => {
+                log::error!("SP_JAM_WATCH: no se pudo abrir el jam: {error}");
+                return;
+            }
+        };
+
+        let session_id = session.session_id.clone();
+        let code = session.join_session_token.clone().unwrap_or_default();
+        log::info!("=== DIAGNOSTIC: el jam mirando ===");
+        log::info!("SP_JAM_WATCH: sesión {session_id}");
+        log::info!("SP_JAM_WATCH: CÓDIGO {code}");
+        log::info!(
+            "SP_JAM_WATCH: unite con ese código desde el otro cliente; miro {} segundos",
+            watch_seconds()
+        );
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(watch_seconds());
+        let mut antes_miembros: Option<usize> = None;
+        let mut antes_cola: Option<usize> = None;
+
+        while std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_secs(3));
+
+            let Ok(poll) = jam_session(&host, false) else {
+                log::error!("SP_JAM_WATCH: la puerta no contestó");
+                continue;
+            };
+            if poll.session_id != session_id {
+                log::error!(
+                    "SP_JAM_WATCH: la sesión cambió a {} — el jam terminó",
+                    poll.session_id
+                );
+                break;
+            }
+
+            let miembros = poll.session_members.len();
+            let cola = jam_queue(&host, &session_id).map(|q| q.len()).unwrap_or(0);
+
+            // **Lo que cambia se dice; lo que no cambia no.** Un log por cada
+            // tres segundos con lo mismo es ruido, y el ruido esconde el
+            // momento en que el otro lado entró.
+            if antes_miembros != Some(miembros) {
+                log::info!(
+                    "SP_JAM_WATCH: {miembros} participante(s) · cola con {cola} canciones"
+                );
+                antes_miembros = Some(miembros);
+            }
+
+            // **La cola es lo que dice si el otro lado controla el jam.** Una
+            // lista con canciones es una lista que el otro lado llenó, y sus
+            // nombres dicen cuáles.
+            if antes_cola != Some(cola) {
+                antes_cola = Some(cola);
+                match jam_queue(&host, &session_id) {
+                    Ok(queue) => {
+                        let nombres: Vec<&str> =
+                            queue.iter().take(5).map(|track| track.name.as_str()).collect();
+                        log::info!("SP_JAM_WATCH: la cola tiene {cola} canciones: {nombres:?}");
+                    }
+                    Err(error) => log::error!("SP_JAM_WATCH: no se pudo leer la cola: {error}"),
+                }
+            }
+        }
+
+        match jam_end(&host, &session_id) {
+            Ok(()) => log::info!("SP_JAM_WATCH: el jam se cerró"),
+            Err(error) => log::error!("SP_JAM_WATCH: el jam no se pudo cerrar: {error}"),
+        }
+        log::info!("=== DIAGNOSTIC: fin del jam mirando ===");
+    });
+}
+
 /// Dónde vive la credencial de la segunda cuenta.
 ///
 /// **Sin esto el arnés no puede arrancar**, y no adivina: adivinar sería

@@ -2631,7 +2631,10 @@ mod jampair;
 mod jamlist;
 
 #[cfg(debug_assertions)]
-pub use jampair::{requested as jam_pair_requested, run as run_jam_pair_probe};
+pub use jampair::{
+    requested as jam_pair_requested, run as run_jam_pair_probe, watch as run_jam_watch_probe,
+    watch_requested as jam_watch_requested,
+};
 
 #[cfg(debug_assertions)]
 pub use probe::{

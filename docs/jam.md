@@ -642,6 +642,8 @@ puede usar esa puerta**.
 | `STARLESS_SP_JAM=1` | mide las rutas: status y cuerpo de cada una, y **prueba las funciones de la app** |
 | `STARLESS_SP_JAM_CREATE=1` | además activa la sesión |
 | `STARLESS_SP_JAM_QUEUE=1` | **sólo** la cola: leerla, mandar el comando y volver a leerla |
+| `STARLESS_SP_JAM_PAIR=1` | **el jam entero, con los dos lados**: ver [el arnés](#el-arnés-el-jam-con-los-dos-lados) |
+| `STARLESS_SP_JAM_WATCH=1` | **el jam mirando**: abre el jam, dice el código y anota lo que cambia |
 
 **La sonda mide dos cosas.** Todo lo de abajo habla con `reqwest` y trae el
 cuerpo de todas las respuestas —que es lo que hace falta para *medir*—, pero lo
@@ -664,6 +666,88 @@ Una sesión de jam viva se le ve a la persona que la está probando —aparece e
 el cliente de Spotify y en la lista de sesiones— y eso es ruido, no un
 resultado.
 
+## El arnés: el jam con los dos lados
+
+La sonda de arriba habla con el servicio **desde la cuenta del anfitrión**, y eso
+mide las puertas pero no el jam: un jam es un protocolo de dos cuentas. Medirlo
+de punta a punta significaba, hasta ahora, mergear, construir y juntar a dos
+personas con un teléfono en la mano —y el resultado en la palabra de alguien.
+
+**Acá los dos lados son locales.** El anfitrión es la sesión de la app —la
+cuenta de esta máquina— y el invitado es una segunda sesión de librespot con
+las credenciales de otra cuenta, en su propio directorio de caché y con su
+propio id de dispositivo. El arnés camina el ciclo entero y escribe un
+veredicto por paso.
+
+Vive en `src-tauri/src/spclient/jampair.rs`, también detrás de
+`#[cfg(debug_assertions)]`.
+
+### Cómo se corre
+
+La segunda cuenta se conecta **una vez**, con la app y con la caché en otro
+directorio:
+
+```powershell
+$env:STARLESS_CACHE_DIR="$env:LOCALAPPDATA\Starless-b"
+bun run app          # entrar con la otra cuenta y cerrar
+```
+
+`STARLESS_CACHE_DIR` **sólo existe en las compilaciones de desarrollo**: en una
+release hay un solo caché, como siempre.
+
+Después, el arnés:
+
+```powershell
+$env:STARLESS_SP_JAM_PAIR='1'
+$env:STARLESS_SP_JAM_PAIR_CACHE="$env:LOCALAPPDATA\Starless-b"
+bun run app
+```
+
+El resultado está en el log (`%LOCALAPPDATA%\Starless\starless.log`), con un
+`PASA` o un `FALLA` por paso:
+
+| Paso | Qué pregunta |
+| --- | --- |
+| el anfitrión abre el jam | ¿la puerta abre y trae código? |
+| el invitado se une con el código | ¿otra cuenta entra? |
+| el invitado sigue en la sesión del anfitrión | ¿la puerta que pregunta devuelve la sesión del anfitrión o una propia? |
+| el anfitrión ve al invitado | ¿los participantes aparecen? |
+| el invitado manda una canción | ¿el comando entra desde otro dispositivo? |
+| **la canción llegó a la cola del anfitrión** | **¿cruza?** |
+| el invitado puede leer la cola compartida | ¿la lista se ve de los dos lados? |
+| la cola del anfitrión se puede sembrar | ¿el anfitrión puede llenar su propia cola? |
+| el invitado se sale | ¿la puerta de irse funciona con otra cuenta? |
+| el anfitrión ve al invitado irse | ¿el que se va desaparece? |
+| el anfitrión cierra el jam | ¿la puerta del dueño funciona? |
+
+**El paso que decide es el sexto.** La cola del jam es la cola del *player* del
+anfitrión, y el player de librespot no publica ninguna —ni contexto ni cola—,
+así que lo más probable es que ese paso falle y la cola siga vacía. **Eso no
+lo arregla una puerta**: lo que falta es saber qué publica el cliente de
+escritorio para que el anfitrión pueda hacerlo también. El arnés no lo supone:
+lo dice, paso por paso.
+
+**El arnés no necesita un pull request.** Corre sobre la rama que esté, así que
+el jam se mide **antes** de mergearlo y no después.
+
+### El modo de mirar: del otro lado hay una persona
+
+Cuando el otro lado no es una cuenta de esta máquina sino el cliente oficial o
+un teléfono, el arnés hace otra cosa: **abre el jam, dice el código y mira**.
+
+```powershell
+$env:STARLESS_SP_JAM_WATCH='1'
+$env:STARLESS_SP_JAM_WATCH_SECONDS='300'   # opcional, 180 por defecto
+bun run app
+```
+
+El código sale en el log (`SP_JAM_WATCH: CÓDIGO …`) y hay que pegarlo en el
+otro cliente. Después el arnés pregunta cada tres segundos y **anota sólo lo que
+cambia**: cuántos participantes hay y cuántas canciones tiene la cola, con los
+nombres de las primeras cinco. Si la cola crece, el otro lado está llenando la
+cola compartida y el jam cruza; si no crece y los participantes aparecen, el
+cruce falla en la cola y no en la sesión.
+
 ## Lo que falta
 
 Honesto, porque buena parte de esto no se comprobó:
@@ -678,10 +762,11 @@ Honesto, porque buena parte de esto no se comprobó:
   no por el comando.
 - **Si el comando que manda el invitado llega a la cola del anfitrión.** El
   servicio contesta `200` con `{"status":"RECOVERED"}`, que dice que el comando
-  entró, pero no dice **qué hizo**: eso necesita dos cuentas. Lo que sí se midió
-  es que, con Starless de anfitrión, la cola del jam **no existe** —ni antes ni
-  después del comando—, porque esa cola es la del player del anfitrión y el
-  player de librespot no tiene cola.
+  entró, pero no dice **qué hizo**: eso necesita dos cuentas, y para eso está
+  el [arnés](#el-arnés-el-jam-con-los-dos-lados). Lo que sí se midió con una
+  sola cuenta es que, con Starless de anfitrión, la cola del jam **no existe** —
+  ni antes ni después del comando—, porque esa cola es la del player del
+  anfitrión y el player de librespot no tiene cola.
 - **Cómo se modifica una sesión.** `GET`, `POST`, `PUT` y `PATCH` sobre
   `/social-connect/v2/sessions/<id>` contestan `405`: el verbo es otro, y
   probablemente sea un `POST` con el cuerpo del proto. Los permisos
@@ -689,11 +774,9 @@ Honesto, porque buena parte de esto no se comprobó:
 - **Si el pubsub se puede implementar.** Si no, el sistema pregunta en vez de
   recibir, y hay que decidir cada cuánto. **La decisión ya está tomada y es
   preguntar**: la sesión y la cola se piden cada tres segundos.
-- **Lo que falta para medirlo del todo: una segunda cuenta.** Todo lo que se
-  sabe del jam se midió con una cuenta: la que abre la sesión. Lo que pasa
-  cuando **alguien más** se une —qué ve el anfitrión, qué puede hacer el
-  invitado, si el invitado puede salirse de verdad— necesita dos cuentas y dos
-  máquinas.
+- ~~**Lo que falta para medirlo del todo: una segunda cuenta.**~~ **Ya no
+  falta.** El arnés corre los dos lados en esta máquina, con dos cuentas y dos
+  cachés: [el arnés](#el-arnés-el-jam-con-los-dos-lados).
 
 ## Para librespot
 

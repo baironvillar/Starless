@@ -1959,6 +1959,12 @@ pub fn run() {
             if spclient::jam_pair_requested() {
                 spclient::run_jam_pair_probe(handle.clone());
             }
+            // El jam mirando: el anfitrión solo, y del otro lado el cliente
+            // oficial o un teléfono. El código sale en el log.
+            #[cfg(debug_assertions)]
+            if spclient::jam_watch_requested() {
+                spclient::run_jam_watch_probe(handle.clone());
+            }
             if selftest::requested() {
                 selftest::run(handle);
             }
