@@ -2296,6 +2296,32 @@ pub fn jam_current(session: &Session) -> Result<Option<JamSession>, String> {
     Ok(if jam.active { Some(jam) } else { None })
 }
 
+/// Los primeros bytes de una respuesta, en hexadecimal y con lo que se puede
+/// leer.
+///
+/// **Es para el log de un cuerpo que no se entendió**, y por eso no es un
+/// volcado de todo: con los primeros doscientos bytes se ve si la respuesta es
+/// un error, una lista vacía o algo que el decoder no conoce.
+fn volcado(body: &[u8]) -> String {
+    let hex: String = body
+        .iter()
+        .take(64)
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    let texto: String = body
+        .iter()
+        .take(64)
+        .map(|byte| {
+            if byte.is_ascii_graphic() || *byte == b' ' {
+                *byte as char
+            } else {
+                '.'
+            }
+        })
+        .collect();
+    format!("{hex} · {texto}")
+}
+
 /// Entrar a una sesión con su código.
 ///
 /// **Es un `POST` con cuerpo.** El `GET` al mismo camino contesta `405` —la
@@ -2459,7 +2485,14 @@ pub fn jam_queue(session: &Session, session_id: &str) -> Result<Vec<Track>, Stri
             Vec::new()
         }
         None => {
-            log::error!("spclient: la cola del jam vino con otra forma");
+            // **El cuerpo crudo, cuando no se entiende.** Un "vino con otra
+            // forma" sin el cuerpo es un callejón sin salida: no se sabe si el
+            // servicio cambió la respuesta o si el decoder se equivocó. Con los
+            // primeros bytes en el log, se sabe.
+            log::error!(
+                "spclient: la cola del jam vino con otra forma · {}",
+                volcado(&answer)
+            );
             return Err("bad_response".to_string());
         }
     };
