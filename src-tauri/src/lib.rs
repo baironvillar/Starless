@@ -1068,7 +1068,24 @@ async fn jam_leave(app: AppHandle, session_id: String, is_owner: bool) -> Result
     let session = ready_session(&app).await?;
 
     tauri::async_runtime::spawn_blocking(move || {
-        spclient::jam_leave(&session, &session_id)?;
+        // **Un `429` es el servicio diciendo "ahora no".** Terminar un jam es la
+        // única acción que no se puede dejar para después: si la persona la
+        // aprieta y el servicio está ocupado, se reintenta un par de veces en
+        // lugar de devolverle un error por algo que se resuelve solo.
+        let mut intento = 0;
+        loop {
+            match spclient::jam_leave(&session, &session_id) {
+                Ok(()) => break,
+                Err(error) if error == "rate_limited" && intento < 3 => {
+                    intento += 1;
+                    log::warn!(
+                        "spclient: el servicio pidió más calma para terminar el jam; intento {intento}"
+                    );
+                    std::thread::sleep(std::time::Duration::from_secs(2 * intento));
+                }
+                Err(error) => return Err(error),
+            }
+        }
 
         if is_owner {
             // Si la sesión ya no está, `jam_end` lo cuenta como un aviso.

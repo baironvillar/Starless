@@ -1303,19 +1303,39 @@ export default function App() {
     // success.
     let espera = JAM_POLL_MS;
 
+    // **La sesión se pregunta una vez cada seis vueltas.**
+    //
+    // Los participantes no cambian cada cinco segundos: cambian cuando alguien
+    // entra o se va. Y cada pregunta es un pedido que el servicio cuenta, y la
+    // cuenta es lo que lo hace decir "ahora no" —medido el 31 de octubre de
+    // 2026: con la sesión y la cola en cada vuelta, el servicio cortó la
+    // tanda y hasta el botón de terminar el jam empezó a fallar. La cola es
+    // lo que se mueve; la sesión puede esperar.
+    let vuelta = 0;
+
     const tick = async () => {
+      vuelta += 1;
       try {
-        const [session, queue] = await Promise.all([jamStatus(), jamQueue(sessionId)]);
+        const [session, queue] = await Promise.all([
+          // **La sesión se pregunta una vez cada seis vueltas.** Los
+          // participantes no cambian cada cinco segundos —cambian cuando
+          // alguien entra o se va—, y cada pregunta es un pedido que el
+          // servicio cuenta.
+          vuelta % 6 === 1 ? jamStatus() : Promise.resolve(null),
+          jamQueue(sessionId),
+        ]);
         if (!alive) return;
 
-        if (session.session_id !== sessionId) {
+        // **La sesión cambió: el jam que había ya no está.** El panel lo dice
+        // en vez de adoptar el nuevo, que sería un jam que nadie abrió.
+        if (session && session.session_id !== sessionId) {
           setJam(null);
           setJamSongs([]);
           jamHead.current = null;
           return;
         }
 
-        setJam(session);
+        if (session) setJam(session);
         setJamSongs(queue);
         espera = JAM_POLL_MS;
 
