@@ -2622,8 +2622,16 @@ fn rootlist_revision(session: &Session) -> Result<Vec<u8>, String> {
 #[cfg(debug_assertions)]
 mod probe;
 
+/// El jam con los dos lados en esta máquina: el arnés que camina el ciclo
+/// entero con dos cuentas y dice qué paso funciona.
+#[cfg(debug_assertions)]
+mod jampair;
+
 /// La cola compartida del jam: el servicio de listas y su protobuf.
 mod jamlist;
+
+#[cfg(debug_assertions)]
+pub use jampair::{requested as jam_pair_requested, run as run_jam_pair_probe};
 
 #[cfg(debug_assertions)]
 pub use probe::{

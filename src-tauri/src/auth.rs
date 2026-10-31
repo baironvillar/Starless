@@ -5,7 +5,7 @@
 //! a boolean and a display name. It never sees an access token, a refresh token,
 //! or the cookie librespot keeps internally.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use librespot_core::{
     authentication::Credentials,
@@ -91,20 +91,39 @@ fn env_or(name: &str) -> Option<String> {
 /// Where librespot keeps its credential cache, so a second launch does not make
 /// the user authorise again.
 pub fn cache_dir() -> Result<PathBuf, String> {
+    // **El arnés del jam necesita dos cuentas en la misma máquina**, y cada
+    // cuenta tiene su credencial en su propio directorio. La puerta es una
+    // variable de entorno y sólo existe en las compilaciones de desarrollo:
+    // en una release hay un solo caché, como siempre, y la variable no hace
+    // nada.
+    #[cfg(debug_assertions)]
+    if let Some(dir) = env_or("STARLESS_CACHE_DIR") {
+        return Ok(PathBuf::from(dir));
+    }
+
     dirs::data_dir()
         .map(|base| base.join("Starless"))
         .ok_or_else(|| fail("no_data_dir", "dirs::data_dir() returned nothing"))
 }
 
-/// Open the credential cache. Three slots, one directory: librespot treats them
-/// separately, and this keeps the on-disk shape trivial to inspect.
-pub fn open_cache() -> Result<Cache, String> {
-    let dir = cache_dir()?;
-    std::fs::create_dir_all(&dir)
+/// Abre un caché de credenciales en el directorio que se le dice.
+///
+/// **La puerta de atrás del arnés del jam.** La cuenta del invitado vive en
+/// otro directorio, y el arnés abre los dos cachés en el mismo proceso: por
+/// eso esto es una función aparte y no un `cache_dir()` con un argumento
+/// opcional.
+pub fn open_cache_at(dir: &Path) -> Result<Cache, String> {
+    std::fs::create_dir_all(dir)
         .map_err(|e| fail("cache_unavailable", format!("create_dir_all({}): {e}", dir.display())))?;
     let path = dir.to_string_lossy().to_string();
     Cache::new(Some(path.as_str()), Some(path.as_str()), Some(path.as_str()), None)
         .map_err(|e| fail("cache_unavailable", e))
+}
+
+/// Open the credential cache. Three slots, one directory: librespot treats them
+/// separately, and this keeps the on-disk shape trivial to inspect.
+pub fn open_cache() -> Result<Cache, String> {
+    open_cache_at(&cache_dir()?)
 }
 
 /// Is there anything on disk that a session could be restored from?
@@ -205,11 +224,21 @@ const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 ///
 /// Blocking: it waits for the handshake. Call it from a blocking thread.
 pub fn connect_now(cache: &Cache) -> Result<Session, String> {
+    let client_id = streaming_client_id();
+    connect_now_as(session_config(&client_id), cache)
+}
+
+/// El mismo handshake, con una configuración propia.
+///
+/// **El invitado del arnés del jam es otro dispositivo, no sólo otra cuenta.**
+/// El servicio identifica a los miembros de una sesión por el dispositivo que
+/// manda el comando, así que dos sesiones con el mismo id serían una sola para
+/// él —y el arnés mediría una sola persona donde hay dos.
+pub fn connect_now_as(config: SessionConfig, cache: &Cache) -> Result<Session, String> {
     let credentials = cache
         .credentials()
         .ok_or_else(|| fail("not_signed_in", "no hay credenciales guardadas"))?;
-    let client_id = streaming_client_id();
-    let session = Session::new(session_config(&client_id), Some(cache.clone()));
+    let session = Session::new(config, Some(cache.clone()));
 
     // The handshake runs on the session's own runtime, so the wait happens on
     // a channel and not on a task of ours: `Session::spawn` is the only way in

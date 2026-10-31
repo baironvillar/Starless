@@ -1952,6 +1952,13 @@ pub fn run() {
             if spclient::jam_requested() {
                 spclient::run_jam_probe(handle.clone());
             }
+            // El jam con los dos lados: el anfitrión es esta sesión y el
+            // invitado es una segunda cuenta en otro caché. Es la única forma de
+            // medir el jam sin mergear nada.
+            #[cfg(debug_assertions)]
+            if spclient::jam_pair_requested() {
+                spclient::run_jam_pair_probe(handle.clone());
+            }
             if selftest::requested() {
                 selftest::run(handle);
             }
