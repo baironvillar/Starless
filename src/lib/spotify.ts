@@ -1519,3 +1519,15 @@ export const SESSION_ERRORS = new Set([
   "audio_stalled",
   "audio_device_failed",
 ]);
+
+/**
+ * If the service said "not now".
+ *
+ * **A `429` is not a broken jam.** It is the service cutting the batch because
+ * it was asked too much, and the next question asks again. Treating it as a
+ * failure would put an error in the panel for something that is only a moment.
+ */
+export function isRateLimited(error: unknown): boolean {
+  const raw = typeof error === "string" ? error : String(error);
+  return raw.includes("rate_limited");
+}

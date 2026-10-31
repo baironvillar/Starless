@@ -2283,7 +2283,7 @@ pub fn jam_current(session: &Session) -> Result<Option<JamSession>, String> {
             Err(error) if error.kind == ErrorKind::NotFound => Ok(false),
             Err(error) => {
                 log::error!("spclient: no se pudo preguntar si hay jam: {error}");
-                Err(error.to_string())
+                Err(net_code(&error))
             }
         }
     })?;

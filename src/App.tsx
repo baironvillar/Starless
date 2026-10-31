@@ -48,6 +48,7 @@ import {
   explain,
   historyKey,
   isDjCard,
+  isRateLimited,
   type JamSession,
   jamAddToQueue,
   jamCurrent,
@@ -389,18 +390,25 @@ export default function App() {
    * ninguna—, así que preguntar es seguro: un jam que ya estaba, aparece, y
    * una cuenta sin jam sigue sin jam.
    *
-   * **Se pregunta dos veces: al abrir la app y al abrir el panel.** La primera
-   * es para que la barra de arriba sepa si hay jam; la segunda, porque entre
-   * una y otra otro dispositivo pudo abrirlo.
+   * **Pregunta una vez por vez.** El servicio corta la tanda con un `429`
+   * cuando se le pregunta de más, y dos preguntas juntas —la del arranque y la
+   * del panel— son dos. Por eso la última pregunta se recuerda: si fue hace
+   * un rato, no se vuelve a hacer.
+   *
+   * **Un `429` no es un error del jam.** Es el servicio diciendo "no ahora", y
+   * la próxima pregunta lo va a preguntar de nuevo.
    */
+  const jamAsked = useRef(0);
   const askJam = useCallback(async () => {
+    if (Date.now() - jamAsked.current < JAM_POLL_MS) return;
+    jamAsked.current = Date.now();
     try {
       const found = await jamCurrent();
       if (found) setJam(found);
     } catch (e) {
       // **Un jam que no se puede leer no es un jam.** El panel sigue ofreciendo
       // empezar uno, que es lo que hay que ofrecer.
-      setJamError(explain(e));
+      if (!isRateLimited(e)) setJamError(explain(e));
     }
   }, []);
 
