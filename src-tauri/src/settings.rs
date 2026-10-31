@@ -338,10 +338,12 @@ pub fn saved_track_view() -> &'static str {
 /// (`soft` halves it, which also keeps it under the kick that sends a wave) and
 /// `bloom` the frost light behind the glass. They are the movement DESIGN.md
 /// allows under the glass, so whoever finds it too much can take it back.
-pub const EFFECTS: [(&str, &[&str]); 3] = [
+/// `motion` is the interface's own: springs, entrances and press feedback.
+pub const EFFECTS: [(&str, &[&str]); 4] = [
     ("glow", &["on", "off"]),
     ("beat", &["strong", "soft", "off"]),
     ("bloom", &["normal", "soft", "off"]),
+    ("motion", &["on", "off"]),
 ];
 
 /// Remember one effect. Same gate as `save_library_sort`: an unknown name or

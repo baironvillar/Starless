@@ -640,6 +640,7 @@ export const EFFECTS = {
   glow: ["on", "off"],
   beat: ["strong", "soft", "off"],
   bloom: ["normal", "soft", "off"],
+  motion: ["on", "off"],
 } as const;
 
 export type EffectName = keyof typeof EFFECTS;
@@ -647,7 +648,15 @@ export type Effects = { [K in EffectName]: (typeof EFFECTS)[K][number] };
 
 const EFFECTS_KEY = "starless:effects";
 
-const EFFECTS_DEFAULT: Effects = { glow: "on", beat: "strong", bloom: "normal" };
+export const EFFECTS_DEFAULT: Effects = {
+  glow: "on",
+  beat: "strong",
+  bloom: "normal",
+  motion: "on",
+};
+
+/** Everything still: what the quiet mode switch writes. */
+export const EFFECTS_QUIET: Effects = { glow: "off", beat: "off", bloom: "off", motion: "off" };
 
 /** Keep only what this build knows, the same gate Rust keeps. */
 function knownEffects(raw: Record<string, unknown>): Effects {
@@ -666,6 +675,9 @@ const effectListeners = new Set<() => void>();
 
 export function applyEffects(next: Effects): void {
   currentEffects = next;
+  // The CSS half of `motion`: index.css stops every transition and keyframe
+  // under this attribute, the same rule the system's reduced motion gets.
+  document.documentElement.toggleAttribute("data-still", next.motion === "off");
   for (const listener of effectListeners) listener();
 }
 
