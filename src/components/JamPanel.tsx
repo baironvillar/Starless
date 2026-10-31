@@ -4,16 +4,38 @@ import { useState } from "react";
 import { copyText } from "../lib/clipboard";
 import type { StringKey } from "../lib/i18n";
 import { SPRING, SPRING_SHEET } from "../lib/motion";
-import type { JamMember, JamSession } from "../lib/spotify";
+import { type JamMember, type JamSession, type Track, trackRowKeys } from "../lib/spotify";
+
+/**
+ * Cuántas canciones de la cola compartida se ven.
+ *
+ * **La cola del jam la llena el servicio**, y con la lista de arranque son
+ * cientos. Panel con cientos de filas no es un panel.
+ */
+const JAM_QUEUE_ROWS = 8;
 
 type JamPanelProps = {
   t: Record<StringKey, string>;
   /** The open session, or `null` when there is none. */
   session: JamSession | null;
+  /**
+   * The shared queue: the songs the jam has written down.
+   *
+   * **It is the jam's queue, not this app's.** The other side can put songs in
+   * it, and that is how one person hears what the other one queued.
+   */
+  queue: Track[];
   /** A request is on its way: the buttons wait. */
   busy: boolean;
   /** What went wrong, in the words of the app. */
   error: string | null;
+  /**
+   * Whether the queue panel is open.
+   *
+   * **The jam docks to the left of it.** The two panels are about different
+   * things and both of them are worth having open.
+   */
+  besideQueue: boolean;
   onStart: () => void;
   onJoin: (token: string) => void;
   onLeave: () => void;
@@ -38,8 +60,10 @@ type JamPanelProps = {
 export function JamPanel({
   t,
   session,
+  queue,
   busy,
   error,
+  besideQueue,
   onStart,
   onJoin,
   onLeave,
@@ -65,7 +89,7 @@ export function JamPanel({
       transition={SPRING_SHEET}
       role="dialog"
       aria-label={t.jamActivity}
-      className="glass-sheet pointer-events-auto absolute top-[104px] right-5 z-30 flex w-[300px] flex-col overflow-hidden rounded-card"
+      className={`glass-sheet pointer-events-auto absolute top-[104px] ${besideQueue ? "right-[260px]" : "right-5"} z-30 flex w-[300px] flex-col overflow-hidden rounded-card`}
     >
       <header className="flex shrink-0 items-center justify-between gap-2 px-4 pt-4 pb-3">
         <h2 className="truncate text-[15px] font-semibold tracking-tight">{t.jamActivity}</h2>
@@ -87,6 +111,7 @@ export function JamPanel({
           <OpenJam
             t={t}
             session={session}
+            queue={queue}
             busy={busy}
             copied={copied}
             onCopy={onCopy}
@@ -171,6 +196,7 @@ export function JamPanel({
 function OpenJam({
   t,
   session,
+  queue,
   busy,
   copied,
   onCopy,
@@ -178,12 +204,20 @@ function OpenJam({
 }: {
   t: Record<StringKey, string>;
   session: JamSession;
+  queue: Track[];
   busy: boolean;
   copied: boolean;
   onCopy: () => void;
   onLeave: () => void;
 }) {
   const code = session.join_session_token ?? "";
+  // **The host closes the jam and the guest leaves it.** Two words for two
+  // doors: the guest's door takes them out of the session and the jam goes
+  // on, and the host's takes the jam down for everybody.
+  const isOwner = session.is_session_owner;
+  // The shared queue can hold the same song twice, so the rows are counted:
+  // a key that repeats leaves the old row mounted, painting the old list.
+  const rowKeys = trackRowKeys(queue);
 
   return (
     <>
@@ -229,6 +263,34 @@ function OpenJam({
         )}
       </section>
 
+      {/*
+          The shared queue: the songs the jam has written down.
+
+          **The first one is the one that is playing.** The queue of a jam is
+          the host's queue, and the host's queue starts at the song that is
+          sounding. This is what makes a jam a jam: the other side's song
+          shows up here, and this app follows it.
+      */}
+      <section>
+        <h3 className="pb-1.5 text-[12px] font-semibold tracking-wide uppercase text-ink-faint">
+          {t.jamQueue}
+        </h3>
+        <p className="pb-1.5 text-[11.5px] leading-relaxed text-ink-faint">{t.jamQueueHint}</p>
+        {queue.length === 0 ? (
+          <p className="px-0.5 text-[12.5px] text-ink-faint">{t.jamQueueEmpty}</p>
+        ) : (
+          <ul className="flex flex-col gap-0.5">
+            {queue.slice(0, JAM_QUEUE_ROWS).map((track, index) => (
+              <li key={rowKeys[index]} className="flex items-center gap-2 rounded-[12px] px-1 py-1">
+                <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-muted">
+                  {track.name}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
       <motion.button
         type="button"
         onClick={onLeave}
@@ -237,7 +299,7 @@ function OpenJam({
         transition={SPRING}
         className="rounded-pill border border-white/12 px-3.5 py-1.5 text-[13px] font-medium text-ink-muted transition-colors duration-200 hover:bg-white/8 hover:text-ink disabled:opacity-60"
       >
-        {busy ? t.jamEnding : t.jamLeave}
+        {busy ? (isOwner ? t.jamEnding : t.jamLeaving) : isOwner ? t.jamLeave : t.jamLeaveGuest}
       </motion.button>
     </>
   );

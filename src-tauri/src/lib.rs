@@ -994,17 +994,103 @@ async fn jam_join(app: AppHandle, token: String) -> Result<JamSession, String> {
         })?
 }
 
-/// Cerrar el jam: la sesión se borra y la cuenta queda como estaba.
+/// Leer la sesión, sin abrir ninguna.
+///
+/// **Es la misma puerta que abre la sesión, pero sin activarla.** El jam no
+/// tiene pubsub en librespot —el `dealer` no lo tiene—, así que la única
+/// forma de saber quién se unió es preguntar cada tanto.
+///
+/// **La puerta crea la sesión si no hay ninguna**, y por eso el panel la usa
+/// solo mientras tiene una sesión en la mano: si la respuesta trae otra
+/// sesión, la que tenía ya no está y el panel lo dice en vez de adoptarla.
 #[tauri::command]
-async fn jam_leave(app: AppHandle, session_id: String) -> Result<(), String> {
+async fn jam_status(app: AppHandle) -> Result<JamSession, String> {
     let session = ready_session(&app).await?;
 
-    tauri::async_runtime::spawn_blocking(move || spclient::jam_leave(&session, &session_id))
+    tauri::async_runtime::spawn_blocking(move || spclient::jam_session(&session, false))
         .await
         .map_err(|e| {
             eprintln!("Starless [command_failed]: {e}");
             "command_failed".to_string()
         })?
+}
+
+/// La cola compartida del jam: las canciones que el servicio tiene escrita.
+///
+/// **La cola es una lista**, y se lee por el servicio de listas —que habla
+/// protobuf— y no por la biblioteca.
+#[tauri::command]
+async fn jam_queue(app: AppHandle, session_id: String) -> Result<Vec<Track>, String> {
+    let session = ready_session(&app).await?;
+
+    tauri::async_runtime::spawn_blocking(move || spclient::jam_queue(&session, &session_id))
+        .await
+        .map_err(|e| {
+            eprintln!("Starless [command_failed]: {e}");
+            "command_failed".to_string()
+        })?
+}
+
+/// Salir del jam.
+///
+/// **Salir y cerrar no son la misma puerta.** Salir es un `POST` a
+/// `…/sessions/<id>/leave`, y es la puerta de un invitado: lo saca de la
+/// sesión y deja la sesión viva. Cerrar —borrar la sesión— es un `DELETE` a
+/// `…/sessions/<id>`, y es del anfitrión: sin él, la sesión queda abierta en
+/// la cuenta de quien la abrió.
+///
+/// **El que aprieta "salir" en el jam que él abrió cierra el jam para todos**,
+/// y por eso el comando hace las dos cosas cuando quien aprieta es el
+/// anfitrión: primero sale, y después la borra. La segunda puede contestar
+/// `404` —la sesión ya no está— y eso no es un fallo: es lo que se quería.
+#[tauri::command]
+async fn jam_leave(app: AppHandle, session_id: String, is_owner: bool) -> Result<(), String> {
+    let session = ready_session(&app).await?;
+
+    tauri::async_runtime::spawn_blocking(move || {
+        spclient::jam_leave(&session, &session_id)?;
+
+        if is_owner {
+            // Si la sesión ya no está, `jam_end` lo cuenta como un aviso.
+            if let Err(e) = spclient::jam_end(&session, &session_id) {
+                log::warn!("spclient: la sesión {session_id} no se pudo borrar: {e}");
+            }
+        }
+
+        Ok(())
+    })
+    .await
+    .map_err(|e| {
+        eprintln!("Starless [command_failed]: {e}");
+        "command_failed".to_string()
+    })?
+}
+
+/// Agregar una canción a la cola compartida del jam.
+///
+/// **La cola compartida se llena con un comando del player**, no con una
+/// escritura de lista: la puerta es `…/sessions/<id>/commands/from/<device>`
+/// y el cuerpo es un comando con `endpoint: "add_to_queue"`.
+///
+/// El comando lo aplica el servicio del jam, que es el que sabe de quién es
+/// cada dispositivo: por eso el `device` del camino es el nuestro y no el del
+/// anfitrión.
+#[tauri::command]
+async fn jam_add_to_queue(
+    app: AppHandle,
+    session_id: String,
+    track_id: String,
+) -> Result<(), String> {
+    let session = ready_session(&app).await?;
+
+    tauri::async_runtime::spawn_blocking(move || {
+        spclient::jam_add_to_queue(&session, &session_id, &track_id)
+    })
+    .await
+    .map_err(|e| {
+        eprintln!("Starless [command_failed]: {e}");
+        "command_failed".to_string()
+    })?
 }
 
 // El DJ: las canciones que Spotify le fabricó a la cuenta, y lo que dice al
@@ -1888,7 +1974,10 @@ pub fn run() {
             dj_speak,
             jam_start,
             jam_join,
+            jam_status,
+            jam_queue,
             jam_leave,
+            jam_add_to_queue,
             radio_start,
             radio_more,
             player_status,

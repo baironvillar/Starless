@@ -17,6 +17,7 @@
 use librespot_core::version::{SPOTIFY_MOBILE_VERSION, SPOTIFY_SEMANTIC_VERSION};
 use librespot_core::{Session, SpotifyId, SpotifyUri};
 use librespot_metadata::{Metadata, Track as MetaTrack};
+use tauri::Manager;
 use librespot_protocol::autoplay_context_request::AutoplayContextRequest;
 use librespot_protocol::clienttoken_http::{
     ClientTokenRequest, ClientTokenRequestType, ClientTokenResponse, ClientTokenResponseType,
@@ -25,14 +26,14 @@ use librespot_protocol::context::Context;
 use librespot_protocol::extended_metadata::{BatchedEntityRequest, EntityRequest, ExtensionQuery};
 use librespot_protocol::extension_kind::ExtensionKind;
 use librespot_protocol::playlist4_external::{
-    Item, ItemAttributes, ItemAttributesPartialState, ListChanges, Op, SelectedListContent,
+    Add, Item, ItemAttributes, ItemAttributesPartialState, ListChanges, Op, SelectedListContent,
     UpdateItemAttributes, op,
 };
 use protobuf::{Enum, EnumOrUnknown, Message, MessageField};
 
 use super::{
-    ROOTLIST_PAGE, account, call, dj_mix, host_path, liked_tracks, playlist_tracks, playlists,
-    search_tracks, station_page,
+    ROOTLIST_PAGE, account, call, delta, dj_mix, host_path, liked_tracks, now_millis, playlist_tracks,
+    playlists, search_tracks, station_page,
 };
 
 // ---------------------------------------------------------------------------
@@ -3334,6 +3335,24 @@ pub fn jam_create_requested() -> bool {
         .unwrap_or(false)
 }
 
+/// La medición corta: **¿la cola del jam aparece cuando alguien mete una
+/// canción?**
+///
+/// Son tres pedidos —leer la cola, mandar el comando, volver a leerla— y
+/// nada más. Existe por una razón concreta: la sonda completa hace cien
+/// pedidos seguidos y el servicio contesta `429` a partir de la sesenta, así
+/// que la medición que importa llega a la puerta demasiado tarde. Con una
+/// sesión activa y sin canción sonando, la cola no existe —el servicio
+/// contesta `Not Found`—, y la pregunta es si el comando la crea.
+///
+/// `STARLESS_SP_JAM_QUEUE=1` corre esto y nada más.
+#[cfg(debug_assertions)]
+pub fn jam_queue_requested() -> bool {
+    std::env::var("STARLESS_SP_JAM_QUEUE")
+        .map(|value| value != "0" && !value.is_empty())
+        .unwrap_or(false)
+}
+
 /// El jam, medido.
 ///
 /// **La primera llamada crea la sesión, y no es culpa de la sonda.** El
@@ -3366,6 +3385,25 @@ pub fn run_jam_probe(app: tauri::AppHandle) {
         // justamente la segunda.
         let app_session = super::jam_session(&session, true);
 
+        // **La medición corta va primero y sola**: son tres pedidos, y con la
+        // sonda completa el servicio corta la tanda con un `429` antes de
+        // llegar.
+        if jam_queue_requested() {
+            let session_id = app_session
+                .as_ref()
+                .map(|found| found.session_id.clone())
+                .unwrap_or_default();
+
+            if !session_id.is_empty() {
+                jam_probe_queue_only(&session, &session_id, &app);
+            } else {
+                log::error!("SP_JAM: no hay sesión para medir la cola");
+            }
+
+            log::info!("=== DIAGNOSTIC: fin de la sonda del jam ===");
+            return;
+        }
+
         match &app_session {
             Ok(found) => log::info!(
                 "SP_JAM: la función de la app devolvió la sesión {} · {} participantes · código {:?}",
@@ -3396,6 +3434,19 @@ pub fn run_jam_probe(app: tauri::AppHandle) {
             .and_then(|value| find_key(value, "join_session_token"));
         let join_uri = payload.as_ref().and_then(|value| find_key(value, "join_session_uri"));
         let join_url = payload.as_ref().and_then(|value| find_key(value, "join_session_url"));
+
+        // El id de un participante: es lo que identifica a alguien **dentro**
+        // de la sesión, y es lo que las puertas de miembro y de expulsión
+        // necesitan. No es el nombre de la cuenta.
+        let member_id = payload
+            .as_ref()
+            .and_then(|value| find_first_member_id(value))
+            .unwrap_or_default();
+
+        // El id del dispositivo, que el cliente de escritorio manda en la
+        // activación (`…current_or_new?activate=…&local_device_id=`) y en la
+        // puerta de comandos. librespot lo tiene a mano.
+        let device = session.device_id().to_owned();
 
         log::info!(
             "SP_JAM: session_id={session_id:?} · join_session_token={join_token:?} · join_session_uri={join_uri:?} · join_session_url={join_url:?}"
@@ -3447,6 +3498,14 @@ pub fn run_jam_probe(app: tauri::AppHandle) {
                 "/social-connect/v2/sessions/current_or_new?activate=true",
                 None,
             );
+
+            // **La cola del jam no está enseguida.** La primera vez que se midió
+            // —con la sesión activada cinco minutos antes— la cola estaba, con
+            // trescientas canciones; con la sesión activada hace cinco segundos
+            // el servicio contesta `Not Found`. Lo que se puede medir es el
+            // tiempo, y por eso se espera antes de leer.
+            log::info!("SP_JAM: se esperan 10 s a que la cola del jam exista");
+            std::thread::sleep(std::time::Duration::from_secs(10));
         } else {
             log::info!("SP_JAM: sin STARLESS_SP_JAM_CREATE no se activa ninguna sesión");
         }
@@ -3613,8 +3672,20 @@ pub fn run_jam_probe(app: tauri::AppHandle) {
                 // La respuesta del servicio de listas es **protobuf**, y
                 // grande: el log la muestra recortada, así que se guarda
                 // entera en disco para poder mirarla sin volver a medir.
+                //
+                // **La cola y la respuesta de error van a archivos distintos.**
+                // El servicio contesta `Not Found` cuando el jam todavía no
+                // tiene cola, y un archivo con eso adentro no es una cola: es
+                // lo que el test del decodificador lee, y si lo leyera
+                // estaría probando que el decodificador falla.
                 if let Some((status, bytes)) = answered {
-                    let path = jam_scratch_path(&format!("jam-list-{slug}.bin"));
+                    let is_queue = super::jamlist::tracks(&bytes).is_some();
+                    let name = if is_queue {
+                        format!("jam-list-{slug}.bin")
+                    } else {
+                        format!("jam-list-{slug}-error.bin")
+                    };
+                    let path = jam_scratch_path(&name);
                     let written = std::fs::write(&path, &bytes).is_ok();
 
                     log::info!(
@@ -3647,6 +3718,20 @@ pub fn run_jam_probe(app: tauri::AppHandle) {
                 &format!("/social-connect/v2/sessions/{id}"),
                 Some(b"{}"),
             );
+
+            // **Las puertas que el cliente de escritorio usa y esta sonda no ha
+            // medido.** Salieron de los strings del `Spotify.dll`, en el bloque
+            // del jam: `social-connect/v2/sessions/` + `…/leave?reason=`,
+            // `…/commands/from/`, y —en el cliente del partner API— `…/kick` y
+            // `…/member/`.
+            //
+            // Se miden por su forma, no por su contenido: un `404` dice que el
+            // camino no existe y un `405` que el router lo conoce pero no con
+            // ese verbo. La diferencia entre las dos cosas es lo que separa un
+            // camino inventado de uno real, y es lo único que se afirma acá.
+            jam_probe_paths(&session, id, &member_id, &device);
+            jam_probe_writes(&session, id, &device);
+            jam_probe_queue_write(&session, id, &device, &app);
         }
 
         // Los permisos de la sesión, que son dos puertas con barra.
@@ -3704,8 +3789,723 @@ pub fn run_jam_probe(app: tauri::AppHandle) {
             }
         }
 
+        // Y la última puerta: la de salir. Va al final porque **salir cierra la
+        // sesión**, y midiendo antes se rompería todo lo de arriba.
+        jam_probe_leave(&session, session_id.as_deref().unwrap_or_default());
+
         log::info!("=== DIAGNOSTIC: fin de la sonda del jam ===");
     });
+}
+
+/// Las puertas del jam que el cliente de escritorio usa y que esta sonda no
+/// había medido.
+///
+/// **Salieron de los strings del `Spotify.dll`**, del bloque del jam: la puerta
+/// de comandos (`…/sessions/<id>/commands/from/<device>`), la de los
+/// participantes (`…/member/<id>`) y la de la expulsión (`…/kick`). Se miden
+/// por su forma y no por su contenido: un `404` dice que el camino no existe,
+/// un `405` que el router lo conoce pero no con ese verbo.
+///
+/// **Ninguna de estas preguntas escribe en la cuenta.** Salvo la de la salida —
+/// que va aparte, y al final— una puerta que existe y contesta `405` es un
+/// dato; una que contesta `404` es un dato también: el camino no existe.
+#[cfg(debug_assertions)]
+fn jam_probe_paths(session: &Session, session_id: &str, member_id: &str, device: &str) {
+    // La puerta de comandos: por donde el jam manda una instrucción a un
+    // dispositivo. El `device` va en el camino —`commands/from/<device>`— y
+    // dice de quién viene la instrucción.
+    jam_ask(
+        session,
+        "comandos",
+        "la puerta de comandos, con GET",
+        &reqwest::Method::GET,
+        &format!("/social-connect/v2/sessions/{session_id}/commands/from/{device}"),
+        None,
+    );
+    jam_ask(
+        session,
+        "comandos",
+        "la puerta de comandos, con POST",
+        &reqwest::Method::POST,
+        &format!("/social-connect/v2/sessions/{session_id}/commands/from/{device}"),
+        Some(b"{}"),
+    );
+
+    // Los participantes y la expulsión. La forma del camino es lo que se
+    // mide: las dos versiones, porque el cliente del partner API usa la
+    // tercera y el jam usa la segunda.
+    for route in [
+        format!("/social-connect/v2/sessions/{session_id}/members"),
+        format!("/social-connect/v2/sessions/{session_id}/member/{member_id}"),
+        format!("/social-connect/v3/sessions/{session_id}/member/{member_id}"),
+        format!("/social-connect/v2/sessions/{session_id}/kick/{member_id}"),
+        format!("/social-connect/v3/sessions/{session_id}/kick/{member_id}"),
+    ] {
+        jam_ask(
+            session,
+            "participantes",
+            "la puerta de un participante",
+            &reqwest::Method::GET,
+            &route,
+            None,
+        );
+    }
+
+    // La lectura de la sesión con el id del dispositivo local: el cliente de
+    // escritorio lo manda al activar, y contesta si la sesión recuerda
+    // cuál es el dispositivo anfitrión.
+    jam_ask(
+        session,
+        "lectura",
+        "la sesión, con el dispositivo local",
+        &reqwest::Method::GET,
+        &format!("/social-connect/v2/sessions/current_or_new?activate=false&local_device_id={device}"),
+        None,
+    );
+
+    // **La lectura por id**: la puerta que el panel necesita para no perder
+    // el ritmo. `current_or_new` crea la sesión si no hay ninguna, así que
+    // usarla para refrescar crearía un jam donde no hay ninguno. Si esta
+    // puerta existe, el panel puede preguntar por la sesión que ya tiene.
+    jam_ask(
+        session,
+        "lectura",
+        "la sesión, por id",
+        &reqwest::Method::GET,
+        &format!("/social-connect/v2/sessions/{session_id}"),
+        None,
+    );
+}
+
+/// Las escrituras: **las puertas queWRITINGen la cola compartida**.
+///
+/// La cola del jam es una lista (`spotify:list:jam-list:<id>`) y se lee con
+/// `GetLists`. Cómo se *escribe* es lo que no está medido, y hay dos candidatas
+/// que salen de lo que el repo ya sabe hacer:
+///
+/// 1. La misma puerta de playlist4 que usa el repo para crear y modificar
+///    playlists — `POST /playlist/v2/playlist/<id>/changes` con un
+///    `ListChanges`— pero con el id de la lista del jam. El cliente de
+///    escritorio tiene la cadena `jam-` al lado de `spotify:list:jam-list:`,
+///    y eso hace sospechar que el id de la lista en playlist4 es `jam-<id>`.
+/// 2. La puerta de comandos, que existe (contestó `400 missing or empty
+///    command field`) y que el cliente de escritorio llama `redirectPlayerCommand`.
+///
+/// Se miden las dos. La primera con un `ListChanges` de verdad —el mismo
+/// `ADD` con `add_last` que el repo manda a una playlist—; la segunda con el
+/// cuerpo que el cliente de escritorio arma: `{"command":%s,...}`.
+#[cfg(debug_assertions)]
+fn jam_probe_writes(session: &Session, session_id: &str, device: &str) {
+    let account = session.username().to_owned();
+    let timestamp = now_millis();
+    let track = "spotify:track:3b5E38f6Dbx28IVof4oeAA";
+
+    // **Primero la lectura, y de ella la revisión.** Una escritura sin la
+    // revisión es un `400` a un cuerpo que el servicio acepta: el cuerpo
+    // está bien, lo que no está bien es contra qué versión se escribe.
+    let uri = format!("spotify:list:jam-list:{session_id}");
+    let listed = jam_ask_typed(
+        session,
+        "cola",
+        "leer la cola del jam",
+        &reqwest::Method::POST,
+        "/playlist/spotify.list.v1.ListReadService/GetLists",
+        Some(&super::jamlist::request(&uri)),
+        "application/x-protobuf",
+    );
+
+    let revision = listed
+        .as_ref()
+        .and_then(|(_, bytes)| super::jamlist::revision(bytes))
+        .unwrap_or_default();
+    let before = listed
+        .as_ref()
+        .and_then(|(_, bytes)| super::jamlist::tracks(bytes))
+        .map(|tracks| tracks.len())
+        .unwrap_or_default();
+
+    log::info!(
+        "SP_JAM: la cola del jam tiene {before} canciones y una revisión de {} bytes",
+        revision.len()
+    );
+
+    let changes = ListChanges {
+        base_revision: Some(revision.clone()),
+        deltas: vec![delta(
+            vec![Op {
+                kind: Some(EnumOrUnknown::new(op::Kind::ADD)),
+                add: MessageField::some(Add {
+                    add_last: Some(true),
+                    items: vec![Item {
+                        uri: Some(track.to_owned()),
+                        attributes: MessageField::some(ItemAttributes {
+                            added_by: Some(account.clone()),
+                            timestamp: Some(timestamp),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }],
+            &account,
+            timestamp,
+        )],
+        want_resulting_revisions: Some(true),
+        want_sync_result: Some(true),
+        nonces: vec![1],
+        ..Default::default()
+    };
+
+    let body = changes.write_to_bytes().unwrap_or_default();
+
+    for candidate in [
+        format!("jam-{session_id}"),
+        session_id.to_owned(),
+        format!("spotify:list:jam-list:{session_id}"),
+        // Un id que no existe de ninguna manera: la **comparación**. Si el
+        // jam contestara lo mismo que este, los tres de arriba no serían una
+        // lista y el `400` no estaría hablando de la lista del jam.
+        "4uLU6hMCjMI75M1A2tKUQC".to_owned(),
+    ] {
+        let answered = jam_ask_typed(
+            session,
+            "escritura",
+            "escribir en la cola del jam",
+            &reqwest::Method::POST,
+            &format!("/playlist/v2/playlist/{candidate}/changes"),
+            Some(&body),
+            "application/x-www-form-urlencoded",
+        );
+
+        // Y después de escribir, se lee otra vez: **la única prueba de que
+        // la canción entró es que la lista la tiene.**
+        let after = jam_ask_typed(
+            session,
+            "cola",
+            "releer la cola del jam",
+            &reqwest::Method::POST,
+            "/playlist/spotify.list.v1.ListReadService/GetLists",
+            Some(&super::jamlist::request(&uri)),
+            "application/x-protobuf",
+        )
+        .and_then(|(_, bytes)| super::jamlist::tracks(&bytes))
+        .map(|tracks| tracks.len())
+        .unwrap_or_default();
+
+        let status = answered.as_ref().map(|(status, _)| *status).unwrap_or(0);
+        log::info!(
+            "SP_JAM: la escritura en `{candidate}` → {status} · la cola pasó de {before} a {after} canciones"
+        );
+    }
+
+    // La puerta de comandos, con el cuerpo que arma el cliente de escritorio:
+    // `{"command":%.*s,"connection_type":"%s","intent_id":"%s"}`.
+    for body in [
+        "{\"command\":{}}".to_owned(),
+        format!(
+            "{{\"command\":{{\"type\":\"PLAY\",\"context_uri\":\"{track}\"}},\"connection_type\":\"LOCAL\",\"intent_id\":\"jam\"}}"
+        ),
+        format!(
+            "{{\"player_command_json\":\"{{\\\"type\\\":\\\"PLAY\\\"}}\",\"target_device_id\":\"{device}\",\"command_id\":\"starless-probe\"}}"
+        ),
+    ] {
+        jam_ask(
+            session,
+            "comandos",
+            "mandar un comando a la sesión",
+            &reqwest::Method::POST,
+            &format!("/social-connect/v2/sessions/{session_id}/commands/from/{device}"),
+            Some(body.as_bytes()),
+        );
+    }
+
+    // El estado del dispositivo: si el servidor guarda el estado de este
+    // dispositivo, la puerta existe y es lo que un invitado mira para seguir
+    // al anfitrión.
+    jam_ask(
+        session,
+        "estado",
+        "el estado del dispositivo",
+        &reqwest::Method::GET,
+        &format!("/connect-state/v1/devices/{device}"),
+        None,
+    );
+    jam_ask(
+        session,
+        "estado",
+        "el grupo de dispositivos",
+        &reqwest::Method::GET,
+        "/connect-state/v1/cluster",
+        None,
+    );
+
+    // El grupo de dispositivos se guarda entero: son casi cuarenta mil bytes y
+    // el log los corta. Lo que importa es si trae el estado de reproducción
+    // —el contexto, la canción y dónde va— y eso no se lee de una línea
+    // recortada.
+    if let Some((status, bytes)) = jam_ask(
+        session,
+        "estado",
+        "el grupo de dispositivos, completo",
+        &reqwest::Method::GET,
+        "/connect-state/v1/cluster",
+        None,
+    ) {
+        let path = jam_scratch_path("connect-cluster.json");
+        std::fs::write(&path, &bytes).ok();
+        log::info!(
+            "SP_JAM: el grupo de dispositivos quedó en {path} ({status}, {} bytes)",
+            bytes.len()
+        );
+    }
+}
+
+/// **La puerta que falta: escribir en la cola compartida del jam.**
+///
+/// Lo que se sabe hasta ahora es que la cola **no** es una playlist de playlist4,
+/// y que el `400` de `POST /playlist/v2/playlist/<id>/changes` no dice "el cuerpo
+/// está mal": dice que **el id no tiene la forma que playlist4 acepta**. La
+/// comparación lo prueba —un id de base62 que no existe contesta `404`, y el id
+/// de la sesión, que son 32 hex, contesta `400`—. playlist4 sólo acepta ids de
+/// 22 caracteres de base62, así que la cola del jam —que se lee como
+/// `spotify:list:jam-list:<id>`— no tiene id de playlist4: no se escribe por
+/// ahí.
+///
+/// Lo que sí tiene la cola es un **servicio**: el de la lectura es
+/// `playlist/spotify.list.v1.ListReadService/GetLists`, en el host `playlist`.
+/// El de la escritura no aparece en el cliente de escritorio —su descriptor no
+/// está embebido, así que no hay forma de volcarlo—, pero los nombres de los
+/// servicios sí están, y son los que se preguntan acá.
+///
+/// **Un cuerpo vacío no escribe nada**, así que la matriz es segura: lo que
+/// contesten los status dice si el servicio existe. Un `404` es que no existe;
+/// un `405` es que el router lo conoce pero no con ese verbo; un `400` es que el
+/// método existe y el cuerpo no es el suyo —que es el dato bueno, porque el
+/// error dice qué falta—; y un `200` es que el método se accepts.
+#[cfg(debug_assertions)]
+fn jam_probe_queue_write(
+    session: &Session,
+    session_id: &str,
+    device: &str,
+    app: &tauri::AppHandle,
+) {
+    let track = "spotify:track:3b5E38f6Dbx28IVof4oeAA";
+
+    // **1. La puerta de comandos del jam, con la forma que el servicio
+    // entiende.**
+    //
+    // El error "Could not parse command" no era por el tipo de comando: era
+    // por la **forma**. El comando no es un objeto con `type`, es un objeto con
+    // `endpoint`, y el `command` del sobre es ese objeto —no una cadena—:
+    //
+    //   {"command": {"endpoint": "add_to_queue", "track": {"uri": "spotify:track:…"},
+    //                "options": {…}, "logging_params": {…}},
+    //    "connection_type": "wlan", "intent_id": "<hex>"}
+    //
+    // Los endpoints son los del player: `add_to_queue`, `play`, `pause`,
+    // `skip_next`, `skip_prev`, `seek_to`, `set_queue`… y `add_to_queue` es
+    // el que mete una canción en la cola del jam.
+    let commands = format!("/social-connect/v2/sessions/{session_id}/commands/from/{device}");
+
+    let now = crate::spclient::now_millis();
+    // El `intent_id` y el `command_id` son hex de 16 bytes. Que sean
+    // aleatorios no importa para la medición; que estén es lo que importa.
+    let intent = "a1b2c3d4e5f60718293a4b5c6d7e8f90";
+
+    for (what, command) in [
+        (
+            "add_to_queue, con la uri de la pista",
+            format!(
+                "{{\"endpoint\":\"add_to_queue\",\"track\":{{\"uri\":\"{track}\"}},\"options\":{{\"override_restrictions\":false,\"only_for_local_device\":false,\"system_initiated\":false}},\"logging_params\":{{\"command_initiated_time\":{now},\"command_received_time\":{now},\"page_instance_ids\":[],\"interaction_ids\":[],\"device_identifier\":\"{device}\",\"command_id\":\"{intent}\"}}}}"
+            ),
+        ),
+        (
+            "add_to_queue, con la uri y el uid",
+            format!(
+                "{{\"endpoint\":\"add_to_queue\",\"track\":{{\"uri\":\"{track}\",\"uid\":\"cb970d145ffcc3721d38\"}},\"options\":{{\"override_restrictions\":false,\"only_for_local_device\":false,\"system_initiated\":false}},\"logging_params\":{{\"command_initiated_time\":{now},\"command_received_time\":{now},\"page_instance_ids\":[],\"interaction_ids\":[],\"device_identifier\":\"{device}\",\"command_id\":\"{intent}\"}}}}"
+            ),
+        ),
+        (
+            "add_to_queue, sin logging_params",
+            format!(
+                "{{\"endpoint\":\"add_to_queue\",\"track\":{{\"uri\":\"{track}\"}}}}"
+            ),
+        ),
+        (
+            "play, con la uri de la pista",
+            format!(
+                "{{\"endpoint\":\"play\",\"track\":{{\"uri\":\"{track}\"}},\"options\":{{\"override_restrictions\":false,\"only_for_local_device\":false,\"system_initiated\":false}},\"logging_params\":{{\"command_initiated_time\":{now},\"command_received_time\":{now},\"page_instance_ids\":[],\"interaction_ids\":[],\"device_identifier\":\"{device}\",\"command_id\":\"{intent}\"}}}}"
+            ),
+        ),
+        (
+            "pause",
+            format!(
+                "{{\"endpoint\":\"pause\",\"options\":{{\"override_restrictions\":false,\"only_for_local_device\":false,\"system_initiated\":false}},\"logging_params\":{{\"command_initiated_time\":{now},\"command_received_time\":{now},\"page_instance_ids\":[],\"interaction_ids\":[],\"device_identifier\":\"{device}\",\"command_id\":\"{intent}\"}}}}"
+            ),
+        ),
+        (
+            "skip_next",
+            format!(
+                "{{\"endpoint\":\"skip_next\",\"options\":{{\"override_restrictions\":false,\"only_for_local_device\":false,\"system_initiated\":false}},\"logging_params\":{{\"command_initiated_time\":{now},\"command_received_time\":{now},\"page_instance_ids\":[],\"interaction_ids\":[],\"device_identifier\":\"{device}\",\"command_id\":\"{intent}\"}}}}"
+            ),
+        ),
+    ] {
+        let body = format!(
+            "{{\"command\":{command},\"connection_type\":\"wlan\",\"intent_id\":\"{intent}\"}}"
+        );
+
+        jam_ask(
+            session,
+            "comandos",
+            what,
+            &reqwest::Method::POST,
+            &commands,
+            Some(body.as_bytes()),
+        );
+    }
+
+    // **2. Los servicios del host `playlist`.** El de la lectura se sabe; los
+    // de la escritura se preguntan por su forma.
+    //
+    // **El cuerpo tiene que tener bytes.** Un cuerpo de cero bytes no manda
+    // `Content-Length` y contesta `411 Length Required` —la respuesta del
+    // front door, que no dice nada del servicio—. Por eso el cuerpo es un
+    // protobuf válido y vacío: dos bytes que el servicio puede leer.
+    for service in [
+        "spotify.list.v1.ListWriteService",
+        "spotify.list.v1.ListService",
+        "spotify.list.v1.ListEditService",
+        "spotify.list.v1.ListMutationService",
+        "spotify.list.v1.ListItemService",
+        "spotify.playlist_esperanto.proto.PlaylistService",
+        "spotify.playlist_esperanto.proto.PlaylistDataService",
+        "spotify.playlist_esperanto.proto.PlaylistPlayService",
+    ] {
+        for method in ["Modify", "AddItems", "Add", "WriteLists", "PutLists", "AddToList"] {
+            let route = format!("/playlist/{service}/{method}");
+
+            jam_ask_typed(
+                session,
+                "escritura",
+                "un servicio de escritura de listas",
+                &reqwest::Method::POST,
+                &route,
+                Some(b"\x0a\x00"),
+                "application/x-protobuf",
+            );
+
+            // El servicio corta con `429` si le llegan many requests juntos:
+            // la matriz son decenas, y una tanda que se corta a mitad no
+            // sirve para nada.
+            std::thread::sleep(std::time::Duration::from_millis(150));
+        }
+    }
+
+    // **El control**: el servicio de la lectura, que se sabe que existe. Si
+    // este contesta `200`, la matriz se lee bien; si contesta `404`, el
+    // problema es otro y la matriz no dice nada.
+    jam_ask_typed(
+        session,
+        "escritura",
+        "el control: el servicio que se sabe que existe",
+        &reqwest::Method::POST,
+        "/playlist/spotify.list.v1.ListReadService/GetLists",
+        Some(b"\x0a\x00"),
+        "application/x-protobuf",
+    );
+
+    // **3. Las puertas de la cola dentro del propio servicio del jam.** El
+    // cliente de escritorio tiene el nombre `jam.patch_track`, y `queue` ya se
+    // midió —`404`— pero en singular y con más segmentos no.
+    for route in [
+        format!("/social-connect/v2/sessions/{session_id}/tracks"),
+        format!("/social-connect/v2/sessions/{session_id}/track"),
+        format!("/social-connect/v2/sessions/{session_id}/items"),
+        format!("/social-connect/v2/sessions/{session_id}/queue/items"),
+        format!("/social-connect/v2/sessions/{session_id}/queue/add"),
+        format!("/social-connect/v2/sessions/{session_id}/patch_track"),
+        format!("/social-connect/v2/sessions/{session_id}/jam/patch_track"),
+    ] {
+        jam_ask(
+            session,
+            "cola",
+            "una puerta de la cola del jam",
+            &reqwest::Method::POST,
+            &route,
+            Some(b"{}"),
+        );
+    }
+
+    // **4. El verbo `PATCH` sobre playlist4.** El cliente de escritorio tiene
+    // las dos cadenas `PATCH` y `Accept-Patch` al lado de la URL de playlist4,
+    // y eso es una pista que la sonda no había seguido.
+    for id in [session_id.to_owned(), format!("jam-{session_id}")] {
+        jam_ask(
+            session,
+            "escritura",
+            "la cola del jam, con PATCH",
+            &reqwest::Method::PATCH,
+            &format!("/playlist/v2/playlist/{id}"),
+            Some(b"{}"),
+        );
+    }
+
+    // **5. Y ahora la función de producción**, que es la que aprieta el botón
+    // de la app: el mismo comando, pero armado por el código que quedó y no a
+    // mano. Si esta contesta bien, lo que se midió arriba es lo que la app
+    // manda.
+    jam_probe_queue_only(session, session_id, app);
+}
+
+/// La medición de la cola: **leer, mandar el comando, volver a leer**.
+///
+/// La comparación es lo que dice si el comando sirvió: que la cola haya
+/// cambiado, o que haya **aparecido** —que es lo que pasa si el servicio la
+/// crea cuando alguien mete una canción—.
+///
+/// Y antes de eso hay una prueba más: **que el anfitrión esté sonando**. La
+/// cola del jam es la cola del player del anfitrión, y un player que no está
+/// sonando no tiene cola. Con algo sonando, la cola del jam tendría que estar.
+#[cfg(debug_assertions)]
+fn jam_probe_queue_only(
+    session: &Session,
+    session_id: &str,
+    app: &tauri::AppHandle,
+) {
+    let before = jam_queue_tracks(session, session_id);
+    log::info!(
+        "SP_JAM: [cola] antes de nada: {} canciones",
+        before.as_ref().map(|c| c.len()).unwrap_or(0)
+    );
+
+    // **La prueba: que el anfitrión esté sonando.** Con el volumen en cero,
+    // porque esto es una medición y no un concierto.
+    let saved_volume = crate::settings::saved_volume();
+    jam_probe_play(session, app, "3b5E38f6Dbx28IVof4oeAA");
+    std::thread::sleep(std::time::Duration::from_secs(15));
+
+    let playing = jam_queue_tracks(session, session_id);
+    log::info!(
+        "SP_JAM: [cola] con el anfitrión sonando: {} canciones",
+        playing.as_ref().map(|c| c.len()).unwrap_or(0)
+    );
+
+    match super::jam_add_to_queue(session, session_id, "3b5E38f6Dbx28IVof4oeAA") {
+        Ok(()) => log::info!(
+            "SP_JAM: [comandos] la función de la app agregó la canción al jam y el servicio la aceptó"
+        ),
+        Err(e) => log::error!("SP_JAM: [comandos] la función de la app no pudo agregar: {e}"),
+    }
+
+    // **Un momento antes de volver a leer.** La cola del jam la escribe el
+    // servicio, no el comando: el comando entra y el servicio lo aplica
+    // después.
+    std::thread::sleep(std::time::Duration::from_secs(3));
+
+    let after = jam_queue_tracks(session, session_id);
+    log::info!(
+        "SP_JAM: [cola] después del comando: {} canciones",
+        after.as_ref().map(|c| c.len()).unwrap_or(0)
+    );
+
+    // El volumen del usuario vuelve a ser el que era.
+    if let Some(volume) = saved_volume {
+        if let Some(state) = app.try_state::<crate::playback::PlaybackState>() {
+            crate::playback::set_volume(&state, volume);
+        }
+    }
+
+    match (&playing, &after) {
+        (None, Some(after)) => log::info!(
+            "SP_JAM: [cola] la cola APARECIÓ con el comando: {} canciones",
+            after.len()
+        ),
+        (Some(playing), Some(after)) => {
+            if playing.len() == after.len() && playing == after {
+                log::info!("SP_JAM: [cola] la cola NO cambió: el comando entró y no la llenó");
+            } else {
+                log::info!(
+                    "SP_JAM: [cola] la cola cambió: {} → {} canciones",
+                    playing.len(),
+                    after.len()
+                );
+                if let Some(added) = after.iter().find(|uri| !playing.contains(uri)) {
+                    log::info!("SP_JAM: [cola] la canción nueva es {added}");
+                }
+            }
+        }
+        (Some(playing), None) => log::info!(
+            "SP_JAM: [cola] la cola desapareció: {} → nada",
+            playing.len()
+        ),
+        (None, None) => {
+            log::info!("SP_JAM: [cola] la cola no existe ni con el anfitrión sonando ni después del comando")
+        }
+    }
+}
+
+/// Que el anfitrión esté "sonando" de verdad, **con el volumen en cero**.
+///
+/// **Son dos cosas, y las dos hacen falta.** La primera es la **radio**: la
+/// app la pide al servicio cuando el usuario elige una canción de una
+/// búsqueda, y esa llamada es la que le dice al servicio *qué contexto está
+/// sonando* —con el lente de autoplay encima—. La segunda es la canción, que
+/// el player reproduce.
+///
+/// **El player de librespot no tiene contexto**: `librespot-playback` no
+/// publica ninguno, y `load(track_id)` es una pista suelta. El contexto lo
+/// publica la radio, y por eso la cola del jam —que es el contexto del
+/// anfitrión más su autoplay— existe con una radio y no existe con una pista.
+///
+/// El volumen lo pone en cero el que llama —y lo vuelve a poner—: la
+/// medición necesita que el player esté sonando, no que se escuche.
+#[cfg(debug_assertions)]
+fn jam_probe_play(session: &Session, app: &tauri::AppHandle, track_id: &str) {
+    let Some(state) = app.try_state::<crate::playback::PlaybackState>() else {
+        log::error!("SP_JAM: no hay estado de reproducción para la prueba");
+        return;
+    };
+
+    crate::playback::set_volume(&state, 0);
+
+    // **La radio**: la llamada que publica el contexto del anfitrión.
+    let context = format!("spotify:track:{track_id}");
+    probe_autoplay(session, &context, &[]);
+
+    let owned = session.clone();
+    // La vida de la referencia: el futuro tiene que ser `'static`, y el id
+    // viene prestado.
+    let id = track_id.to_owned();
+    let duration = call(session, async move {
+        let uri = format!("spotify:track:{id}");
+        let Ok(parsed) = SpotifyUri::from_uri(&uri) else {
+            return Err("bad_track_id".to_string());
+        };
+        MetaTrack::get(&owned, &parsed)
+            .await
+            .map(|track| track.duration.max(0) as u32)
+            .map_err(|e| e.to_string())
+    })
+    .unwrap_or(0);
+
+    crate::playback::ensure_player(app, session);
+    match crate::playback::play(&state, track_id, 0, duration) {
+        Ok(()) => log::info!("SP_JAM: la prueba suena {track_id} ({duration} ms)"),
+        Err(e) => log::error!("SP_JAM: la prueba no pudo sonar: {e}"),
+    }
+}
+
+/// La cola del jam, leída y decodificada.
+///
+/// **Es la misma lectura que hace la app**, con el mismo cuerpo y el mismo
+/// `content-type`: lo que se compara antes y después del comando tiene que ser
+/// lo que la app ve.
+#[cfg(debug_assertions)]
+fn jam_queue_tracks(session: &Session, session_id: &str) -> Option<Vec<String>> {
+    let uri = format!("spotify:list:jam-list:{session_id}");
+    let body = jam_list_request(&uri);
+
+    let (status, bytes) = jam_ask_typed(
+        session,
+        "cola",
+        "la cola del jam",
+        &reqwest::Method::POST,
+        "/playlist/spotify.list.v1.ListReadService/GetLists",
+        Some(&body),
+        "application/x-protobuf",
+    )?;
+
+    if status != 200 {
+        log::info!("SP_JAM: [cola] la cola del jam → {status} · {} bytes", bytes.len());
+        return None;
+    }
+
+    super::jamlist::tracks(&bytes)
+}
+
+/// La puerta de salida, que es la última porque **puede cerrar la sesión**.
+///
+/// Se mide sobre una sesión nueva, así que lo de arriba no se rompe. Y al
+/// final se cierra lo que quede: una sesión de jam viva se le ve a la persona
+/// que la está probando, y eso es ruido, no un resultado.
+#[cfg(debug_assertions)]
+fn jam_probe_leave(session: &Session, session_id: &str) {
+    log::info!(
+        "SP_JAM: la puerta de salida se mide sobre una sesión nueva (la de {session_id} ya se cerró)"
+    );
+
+    let fresh = jam_ask(
+        session,
+        "salir",
+        "una sesión nueva para medir la salida",
+        &reqwest::Method::GET,
+        "/social-connect/v2/sessions/current_or_new?activate=true",
+        None,
+    );
+
+    let Some(id) = fresh
+        .as_ref()
+        .and_then(|(_, bytes)| serde_json::from_slice::<serde_json::Value>(bytes).ok())
+        .and_then(|value| find_key(&value, "session_id"))
+    else {
+        log::error!("SP_JAM: no se pudo abrir una sesión para medir la salida");
+        return;
+    };
+
+    // Las cuatro formas que se pueden pensar, con el motivo que el cliente
+    // de escritorio manda en la query (`…/leave?reason=`).
+    jam_ask(
+        session,
+        "salir",
+        "salir de la sesión, con GET",
+        &reqwest::Method::GET,
+        &format!("/social-connect/v2/sessions/{id}/leave"),
+        None,
+    );
+    jam_ask(
+        session,
+        "salir",
+        "salir de la sesión, con DELETE",
+        &reqwest::Method::DELETE,
+        &format!("/social-connect/v2/sessions/{id}/leave"),
+        None,
+    );
+    jam_ask(
+        session,
+        "salir",
+        "salir de la sesión, con DELETE y motivo",
+        &reqwest::Method::DELETE,
+        &format!("/social-connect/v2/sessions/{id}/leave?reason=USER_LEFT"),
+        None,
+    );
+    jam_ask(
+        session,
+        "salir",
+        "salir de la sesión, con POST y cuerpo",
+        &reqwest::Method::POST,
+        &format!("/social-connect/v2/sessions/{id}/leave"),
+        Some(b"{}"),
+    );
+    jam_ask(
+        session,
+        "salir",
+        "salir de la sesión, en la versión 3",
+        &reqwest::Method::DELETE,
+        &format!("/social-connect/v3/sessions/{id}/leave?reason=USER_LEFT"),
+        None,
+    );
+
+    // Lo que quede vivo se cierra, para no dejar nada abierto en la cuenta.
+    jam_ask(
+        session,
+        "cerrar",
+        "cerrar la sesión de la medición de salida",
+        &reqwest::Method::DELETE,
+        &format!("/social-connect/v2/sessions/{id}"),
+        None,
+    );
 }
 
 /// Una pregunta a la puerta del jam, y lo que contestó.
@@ -3995,6 +4795,24 @@ fn describe_strings(bytes: &[u8]) -> String {
 fn jam_scratch_path(name: &str) -> String {
     let base = std::env::var("LOCALAPPDATA").unwrap_or_default();
     format!("{base}\\Starless\\{name}")
+}
+
+/// El id del primer participante de la sesión.
+///
+/// **No es el nombre de la cuenta**: es el id que el servicio le da a cada
+/// persona *dentro* de la sesión, y es lo que las puertas de miembro y de
+/// expulsión necesitan.
+#[cfg(debug_assertions)]
+fn find_first_member_id(value: &serde_json::Value) -> Option<String> {
+    let members = match value {
+        serde_json::Value::Object(map) => map.get("session_members")?,
+        _ => return None,
+    };
+
+    let members = members.as_array()?;
+    let first = members.first()?;
+
+    first.get("id")?.as_str().map(|id| id.to_owned())
 }
 
 /// Busca un campo por nombre, a cualquier nivel del JSON.

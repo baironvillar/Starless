@@ -421,13 +421,60 @@ export async function jamJoin(token: string): Promise<JamSession> {
 }
 
 /**
- * Close the jam.
+ * Read the session, without opening one.
  *
- * The session is deleted and the account is left as it was: a jam that nobody
- * ends stays open on the account of whoever started it.
+ * **It is the same door that opens a jam, but without activating it.** The
+ * jam has no pubsub in librespot —the `dealer` has none— so the only way to
+ * learn who joined is to ask now and then.
+ *
+ * **That door creates a session when there is none**, so the panel asks only
+ * while it holds one: if the answer brings a different session, the one it
+ * had is gone, and the panel says so instead of adopting the new one.
  */
-export async function jamLeave(sessionId: string): Promise<void> {
-  return invoke<void>("jam_leave", { sessionId });
+export async function jamStatus(): Promise<JamSession> {
+  return invoke<JamSession>("jam_status");
+}
+
+/**
+ * The shared queue: the songs the service has written down.
+ *
+ * **The queue is a list, not a playlist**, and it comes from the list
+ * service —which speaks protobuf— and not from the library.
+ */
+export async function jamQueue(sessionId: string): Promise<Track[]> {
+  return invoke<Track[]>("jam_queue", { sessionId });
+}
+
+/**
+ * Leave the jam.
+ *
+ * **Leaving and closing are two different doors.** Leaving is a `POST` to
+ * `…/sessions/<id>/leave`, and it is the guest's door: it takes the account
+ * out of the session and leaves the session alive. Closing —deleting the
+ * session— is a `DELETE` to `…/sessions/<id>`, and it belongs to the host:
+ * without it, the session stays open on the account that opened it.
+ *
+ * **The one who presses "leave" on the jam they opened closes the jam for
+ * everyone**, and that is why the command does both when the one pressing is
+ * the host.
+ */
+export async function jamLeave(sessionId: string, isOwner: boolean): Promise<void> {
+  return invoke<void>("jam_leave", { sessionId, isOwner });
+}
+
+/**
+ * Add a song to the shared queue.
+ *
+ * **The shared queue is filled with a player command, not with a list write.**
+ * The door is `…/sessions/<id>/commands/from/<device>` and the body is a command
+ * whose `endpoint` is `add_to_queue`.
+ *
+ * The command is the one the desktop client sends, and it is the door that
+ * crosses: whoever adds the song, the song lands in the jam's queue and both
+ * sides see it in the queue they poll.
+ */
+export async function jamAddToQueue(sessionId: string, trackId: string): Promise<void> {
+  return invoke<void>("jam_add_to_queue", { sessionId, trackId });
 }
 
 /**

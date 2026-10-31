@@ -7,6 +7,7 @@ import {
   ListPlus,
   MoreHorizontal,
   User,
+  Users,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { copyText } from "../lib/clipboard";
@@ -23,6 +24,13 @@ type TrackMenuProps = {
   onAddToQueue: (track: Track) => void;
   /** Opens the new-playlist dialog with this song pending. */
   onNewPlaylist: (track: Track) => void;
+  /**
+   * Puts the song in the jam's shared queue.
+   *
+   * **It is only there when there is a jam to put it in.** A row that leads
+   * nowhere is a row that reads as broken, and the jam is not always open.
+   */
+  onAddToJam?: (track: Track) => void;
 };
 
 /** How long the copied confirmation stays up before the label goes back. */
@@ -46,9 +54,13 @@ const SUBMENU_CLOSE_MS = 260;
  * client this mirrors offers twelve: add to playlist, remove from this
  * playlist, remove from liked songs, add to queue, exclude from taste profile,
  * start a jam, sleep timer, go to song radio, go to artist, go to album, view
- * credits, share. The radio, the jam and the credits have no read behind this
- * session at all, and "remove from this playlist" is a write against a
- * revision the backend does not keep.
+ * credits, share. The radio and the credits have no read behind this session at
+ * all, and "remove from this playlist" is a write against a revision the
+ * backend does not keep.
+ *
+ * The jam is the exception to the exception: **it works, but only while there
+ * is a jam open**, so its row appears and disappears with the jam. A row that
+ * is always there and does nothing is worse than no row.
  *
  * A menu of twelve entries where three work is worse than a menu of three. The
  * greyed-out rows read as broken, and the first time somebody clicks one and
@@ -73,6 +85,7 @@ export function TrackMenu({
   onOpenAlbum,
   onAddToQueue,
   onNewPlaylist,
+  onAddToJam,
 }: TrackMenuProps) {
   const [open, setOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -180,6 +193,23 @@ export function TrackMenu({
             onAddToQueue(track);
           }}
         />
+
+        {/*
+            The jam, when there is one to join.
+
+            **The song goes into the jam's queue, not into this app's.** That is
+            the whole point of the row: the other side hears it.
+        */}
+        {onAddToJam && (
+          <MenuItem
+            label={t.addToJam}
+            icon={<Users className="size-4" strokeWidth={2} />}
+            onSelect={() => {
+              close();
+              onAddToJam(track);
+            }}
+          />
+        )}
 
         {/*
           The one row that opens another menu.
