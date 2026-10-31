@@ -65,6 +65,18 @@ fn watch_seconds() -> u64 {
 /// **Una que cualquiera reconozca**: si aparece en el celu, el comando llegó.
 const PUSH: &str = "0VjIjW4GlUZAMYd2vXMi3b";
 
+/// El `uid` de esa pista: el SHA-1 de su URI.
+///
+/// **El `uid` es lo que hace que la canción sea la correcta.** El comando del
+/// player lleva la pista como un `ContextTrack` (`{ uri, uid, gid, metadata }`),
+/// y mandando sólo la URI el servicio acepta el comando y lo aplica **a la
+/// pista que está sonando**: al otro lado del jam entra la canción de siempre y
+/// la lista compartida no cambia.
+///
+/// El `uid` que se ve en la lista tiene la forma de un SHA-1 —cuarenta hex—, y
+/// el del probe era el SHA-1 de la URI. Este es el de esta pista.
+const PUSH_UID: &str = "e1f66c09f889547da78626c2ef1e87bdad2af66c";
+
 /// El modo de mirar: el anfitrión solo, mirando.
 /// 
 /// **El código va al log, porque es lo que la otra persona tiene que pegar.**
@@ -98,6 +110,15 @@ pub fn watch(app: tauri::AppHandle) {
         let mut antes_cola: Option<usize> = None;
         let mut vueltas = 0_u32;
 
+        // **El contexto del anfitrión se publica una vez, al principio.**
+        //
+        // La cola compartida del jam es el contexto que publica el player del
+        // anfitrión, y el player de librespot no publica ninguno: lo publica
+        // la llamada de autoplay. Sin esto, la cola que se lee es la semilla
+        // —las últimas canciones de la cuenta— y no hay nada que agregar.
+        super::probe::probe_autoplay(&host, &format!("spotify:track:{PUSH}"), &[]);
+        log::info!("SP_JAM_WATCH: publiqué el contexto del anfitrión");
+
         while std::time::Instant::now() < deadline {
             // **Cada cuánto se pregunta importa tanto como qué se pregunta.**
             // El servicio corta la tanda con un `429` —medido: a los tres
@@ -114,7 +135,12 @@ pub fn watch(app: tauri::AppHandle) {
             // no que la lista lo tomó. Y si la lista no lo toma, el cruce de
             // canciones no existe — y entonces hay que buscar otra puerta.
             if vueltas % 6 == 0 {
-                match jam_add_to_queue(&host, &session_id, PUSH) {
+                match super::jam_add_to_queue_with_uid(
+                    &host,
+                    &session_id,
+                    PUSH,
+                    Some(PUSH_UID),
+                ) {
                     Ok(()) => log::info!("SP_JAM_WATCH: mandé {PUSH} a la cola compartida"),
                     Err(error) => log::error!("SP_JAM_WATCH: el comando no entró: {error}"),
                 }
@@ -152,6 +178,26 @@ pub fn watch(app: tauri::AppHandle) {
                     0
                 }
             };
+
+            // **La cola entera, con el id de cada canción.**
+            //
+            // El `uid` es lo que el comando del player necesita para agregar
+            // *esa* canción, y la lista entera es lo que el otro lado está
+            // mirando: si las dos coinciden, el otro lado ve esta lista.
+            if vueltas % 3 == 0 {
+                match super::jam_queue_items(&host, &session_id) {
+                    Ok(items) => {
+                        let toda: Vec<String> = items
+                            .iter()
+                            .map(|(uri, uid)| format!("{uri}#{uid}"))
+                            .collect();
+                        log::info!("SP_JAM_WATCH: la cola completa: {toda:?}");
+                    }
+                    Err(error) => {
+                        log::error!("SP_JAM_WATCH: la cola completa no se pudo leer: {error}");
+                    }
+                }
+            }
 
             if antes_miembros != Some(miembros) {
                 // **Quiénes, no sólo cuántos.** El nombre del miembro es lo que

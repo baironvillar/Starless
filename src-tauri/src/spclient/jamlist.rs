@@ -56,6 +56,17 @@ pub(super) fn request(uri: &str) -> Vec<u8> {
 /// `Option`: `None` es "no se pudo leer", y `Some(vec![])` es "la lista está
 /// vacía".
 pub(super) fn tracks(body: &[u8]) -> Option<Vec<String>> {
+    Some(tracks_with_ids(body)?.into_iter().map(|(uri, _)| uri).collect())
+}
+
+/// Las canciones de la lista con el id que tiene cada una.
+///
+/// **El id del item es el `uid` de la pista dentro del contexto**, que es lo
+/// que el comando del player necesita para agregar una canción *esa* y no otra:
+/// `ContextTrack { uri, uid, gid, metadata }`. Sin el `uid`, el servicio
+/// resuelve otra cosa —medido el 31 de octubre de 2026: mandando sólo la URI,
+/// al otro lado entró la canción que estaba sonando—.
+pub(super) fn tracks_with_ids(body: &[u8]) -> Option<Vec<(String, String)>> {
     let mut reader = Reader::new(body);
     let mut out = Vec::new();
     let mut seen = false;
@@ -88,7 +99,7 @@ fn entity(body: &[u8]) -> Option<&[u8]> {
 }
 
 /// Las canciones de una `ListEntity`.
-fn items(body: &[u8]) -> Option<Vec<String>> {
+fn items(body: &[u8]) -> Option<Vec<(String, String)>> {
     let mut reader = Reader::new(body);
     let mut out = Vec::new();
 
@@ -97,7 +108,10 @@ fn items(body: &[u8]) -> Option<Vec<String>> {
             // `ListEntity.items` → `Item`
             let item = reader.take()?;
             if let Some(uri) = item_uri(item) {
-                out.push(uri);
+                // **El id del item y el de la pista son dos cosas.** El id del
+                // item es el `uid` de la pista en el contexto; el de los
+                // atributos es la URI.
+                out.push((uri, item_id(item).unwrap_or_default()));
             }
         } else if reader.skip(wire).is_none() {
             return None;
@@ -105,6 +119,20 @@ fn items(body: &[u8]) -> Option<Vec<String>> {
     }
 
     Some(out)
+}
+
+/// El id de un item: el `uid` de la pista dentro del contexto.
+fn item_id(body: &[u8]) -> Option<String> {
+    let mut reader = Reader::new(body);
+    while let Some((number, wire)) = reader.field() {
+        if number == 1 && wire == 2 {
+            // `Item.id`
+            let raw = reader.take()?;
+            return String::from_utf8(raw.to_vec()).ok();
+        }
+        reader.skip(wire)?;
+    }
+    None
 }
 
 /// La URI de una canción: está en los atributos del item.

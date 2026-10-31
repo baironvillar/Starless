@@ -2477,6 +2477,52 @@ fn jam_track_cache() -> &'static std::sync::Mutex<HashMap<String, Track>> {
     CACHE.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
+/// La cola compartida del jam, con el `uid` de cada canción.
+///
+/// **La URI sola no alcanza para agregar una canción**: el comando del player
+/// lleva un `ContextTrack { uri, uid, gid, metadata }`, y sin el `uid` el
+/// servicio resuelve otra pista —la que está sonando—. El `uid` de cada
+/// canción está en el id del item de la lista.
+pub fn jam_queue_items(
+    session: &Session,
+    session_id: &str,
+) -> Result<Vec<(String, String)>, String> {
+    let uri = format!("spotify:list:jam-list:{session_id}");
+    let body = jamlist::request(&uri);
+
+    let owned = session.clone();
+    let answer = call(session, async move {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            reqwest::header::CONTENT_TYPE,
+            reqwest::header::HeaderValue::from_static("application/x-protobuf"),
+        );
+
+        owned
+            .spclient()
+            .request(
+                &reqwest::Method::POST,
+                "/playlist/spotify.list.v1.ListReadService/GetLists",
+                Some(headers),
+                Some(&body),
+            )
+            .await
+            .map_err(|e| {
+                log::error!("spclient: la cola del jam no se pudo leer: {e}");
+                net_code(&e)
+            })
+    })?;
+
+    match jamlist::tracks_with_ids(&answer) {
+        Some(items) => Ok(items),
+        None if jamlist::not_found(&answer) => Ok(Vec::new()),
+        None => {
+            log::error!("spclient: la cola del jam vino con otra forma");
+            Err("bad_response".to_string())
+        }
+    }
+}
+
 /// Agregar una canción a la cola compartida del jam.
 ///
 /// La puerta es `POST /social-connect/v2/sessions/<id>/commands/from/<device>`
@@ -2507,6 +2553,28 @@ fn jam_track_cache() -> &'static std::sync::Mutex<HashMap<String, Track>> {
 /// comando entró, y `DEVICE_NOT_FOUND` —lo que contesta `pause` cuando no hay
 /// un dispositivo al que mandárselo— es que no había a quién.
 pub fn jam_add_to_queue(session: &Session, session_id: &str, track_id: &str) -> Result<(), String> {
+    jam_add_to_queue_with_uid(session, session_id, track_id, None)
+}
+
+/// Agregar una canción a la cola compartida, con el `uid` de la pista.
+///
+/// **El `uid` es lo que hace que la canción sea la correcta.**
+///
+/// El comando del player lleva la pista como un `ContextTrack`
+/// (`{ uri, uid, gid, metadata }`). Mandando sólo la URI, el servicio acepta el
+/// comando y **lo aplica a la pista que está sonando**: al otro lado del jam le
+/// entra la canción de siempre, y la lista compartida no cambia. Es lo que se
+/// midió el 31 de octubre de 2026 — el comando contestaba `SUCCESS` y la lista
+/// seguía igual—.
+///
+/// Con el `uid` —el id que la pista tiene dentro del contexto— la lista
+/// compartida toma la canción que se mandó.
+pub fn jam_add_to_queue_with_uid(
+    session: &Session,
+    session_id: &str,
+    track_id: &str,
+    uid: Option<&str>,
+) -> Result<(), String> {
     // **La URI se arma acá y no en el frontend.** El id de una pista es base62,
     // y hay un solo lugar en la app que sabe eso: el mismo que arma la URI
     // para reproducir. Si el frontend mandara la URI, serían dos lugares
@@ -2516,7 +2584,11 @@ pub fn jam_add_to_queue(session: &Session, session_id: &str, track_id: &str) -> 
 
     let device = session.device_id().to_owned();
     let route = format!("/social-connect/v2/sessions/{session_id}/commands/from/{device}");
-    let body = jam_command_body("add_to_queue", Some(&uri), &device);
+    let body = jam_command_body_with_track(
+        "add_to_queue",
+        Some((uri.as_str(), uid)),
+        &device,
+    );
 
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert(
@@ -2574,10 +2646,27 @@ pub fn jam_add_to_queue(session: &Session, session_id: &str, track_id: &str) -> 
 /// El cuerpo de un comando del player, que es lo que la puerta del jam
 /// entiende.
 ///
-/// Va con `serde_json` y no a mano porque la URI de la canción viaja dentro: una
-/// comilla rare en un título sería un JSON roto, y un JSON roto es un `400` que
-/// no dice por qué.
+/// **La forma simple, sin `uid`.** Sólo la usan los tests: la app manda el
+/// `ContextTrack` completo, con su `uid`, porque sin él el servicio mete la
+/// pista que está sonando en vez de la que se le pidió.
+#[cfg(test)]
 fn jam_command_body(endpoint: &str, uri: Option<&str>, device: &str) -> String {
+    jam_command_body_with_track(endpoint, uri.map(|uri| (uri, None)), device)
+}
+
+/// El mismo comando, pero con la pista completa.
+///
+/// **La pista del comando es un `ContextTrack` y no una URI suelta**:
+/// `ContextTrack { uri, uid, gid, metadata }`. Medido el 31 de octubre de 2026:
+/// mandando sólo la URI, el servicio acepta el comando —`SUCCESS`— y lo aplica
+/// **a la pista que está sonando**, no a la que se mandó: al otro lado del jam
+/// le entra la canción de siempre. Con el `uid` de la pista, la lista compartida
+/// la toma.
+fn jam_command_body_with_track(
+    endpoint: &str,
+    track: Option<(&str, Option<&str>)>,
+    device: &str,
+) -> String {
     let now = now_millis();
 
     let mut command = serde_json::Map::new();
@@ -2586,11 +2675,13 @@ fn jam_command_body(endpoint: &str, uri: Option<&str>, device: &str) -> String {
         serde_json::Value::String(endpoint.to_owned()),
     );
 
-    if let Some(uri) = uri {
-        command.insert(
-            "track".into(),
-            serde_json::json!({ "uri": uri }),
-        );
+    if let Some((uri, uid)) = track {
+        let mut pista = serde_json::Map::new();
+        pista.insert("uri".into(), serde_json::Value::String(uri.to_owned()));
+        if let Some(uid) = uid {
+            pista.insert("uid".into(), serde_json::Value::String(uid.to_owned()));
+        }
+        command.insert("track".into(), serde_json::Value::Object(pista));
     }
 
     command.insert(
@@ -2696,6 +2787,12 @@ mod jampair;
 /// La cola compartida del jam: el servicio de listas y su protobuf.
 mod jamlist;
 
+/// El estado del player, publicado al servicio.
+///
+/// **Sin esto el jam no tiene anfitrión**: la cola compartida es el contexto
+/// que publica el player del anfitrión, y Starless no publicaba ninguno.
+pub mod state;
+
 #[cfg(debug_assertions)]
 pub use jampair::{
     requested as jam_pair_requested, run as run_jam_pair_probe, watch as run_jam_watch_probe,
@@ -2704,10 +2801,11 @@ pub use jampair::{
 
 #[cfg(debug_assertions)]
 pub use probe::{
-    create_requested, dj_requested, home_requested, jam_requested, pictures_requested,
-    private_requested, radio_requested, requested, run_create_probe, run_dj_probe, run_home_probe,
-    run_jam_probe, run_picture_probe, run_private_probe, run_probe, run_radio_probe, run_shape_probe,
-    run_voice_probe, shapes_requested, voice_requested,
+    create_requested, dj_requested, home_requested, jam_requested, jam_state_requested,
+    pictures_requested, private_requested, radio_requested, requested, run_create_probe,
+    run_dj_probe, run_home_probe, run_jam_probe, run_jam_state_probe, run_picture_probe,
+    run_private_probe, run_probe, run_radio_probe, run_shape_probe, run_voice_probe,
+    shapes_requested, voice_requested,
 };
 
 #[cfg(test)]

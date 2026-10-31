@@ -997,9 +997,10 @@ async fn jam_join(app: AppHandle, token: String) -> Result<JamSession, String> {
 
 /// Leer la sesión, sin abrir ninguna.
 ///
-/// **Es la misma puerta que abre la sesión, pero sin activarla.** El jam no
-/// tiene pubsub en librespot —el `dealer` no lo tiene—, así que la única
-/// forma de saber quién se unió es preguntar cada tanto.
+/// **Es la misma puerta que abre la sesión, pero sin activarla.** El jam **sí**
+/// tiene pubsub —es el `dealer`, el mismo websocket por el que llega el
+/// `connection id`—, pero el panel todavía no lo escucha: preguntar cada tanto
+/// es lo que hay. Ver `docs/jam.md`.
 ///
 /// **La puerta crea la sesión si no hay ninguna**, y por eso el panel la usa
 /// solo mientras tiene una sesión en la mano: si la respuesta trae otra
@@ -1867,6 +1868,13 @@ pub fn run() {
             // window looks perfect while the app is deaf.
             playback::watch(handle.clone());
 
+            // **Lo que Starless está sonando, dicho al servicio.**
+            //
+            // Sin esto el jam no tiene anfitrión: la cola compartida es el
+            // contexto que publica el player del anfitrión, y Starless no
+            // publicaba ninguno. Ver `playback::publish_state`.
+            playback::publish_state(handle.clone());
+
             // **La conexión, cortada a propósito.**
             //
             // Una sesión que se muere sola no se puede reproducir cuando se
@@ -1964,6 +1972,12 @@ pub fn run() {
             #[cfg(debug_assertions)]
             if spclient::jam_watch_requested() {
                 spclient::run_jam_watch_probe(handle.clone());
+            }
+            // El estado del player: lo que el servicio necesita para saber qué
+            // está sonando, y lo que hace que el jam tenga un anfitrión.
+            #[cfg(debug_assertions)]
+            if spclient::jam_state_requested() {
+                spclient::run_jam_state_probe(handle.clone());
             }
             if selftest::requested() {
                 selftest::run(handle);

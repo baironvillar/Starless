@@ -43,6 +43,119 @@ const STATUS_ECHO_MS: u64 = 100;
 
 const MAX_VOLUME: u16 = 65535;
 
+/// Cada cuánto se le dice a Spotify qué está sonando.
+///
+/// **La posición también es parte del estado.** Quien escucha del otro lado
+/// necesita saber en qué segundo va la canción para no quedar desfasado, y
+/// cinco segundos es la diferencia entre "va conmigo" y "va un rato atrasado".
+const PUBLISH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// El hilo que le dice a Spotify qué está sonando.
+///
+/// **Por qué existe.** La cola compartida del jam no es una lista que escribe
+/// el jam: es el contexto que publica el player del anfitrión. Medido el 31
+/// de octubre de 2026: antes de publicar, la cola del jam tenía las ciento
+/// cincuenta canciones del teléfono y ni una de Starless; después de publicar,
+/// tenía las cincuenta y una de Starless y ni una del teléfono.
+///
+/// **Es un hilo y no un comando**: publicar es una ida al servicio, y una ida
+/// al servicio en el camino de un click es un click que tarda.
+///
+/// **El `dealer` se abre acá.** Starless no lo usaba para nada —el `player` de
+/// librespot 0.8 es local— y sin él no hay `connection id`, y sin `connection
+/// id` el servicio rechaza el estado con un `400`.
+pub fn publish_state(app: AppHandle) {
+    std::thread::spawn(move || {
+        // **La sesión puede tardar: el usuario puede no haber entrado todavía.**
+        // El hilo espera, en vez de rendirse: el que publica tiene que estar
+        // cuando empieza la música, no cuando arrancó la app.
+        let session = loop {
+            let Some(session_state) = app.try_state::<crate::SessionState>() else {
+                std::thread::sleep(PUBLISH_INTERVAL);
+                continue;
+            };
+            match session_state.ready() {
+                Ok(session) => break session,
+                Err(error) => {
+                    log::debug!("playback: todavía no hay sesión para publicar: {error}");
+                    std::thread::sleep(PUBLISH_INTERVAL);
+                }
+            }
+        };
+
+        if let Err(error) = crate::spclient::state::watch_connection_id(&session) {
+            log::error!("playback: no se pudo escuchar el pusher: {error}");
+            return;
+        }
+
+        // **El id llega un segundo después de abrir el websocket.** Sin él, el
+        // `PUT` contesta `400` y el jam se queda sin anfitrión.
+        for _ in 0..50 {
+            if !session.connection_id().is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+        if session.connection_id().is_empty() {
+            log::warn!(
+                "playback: el servicio no asignó un connection id; el estado del player no se publica"
+            );
+            return;
+        }
+
+        let mut ultima: Option<String> = None;
+        let mut snapshot = crate::spclient::state::empty_snapshot();
+
+        loop {
+            std::thread::sleep(PUBLISH_INTERVAL);
+
+            let Some(state) = app.try_state::<PlaybackState>() else {
+                return;
+            };
+            let status = state.status();
+
+            match status.track_id.clone() {
+                // **La canción cambió: el contexto se rehace.** Es una ida al
+                // servicio, y por eso no se hace en cada vuelta.
+                Some(track_id) => {
+                    if ultima.as_deref() != Some(track_id.as_str()) {
+                        let uri = format!("spotify:track:{track_id}");
+                        match crate::spclient::state::snapshot_for(
+                            &session,
+                            &uri,
+                            status.real_duration_ms as u64,
+                        ) {
+                            Some(nueva) => {
+                                ultima = Some(track_id);
+                                snapshot = nueva;
+                            }
+                            None => continue,
+                        }
+                    }
+
+                    snapshot.position_ms = status.position_ms as u64;
+                    snapshot.duration_ms = status.real_duration_ms as u64;
+                    snapshot.playing = status.playing;
+                }
+                // **No hay nada sonando: el estado se vacía.** Publicar la
+                // última canción como si siguiera sonando es una mentira que
+                // el otro lado cree.
+                None => {
+                    if ultima.is_none() {
+                        continue;
+                    }
+                    ultima = None;
+                    snapshot = crate::spclient::state::empty_snapshot();
+                }
+            }
+
+            if let Err(error) = crate::spclient::state::publish(&session, &snapshot) {
+                log::error!("playback: el estado del player no se publicó: {error}");
+            }
+        }
+    });
+}
+
 /// How long the player can stay quiet before the app stops believing it.
 ///
 /// While the audio flows the position moves twice a second. Twenty seconds of
