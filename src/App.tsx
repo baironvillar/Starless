@@ -165,8 +165,24 @@ const RECENT_FOR_RADIO = 5;
  * que alguien se unió es preguntar. Tres segundos es lo que tarda el otro
  * lado en contarse en el jam, y es un viaje por la red que no puede ir cada
  * frame.
+ *
+ * **Cinco, y no tres.** El servicio corta la tanda con un `429` cuando se le
+ * pregunta de más —medido el 31 de octubre de 2026— y con el panel del jam
+ * abierto son dos pedidos por vuelta: la sesión y la cola. Tres segundos son
+ * cuarenta pedidos por minuto; cinco son veinticuatro, que es lo que el
+ * servicio aguanta sin quejarse.
  */
-const JAM_POLL_MS = 3000;
+const JAM_POLL_MS = 5000;
+
+/**
+ * Cuánto espera la app cuando el servicio dice que no.
+ *
+ * **El techo de la espera, no la espera.** La espera empieza en
+ * [`JAM_POLL_MS`] y se duplica en cada fallo, hasta este tope: más que esto
+ * y el panel del jam queda viejo a propósito, que es mejor que golpear un
+ * servicio que ya dijo "ahora no".
+ */
+const JAM_POLL_MAX_MS = 60000;
 
 /**
  * The fade that dissolves the edges of the content area, as a mask.
@@ -1111,6 +1127,17 @@ export default function App() {
     const sessionId = jam?.session_id;
     if (!sessionId) return;
     let alive = true;
+    let timer: number | undefined;
+
+    // **La espera crece cuando el servicio dice que no.**
+    //
+    // The jam has no pubsub here, so the app asks —every few seconds— and the
+    // service cuts the batch with a `429` when it is asked too much. A fixed
+    // interval keeps hammering a service that is already saying "not now", and
+    // the panel stays broken long after the service would have answered. So
+    // the wait doubles on every failure and goes back to normal on the first
+    // success.
+    let espera = JAM_POLL_MS;
 
     const tick = async () => {
       try {
@@ -1126,6 +1153,7 @@ export default function App() {
 
         setJam(session);
         setJamSongs(queue);
+        espera = JAM_POLL_MS;
 
         // **The head of the shared queue is what the other side put in it.**
         // The first poll only writes it down: the queue starts with a seed
@@ -1151,14 +1179,16 @@ export default function App() {
         // A jam that cannot be read right now is not a jam that is over: the
         // next poll asks again.
         console.warn("Starless: no se pudo leer el jam", explain(e));
+        espera = Math.min(espera * 2, JAM_POLL_MAX_MS);
+      } finally {
+        if (alive) timer = window.setTimeout(() => void tick(), espera);
       }
     };
 
-    const timer = setInterval(() => void tick(), JAM_POLL_MS);
     void tick();
     return () => {
       alive = false;
-      clearInterval(timer);
+      if (timer !== undefined) window.clearTimeout(timer);
     };
   }, [jam?.session_id]);
 
