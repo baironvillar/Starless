@@ -500,6 +500,19 @@ export function onDjVoice(handler: (event: DjVoiceEvent) => void): Promise<Unlis
   return listen<DjVoiceEvent>("dj://voice", (event) => handler(event.payload));
 }
 
+/**
+ * Subscribe to the music's pulse: 0 between beats, up to 1 on a kick, about
+ * thirty times a second while something sounds (see `beat.rs`).
+ *
+ * **Feed it to a motion value, never to React state.** Thirty renders a second
+ * of the player bar is the same trap the volume echo already paid for.
+ * `bun run dev` has no backend, so there the pulse simply never arrives.
+ */
+export function onBeat(handler: (pulse: number) => void): Promise<UnlistenFn> | null {
+  if (!hasBackend()) return null;
+  return listen<number>("player://beat", (event) => handler(event.payload));
+}
+
 export async function playTrack(
   track: Pick<Track, "id" | "duration_ms">,
   positionMs = 0,

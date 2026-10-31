@@ -389,7 +389,11 @@ impl Iterator for Counted {
         // se encoló, y el control del volumen tardaba lo que la cola tarda en
         // vaciarse —hasta 26 paquetes— en llegar al oído. Acá se atenúa al
         // salir, que es cuando el oído la está esperando.
-        self.inner.next().map(|sample| sample * attenuation() as f32)
+        self.inner.next().map(|sample| {
+            // El pulso de la barra se mide acá, cuando suena, y antes del volumen.
+            crate::beat::feed(sample);
+            sample * attenuation() as f32
+        })
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {

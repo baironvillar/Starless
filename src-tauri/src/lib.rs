@@ -6,6 +6,7 @@
 // needs the frontend to read a token, that is the bug, not the design.
 
 mod auth;
+mod beat;
 mod crossfade;
 // Named `selftest`, never `diagnostic`: the `diagnostic` crate provides the
 // `#[diagnostic::on_unimplemented]` attribute that `#[tauri::command]` expands

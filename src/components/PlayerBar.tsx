@@ -13,13 +13,14 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion, useMotionValue } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { StringKey } from "../lib/i18n";
 import {
   coverImage,
   explain,
   formatDuration,
+  onBeat,
   type PlaybackStatus,
   seekPlayback,
   setVolume,
@@ -287,6 +288,16 @@ export function PlayerBar({
   const toggleMute = useCallback(() => {
     void setVolume(muted ? lastAudible.current : 0).catch(() => {});
   }, [muted]);
+
+  // The music's pulse, for the waves on the volume. A motion value and not
+  // state: it changes thirty times a second and must not re-render the bar.
+  const pulse = useMotionValue(0);
+  useEffect(() => {
+    const unlisten = onBeat((value) => pulse.set(value));
+    return () => {
+      void unlisten?.then((stop) => stop());
+    };
+  }, [pulse]);
 
   const busy = loading;
   /**
@@ -610,6 +621,7 @@ export function PlayerBar({
             disabled={idle}
             onChange={(value) => void setVolume(value).catch(() => {})}
             label={t.volume}
+            pulse={muted ? undefined : pulse}
           />
         </div>
       </div>
