@@ -275,7 +275,7 @@ fn pkce(
         .open_in_browser()
         .with_custom_message(
             "<!doctype html><meta charset=utf-8>\
-             <body style=\"background:#0A0A12;color:#F4F4FA;font:16px system-ui;\
+             <body style=\"background:#08080A;color:#F4F5F7;font:16px system-ui;\
              display:grid;place-items:center;height:100vh;margin:0\">\
              <p>Listo. Vuelve a Starless.</p>",
         )

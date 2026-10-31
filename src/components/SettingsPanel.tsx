@@ -72,9 +72,9 @@ type SettingsPanelProps = {
  * Every one of them is light enough to carry the dark label, which is the whole
  * point: an accent is a fill under text as often as it is a mark beside text, and
  * a preset that made a button unreadable would be a preset that ships a bug. The
- * shipped lime comes first and is also how the section gets its default back.
+ * shipped chrome comes first and is also how the section gets its default back.
  */
-const ACCENT_PRESETS = ["#c9f73c", "#3ddc97", "#4cc9f0", "#7aa2ff", "#c08bff", "#ff8fb1"];
+const ACCENT_PRESETS = ["#c8ccd4", "#3ddc97", "#4cc9f0", "#7aa2ff", "#c08bff", "#ff8fb1"];
 
 /**
  * How long the hand has to be still before the opacity is applied for real.
@@ -996,7 +996,7 @@ function Select({
         className="min-w-[164px] appearance-none rounded-pill border border-white/14 bg-white/6 py-2.5 pr-10 pl-4 text-[13px] font-medium outline-none transition-colors duration-200 hover:bg-white/10"
       >
         {options.map((o) => (
-          <option key={o.value} value={o.value} className="bg-[#14141f]">
+          <option key={o.value} value={o.value} className="bg-[#1c1d21]">
             {o.label}
           </option>
         ))}

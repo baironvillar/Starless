@@ -206,7 +206,7 @@ function Sent({
       <button
         type="button"
         onClick={() => void openUrl(outcome.url)}
-        className="glass flex items-center gap-2.5 rounded-pill px-4 py-2.5 text-[12.5px] font-medium text-ink-muted transition-colors duration-200 hover:text-ink"
+        className="glass-overlay flex items-center gap-2.5 rounded-pill px-4 py-2.5 text-[12.5px] font-medium text-ink-muted transition-colors duration-200 hover:text-ink"
       >
         {/* A repeated crash went to the issue that already had it: saying "created"
             would send the person looking for an issue that is not theirs. */}

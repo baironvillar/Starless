@@ -352,7 +352,7 @@ export function AuthGate({
                 <div
                   className="size-16 rounded-pill"
                   style={{
-                    background: "linear-gradient(140deg, hsl(78 72% 58%), hsl(18 65% 38%))",
+                    background: "linear-gradient(140deg, #f4f5f7, #4a4d54)",
                   }}
                 />
 
@@ -460,7 +460,7 @@ function Restoring({ t }: { t: Record<StringKey, string> }) {
       animate={{ opacity: 1, scale: 1 }}
       transition={SPRING_GATE}
       className="size-16 rounded-pill"
-      style={{ background: "linear-gradient(140deg, hsl(78 72% 58%), hsl(18 65% 38%))" }}
+      style={{ background: "linear-gradient(140deg, #f4f5f7, #4a4d54)" }}
     />
   );
 }

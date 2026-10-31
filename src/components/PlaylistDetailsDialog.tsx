@@ -240,7 +240,7 @@ export function PlaylistDetailsDialog({
               event.preventDefault();
               void save();
             }}
-            className="glass flex w-full max-w-[460px] flex-col gap-4 rounded-[18px] p-5"
+            className="glass-overlay flex w-full max-w-[460px] flex-col gap-4 rounded-[18px] p-5"
           >
             <div className="flex items-center gap-3">
               <h2 className="min-w-0 flex-1 text-[15px] font-semibold tracking-tight">

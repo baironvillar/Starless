@@ -15,11 +15,10 @@ Two constraints sharpen it, and both come from PRODUCT.md rather than from taste
 
 ## Shape
 
-Four floating layers, and no more. Each sits above the one beneath.
+Three floating layers over a black ground lit by a frost bloom, and no more.
 
 | Layer | Role | Radius |
 |---|---|---|
-| Colour bloom | A large soft radial wash behind everything | full |
 | Top bar | Home, library toggle, centred search, secondary actions | 20px |
 | Library sidebar | The user's playlists and liked songs | 20px |
 | Player bar | Transport, progress, volume — arrives with the music | 20px |
@@ -34,20 +33,20 @@ The top bar is a three-column grid, `1fr auto 1fr`, so the search stays opticall
 
 ## Colour
 
-Vivid, as the user asked. The saturation lives in the bloom and in state marks, not in flat panel fills — a large saturated field is what turns a glass UI cheap.
+Achromatic, taken from the landing (`site/DESIGN.md`) so the site and the app read as one product: near-black ground, cool frost for type, chrome for the one action colour. No hue lives in the chrome; colour appears only in the album art and in the reserved state marks.
 
 | Token | Value | Use |
 |---|---|---|
-| `--ink-ground` | `#0A0A12` | Behind everything |
-| `--ink` | `#F4F4FA` | Primary text |
-| `--ink-muted` | `#9A9AB0` | Secondary text, timecodes |
-| `--ink-faint` | `#9090A8` | Tertiary text. Must stay at or above `#9090A8` — see Contrast below |
-| `--accent` | `#C9F73C` | Primary actions, active nav, progress fill |
+| `--ink-ground` | `#08080A` | Behind everything (the landing's Speaker Black) |
+| `--ink` | `#F4F5F7` | Primary text (Frost) |
+| `--ink-muted` | `#9A9EA8` | Secondary text, timecodes (Mute) |
+| `--ink-faint` | `#8F939C` | Tertiary text. Must stay at or above `#8F939C` — see Contrast below |
+| `--accent` | `#C8CCD4` | Primary actions, active nav, progress fill (Chrome). The user can still pick another in Settings |
 | `--accent-live` | `#FF5A36` | Currently playing. Reserved |
 | `--accent-ok` | `#3DDC97` | Played, confirmed |
 | `--accent-warn` | `#FFB020` | Failed to load |
 
-**The palette is warm and acidic on purpose.** An earlier violet-on-dark bloom was rejected by the impeccable detector as `ai-color-palette` — purple gradients on a dark ground are the single most recognizable tell of AI-generated UI, and a design system that carries one cannot escape it. Violet and cyan are both out of the chrome.
+**The palette used to be warm and acidic** (a lime accent over an orange-and-green bloom), chosen after a violet bloom was rejected by the impeccable detector as `ai-color-palette`. It was replaced by the landing's achromatic ramp so the app looks like the page that sells it. Violet stays out.
 
 `--accent-live` is reserved. It appears on exactly one thing at a time: the track currently sounding. Reusing it for a hovered button or a selected tab is the fastest way to lose the signal the whole design is built on.
 
@@ -55,22 +54,23 @@ Vivid, as the user asked. The saturation lives in the bloom and in state marks, 
 
 The detector caught `--ink-faint` at 2.7:1 against the ground and 3.4:1 against glass. WCAG AA wants 4.5:1 for body text.
 
-The floor is now `#9090A8` on the ground and on the glass base, which is about 5.5:1 in both. **Any new tertiary text token must be checked against `#0A0A12` and against the glass base `#23232C`, not against a screenshot.** Never tint a text token toward the accent to make it feel integrated; that is exactly how contrast quietly disappears.
+The floor is now `#8F939C`: 6.5:1 on the ground and 5.5:1 on graphite `#1C1D21`, the opaque end of the glass base. **Any new tertiary text token must be checked against `#08080A` and against `#1C1D21`, not against a screenshot.** Never tint a text token toward the accent to make it feel integrated; that is exactly how contrast quietly disappears.
 
 ## Type
 
-`Manrope` for UI, `JetBrains Mono` for timecodes. Not Inter: the detector flags it as `overused-font`, and it is right — Inter is where every generated UI converges, and a design system that ships it has no voice. Manrope's slightly rounded terminals also carry the roundness the direction is built on.
+`Funnel Sans` for UI and `Funnel Display` for `h1`/`h2` titles, the landing's pair. Timecodes stay in Funnel Sans with tabular figures (`.tabular`), so a countdown never shifts; the system monospace is left only for raw logs and codes. Not Inter: the detector flags it as `overused-font`. Manrope, the earlier choice, was dropped so the app and the site share one voice.
 
-## The bloom is fixed, not per-album
+## A frost bloom, never a coloured one
 
-Resolved: the bloom **does not tint per album**. An earlier version derived its hue from the current track, which meant a Radiohead track pushed violet through the entire interface and a different artist would produce a different product. Palette consistency beat per-album mood, and it is cheaper: the bloom is a static stack of three radials that never repaints.
+Behind everything sits a static bloom of white light on black: three radials in frost and chrome, brightest at the top centre. It gives the glass something to show through without bringing hue back, the same way the landing gets colour only from reflected light. It is fixed (a per-album tint once pushed violet through the whole interface) and never animates.
+**One light follows the pointer** (`CursorGlow.tsx`): a 900px pool of frost at 16% that drifts after the mouse on a soft spring. It is the one exception to the static backdrop, asked for by the user. It costs a blur re-sample on the glass while the pointer moves, so it moves only by `transform`, only with the pointer, and is not drawn with reduced motion. If the app drops below 60fps, this is the first thing to cut.
 
 ## The glass recipe
 
 A glass surface is three stacked things, never one. Omitting the middle layer is what turns translucency into unreadable.
 
 ```
-1. base       rgba(20,20,32,0.55)   ← guarantees the contrast floor
+1. base       rgba(28,29,33,0.46)   ← graphite; the bars (`glass`) sit mostly over the bloom, so they go below the 0.5 floor for more see-through. Menus and sheets keep their own alpha
 2. blur       blur(24px) saturate(180%)
 3. lift       0 24px 48px -12px rgba(0,0,0,0.6)
 ```
@@ -92,11 +92,11 @@ This is the part that decides whether the direction survives contact with a real
 - **Blur radius caps at 24px.** Past that the cost climbs with no visible gain at these element sizes.
 - **Never animate `backdrop-filter`.** Animating the blur value forces a re-sample every frame. Animate `transform` and `opacity` only. A glass bar that fades in fades its *opacity*, never its blur.
 - **One glass layer over the content area.** The bar and the rail are separate regions; do not blur a container that contains another blurred element.
-- **The bloom behind the glass is static.** A fixed stack of three radial gradients that never repaints. A continuously animating backdrop under a blurred surface is the single worst thing this design could do — it repaints the blur every frame.
+- **What sits behind the glass is static.** The bloom is a fixed stack of radials that never repaints; a continuously animating backdrop under a blurred surface is the single worst thing this design could do — it repaints the blur every frame.
 - **`contain: paint`** on glass surfaces, so their repaint cannot leak into the content behind them.
 - **`will-change: transform`**, never `will-change: filter`.
 
-If the app ever drops below 60fps, the bloom's animation is the first thing to cut, then blur radius drops to 16px. Dropping the glass entirely is the last resort and probably wrong.
+If the app ever drops below 60fps, the pointer glow goes first, then blur radius drops to 16px. Dropping the glass entirely is the last resort and probably wrong.
 
 ## Motion
 
@@ -106,7 +106,7 @@ Motion is what separates "designed" from "assembled", and it is one of the three
 - Press feedback is a scale to 0.94 with a ~120ms spring. It must feel instant.
 - The bar enters **with the music**: fade and rise 16px, ~320ms. It is not on screen before the first song — an empty bar is the shape of an absence — and it never re-enters on navigation.
 - The bar leaves the way it came: the same fade, the same 16px, downward. The window gives the bar its room at the same time, so the two are one movement and not two gestures. The library, the rail and the queue stop 20px above the window's edge when there is no bar, and at 144px — where the bar begins — when there is one.
-- Track change: nothing in the chrome moves. The bloom is fixed, so a track change only updates the artwork swatch and the running-time column.
+- Track change: nothing in the chrome moves. A track change only updates the artwork swatch and the running-time column.
 - Nothing animates on a loop, with exactly one exception: the now-playing mark in the track list breathes slowly. It is the only thing on screen allowed to move indefinitely, and it is 8px across. An app open all day must otherwise be able to sit completely still.
 
 ## Signature move

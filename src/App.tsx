@@ -6,6 +6,7 @@ import { AlbumScreen } from "./components/AlbumScreen";
 import { ArtistScreen } from "./components/ArtistScreen";
 import { AuthGate } from "./components/AuthGate";
 import { CrashPrompt } from "./components/CrashPrompt";
+import { CursorGlow } from "./components/CursorGlow";
 import { FeedbackPanel } from "./components/FeedbackPanel";
 import { HomeScreen } from "./components/HomeScreen";
 import { JamPanel } from "./components/JamPanel";
@@ -2378,28 +2379,24 @@ export default function App() {
   return (
     <div className="relative h-full overflow-hidden bg-ground">
       {/*
-        Colour bloom.
+        Bloom, in frost only: light on black, like the landing's chrome, so the
+        glass has something to show through without bringing hue back.
 
-        Deliberately FIXED, not tinted per album. A per-album tint made the chrome
-        unrepeatable — whatever hue the current track happened to be leaked into the
-        whole interface, which is how a palette stops being a palette. The warmth
-        here is Starless's own.
-
-        Also deliberately STATIC. It never animates. A continuously animating
-        backdrop under a blurred surface repaints the blur every frame, which is the
-        single most expensive thing this design could do — see DESIGN.md.
+        These three are static. The one light that moves is CursorGlow, and only
+        with the pointer: a backdrop that animates on its own under blurred glass
+        repaints the blur every frame — see DESIGN.md.
       */}
       <div
         className="pointer-events-none absolute inset-0"
         style={{
           background: [
-            "radial-gradient(130% 90% at 6% 116%, hsl(22 78% 38% / 0.20) 0%, transparent 58%)",
-            "radial-gradient(110% 80% at 98% -14%, hsl(78 68% 40% / 0.13) 0%, transparent 60%)",
-            "radial-gradient(120% 70% at 46% 124%, hsl(34 72% 36% / 0.14) 0%, transparent 62%)",
-            "linear-gradient(to top, rgb(10 10 18 / 0.9) 0%, rgb(10 10 18 / 0.3) 22%, transparent 46%)",
+            "radial-gradient(90% 70% at 50% -6%, rgb(244 245 247 / 0.24) 0%, transparent 64%)",
+            "radial-gradient(70% 70% at 104% 108%, rgb(200 204 212 / 0.18) 0%, transparent 60%)",
+            "radial-gradient(60% 60% at -6% 96%, rgb(244 245 247 / 0.10) 0%, transparent 60%)",
           ].join(", "),
         }}
       />
+      <CursorGlow />
 
       <AuthGate t={t} onReport={() => setFeedbackOpen(true)} onSignedOut={resetView}>
         <TopBar
