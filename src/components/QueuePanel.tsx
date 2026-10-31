@@ -4,6 +4,8 @@ import { useRef } from "react";
 import type { StringKey } from "../lib/i18n";
 import { SPRING, SPRING_SHEET } from "../lib/motion";
 import {
+  type Album,
+  type Artist,
   coverImage,
   type DjNarration,
   formatDuration,
@@ -13,6 +15,7 @@ import {
 } from "../lib/spotify";
 import { useRowWindow } from "../lib/useRowWindow";
 import { DjArtwork } from "./DjArtwork";
+import { TrackMenu } from "./TrackMenu";
 
 type QueuePanelProps = {
   t: Record<StringKey, string>;
@@ -81,7 +84,27 @@ type QueuePanelProps = {
    * and adding it again would be adding the same song twice.
    */
   jamOpen?: boolean;
-  onAddToJam?: (track: Track) => void;
+  /**
+   * The jam's queue, when a jam is open.
+   *
+   * **It is the queue the panel shows.** El jam comparte la cola: lo que suma
+   * el otro lado aparece acá, y lo que se suma acá llega allá. La cabeza es la
+   * canción que está sonando, así que no se repite bajo "a continuación".
+   */
+  jamSongs?: Track[];
+  /**
+   * Add a song to the queue that is on screen.
+   *
+   * **Con jam abierto la cola es la del jam**, y la canción se guarda para los
+   * dos. Sin jam, la canción va a la cola de la app.
+   */
+  onAddToQueue?: (track: Track) => void;
+  /** The row's menu: the artist of the song. */
+  onOpenArtist?: (artist: Artist) => void;
+  /** The row's menu: the album of the song. */
+  onOpenAlbum?: (album: Album) => void;
+  /** The row's menu: the playlist the song goes into. */
+  onNewPlaylist?: (track: Track) => void;
 };
 
 /**
@@ -127,6 +150,7 @@ export function QueuePanel({
   t,
   playing,
   upNext,
+  jamSongs,
   narration,
   dj,
   station,
@@ -135,11 +159,22 @@ export function QueuePanel({
   onClose,
   onOpenJam,
   jamOpen,
-  onAddToJam,
+  onAddToQueue,
+  onOpenArtist,
+  onOpenAlbum,
+  onNewPlaylist,
 }: QueuePanelProps) {
-  const rowKeys = trackRowKeys(upNext);
+  /**
+   * The list the panel draws.
+   *
+   * **With a jam open it is the jam's queue.** El jam es una cola compartida:
+   * lo que suma el otro lado aparece acá, y lo que se suma acá llega allá.
+   * Sin jam, es la cola de la app.
+   */
+  const list = jamOpen && jamSongs ? jamSongs : upNext;
+  const rowKeys = trackRowKeys(list);
   const nextRef = useRef<HTMLUListElement>(null);
-  const { first, last, pitch } = useRowWindow(nextRef, upNext.length);
+  const { first, last, pitch } = useRowWindow(nextRef, list.length);
 
   return (
     <motion.aside
@@ -217,10 +252,10 @@ export function QueuePanel({
         */}
         {!station && (
           <Section label={t.queueNextUp} listRef={nextRef}>
-            {upNext.length > 0 ? (
+            {list.length > 0 ? (
               <>
                 {first > 0 && <li style={{ height: first * pitch }} aria-hidden />}
-                {upNext.slice(first, last).map((track, offset) => (
+                {list.slice(first, last).map((track, offset) => (
                   <QueueRow
                     key={rowKeys[first + offset]}
                     t={t}
@@ -229,11 +264,14 @@ export function QueuePanel({
                     onPlay={onPlay}
                     row={first + offset}
                     jamOpen={jamOpen}
-                    onAddToJam={onAddToJam}
+                    onAddToQueue={onAddToQueue}
+                    onOpenArtist={onOpenArtist}
+                    onOpenAlbum={onOpenAlbum}
+                    onNewPlaylist={onNewPlaylist}
                   />
                 ))}
-                {last < upNext.length && (
-                  <li style={{ height: (upNext.length - last) * pitch }} aria-hidden />
+                {last < list.length && (
+                  <li style={{ height: (list.length - last) * pitch }} aria-hidden />
                 )}
               </>
             ) : (
@@ -360,7 +398,10 @@ function QueueRow({
   position,
   onPlay,
   jamOpen,
-  onAddToJam,
+  onAddToQueue,
+  onOpenArtist,
+  onOpenAlbum,
+  onNewPlaylist,
   row,
 }: {
   t: Record<StringKey, string>;
@@ -368,7 +409,10 @@ function QueueRow({
   position?: number;
   onPlay: (track: Track, row: number) => void;
   jamOpen?: boolean;
-  onAddToJam?: (track: Track) => void;
+  onAddToQueue?: (track: Track) => void;
+  onOpenArtist?: (artist: Artist) => void;
+  onOpenAlbum?: (album: Album) => void;
+  onNewPlaylist?: (track: Track) => void;
   row: number;
 }) {
   return (
@@ -418,18 +462,37 @@ function QueueRow({
           </span>
         </button>
 
-        {jamOpen && onAddToJam ? (
+        {/*
+            The two extras of the row, and neither is there until the pointer
+            arrives.
+
+            **Una fila con un botón siempre puesto es una fila que pregunta.**
+            El plus y los tres puntos sólo existen al pasar el mouse: la lista
+            se lee, y el que quiere operar la fila la busca.
+        */}
+        {jamOpen && onAddToQueue ? (
           <motion.button
             type="button"
-            onClick={() => onAddToJam(track)}
+            onClick={() => onAddToQueue(track)}
             whileTap={{ scale: 0.9 }}
             transition={SPRING}
-            aria-label={t.addToJam}
-            title={t.addToJam}
-            className="grid size-7 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink"
+            aria-label={t.addToQueue}
+            title={t.addToQueue}
+            className="grid size-7 shrink-0 place-items-center rounded-pill text-ink-muted opacity-0 transition-[opacity,color] duration-150 hover:bg-white/10 hover:text-ink focus-visible:opacity-100 group-hover:opacity-100"
           >
             <Plus className="size-4" strokeWidth={2.2} />
           </motion.button>
+        ) : null}
+
+        {onAddToQueue ? (
+          <TrackMenu
+            t={t}
+            track={track}
+            onOpenArtist={onOpenArtist}
+            onOpenAlbum={onOpenAlbum}
+            onAddToQueue={onAddToQueue}
+            onNewPlaylist={onNewPlaylist}
+          />
         ) : null}
       </div>
     </motion.li>

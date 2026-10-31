@@ -502,18 +502,6 @@ export default function App() {
   );
 
   /**
-   * Whether the screens should offer to put a song in the jam.
-   *
-   * **The row only exists while there is a jam to put the song in.** A menu
-   * row that is always there and does nothing is worse than no row: it reads
-   * as broken.
-   */
-  const onAddToJam = useMemo(
-    () => (jam ? (track: Track) => void addToJam(track) : undefined),
-    [jam, addToJam],
-  );
-
-  /**
    * How the shelf is ordered and drawn, read once at startup for the same reason the
    * glass and the accent are: the library is the first screen there is, and a shelf
    * that resets to A–Z every launch makes the control look like it does not save.
@@ -875,6 +863,31 @@ export default function App() {
     },
     [moveTo],
   );
+
+  /**
+   * Un jam nuevo arranca con la cola nueva.
+   *
+   * **La cola local era de antes del jam.** Las canciones que se habían
+   * summed y la lista que se había puesto eran de esta app; a partir de que
+   * hay un jam, la cola es la del jam —la de los dos— y lo que estaba en la
+   * cola local se va. Lo que sigue sonando sigue sonando: esto no toca el
+   * player.
+   *
+   * **Se hace una vez por jam.** El id de la sesión es la marca: mientras sea
+   * el mismo, la cola no se vuelve a tocar —ni cuando la app pregunta cada
+   * pocos segundos si el jam sigue vivo—.
+   */
+  const jamStarted = useRef<string | null>(null);
+  useEffect(() => {
+    const id = jam?.session_id ?? null;
+    if (!id) {
+      jamStarted.current = null;
+      return;
+    }
+    if (jamStarted.current === id) return;
+    jamStarted.current = id;
+    setQueueOverride(null);
+  }, [jam?.session_id, setQueueOverride]);
   /**
    * The DJ, while it is being asked for and while it could not be read.
    *
@@ -1361,6 +1374,24 @@ export default function App() {
     () => upNextTracks(queueAt, visibleTracks, queueOverride),
     [queueAt, visibleTracks, queueOverride],
   );
+
+  /**
+   * La cola compartida del jam, sin la cabeza.
+   *
+   * **La cabeza es la canción que está sonando.** La cola del jam es la cola
+   * del anfitrión —la que publica su estado de player—, y arranca por la
+   * canción que suena. El panel ya tiene una fila para eso, arriba, en "ahora
+   * suena": repetirla abajo sería ver la misma canción dos veces.
+   *
+   * **La cabeza sólo se saca si es la que suena de verdad.** Si el otro lado
+   * está sonando otra cosa, la cabeza es una canción más y se queda.
+   */
+  const jamNext = useMemo(() => {
+    if (!jamSongs.length) return [];
+    const head = jamSongs[0];
+    const current = status?.trackId ?? loadedTrack?.id ?? null;
+    return head && head.id === current ? jamSongs.slice(1) : jamSongs;
+  }, [jamSongs, status?.trackId, loadedTrack?.id]);
 
   /**
    * How many songs of the station's page are still ahead.
@@ -2422,7 +2453,7 @@ export default function App() {
    * same song twice meant to hear it twice, and quietly dropping the second is
    * the app disagreeing with a decision that was made on purpose.
    */
-  const onAddToQueue = useCallback(
+  const addToLocalQueue = useCallback(
     (track: Track) => {
       // La cola del DJ sigue siendo la cola del DJ: agregar una canción no
       // borra las frases que la trajeron, ni la convierte en una lista.
@@ -2436,6 +2467,28 @@ export default function App() {
       moveTo(edit.at);
     },
     [queue, visibleTracks, moveTo],
+  );
+
+  /**
+   * Agregar una canción a la cola que está a la vista.
+   *
+   * **Con un jam abierto, la cola es la del jam.** La canción se manda a la
+   * sesión —con el comando del player— y los dos la escuchan: la cola del jam
+   * no es una lista de esta app, es la de los dos. Sin jam, la canción va a la
+   * cola de la app, que es la de siempre.
+   *
+   * **Por eso el botón se llama "agregar a la cola" y no "agregar al jam".**
+   * El jam no es una cola aparte: es la cola, con dos personas.
+   */
+  const onAddToQueue = useCallback(
+    (track: Track) => {
+      if (!jam) {
+        addToLocalQueue(track);
+        return;
+      }
+      void addToJam(track);
+    },
+    [jam, addToJam, addToLocalQueue],
   );
 
   /**
@@ -2474,13 +2527,21 @@ export default function App() {
         return;
       }
       if (command.endpoint === "add_to_queue" && command.track) {
-        onAddToQueue(command.track);
+        /**
+         * La canción que manda el otro lado va a la cola **de la app**.
+         *
+         * **Y no se vuelve a mandar al jam.** Esta canción llegó porque el otro
+         * lado la mandó; si la app la mandara de vuelta, la otra persona la
+         * vería aparecer dos veces y el comando cruzaría de ida y vuelta sin
+         * parar.
+         */
+        addToLocalQueue(command.track);
       }
     });
     return () => {
       unlisten.then((off) => off());
     };
-  }, [advance, playDirect, onAddToQueue, status?.playing, visibleTracks]);
+  }, [advance, playDirect, addToLocalQueue, status?.playing, visibleTracks]);
 
   /**
    * La playlist entera a la cola, y no lo que el filtro dejó a la vista.
@@ -2689,6 +2750,7 @@ export default function App() {
               t={t}
               playing={status?.trackId ? loadedTrack : null}
               upNext={upNext}
+              jamSongs={jamNext}
               narration={narration}
               dj={djVoice}
               station={queue?.source === "dj"}
@@ -2697,7 +2759,10 @@ export default function App() {
               onClose={() => setQueueOpen(false)}
               onOpenJam={() => setJamOpen(true)}
               jamOpen={jam !== null}
-              onAddToJam={(track) => void addToJam(track)}
+              onAddToQueue={onAddToQueue}
+              onOpenArtist={openArtist}
+              onOpenAlbum={openAlbum}
+              onNewPlaylist={openNaming}
             />
           )}
         </AnimatePresence>
@@ -2716,7 +2781,6 @@ export default function App() {
             <JamPanel
               t={t}
               session={jam}
-              queue={jamSongs}
               busy={jamBusy}
               error={jamError}
               besideQueue={queueOpen}
@@ -2827,7 +2891,6 @@ export default function App() {
                 onOpenArtist={openArtist}
                 onAddToQueue={onAddToQueue}
                 onNewPlaylist={openNaming}
-                onAddToJam={onAddToJam}
               />
             ) : (
               <p className="rounded-card border border-white/8 bg-white/4 px-5 py-6 text-center text-[13px] text-ink-faint">
@@ -2922,7 +2985,6 @@ export default function App() {
               onOpenAlbum={openAlbum}
               onAddToQueue={onAddToQueue}
               onNewPlaylist={openNaming}
-              onAddToJam={onAddToJam}
               onAddListToQueue={onAddListToQueue}
               prefs={trackPrefs}
               onPrefsChange={changeTrackPrefs}
@@ -2961,7 +3023,6 @@ export default function App() {
               onOpenAlbum={openAlbum}
               onAddToQueue={onAddToQueue}
               onNewPlaylist={openNaming}
-              onAddToJam={onAddToJam}
               // Los tres puntos de la playlist: la lista entera va a la cola, y
               // los detalles son un diálogo aparte.
               onAddListToQueue={onAddListToQueue}

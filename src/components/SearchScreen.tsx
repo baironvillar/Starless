@@ -23,8 +23,6 @@ type SearchScreenProps = {
   onAddToQueue: (track: Track) => void;
   /** The row's extras, forwarded to the list. See `TrackMenu`. */
   onNewPlaylist: (track: Track) => void;
-  /** The row's extras, forwarded to the list. See `TrackMenu`. */
-  onAddToJam?: (track: Track) => void;
 };
 
 /**
@@ -46,7 +44,6 @@ export function SearchScreen({
   onOpenArtist,
   onAddToQueue,
   onNewPlaylist,
-  onAddToJam,
 }: SearchScreenProps) {
   /**
    * Alphabetical, because a list of results is a lookup.
@@ -79,7 +76,6 @@ export function SearchScreen({
           onOpenArtist={onOpenArtist}
           onAddToQueue={onAddToQueue}
           onNewPlaylist={onNewPlaylist}
-          onAddToJam={onAddToJam}
         />
       )}
       empty={t.searchNoResults}

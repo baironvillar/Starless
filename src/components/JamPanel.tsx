@@ -4,27 +4,12 @@ import { useState } from "react";
 import { copyText } from "../lib/clipboard";
 import type { StringKey } from "../lib/i18n";
 import { SPRING, SPRING_SHEET } from "../lib/motion";
-import { type JamMember, type JamSession, type Track, trackRowKeys } from "../lib/spotify";
-
-/**
- * Cuántas canciones de la cola compartida se ven.
- *
- * **La cola del jam la llena el servicio**, y con la lista de arranque son
- * cientos. Panel con cientos de filas no es un panel.
- */
-const JAM_QUEUE_ROWS = 8;
+import type { JamMember, JamSession } from "../lib/spotify";
 
 type JamPanelProps = {
   t: Record<StringKey, string>;
   /** The open session, or `null` when there is none. */
   session: JamSession | null;
-  /**
-   * The shared queue: the songs the jam has written down.
-   *
-   * **It is the jam's queue, not this app's.** The other side can put songs in
-   * it, and that is how one person hears what the other one queued.
-   */
-  queue: Track[];
   /** A request is on its way: the buttons wait. */
   busy: boolean;
   /** What went wrong, in the words of the app. */
@@ -60,7 +45,6 @@ type JamPanelProps = {
 export function JamPanel({
   t,
   session,
-  queue,
   busy,
   error,
   besideQueue,
@@ -115,7 +99,6 @@ export function JamPanel({
           <OpenJam
             t={t}
             session={session}
-            queue={queue}
             busy={busy}
             copied={copied}
             onCopy={onCopy}
@@ -196,11 +179,14 @@ export function JamPanel({
  *
  * **The code is the whole invitation.** There is no page to open and no link to
  * follow: the guest's door takes the code, so the code is what gets shared.
+ *
+ * **The queue is not here.** It is in the queue panel, which is where a queue
+ * belongs: this panel answers *who else is listening*, and the other one answers
+ * *what comes next*. Two questions, two panels.
  */
 function OpenJam({
   t,
   session,
-  queue,
   busy,
   copied,
   onCopy,
@@ -208,7 +194,6 @@ function OpenJam({
 }: {
   t: Record<StringKey, string>;
   session: JamSession;
-  queue: Track[];
   busy: boolean;
   copied: boolean;
   onCopy: () => void;
@@ -219,9 +204,6 @@ function OpenJam({
   // doors: the guest's door takes them out of the session and the jam goes
   // on, and the host's takes the jam down for everybody.
   const isOwner = session.is_session_owner;
-  // The shared queue can hold the same song twice, so the rows are counted:
-  // a key that repeats leaves the old row mounted, painting the old list.
-  const rowKeys = trackRowKeys(queue);
 
   return (
     <>
@@ -262,34 +244,6 @@ function OpenJam({
           <ul className="flex flex-col gap-1">
             {session.session_members.map((member) => (
               <Member key={member.id} member={member} />
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {/*
-          The shared queue: the songs the jam has written down.
-
-          **The first one is the one that is playing.** The queue of a jam is
-          the host's queue, and the host's queue starts at the song that is
-          sounding. This is what makes a jam a jam: the other side's song
-          shows up here, and this app follows it.
-      */}
-      <section>
-        <h3 className="pb-1.5 text-[12px] font-semibold tracking-wide uppercase text-ink-faint">
-          {t.jamQueue}
-        </h3>
-        <p className="pb-1.5 text-[11.5px] leading-relaxed text-ink-faint">{t.jamQueueHint}</p>
-        {queue.length === 0 ? (
-          <p className="px-0.5 text-[12.5px] text-ink-faint">{t.jamQueueEmpty}</p>
-        ) : (
-          <ul className="flex flex-col gap-0.5">
-            {queue.slice(0, JAM_QUEUE_ROWS).map((track, index) => (
-              <li key={rowKeys[index]} className="flex items-center gap-2 rounded-[12px] px-1 py-1">
-                <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-muted">
-                  {track.name}
-                </span>
-              </li>
             ))}
           </ul>
         )}

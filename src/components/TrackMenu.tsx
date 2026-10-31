@@ -7,7 +7,6 @@ import {
   ListPlus,
   MoreHorizontal,
   User,
-  Users,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { copyText } from "../lib/clipboard";
@@ -21,16 +20,20 @@ type TrackMenuProps = {
   track: Track;
   onOpenArtist?: (artist: Artist) => void;
   onOpenAlbum?: (album: Album) => void;
-  onAddToQueue: (track: Track) => void;
-  /** Opens the new-playlist dialog with this song pending. */
-  onNewPlaylist: (track: Track) => void;
   /**
-   * Puts the song in the jam's shared queue.
+   * Add the song to the queue that is on screen.
    *
-   * **It is only there when there is a jam to put it in.** A row that leads
-   * nowhere is a row that reads as broken, and the jam is not always open.
+   * **Con un jam abierto la cola es la del jam**, y la canción se guarda para
+   * los dos: es la misma puerta con dos destinos, no dos puertas.
    */
-  onAddToJam?: (track: Track) => void;
+  onAddToQueue: (track: Track) => void;
+  /**
+   * Opens the new-playlist dialog with this song pending.
+   *
+   * **It is optional, and the row goes with it.** Un menú con una fila que no
+   * hace nada es un menú que hay que leer antes de poder confiar.
+   */
+  onNewPlaylist?: (track: Track) => void;
 };
 
 /** How long the copied confirmation stays up before the label goes back. */
@@ -50,21 +53,28 @@ const SUBMENU_CLOSE_MS = 260;
 /**
  * The three dots on a song.
  *
+ * **The rows are in the order the client puts them.** Add to playlist first,
+ * add to queue after it, then the two doors to where the song comes from, and
+ * the link last: the menu is a table of contents and the order is the one the
+ * person reading it already knows.
+ *
  * **Every row does something, and every row that could work is here.** The
  * client this mirrors offers twelve: add to playlist, remove from this
  * playlist, remove from liked songs, add to queue, exclude from taste profile,
  * start a jam, sleep timer, go to song radio, go to artist, go to album, view
  * credits, share. The radio and the credits have no read behind this session at
- * all, and "remove from this playlist" is a write against a revision the
- * backend does not keep.
- *
- * The jam is the exception to the exception: **it works, but only while there
- * is a jam open**, so its row appears and disappears with the jam. A row that
- * is always there and does nothing is worse than no row.
+ * all, "remove from this playlist" is a write against a revision the backend
+ * does not keep, the liked songs have no write either, and the sleep timer and
+ * the taste profile are two features this app does not have.
  *
  * A menu of twelve entries where three work is worse than a menu of three. The
  * greyed-out rows read as broken, and the first time somebody clicks one and
  * nothing happens is the first time they stop trusting the whole control.
+ *
+ * **The jam is not a row of its own.** Spotify's menu has "start a jam" and not
+ * "add to the jam": la cola del jam *es* la cola, y "agregar a la cola" ya
+ * lleva la canción a los dos lados. Agregar una fila con el nombre del jam
+ * sería una segunda puerta a lo mismo, con otro nombre.
  *
  * **"Add to playlist" opens a submenu and the submenu does the work.** The
  * list of playlists is a second surface, measured against the row that asked
@@ -85,7 +95,6 @@ export function TrackMenu({
   onOpenAlbum,
   onAddToQueue,
   onNewPlaylist,
-  onAddToJam,
 }: TrackMenuProps) {
   const [open, setOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -163,6 +172,78 @@ export function TrackMenu({
       </button>
 
       <MenuPanel open={open} onClose={close} anchor={anchor} label={t.trackMenu} width={236}>
+        {/*
+          The one row that opens another menu, and it goes first.
+
+          **The submenu is a second portal and it is measured against this
+          row.** The row is its anchor, so the submenu opens next to the thing
+          that was clicked instead of in the middle of the screen, and the press
+          inside the submenu does not close the menu that opened it: the
+          outside-press check reads the path of the event, and the submenu is
+          in it.
+
+          **It opens on the way in, not on the click.** The row is the only one
+          in the menu that changes shape under the pointer, and the chevron is
+          what says so. The click still opens it, because the keyboard has no
+          hover and a row that only answered the mouse would be a row the
+          keyboard could not reach.
+        */}
+        {onNewPlaylist && (
+          <>
+            <MenuItem
+              ref={pickerAnchor}
+              label={t.addToPlaylist}
+              icon={<ListMusic className="size-4" strokeWidth={2} />}
+              trailing={<ChevronRight className="size-4 shrink-0 text-ink-faint" strokeWidth={2} />}
+              onHover={openPicker}
+              onUnhover={closePickerSoon}
+              onSelect={openPicker}
+            />
+
+            {pickerOpen && (
+              <MenuPanel
+                open
+                onClose={() => setPickerOpen(false)}
+                anchor={pickerAnchor}
+                label={t.addToPlaylist}
+                width={264}
+                placement="right"
+                onHover={cancelClose}
+                onUnhover={closePickerSoon}
+              >
+                <PlaylistPicker
+                  t={t}
+                  track={track}
+                  onDone={close}
+                  onNewPlaylist={(picked) => {
+                    // The whole menu goes, not only the submenu: the dialog is a
+                    // surface of its own and a menu left open over it would cover
+                    // it — the menu is the higher layer.
+                    close();
+                    onNewPlaylist(picked);
+                  }}
+                />
+              </MenuPanel>
+            )}
+          </>
+        )}
+
+        {/*
+            The queue, and it is the queue that is on screen.
+
+            **Con un jam abierto la cola es la del jam**, y la canción se guarda
+            para los dos. Por eso la fila se llama "agregar a la cola" y no
+            "agregar al jam": el jam no es una cola aparte, es la cola.
+        */}
+        <MenuItem
+          label={t.addToQueue}
+          icon={<ListPlus className="size-4" strokeWidth={2} />}
+          onSelect={() => {
+            close();
+            onAddToQueue(track);
+          }}
+        />
+
         {artist && onOpenArtist && (
           <MenuItem
             label={t.goToArtist.replace("{name}", artist.name)}
@@ -183,84 +264,6 @@ export function TrackMenu({
               onOpenAlbum(album);
             }}
           />
-        )}
-
-        <MenuItem
-          label={t.addToQueue}
-          icon={<ListPlus className="size-4" strokeWidth={2} />}
-          onSelect={() => {
-            close();
-            onAddToQueue(track);
-          }}
-        />
-
-        {/*
-            The jam, when there is one to join.
-
-            **The song goes into the jam's queue, not into this app's.** That is
-            the whole point of the row: the other side hears it.
-        */}
-        {onAddToJam && (
-          <MenuItem
-            label={t.addToJam}
-            icon={<Users className="size-4" strokeWidth={2} />}
-            onSelect={() => {
-              close();
-              onAddToJam(track);
-            }}
-          />
-        )}
-
-        {/*
-          The one row that opens another menu.
-
-          **The submenu is a second portal and it is measured against this
-          row.** The row is its anchor, so the submenu opens next to the thing
-          that was clicked instead of in the middle of the screen, and the press
-          inside the submenu does not close the menu that opened it: the
-          outside-press check reads the path of the event, and the submenu is
-          in it.
-
-          **It opens on the way in, not on the click.** The row is the only one
-          in the menu that changes shape under the pointer, and the chevron is
-          what says so. The click still opens it, because the keyboard has no
-          hover and a row that only answered the mouse would be a row the
-          keyboard could not reach.
-        */}
-        <MenuItem
-          ref={pickerAnchor}
-          label={t.addToPlaylist}
-          icon={<ListMusic className="size-4" strokeWidth={2} />}
-          trailing={<ChevronRight className="size-4 shrink-0 text-ink-faint" strokeWidth={2} />}
-          onHover={openPicker}
-          onUnhover={closePickerSoon}
-          onSelect={openPicker}
-        />
-
-        {pickerOpen && (
-          <MenuPanel
-            open
-            onClose={() => setPickerOpen(false)}
-            anchor={pickerAnchor}
-            label={t.addToPlaylist}
-            width={264}
-            placement="right"
-            onHover={cancelClose}
-            onUnhover={closePickerSoon}
-          >
-            <PlaylistPicker
-              t={t}
-              track={track}
-              onDone={close}
-              onNewPlaylist={(picked) => {
-                // The whole menu goes, not only the submenu: the dialog is a
-                // surface of its own and a menu left open over it would cover
-                // it — the menu is the higher layer.
-                close();
-                onNewPlaylist(picked);
-              }}
-            />
-          </MenuPanel>
         )}
 
         {/*
