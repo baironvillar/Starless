@@ -1,4 +1,4 @@
-import { Heart, PanelLeftClose, PanelLeftOpen, Plus, TriangleAlert } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, Plus, TriangleAlert } from "lucide-react";
 import { motion } from "motion/react";
 import type { StringKey } from "../lib/i18n";
 import {
@@ -11,6 +11,7 @@ import {
 } from "../lib/spotify";
 import { DjArtwork } from "./DjArtwork";
 import { LibrarySortMenu, LibraryViewToggle } from "./LibraryControls";
+import { LikedCover } from "./LikedCover";
 import { PlaylistTile } from "./PlaylistTile";
 
 /** Two widths, and the space each one claims from the content area. */
@@ -257,19 +258,15 @@ export function LibrarySidebar({
         say twice. One grid: liked first, then the playlists in the order the rail
         holds them.
 
-        The square is the same one it has always had, at tile size, and the heart
-        grows with it: an accent square with a 16px heart in a 106px tile is a stamp
-        on a blank card.
+        The square is `LikedCover`, the same drawing at every size: the heart
+        grows with the tile, because a 16px heart in a 106px tile is a stamp on a
+        blank card.
       */}
         {!collapsed && view === "grid" ? (
           <div className="grid grid-cols-2 gap-0.5 px-1 pb-1">
             <PlaylistTile
               title={t.likedSongs}
-              artwork={
-                <span className="grid size-full place-items-center bg-accent text-on-accent">
-                  <Heart className="size-6 fill-current" strokeWidth={2} />
-                </span>
-              }
+              artwork={<LikedCover />}
               active={activeId === "liked"}
               onOpen={() => onSelect("liked")}
             />
@@ -304,8 +301,8 @@ export function LibrarySidebar({
             } ${activeId === "liked" ? "bg-white/12" : "hover:bg-white/6"}`}
           >
             {mark(activeId === "liked")}
-            <span className="grid size-9 shrink-0 place-items-center rounded-[9px] bg-accent text-on-accent">
-              <Heart className="size-4 fill-current" strokeWidth={2} />
+            <span className="size-9 shrink-0 overflow-hidden rounded-[9px]">
+              <LikedCover />
             </span>
             {!collapsed && (
               <span className="min-w-0 flex-1">
