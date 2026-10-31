@@ -2545,6 +2545,17 @@ export default function App() {
   useEffect(() => {
     const unlisten = onJamCommand((command) => {
       if (command.endpoint === "skip_next") {
+        /**
+         * El teléfono saltó a una canción concreta.
+         *
+         * **La que dice el comando es la que suena.** Sin esto, el frontend
+         * avanzaría en la cola de esta app —que es otra lista— y el teléfono
+         * y Starless seguirían caminos distintos.
+         */
+        if (command.track) {
+          playDirect(command.track);
+          return;
+        }
         advance();
         return;
       }
@@ -2558,7 +2569,24 @@ export default function App() {
         if (status?.playing) void togglePlayback().catch(() => {});
         return;
       }
+      if (command.endpoint === "resume") {
+        // **Seguir es levantar lo que ya está sonando**, no poner otra cosa.
+        if (!status?.playing) void togglePlayback().catch(() => {});
+        return;
+      }
       if (command.endpoint === "play") {
+        /**
+         * El teléfono puso una canción: esa suena acá.
+         *
+         * **Y queda en la cola.** El jam es una cola compartida: lo que el
+         * otro lado pone es de los dos, y la cola que se publica es la que
+         * el otro lado ve.
+         */
+        if (command.track) {
+          addToLocalQueue(command.track);
+          playDirect(command.track);
+          return;
+        }
         if (!status?.playing) void togglePlayback().catch(() => {});
         return;
       }

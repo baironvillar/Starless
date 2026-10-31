@@ -139,10 +139,21 @@ async fn translate(
     };
 
     match command {
-        Command::SkipNext(_) => RemoteCommand {
-            endpoint: "skip_next".to_string(),
-            ..nada
-        },
+        Command::SkipNext(saltar) => {
+            // **La pista a la que salta, cuando la trae.** El teléfono dice a
+            // qué canción salta; sin eso, el frontend avanza en su propia
+            // cola —que es otra lista— y las dos no se pican.
+            let mut comando = RemoteCommand {
+                endpoint: "skip_next".to_string(),
+                ..nada
+            };
+            if let Some(track) = &saltar.track {
+                let id = track.uri.rsplit(':').next().unwrap_or_default().to_string();
+                comando.track_id = Some(id.clone());
+                comando.track = resolve(session, &id).await;
+            }
+            comando
+        }
         Command::SkipPrev(_) => RemoteCommand {
             endpoint: "skip_prev".to_string(),
             ..nada
@@ -151,8 +162,36 @@ async fn translate(
             endpoint: "pause".to_string(),
             ..nada
         },
-        Command::Play(_) | Command::Resume(_) => RemoteCommand {
-            endpoint: "play".to_string(),
+        Command::Play(play) => {
+            // **La pista que hay que poner es la que dice el comando.**
+            //
+            // El `skip_to` dice a cuál saltar; si no hay, es el contexto, que
+            // puede ser una pista. Sin esto, "play" es "seguí con lo que
+            // estés sonando" y el teléfono aprieta una canción y Starless
+            // sigue con la otra.
+            let uri = play
+                .options
+                .skip_to
+                .as_ref()
+                .and_then(|salto| salto.track_uri.clone())
+                .or_else(|| play.context.uri.clone())
+                .filter(|uri| uri.starts_with("spotify:track:"));
+            let mut comando = RemoteCommand {
+                endpoint: "play".to_string(),
+                ..nada
+            };
+            if let Some(uri) = uri {
+                let id = uri.rsplit(':').next().unwrap_or_default().to_string();
+                comando.track_id = Some(id.clone());
+                comando.track = resolve(session, &id).await;
+            }
+            comando
+        }
+        Command::Resume(_) => RemoteCommand {
+            // **Seguir es seguir, no poner una canción.** Es otro comando, y
+            // el frontend los trata distinto: uno pone una pista, el otro
+            // levanta la que ya está sonando.
+            endpoint: "resume".to_string(),
             ..nada
         },
         Command::SeekTo(seek) => RemoteCommand {

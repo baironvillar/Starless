@@ -2497,6 +2497,16 @@ pub fn jam_queue(session: &Session, session_id: &str) -> Result<Vec<Track>, Stri
         }
     };
 
+    // **La cola que la app, escrita en el log.** La cola compartida es lo que
+    // el otro lado ve, y sin ver lo que el servicio tiene no hay forma de
+    // saber si lo que se publica llegó: el log dice cuántas canciones hay y
+    // cuáles son las primeras.
+    log::info!(
+        "spclient: la cola compartida tiene {} canciones · las primeras {:?}",
+        uris.len(),
+        uris.iter().take(4).collect::<Vec<_>>()
+    );
+
     // **La cola del jam la llena el servicio, y son cientos de canciones.**
     // Resolver el nombre de cada una es un viaje por la red cada vez que se
     // pregunta, así que se leen las primeras: el panel muestra ocho, y la
