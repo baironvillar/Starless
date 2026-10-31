@@ -14,6 +14,8 @@
 //! `spclient.rs`, cerrado por `#[cfg(debug_assertions)]`: en release este archivo
 //! ni siquiera existe.
 
+use futures_util::StreamExt;
+use librespot_core::dealer::protocol::PayloadValue;
 use librespot_core::version::{SPOTIFY_MOBILE_VERSION, SPOTIFY_SEMANTIC_VERSION};
 use librespot_core::{Session, SpotifyId, SpotifyUri};
 use librespot_metadata::{Metadata, Track as MetaTrack};
@@ -730,7 +732,7 @@ pub fn radio_requested() -> bool {
 
 /// El autoplay: la puerta con el contexto y las canciones recientes.
 #[cfg(debug_assertions)]
-fn probe_autoplay(session: &Session, context_uri: &str, recent: &[String]) {
+pub(super) fn probe_autoplay(session: &Session, context_uri: &str, recent: &[String]) {
     let request = AutoplayContextRequest {
         context_uri: Some(context_uri.to_owned()),
         recent_track_uri: recent.to_vec(),
@@ -4963,6 +4965,273 @@ fn find_first_member_id(value: &serde_json::Value) -> Option<String> {
 
 /// Busca un campo por nombre, a cualquier nivel del JSON.
 #[cfg(debug_assertions)]
+/// La medición que decide si el jam tiene anfitrión: **publicar el estado del
+/// player y ver si la cola compartida deja de ser la del teléfono.**
+///
+/// **Por qué esta medición y no otra.** La cola compartida del jam no es una
+/// lista que escribe el jam: es el contexto que publica el player del
+/// anfitrión. Mientras Starless no publique nada, el servicio sigue viendo al
+/// teléfono como el que manda, y la cola muestra las canciones del teléfono.
+/// La pregunta es de una sola respuesta: después de publicar, ¿la cola
+/// muestra las canciones de Starless?
+///
+/// `STARLESS_SP_JAM_STATE=1` corre esto y nada más.
+#[cfg(debug_assertions)]
+pub fn jam_state_requested() -> bool {
+    std::env::var("STARLESS_SP_JAM_STATE")
+        .map(|value| value != "0" && !value.is_empty())
+        .unwrap_or(false)
+}
+
+/// La pista con la que se mide.
+///
+/// **Una que cualquiera reconozca**: si aparece en el celu, el comando llegó.
+#[cfg(debug_assertions)]
+const STATE_TRACK: &str = "0VjIjW4GlUZAMYd2vXMi3b";
+
+/// La medición del estado del player.
+#[cfg(debug_assertions)]
+pub fn run_jam_state_probe(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(session) = crate::selftest::wait_for_session(&app) else {
+            log::error!("SP_JAM_STATE: la sesión no llegó a conectar");
+            return;
+        };
+
+        log::info!("=== DIAGNOSTIC: el estado del player ===");
+
+        // 0. Los comandos del otro lado, **antes** de abrir el `dealer`.
+        //
+        // **Sin esto el teléfono no puede mandar nada**: los comandos del
+        // player llegan empujados por el `dealer`, y si no hay nadie escuchando
+        // el tema, se pierden con un aviso en el log y nada más.
+        jam_probe_commands(&session);
+
+        // 0 bis. El `connection id`.
+        //
+        // **Sin esto el `PUT` contesta `400`**: el servicio exige el
+        // `X-Spotify-Connection-Id` y ese id lo empuja el backend por el
+        // `dealer`, que Starless no abría.
+        match super::state::watch_connection_id(&session) {
+            Ok(()) => log::info!("SP_JAM_STATE: estoy esperando el connection id"),
+            Err(error) => log::error!("SP_JAM_STATE: no se pudo escuchar el pusher: {error}"),
+        }
+        for _ in 0..20 {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            if !session.connection_id().is_empty() {
+                break;
+            }
+        }
+        log::info!("SP_JAM_STATE: el connection id es {:?}", session.connection_id());
+
+        // 1. El contexto de una canción, con los `uid` que da el servicio.
+        let uri = format!("spotify:track:{STATE_TRACK}");
+        let Some(snapshot) = super::state::snapshot_for(&session, &uri, 0) else {
+            log::error!("SP_JAM_STATE: el contexto de {STATE_TRACK} no vino");
+            return;
+        };
+        let mias = snapshot.track.uri.clone();
+        log::info!(
+            "SP_JAM_STATE: el contexto tiene {} pistas · la primera es {} con uid {} y gid {}",
+            snapshot.next.len() + 1,
+            mias,
+            snapshot.track.uid,
+            snapshot
+                .track
+                .gid
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        );
+
+        // 2. Publicarlo. **Esto es lo que no estaba.**
+        match super::state::publish(&session, &snapshot) {
+            Ok(()) => log::info!("SP_JAM_STATE: el estado se publicó"),
+            Err(error) => log::error!("SP_JAM_STATE: el estado no se publicó: {error}"),
+        }
+
+        // 3. Qué ve el servicio de este lado.
+        jam_probe_cluster(&session);
+
+        // 4. Abrir el jam y leer la cola: ¿es la de Starless?
+        let Ok(jam) = super::jam_session(&session, true) else {
+            log::error!("SP_JAM_STATE: no se pudo abrir el jam");
+            return;
+        };
+        let session_id = jam.session_id.clone();
+        log::info!("SP_JAM_STATE: jam {session_id}");
+
+        match super::jam_queue_items(&session, &session_id) {
+            Ok(items) => {
+                let primeras: Vec<String> = items
+                    .iter()
+                    .take(6)
+                    .map(|(uri, uid)| format!("{uri}#{uid}"))
+                    .collect();
+                let mias_en_la_cola = items.iter().filter(|(uri, _)| uri == &mias).count();
+                log::info!(
+                    "SP_JAM_STATE: la cola tiene {} canciones · {} de Starless · primeras {primeras:?}",
+                    items.len(),
+                    mias_en_la_cola
+                );
+            }
+            Err(error) => log::error!("SP_JAM_STATE: la cola no se pudo leer: {error}"),
+        }
+
+        // 5. Mandar una canción a la cola con el `uid` que dio el servicio.
+        //
+        // **El `uid` es lo que decide a qué canción apunta el comando.** Con el
+        // `uid` de la pista, el comando apunta a esa; sin él, el servicio lo
+        // aplica a la que está sonando.
+        let Some((empujada, uid)) = snapshot
+            .next
+            .first()
+            .map(|track| (track.uri.clone(), track.uid.clone()))
+        else {
+            log::error!("SP_JAM_STATE: el contexto no trajo ninguna pista más");
+            return;
+        };
+        let id = empujada.rsplit(':').next().unwrap_or_default().to_string();
+        match super::jam_add_to_queue_with_uid(&session, &session_id, &id, Some(&uid)) {
+            Ok(()) => log::info!("SP_JAM_STATE: mandé {empujada} con uid {uid}"),
+            Err(error) => log::error!("SP_JAM_STATE: el comando no entró: {error}"),
+        }
+
+        std::thread::sleep(std::time::Duration::from_secs(6));
+        match super::jam_queue_items(&session, &session_id) {
+            Ok(items) => {
+                let veces = items.iter().filter(|(uri, _)| uri == &empujada).count();
+                log::info!(
+                    "SP_JAM_STATE: la cola tiene {} canciones · la que mandé aparece {veces} vez(es)",
+                    items.len()
+                );
+            }
+            Err(error) => log::error!("SP_JAM_STATE: la cola no se pudo leer: {error}"),
+        }
+
+        // 7. Los comandos del otro lado.
+        //
+        // **El backend empuja los comandos del player por el `dealer`.** Es lo
+        // que hace que el teléfono pueda saltar la canción de Starless: el
+        // comando llega a este lado, no al revés. El que escucha ya está
+        // puesto, arriba: si se pusiera acá, los comandos que llegan mientras
+        // se publica el estado se pierden.
+
+        // 8. Y ahora, a mirar: ¿la cola_shared sigue a Starless?
+        for vuelta in 1..=12 {
+            std::thread::sleep(std::time::Duration::from_secs(5));
+            match super::jam_session(&session, false) {
+                Ok(jam) => {
+                    let (_, cuerpo) = jam_ask(
+                        &session,
+                        "estado",
+                        "la sesión del jam",
+                        &reqwest::Method::GET,
+                        &format!("/social-connect/v2/sessions/{session_id}"),
+                        None,
+                    )
+                    .unwrap_or((0, Vec::new()));
+                    let json: serde_json::Value =
+                        serde_json::from_slice(&cuerpo).unwrap_or(serde_json::Value::Null);
+                    let anfitrion = find_key(&json, "host_device_info")
+                        .unwrap_or_else(|| "?".to_string());
+                    if vuelta == 1 {
+                        log::info!("SP_JAM_STATE: la sesión entera es {json}");
+                    }
+                    log::info!(
+                        "SP_JAM_STATE: vuelta {vuelta} · anfitrión={anfitrion} · miembros={} · dueño={}",
+                        jam.session_members.len(),
+                        jam.is_session_owner
+                    );
+                }
+                Err(error) => log::error!("SP_JAM_STATE: la sesión no se pudo leer: {error}"),
+            }
+            match super::jam_queue_items(&session, &session_id) {
+                Ok(items) => {
+                    let mias = items.iter().filter(|(uri, _)| uri == &mias).count();
+                    log::info!(
+                        "SP_JAM_STATE: vuelta {vuelta} · la cola tiene {} canciones · {mias} de Starless",
+                        items.len()
+                    );
+                }
+                Err(error) => log::error!("SP_JAM_STATE: la cola no se pudo leer: {error}"),
+            }
+        }
+    });
+}
+
+/// Los comandos que el otro lado manda.
+///
+/// **El backend empuja los comandos del player por el `dealer`**, y sin
+/// escucharlos el teléfono puede pedirle a Starless que salte la canción y no
+/// pasa nada.
+#[cfg(debug_assertions)]
+fn jam_probe_commands(session: &Session) {
+    let owned = session.clone();
+
+    // **La suscripción va antes que la conexión del dealer**, y por eso se
+    // reintenta: si el websocket todavía no está, no hay constructor al que
+    // suscribirse y el comando se pierde.
+    let mut intentos = 0;
+    let subscription = loop {
+        match owned.dealer().add_listen_for("hm://connect-state/v1/player/command") {
+            Ok(subscription) => break subscription,
+            Err(error) => {
+                intentos += 1;
+                if intentos > 30 {
+                    log::error!("SP_JAM_STATE: no se pudieron escuchar los comandos: {error}");
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
+        }
+    };
+
+    owned.spawn(async move {
+        let mut stream = subscription.map(|message| {
+            let cuerpo = match &message.payload {
+                PayloadValue::Json(texto) => texto.clone(),
+                PayloadValue::Raw(bytes) => String::from_utf8_lossy(bytes).to_string(),
+                PayloadValue::Empty => "(vacío)".to_string(),
+            };
+            Ok::<(String, String), librespot_core::Error>((message.uri.clone(), cuerpo))
+        });
+
+        while let Some(Ok((uri, cuerpo))) = stream.next().await {
+            log::info!("SP_JAM_STATE: comando del player en {uri} · {cuerpo}");
+        }
+    });
+}
+
+/// El cluster: qué dispositivos ve el servicio y cuál manda.
+///
+/// **Es la foto del estado**: si el `context_uri` es el de Starless, el
+/// servicio ya sabe qué estamos sonando, y el jam tiene anfitrión.
+#[cfg(debug_assertions)]
+fn jam_probe_cluster(session: &Session) {
+    let Some((status, body)) = jam_ask(
+        session,
+        "estado",
+        "el grupo de dispositivos",
+        &reqwest::Method::GET,
+        "/connect-state/v1/cluster",
+        None,
+    ) else {
+        log::error!("SP_JAM_STATE: el cluster no contestó");
+        return;
+    };
+
+    log::info!("SP_JAM_STATE: el cluster → {status}");
+    let Ok(json) = serde_json::from_slice::<serde_json::Value>(&body) else {
+        log::error!("SP_JAM_STATE: el cluster vino con otra forma");
+        return;
+    };
+
+    let activo = find_key(&json, "active_device_id");
+    let contexto = find_key(&json, "context_uri");
+    log::info!("SP_JAM_STATE: el que manda es {activo:?} · el contexto es {contexto:?}");
+}
+
 fn find_key(value: &serde_json::Value, key: &str) -> Option<String> {
     match value {
         serde_json::Value::Object(map) => {
