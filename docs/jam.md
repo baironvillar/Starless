@@ -375,7 +375,7 @@ que la llena la llena con un comando como este. Por eso la reproducción cruza
 de un lado al otro sin pubsub: no es que uno mande al otro, es que los dos miran
 la misma lista.
 
-### La cola del jam es la cola del anfitrión, y Starless no tiene cola
+### La cola del jam es el contexto que publica el anfitrión
 
 Esto se midió el 30 de octubre de 2026, con la sesión activa:
 
@@ -393,25 +393,76 @@ publica. Cuando el anfitrión es el cliente de escritorio —que tiene contexto 
 cola— la cola del jam existe: se la midió con 300 canciones y su `list-uri`
 apuntando a la lista de contexto del anfitrión.
 
-**Starless no tiene cola de player.** El `Player` de librespot 0.8 carga
-pistas —`load(track_id)`— y no tiene contexto ni cola: `librespot-playback` no
-publica ninguna de las dos cosas, y `load` es una pista suelta. La radio de la
-app tampoco alcanza: la radio le pide al servicio el contenido de un contexto
-—con el lente de autoplay— y eso es una lista de canciones, no la cola de un
-player.
+**Lo que faltaba era del lado de Starless, y era una cosa entera.** Starless no
+publicaba su estado de player, así que para el servicio Starless era un
+dispositivo mudo. La cola del jam la arma el servicio con el contexto que
+publica el player que manda, y sin estado no hay contexto: la cola era siempre
+la del otro dispositivo —la del celu—, y por eso el comando de agregar una
+canción se aplicaba a la canción que estaba sonando y no a la que se pedía.
 
-Eso deja dos casos, y son distintos:
+El detalle está en [El estado del player](#el-estado-del-player).
 
-- **El anfitrión es otra cosa** —el cliente de escritorio, el celu—: la cola
-  existe, se lee, y el comando del invitado la llena. **Es el caso que
-  funciona.**
-- **El anfitrión es Starless**: no hay cola compartida, y el invitado ve una
-  lista vacía. La cola del jam no se puede crear desde acá: el comando entra y
-  no aparece.
+### El estado del player
 
-Lo que **no** se midió es el caso del invitado con el anfitrión en el cliente
-de escritorio: que el comando llegue al player del anfitrión y que la cola de
-éste crezca. Eso necesita dos cuentas.
+Es lo que el servicio usa para saber qué está sonando, y sin esto el jam no
+tiene anfitrión:
+
+```
+PUT /connect-state/v1/devices/<device_id>  →  200
+```
+
+El cuerpo es un protobuf —`PutStateRequest`, el de `connect.proto` de
+librespot— con el contexto, la pista, las que siguen y la posición.
+
+**La puerta es `PUT` y no `GET`, y necesita dos cosas que no están a la vista:**
+
+- **El `X-Spotify-Connection-Id`.** Sin ese encabezado el servicio contesta
+  `400 Bad Request` —medido el 31 de octubre de 2026—. El id no lo da la
+  sesión: lo empuja el backend por el `dealer`, en el mensaje de
+  `hm://pusher/v1/connections/`, con el id en el encabezado
+  `Spotify-Connection-Id`.
+- **El `dealer`.** Es el websocket que empuja las cosas, y **Starless no lo
+  abría**: el `Player` de librespot 0.8 es local —habla con el servicio de
+  archivos y con nada más— y el `dealer` es lo que queda. La suscripción va
+  **antes** de abrir el websocket, porque el constructor del `dealer` lleva las
+  suscripciones al abrirse y después no queda constructor al que suscribirse:
+  `add_listen_for` contesta `no hay constructor` y el id nunca llega. Esa es una
+  carrera, y se pierde una de cada dos veces.
+
+**Lo que se publica no es la cola de la app**: es el contexto que arma el
+servicio para la canción que suena —con el lente de autoplay—, que es
+exactamente lo que publica el cliente oficial. La diferencia con el cliente de
+escritorio es que el contexto de una canción suelta no incluye la canción: la
+pista que suena va aparte, y las del contexto son las que siguen.
+
+**Medido el 31 de octubre de 2026**, con el mismo jam y el mismo celu:
+
+| | antes de publicar | después de publicar |
+| --- | --- | --- |
+| la cola del jam | 150 canciones, del celu | **51 canciones, de Starless** |
+| el cluster (`GET /connect-state/v1/cluster`) | `active_device_id`: el celu | **`active_device_id`: `Starless`** |
+| el `context_uri` del cluster | el contexto del celu | **`spotify:track:0VjIjW4GlUZAMYd2vXMi3b`** |
+
+La primera canción de la cola compartida es la que Starless dice que está
+sonando, y las otras cincuenta son su contexto.
+
+### Lo que empuja el `dealer`
+
+Con el `dealer` abierto aparecen dos temas que antes nadie escuchaba:
+
+| el tema | qué es |
+| --- | --- |
+| `hm://pusher/v1/connections/` | el `connection id` del servicio |
+| `hm://connect-state/v1/player/command` | **los comandos del player del otro lado** |
+
+El segundo es el camino de vuelta: **el comando que manda el celu —saltar,
+pausar— llega al `dealer` del anfitrión**, no al revés. Sin escucharlo, el
+celu aprieta "siguiente" y no pasa nada, y el log dice solamente
+`No handler for message_ident: hm://connect-state/v1/player/command`.
+
+**El `dealer` también es el pubsub del jam.** Por él llegan los avisos de que
+alguien se unió —`social-connect/v2/session_update`—, que por HTTP no existen:
+la puerta `social-connect/v2/session_update` contesta `404` y el mensaje existe.
 
 ## El estado del dispositivo
 
@@ -774,7 +825,42 @@ Cuatro cosas que cambian lo que dice el resto de este documento:
    justamente la puerta que falta usar.
 4. **El invitado no aparece en la lista de participantes.** Con la misma
    cuenta en dos dispositivos, la sesión sigue trayendo un solo miembro —el
-   anfitrión—, aunque el otro dispositivo esté sonando y la cola cambie.
+   anfitrión—, aunque el otro dispositivo esté sonando y la cola cambie. **El
+   servicio cuenta por cuenta, no por dispositivo**: la sesión trae
+   `session_members` con una entrada por cuenta, y `host_device_info` con el
+   dispositivo que manda —que fue el iPhone, no Starless—. Para ver dos
+   participantes hay que usar **dos cuentas**: no es un bug que se arregle con
+   código.
+5. **La cola compartida tiene cien pistas, no doce.** La app resuelve los
+   nombres de las primeras doce, pero la lista tiene más: unas cincuenta sin
+   id —la semilla, las últimas canciones de la cuenta— y el resto **con un id
+   de cuarenta hex**. Ese id es el `uid` de la pista dentro del contexto, y
+   una canción repetida con dos ids distintos es **la misma canción en dos
+   lugares del contexto**, que es lo que hace una radio con autoplay.
+6. **El comando `add_to_queue` no cambia la lista.** Entra —`200`, `SUCCESS`— y
+   la lista compartida sigue igual, con `uid` y sin `uid` en el comando. Lo
+   que el servicio contesta es que el comando se aplicó **al player del
+   dispositivo que está mandando**, que no es el de Starless.
+   **La causa era que Starless no publicaba su estado** —ver
+   [El estado del player](#el-estado-del-player)—: sin estado publicado, el
+   dispositivo que mandaba era el celu, y el comando se aplicaba en el celu.
+   Con el estado publicado, la cola del jam pasa a ser la de Starless.
+
+### Lo que falta para que cruce de verdad
+
+**El anfitrión tiene que publicar su estado de player**, y eso ya está hecho:
+`spclient/state.rs` publica el `PutStateRequest` en
+`PUT /connect-state/v1/devices/<device_id>`, con el `connection id` que empuja
+el `dealer`. Ver [El estado del player](#el-estado-del-player).
+
+**Lo que falta es el otro lado del cable:** que el comando que manda el celu
+—saltar, pausar, agregar una canción— se aplique en Starless. El comando llega
+por `hm://connect-state/v1/player/command`, y el `dealer` lo trae, pero el
+formato del payload todavía no se miró y no hay código que lo escuche.
+
+**Y el `uid` de la pista**: el comando tiene que llevar el `ContextTrack`
+completo —`{ uri, uid, gid, metadata }`— para apuntar a una canción y no a la
+que está sonando.
 
 ## Lo que falta
 
@@ -786,15 +872,16 @@ Honesto, porque buena parte de esto no se comprobó:
   convite, y con ella la forma de compartir el jam.
 - **El camino de vuelta de los comandos.** La puerta de comandos es de escritura:
   el comando entra y el servicio lo aplica, pero el otro lado no lo *recibe* sin
-  pubsub. Por eso el cruce funciona por la cola —los dos leen la misma lista— y
-  no por el comando.
+  pubsub. **El pubsub existe: es el `dealer`** —el mismo websocket por el que
+  llega el `connection id`—, y el tema es
+  `hm://connect-state/v1/player/command`. Falta leer el payload y aplicarlo.
 - **Si el comando que manda el invitado llega a la cola del anfitrión.** El
   servicio contesta `200` con `{"status":"RECOVERED"}`, que dice que el comando
   entró, pero no dice **qué hizo**: eso necesita dos cuentas, y para eso está
-  el [arnés](#el-arnés-el-jam-con-los-dos-lados). Lo que sí se midió con una
-  sola cuenta es que, con Starless de anfitrión, la cola del jam **no existe** —
-  ni antes ni después del comando—, porque esa cola es la del player del
-  anfitrión y el player de librespot no tiene cola.
+  el [arnés](#el-arnés-el-jam-con-los-dos-lados). Con una sola cuenta y
+  Starless de anfitrión, la cola del jam **existe** y es la de Starless —51
+  canciones, la primera la que está sonando—, y el comando `add_to_queue` entra
+  con `SUCCESS`.
 - **Cómo se modifica una sesión.** `GET`, `POST`, `PUT` y `PATCH` sobre
   `/social-connect/v2/sessions/<id>` contestan `405`: el verbo es otro, y
   probablemente sea un `POST` con el cuerpo del proto. Los permisos
