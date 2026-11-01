@@ -2269,7 +2269,11 @@ pub fn jam_session(session: &Session, activate: bool) -> Result<JamSession, Stri
     // **El device activo del jam se anota.** Un jam tiene un solo device
     // sonando, y lo cambia quien está del otro lado cuando elige escuchar
     // desde su teléfono. El que era activo tiene que hacerse a un lado.
-    crate::playback::remember_jam_device(sesion.host_active_device_id.clone());
+    crate::playback::remember_jam_device(
+        sesion.host_active_device_id.clone(),
+        session.device_id(),
+        sesion.is_session_owner,
+    );
 
     Ok(sesion)
 }
@@ -2314,7 +2318,7 @@ pub fn jam_current(session: &Session) -> Result<Option<JamSession>, String> {
 
     if !hay {
         // Sin jam no hay device activo: esta app suena.
-        crate::playback::remember_jam_device(None);
+        crate::playback::remember_jam_device(None, session.device_id(), false);
         return Ok(None);
     }
 
@@ -2388,7 +2392,11 @@ pub fn jam_join(session: &Session, token: &str) -> Result<JamSession, String> {
     // **El device activo del jam se anota.** Un jam tiene un solo device
     // sonando, y lo cambia quien está del otro lado cuando elige escuchar
     // desde su teléfono. El que era activo tiene que hacerse a un lado.
-    crate::playback::remember_jam_device(sesion.host_active_device_id.clone());
+    crate::playback::remember_jam_device(
+        sesion.host_active_device_id.clone(),
+        session.device_id(),
+        sesion.is_session_owner,
+    );
 
     Ok(sesion)
 }

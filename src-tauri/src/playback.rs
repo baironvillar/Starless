@@ -82,6 +82,22 @@ pub struct RemoteCommand {
     /// servicio les dio a cada una: sin ese identificador el servicio no puede
     /// apuntar a ninguna, y la cola compartida se queda vacía.
     pub queue: Vec<QueueSong>,
+    /// El device del otro lado al que se traspasó la música, si el comando fue
+    /// un `transfer`.
+    ///
+    /// **Es el device que tiene la música.** El `transfer` es el aviso de que
+    /// la música del jam cambió de manos, y el que viaja en el comando es
+    /// justamente el device al que pertenece ahora.
+    pub from_device: Option<String>,
+    /// Si la música del traspaso es de esta app.
+    ///
+    /// **Es lo que decide si se toma o se cede.** Si la música es de esta app,
+    /// la app sigue sonando; si es del otro, la app se hace a un lado: dos
+    /// devices con la misma música en el jam es la forma de que los dos suenen
+    /// cosas distintas.
+    pub for_me: bool,
+    /// Si la música del traspaso venía pausada.
+    pub paused: bool,
 }
 
 /// Escucha los comandos que manda el otro lado del jam.
@@ -131,7 +147,7 @@ pub fn watch_commands(app: AppHandle) {
         session.spawn(async move {
             let mut stream = stream;
             while let Some((request, reply)) = stream.next().await {
-                let mut command = translate(&para_el_bucle, &request.command).await;
+                let mut command = translate(&para_el_bucle, &request.command, &request.sent_by_device_id).await;
                 // **El id de la pista, si el comando no lo trajo.** El comando
                 // `add_to_queue` del otro lado llega sin id: el servicio no lo
                 // resolvió, y sin id la canción no entra en la cola
@@ -190,6 +206,7 @@ pub fn watch_commands(app: AppHandle) {
 async fn translate(
     session: &Session,
     command: &librespot_core::dealer::protocol::request::Command,
+    mandado_por: &str,
 ) -> RemoteCommand {
     use librespot_core::dealer::protocol::request::Command;
 
@@ -200,6 +217,9 @@ async fn translate(
         track_uid: None,
         position_ms: None,
         queue: Vec::new(),
+        from_device: None,
+        for_me: false,
+        paused: false,
     };
 
     match command {
@@ -326,11 +346,278 @@ async fn translate(
                 ..nada
             }
         }
+        // **El `transfer` llega como desconocido.** El deserializador de
+        // librespot exige campos que el servicio no manda, así que el comando
+        // cae en `Unknown` con el JSON crudo adentro. Es el comando que mueve
+        // la música entre devices: sin él, la otra persona elige en qué device
+        // escuchar y acá no pasa nada.
+        Command::Unknown(value) => {
+            match translate_transfer(session, &value, mandado_por).await {
+                Some(comando) => comando,
+                None => RemoteCommand {
+                    endpoint: format!(
+                        "desconocido: {}",
+                        campo(&value, &["endpoint"]).and_then(|v| v.as_str()).unwrap_or("???")
+                    ),
+                    ..nada
+                },
+            }
+        }
         other => RemoteCommand {
             endpoint: format!("desconocido: {other}"),
             ..nada
         },
     }
+}
+
+/// Lo que dice un `transfer`: el estado de la música en el momento del traspaso.
+///
+/// **El traspaso es el comando que mueve la música entre devices.** Cuando la
+/// otra persona del jam elige en qué device escuchar, el servicio manda este
+/// comando con el estado entero: la canción que suena, la cola y la posición.
+///
+/// **El estado viene en protobuf y en base64.** Es lo que manda el `dealer`, y
+/// el cliente de escritorio lo lee con el mismo formato: el `data` no es un
+/// objeto con campos, es un `TransferState` empaquetado.
+#[derive(Default)]
+struct EstadoDelTraspaso {
+    /// La canción que suena: su id y el identificador que le dio el servicio.
+    pista: Option<(String, String)>,
+    /// La cola que viene con el traspaso: el id y el identificador de cada una.
+    cola: Vec<(String, String)>,
+    /// En qué milisegundo va la canción.
+    posicion_ms: Option<u32>,
+    /// Si la música venía pausada.
+    pausada: bool,
+}
+
+/// Traduce el `transfer`: el comando que mueve la música entre devices.
+///
+/// **El `transfer` es el único comando que no se sabe leer.** El deserializador
+/// de librespot exige un `options` y un `logging_params` que el servicio no
+/// manda, así que el comando llega como `Unknown` con el JSON crudo adentro.
+/// Acá se lee a mano.
+///
+/// **Lo que trae es el estado de la música**: la canción que suena con el
+/// identificador que le dio el servicio, la cola completa y la posición. Es la
+/// misma información que manda el `set_queue`, pero del device al que se le
+/// traspasó la música.
+///
+/// **El `data` puede venir en dos formatos.** El `dealer` lo manda en protobuf
+/// y en base64, y hay versiones que lo mandan como JSON. Se leen los dos: un
+/// formato que no se entiende es un traspaso que no se aplica.
+async fn translate_transfer(
+    session: &Session,
+    value: &serde_json::Value,
+    mandado_por: &str,
+) -> Option<RemoteCommand> {
+    if campo(value, &["endpoint"]).and_then(|v| v.as_str()) != Some("transfer") {
+        return None;
+    }
+
+    let from_device = campo(value, &["from_device_identifier", "fromDeviceIdentifier"])
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+
+    let estado = campo(value, &["data"]).and_then(estado_del_traspaso);
+
+    // **Sin estado no hay traspaso que aplicar.** Un `transfer` vacío no dice
+    // qué canción suena: aplicarlo a ciegas sería poner una canción que
+    // nadie pidió.
+    let Some(estado) = estado else {
+        log::warn!("jam: llegó un transfer sin estado; no se aplica");
+        return None;
+    };
+
+    // **El device que tiene la música.** El campo del comando dice de quién es
+    // la música que se está traspasando, y compararlo con el id de esta app
+    // es lo que dice si la app sigue sonando o se hace a un lado.
+    let for_me = jam_soy_el_activo();
+
+    log::info!(
+        "jam: el transfer viene de {from_device} (mandado por {}) · {} · el jam dice que suena {} · {} canciones en la cola · {}ms · pausada: {}",
+        mandado_por,
+        if for_me {
+            "esta app es la que suena"
+        } else {
+            "la música es del otro lado"
+        },
+        jam_active_device().unwrap_or_else(|| "(ninguno)".to_string()),
+        estado.cola.len(),
+        estado.posicion_ms.unwrap_or_default(),
+        estado.pausada,
+    );
+
+    let mut comando = RemoteCommand {
+        endpoint: "transfer".to_string(),
+        track: None,
+        track_id: None,
+        track_uid: None,
+        position_ms: estado.posicion_ms,
+        queue: Vec::new(),
+        from_device: Some(from_device),
+        for_me,
+        paused: estado.pausada,
+    };
+
+    // **La canción que suena.** El identificador que trae es del servicio, y es
+    // lo que hace que esa canción entre en la cola compartida.
+    if let Some((id, uid)) = estado.pista {
+        comando.track_id = Some(id.clone());
+        comando.track_uid = Some(uid.clone());
+        comando.track = resolve(session, &id).await;
+    }
+
+    // **La cola que viene con el traspaso.** Son las canciones que el otro lado
+    // tiene en pantalla, cada una con su identificador: sin él, la cola
+    // compartida se queda vacía.
+    let canciones: Vec<(String, String)> = estado.cola.into_iter().take(MAX_QUEUE_SONGS).collect();
+    if !canciones.is_empty() {
+        let filas: Vec<(String, Option<i64>)> =
+            canciones.iter().map(|(id, _)| (id.clone(), None)).collect();
+        if let Ok(pistas) = crate::spclient::hydrate(session, filas) {
+            comando.queue = pistas
+                .into_iter()
+                .zip(canciones.iter())
+                .map(|(track, (_, uid))| QueueSong {
+                    track,
+                    uid: uid.clone(),
+                })
+                .collect();
+        }
+    }
+
+    Some(comando)
+}
+
+/// El estado del traspaso, del `data` que vino.
+///
+/// **El `data` es un `TransferState` en protobuf, y el protobuf viaja en
+/// base64.** El cliente de escritorio lo lee con el mismo formato, así que se
+/// lee con el mismo formato.
+fn estado_del_traspaso(data: &serde_json::Value) -> Option<EstadoDelTraspaso> {
+    match data {
+        serde_json::Value::String(base64) => {
+            use base64::Engine;
+            use base64::prelude::BASE64_STANDARD;
+            use protobuf::Message;
+
+            let bytes = BASE64_STANDARD.decode(base64).ok()?;
+            let estado = librespot_protocol::transfer_state::TransferState::parse_from_bytes(&bytes)
+                .ok()?;
+            Some(estado_del_proto(&estado))
+        }
+        // **También puede venir como JSON.** El mismo estado, en el otro
+        // formato que usa el servicio para hablarle a un device.
+        serde_json::Value::Object(_) => Some(estado_del_json(data)),
+        _ => None,
+    }
+}
+
+/// El estado del traspaso, leído del protobuf.
+fn estado_del_proto(estado: &librespot_protocol::transfer_state::TransferState) -> EstadoDelTraspaso {
+    let mut salida = EstadoDelTraspaso::default();
+
+    if let Some(playback) = estado.playback.as_ref() {
+        salida.pausada = playback.is_paused.unwrap_or(false);
+        if let Some(pista) = playback.current_track.as_ref()
+            && let Some(id) = id_de_uri(pista.uri.as_deref())
+        {
+            salida.pista = Some((id, pista.uid.clone().unwrap_or_default()));
+        }
+        // **La posición es la de hace un rato.** El traspaso dice en qué
+        // milisegundo va la canción y en qué instante se midió; la diferencia
+        // entre los dos es lo que pasó mientras el comando viajaba. Se corrige
+        // sólo si el desfase es de los cortos: un reloj que no es el del
+        // servicio daría una diferencia enorme y mejor ignorarla.
+        let posicion = playback.position_as_of_timestamp.unwrap_or(0).max(0) as u64;
+        let desfase = match playback.timestamp {
+            Some(instante) => (ahora_en_milisegundos().saturating_sub(instante.max(0) as u64))
+                .min(60_000),
+            None => 0,
+        };
+        if posicion > 0 {
+            salida.posicion_ms = Some((posicion + desfase) as u32);
+        }
+    }
+
+    if let Some(queue) = estado.queue.as_ref() {
+        for pista in queue.tracks.iter() {
+            if let Some(id) = id_de_uri(pista.uri.as_deref()) {
+                salida.cola.push((id, pista.uid.clone().unwrap_or_default()));
+            }
+        }
+    }
+
+    salida
+}
+
+/// El estado del traspaso, leído del JSON.
+fn estado_del_json(data: &serde_json::Value) -> EstadoDelTraspaso {
+    let mut salida = EstadoDelTraspaso::default();
+
+    if let Some(playback) = data.get("playback") {
+        salida.pausada = campo(playback, &["isPaused", "is_paused"])
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if let Some(pista) = campo(playback, &["currentTrack", "current_track"])
+            && let Some(id) = id_de_uri(campo(pista, &["uri"]).and_then(|v| v.as_str()))
+        {
+            let uid = campo(pista, &["uid"])
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            salida.pista = Some((id, uid));
+        }
+        let posicion = campo(playback, &["positionAsOfTimestamp", "position_as_of_timestamp"])
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0)
+            .max(0) as u32;
+        if posicion > 0 {
+            salida.posicion_ms = Some(posicion);
+        }
+    }
+
+    if let Some(pistas) = data
+        .get("queue")
+        .and_then(|q| q.get("tracks"))
+        .and_then(|v| v.as_array())
+    {
+        for pista in pistas {
+            if let Some(id) = id_de_uri(campo(pista, &["uri"]).and_then(|v| v.as_str())) {
+                let uid = campo(pista, &["uid"])
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                salida.cola.push((id, uid));
+            }
+        }
+    }
+
+    salida
+}
+
+/// El primer campo que existe, de entre los nombres que puede tener.
+///
+/// **El protobuf en JSON escribe los nombres de dos maneras**, y el servicio no
+/// siempre usa la misma: se buscan las dos antes de decir que no está.
+fn campo<'a>(valor: &'a serde_json::Value, nombres: &[&str]) -> Option<&'a serde_json::Value> {
+    nombres.iter().find_map(|nombre| valor.get(*nombre))
+}
+
+/// El id de una pista, si su URI lo trae.
+fn id_de_uri(uri: Option<&str>) -> Option<String> {
+    let id = uri?.rsplit(':').next().unwrap_or_default();
+    if id.is_empty() { None } else { Some(id.to_string()) }
+}
+
+/// El reloj de la máquina, en milisegundos.
+fn ahora_en_milisegundos() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or_default()
 }
 
 /// Los datos de una canción, para que el frontend pueda ponerla en la cola.
@@ -399,6 +686,20 @@ impl PublishQueue {
 /// de una frase.
 static JAM_ACTIVE_DEVICE: Mutex<Option<String>> = Mutex::new(None);
 
+/// Si esta app es la que el jam dice que está sonando.
+///
+/// **Es la respuesta a la pregunta que hace el otro lado del jam**: "en qué
+/// device escucho". Un jam tiene un solo device sonando, y el que no es ése
+/// tiene que hacerse a un lado: dos devices con música propia en el mismo jam
+/// son dos jams distintos, y cada uno oye una canción diferente.
+static JAM_SOY_EL_ACTIVO: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(true);
+
+/// Si esta app es la que el jam dice que está sonando.
+pub fn jam_soy_el_activo() -> bool {
+    JAM_SOY_EL_ACTIVO.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// El device activo del jam, si el jam dijo cuál es.
 pub fn jam_active_device() -> Option<String> {
     match JAM_ACTIVE_DEVICE.lock() {
@@ -408,7 +709,17 @@ pub fn jam_active_device() -> Option<String> {
 }
 
 /// Anota el device activo del jam.
-pub fn remember_jam_device(device: Option<String>) {
+///
+/// **El id de esta app se resuelve acá y queda anotado.** La comparación
+/// necesita el id de la sesión, y el estado del jam se lee en un hilo que no
+/// la tiene a mano; además el estado del player —que es lo que el webview
+/// mira— no tiene por qué llevar la sesión.
+///
+/// **El invitado no se aparta por esto.** El campo del jam dice cuál es el
+/// device del *anfitrión*, y para el invitado ese dato no habla de su propio
+/// device: no dice quién está sonando. El invitado decide con el `transfer`,
+/// que es el comando que mueve la música.
+pub fn remember_jam_device(device: Option<String>, mi_device_id: &str, soy_anfitrion: bool) {
     let mut guard = match JAM_ACTIVE_DEVICE.lock() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
@@ -419,6 +730,19 @@ pub fn remember_jam_device(device: Option<String>) {
             device.clone().unwrap_or_else(|| "(ninguno)".to_string())
         );
     }
+    // **Un jam sin device activo no es un jam sin música: es un jam con la
+    // música del otro lado.** El campo vacío es lo que contesta el servicio
+    // cuando el anfitrión no es el que está sonando.
+    let mio = if !soy_anfitrion {
+        true
+    } else {
+        match &*guard {
+            None => true,
+            Some(device) if device.is_empty() => false,
+            Some(device) => device == &crate::spclient::state::DEVICE_NAME || device == mi_device_id,
+        }
+    };
+    JAM_SOY_EL_ACTIVO.store(mio, std::sync::atomic::Ordering::Relaxed);
     *guard = device;
 }
 
@@ -426,11 +750,8 @@ pub fn remember_jam_device(device: Option<String>) {
 ///
 /// **Sin jam, siempre.** El jam es el que reparte el device activo, y lo que
 /// contesta es el nombre del device —`Starless`— o su id.
-pub fn es_el_device_activo(session: &Session) -> bool {
-    let Some(device) = jam_active_device() else {
-        return true;
-    };
-    device == crate::spclient::state::DEVICE_NAME || device == session.device_id().to_string()
+pub fn es_el_device_activo(_session: &Session) -> bool {
+    jam_soy_el_activo()
 }
 
 /// Los identificadores que el servicio le dio a las pistas.
@@ -716,6 +1037,13 @@ pub struct PlaybackStatus {
     pub real_duration_ms: u32,
     /// 0..=65535, matching librespot's own scale. The UI maps it to 0..=100.
     pub volume: u16,
+    /// Whether this app is the device the jam says is playing.
+    ///
+    /// **A jam has one device playing.** The other side chooses it —"here" or
+    /// "Starless"— and the app that is not it has to step aside: two devices
+    /// playing their own music in the same jam are two jams, and each one hears
+    /// a different song.
+    pub jam_active: bool,
     /// The track ran to its end and nothing replaced it.
     ///
     /// Distinct from `playing == false`, which also means paused. The UI has to
@@ -897,6 +1225,11 @@ impl PlaybackState {
         // lectura y no al cargar la canción: cambiar el crossfade con una
         // canción sonando tiene que verse en la barra enseguida.
         status.duration_ms = crate::crossfade::effective_duration_ms(status.real_duration_ms);
+        // **Si esta app es la que el jam dice que está sonando.** Un jam tiene
+        // un solo device activo, y el webview tiene que saber cuál es: sin
+        // este dato sigue sonando su propia música mientras la otra persona
+        // escucha otra, y los dos oyen cosas distintas.
+        status.jam_active = jam_soy_el_activo();
         status
     }
 }
@@ -2053,5 +2386,97 @@ mod tests {
         let _ = requested_track(&state, ("fallida".to_string(), 2));
         let second = requested_track(&state, ("fallida".to_string(), 2));
         assert_eq!(second, ("fallida".to_string(), 2));
+    }
+
+    /// El `transfer` trae la música del jam: la canción, la cola y la posición.
+    ///
+    /// **El `data` es un protobuf en base64.** Es lo que manda el `dealer`, y
+    /// si no se lee en ese formato el traspaso no dice nada: el jam queda con
+    /// dos devices con música propia y cada uno oye una canción distinta.
+    #[test]
+    fn el_traspaso_trae_la_cancion_y_la_cola() {
+        use base64::Engine;
+        use base64::prelude::BASE64_STANDARD;
+        use protobuf::Message;
+
+        let mut estado = librespot_protocol::transfer_state::TransferState::new();
+
+        let mut playback = librespot_protocol::playback::Playback::new();
+        playback.current_track = protobuf::MessageField::some(
+            librespot_protocol::context_track::ContextTrack {
+                uri: Some("spotify:track:4Au4OwxRB7JWxaZU3lhqXf".to_string()),
+                uid: Some("1028c776c1faf023".to_string()),
+                ..Default::default()
+            },
+        );
+        playback.is_paused = Some(false);
+        playback.position_as_of_timestamp = Some(30_000);
+        estado.playback = protobuf::MessageField::some(playback);
+
+        let mut cola = librespot_protocol::queue::Queue::new();
+        cola.tracks
+            .push(librespot_protocol::context_track::ContextTrack {
+                uri: Some("spotify:track:1MwijGwyDLBQOTJfigEMHJ".to_string()),
+                uid: Some("e48cdaa7c0654734".to_string()),
+                ..Default::default()
+            });
+        estado.queue = protobuf::MessageField::some(cola);
+
+        let base64 = BASE64_STANDARD.encode(estado.write_to_bytes().expect("the state is written"));
+        let datos = serde_json::json!(base64);
+
+        let leido = estado_del_traspaso(&datos).expect("the transfer is read");
+        assert_eq!(
+            leido.pista,
+            Some((
+                "4Au4OwxRB7JWxaZU3lhqXf".to_string(),
+                "1028c776c1faf023".to_string()
+            ))
+        );
+        assert_eq!(
+            leido.cola,
+            vec![(
+                "1MwijGwyDLBQOTJfigEMHJ".to_string(),
+                "e48cdaa7c0654734".to_string()
+            )]
+        );
+        assert_eq!(leido.posicion_ms, Some(30_000));
+        assert!(!leido.pausada);
+    }
+
+    /// El mismo traspaso, pero en JSON: el servicio habla en los dos
+    /// formatos y el que no se lee es un traspaso que no se aplica.
+    #[test]
+    fn el_traspaso_tambien_viene_en_json() {
+        let datos = serde_json::json!({
+            "playback": {
+                "isPaused": true,
+                "positionAsOfTimestamp": 1200,
+                "currentTrack": {
+                    "uri": "spotify:track:4Au4OwxRB7JWxaZU3lhqXf",
+                    "uid": "1028c776c1faf023"
+                }
+            },
+            "queue": {
+                "tracks": [
+                    {
+                        "uri": "spotify:track:1MwijGwyDLBQOTJfigEMHJ",
+                        "uid": "e48cdaa7c0654734"
+                    }
+                ]
+            }
+        });
+
+        let leido = estado_del_traspaso(&datos).expect("the transfer is read");
+        assert_eq!(
+            leido.pista,
+            Some((
+                "4Au4OwxRB7JWxaZU3lhqXf".to_string(),
+                "1028c776c1faf023".to_string()
+            ))
+        );
+        assert_eq!(leido.cola.len(), 1);
+        assert_eq!(leido.posicion_ms, Some(1200));
+        assert!(leido.pausada);
     }
 }

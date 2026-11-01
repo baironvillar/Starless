@@ -232,6 +232,14 @@ export type PlaybackStatus = {
   /** 0..=65535, librespot's own scale. */
   volume: number;
   /**
+   * Whether this app is the device the jam says is playing.
+   *
+   * **A jam has one device playing.** The other side picks it —"here" or
+   * "Starless"— and the app that is not it has to step aside, or the two ends
+   * of the jam hear different songs.
+   */
+  jamActive: boolean;
+  /**
    * The track ran to its end. Not the same as `playing: false` — that also means
    * paused, and only one of the two should move the queue forward.
    */
@@ -564,6 +572,23 @@ export type JamCommand = {
   queue: { track: Track; uid: string }[];
   /** Where to jump, in milliseconds, when the command is a `seek_to`. */
   position_ms: number | null;
+  /**
+   * The device the music belongs to, when the command is a `transfer`.
+   *
+   * **A transfer is the music changing hands.** The other person chooses which
+   * device listens, and the service says so with this command.
+   */
+  from_device: string | null;
+  /**
+   * Whether the music of the transfer belongs to this app.
+   *
+   * **This is what decides who plays.** If the music is ours, we go on playing
+   * it; if it is the other side's, this app steps aside: two devices playing
+   * the same jam is how the two ends end up hearing different songs.
+   */
+  for_me: boolean;
+  /** Whether the music of the transfer was paused. */
+  paused: boolean;
 };
 
 /**
