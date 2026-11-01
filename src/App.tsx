@@ -38,6 +38,7 @@ import {
   applyAccentColor,
   applyEffects,
   applyMenuOpacity,
+  contextTracks,
   createPlaylist as createPlaylistCall,
   DEFAULT_TRACK_LIST_PREFS,
   type DjNarration,
@@ -1221,7 +1222,7 @@ export default function App() {
   const closeLyrics = useCallback(() => setLyricsOpen(false), []);
 
   const onPlay = useCallback(
-    (track: Track, at?: number) => {
+    (track: Track, at?: number, alJam = true) => {
       // A deliberate choice clears the advance guard. Without this, replaying the
       // same track by hand would still carry the previous "already handled this
       // ending" mark, and the next finish would be silently ignored.
@@ -1250,8 +1251,11 @@ export default function App() {
        * identificador que le dio el servicio: sin él, el comando entra pero el
        * servicio lo aplica a la pista que está sonando, y al otro lado le
        * entra la canción de siempre.
+       *
+       * **Las que llegan del otro lado no se mandan de vuelta.** El comando
+       * cruzaría de ida y vuelta sin parar.
        */
-      void publishToJam(track);
+      if (alJam) publishToJam(track);
       playTrack(track).catch((e) => {
         // A refusal that only reaches the console is a refusal the user never sees.
         // The bar shows whatever `status.error` says; this is the console copy.
@@ -2273,7 +2277,7 @@ export default function App() {
    * guess, and the only thing it could guess is the last song.
    */
   const playFrom = useCallback(
-    (tracks: Track[], track: Track, context: RadioContext | null = null) => {
+    (tracks: Track[], track: Track, context: RadioContext | null = null, alJam = true) => {
       setQueueOverride(tracks, context);
       // **El lugar se busca en la lista nueva.** La cola que se acaba de poner
       // es la que va a mandar, y el índice de la canción en ella es lo que
@@ -2281,6 +2285,7 @@ export default function App() {
       onPlay(
         track,
         tracks.findIndex((item) => item.id === track.id),
+        alJam,
       );
     },
     [onPlay, setQueueOverride],
@@ -2865,7 +2870,37 @@ export default function App() {
           playDirect(command.track);
           return;
         }
+        // **Sin canción es "seguí".** Es otro comando, y el frontend los trata
+        // distinto: uno pone una pista, el otro levanta la que ya está
+        // sonando.
         if (!statusRef.current?.playing) void togglePlayback().catch(() => {});
+        return;
+      }
+      if (command.endpoint === "play_context" && command.context_uri) {
+        /**
+         * La otra persona puso una lista: una playlist, un álbum, un artista.
+         *
+         * **Suenan sus canciones, y en el orden que pidió.** Si la puso al
+         * azar, el comando lo dice, y la lista se baraja: una lista barajada
+         * que suena en el orden en que está guardada contradice al botón de
+         * aleatorio que la otra persona tiene encendido en su pantalla.
+         *
+         * **Y no se manda de vuelta.** La lista vino del otro lado; mandarla
+         * al jam sería un viaje de ida y vuelta sin parar.
+         */
+        const uri = command.context_uri;
+        void contextTracks(uri)
+          .then((pistas) => {
+            if (!pistas.length) return;
+            if (command.shuffled) {
+              playShuffled(pistas, pistas[Math.floor(Math.random() * pistas.length)], null);
+              return;
+            }
+            playFrom(pistas, pistas[0], null, false);
+          })
+          .catch((e) => {
+            console.error("Starless: no se pudo poner la lista del otro lado", explain(e));
+          });
         return;
       }
       if (command.endpoint === "seek_to" && command.position_ms != null) {
@@ -2909,7 +2944,15 @@ export default function App() {
     return () => {
       unlisten.then((off) => off());
     };
-  }, [advance, playDirect, addToLocalQueue, setQueueOverride, visibleTracks]);
+  }, [
+    advance,
+    playDirect,
+    addToLocalQueue,
+    setQueueOverride,
+    visibleTracks,
+    playFrom,
+    playShuffled,
+  ]);
 
   /**
    * La playlist entera a la cola, y no lo que el filtro dejó a la vista.

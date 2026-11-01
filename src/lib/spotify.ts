@@ -530,6 +530,20 @@ export async function jamTrackUid(trackId: string): Promise<string | null> {
 }
 
 /**
+ * The songs of a context: a playlist, an album, an artist.
+ *
+ * **The same door for the three.** Only the URI changes, and the service
+ * understands it by its shape.
+ *
+ * It is what puts a list on this side when the other side of the Jam plays
+ * one: the `play` command carries the context, and without this the list was
+ * lost on the way.
+ */
+export async function contextTracks(uri: string): Promise<Track[]> {
+  return invoke<Track[]>("context_tracks", { uri });
+}
+
+/**
  * The queue that is coming, so the service knows what this player will play.
  *
  * **The shared queue of a Jam is this queue.** The Jam's queue is not a list the
@@ -621,6 +635,21 @@ export type JamCommand = {
   for_me: boolean;
   /** Whether the music of the transfer was paused. */
   paused: boolean;
+  /**
+   * The URI of the context to play, when it is a list and not a song.
+   *
+   * **A playlist, an album, an artist.** The `play` command of the other side
+   * carries the context, and without this the list was dropped on the way: only
+   * a song was understood.
+   */
+  context_uri: string | null;
+  /**
+   * Whether the context goes shuffled.
+   *
+   * **The shuffle is the other side's decision.** When they put a playlist on
+   * shuffle, the command says so, and the list has to sound that way.
+   */
+  shuffled: boolean;
 };
 
 /**

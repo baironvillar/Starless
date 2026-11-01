@@ -98,6 +98,19 @@ pub struct RemoteCommand {
     pub for_me: bool,
     /// Si la música del traspaso venía pausada.
     pub paused: bool,
+    /// La URI del contexto que hay que poner, cuando no es una canción.
+    ///
+    /// **Es una lista.** Una playlist, un álbum, un artista: el comando `play`
+    /// del otro lado lo dice con la URI del contexto, y sin esto la lista se
+    /// perdía en el camino.
+    pub context_uri: Option<String>,
+    /// Si el contexto va barajado.
+    ///
+    /// **El barajado es una decisión del otro lado.** Cuando pone una playlist
+    /// al azar, el comando lo dice, y la lista tiene que sonar al azar: una
+    /// lista barajada que suena en el orden en que está guardada contradice al
+    /// botón que la otra persona tiene encendido en su pantalla.
+    pub shuffled: bool,
 }
 
 /// Escucha los comandos que manda el otro lado del jam.
@@ -220,6 +233,8 @@ async fn translate(
         from_device: None,
         for_me: false,
         paused: false,
+        context_uri: None,
+        shuffled: false,
     };
 
     match command {
@@ -257,17 +272,42 @@ async fn translate(
             let salto = play.options.skip_to.as_ref();
             let uri = salto
                 .and_then(|salto| salto.track_uri.clone())
-                .or_else(|| play.context.uri.clone())
-                .filter(|uri| uri.starts_with("spotify:track:"));
+                .or_else(|| play.context.uri.clone());
+
+            // **El barajado viene con el comando.** Cuando la otra persona
+            // pone una playlist al azar, el comando lo dice en las opciones del
+            // player: sin esto, la lista sonaría en el orden en que está
+            // guardada, que no es lo que pidió.
+            let shuffled = play
+                .options
+                .player_options_override
+                .as_ref()
+                .and_then(|opciones| opciones.shuffling_context)
+                .unwrap_or(false);
+
             let mut comando = RemoteCommand {
                 endpoint: "play".to_string(),
                 ..nada
             };
-            if let Some(uri) = uri {
-                let id = uri.rsplit(':').next().unwrap_or_default().to_string();
-                comando.track_id = Some(id.clone());
-                comando.track_uid = salto.and_then(|salto| salto.track_uid.clone());
-                comando.track = resolve(session, &id).await;
+
+            match uri {
+                Some(uri) if uri.starts_with("spotify:track:") => {
+                    let id = uri.rsplit(':').next().unwrap_or_default().to_string();
+                    comando.track_id = Some(id.clone());
+                    comando.track_uid = salto.and_then(|salto| salto.track_uid.clone());
+                    comando.track = resolve(session, &id).await;
+                }
+                Some(uri) => {
+                    // **Una lista es una lista, no una canción.** Cuando la
+                    // otra persona pone una playlist —un álbum, un artista—
+                    // lo que tiene que sonar es la lista, con sus canciones
+                    // en la cola. Antes el comando se descartaba: el otro
+                    // lado ponía una lista y acá no pasaba nada.
+                    comando.endpoint = "play_context".to_string();
+                    comando.context_uri = Some(uri);
+                    comando.shuffled = shuffled;
+                }
+                None => {}
             }
             comando
         }
@@ -459,6 +499,8 @@ async fn translate_transfer(
         from_device: Some(from_device),
         for_me,
         paused: estado.pausada,
+        context_uri: None,
+        shuffled: false,
     };
 
     // **La canción que suena.** El identificador que trae es del servicio, y es

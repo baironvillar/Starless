@@ -514,7 +514,29 @@ saber qué publicó la app y qué quedó reconocido.
 Starless lleva un registro `uri → uid`, lo publica con la cola, y lo manda en el
 comando de agregar cuando lo conoce.
 
-### La cola compartida la llena el comando, no el estado del player
+#### Cuando el otro lado pone una lista
+
+El comando `play` del otro lado trae el contexto, y hay dos kinds:
+
+- **`spotify:track:<id>`** — una canción. Es lo que se entendía siempre: la
+  canción suena acá y queda en la cola de la app.
+- **`spotify:playlist:<id>`, `spotify:album:<id>`, `spotify:artist:<id>`** — una
+  lista. Antes el comando se **descartaba**: el filtro sólo dejaba pasar los
+  contextos de canción, así que la otra persona ponía una playlist y acá no
+  pasaba nada.
+
+**La lista se pide por la puerta de los contextos.** `GET /context-resolve/v1/<uri>`
+devuelve las pistas del contexto —con el `uid` de cada una—, y el mismo
+contexto sirve para una playlist, un álbum o un artista: lo único que cambia es
+la URI. El comando Tauri `context_tracks` es esa llamada.
+
+**El barajado viene con el comando**, en
+`options.player_options_override.shuffling_context`. Cuando la otra persona
+pone una playlist al azar, la lista tiene que sonar al azar: una lista barajada
+que suena en el orden en que está guardada contradice al botón de aleatorio
+que la otra persona tiene encendido en su pantalla.
+
+## La cola compartida la llena el comando, no el estado del player
 
 **Medido el 1 de noviembre de 2026**, con las dos personas en el jam y la app
 publicando su estado de player:
@@ -1120,12 +1142,14 @@ Honesto, porque buena parte de esto no se comprobó:
   con `SUCCESS`. **Lo que falta es que las canciones de Starless entren en la
   cola compartida con el `uid` que el servicio les dio**: sin él, el servicio no
   las reconoce, y la cola compartida sigue siendo la del otro lado.
-- **Lo que el otro lado pone cuando es una playlist.** El comando `play` del
-  otro lado trae el contexto, y hoy la app sólo entiende el contexto de una
-  canción: si la otra persona pone una playlist, lo que tiene que sonar es la
-  playlist —con sus canciones en la cola— y, si la puso barajada, barajada.
-  **La parte de "en torno a la canción que puso" es el autoplay**, que es lo que
-  el servicio arma solo cuando el contexto es de una canción.
+- **Lo que el otro lado pone cuando es una playlist.** ~~Sin hacer.~~ **Ya está:**
+  el comando `play` con un contexto de lista pide las pistas por
+  `context_tracks` y las pone en la cola, barajadas si el comando dice que
+  venían barajadas. **Lo que falta es probarlo con la otra persona.**
+- **La radio alrededor de la canción que puso el otro.** Cuando la otra persona
+  pone una canción —no una lista—, lo que tiene que seguir en Starless es la
+  cola que ya tenía, y no una estación nueva: es lo que el autoplay del
+  servicio arma cuando el contexto es de una canción.
 - **Cómo se modifica una sesión.** `GET`, `POST`, `PUT` y `PATCH` sobre
   `/social-connect/v2/sessions/<id>` contestan `405`: el verbo es otro, y
   probablemente sea un `POST` con el cuerpo del proto. Los permisos

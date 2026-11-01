@@ -529,7 +529,23 @@ fn hydrate_rows(session: &Session, rows: Vec<(String, Option<i64>)>) -> Result<V
 /// mandarle un cero dibujaría el 1 de enero de 1970 en una columna de fechas. La
 /// columna dice lo que sabe —canciones guardadas no llevan fecha— y la lista de
 /// reproducción, que sí la trae, sí la muestra.
-fn context_tracks(session: &Session, uri: String) -> Result<Vec<Track>, String> {
+/// Las pistas de un context por su URI especial.
+///
+/// **Una lista, un álbum y un artista son todos un context.** La puerta es la
+/// misma y la forma de la URI es lo único que cambia, así que el comando que
+/// pone una lista en el otro lado del jam se entiende con esta llamada.
+///
+/// `spotify:user:<id>:collection` son las canciones guardadas y
+/// `spotify:search:<consulta>` la búsqueda. Los dos son URIs que el servicio
+/// entiende por su forma, así que no hacen falta client id ni scopes: son la
+/// misma llamada que pide una playlist, con otra URI.
+///
+/// **Sin fecha de agregado, y no por descuido.** Un context trae `Item`s sin
+/// `attributes`, así que `timestamp` no existe para él: no hay dato que mandar, y
+/// mandarle un cero dibujaría el 1 de enero de 1970 en una columna de fechas. La
+/// columna dice lo que sabe —canciones guardadas no llevan fecha— y la lista de
+/// reproducción, que sí la trae, sí la muestra.
+pub(crate) fn context_tracks(session: &Session, uri: String) -> Result<Vec<Track>, String> {
     let owned = session.clone();
     let pistas = call(session, async move {
         owned

@@ -955,6 +955,25 @@ spclient_command!(account, spclient::account, Account);
 spclient_command!(my_playlists, spclient::playlists, Vec<Playlist>);
 spclient_command!(liked_tracks, spclient::liked_tracks, Vec<Track>);
 spclient_command!(playlist_tracks, spclient::playlist_tracks, Vec<Track>, playlist_id: String);
+
+/// Las pistas de un context: una playlist, un álbum o un artista.
+///
+/// **La puerta es la misma para las tres.** Lo único que cambia es la URI, y
+/// el servicio la entiende por su forma.
+///
+/// **Se usa cuando el otro lado del jam pone una lista.** El comando `play`
+/// de un teléfono trae el contexto, y sin esto la lista se pierde: sólo se
+/// entendía el contexto de una canción.
+#[tauri::command]
+async fn context_tracks(app: AppHandle, uri: String) -> Result<Vec<Track>, String> {
+    let session = ready_session(&app).await?;
+    tauri::async_runtime::spawn_blocking(move || spclient::context_tracks(&session, uri))
+        .await
+        .map_err(|e| {
+            eprintln!("Starless [command_failed]: {e}");
+            "command_failed".to_string()
+        })?
+}
 spclient_command!(search_tracks, spclient::search_tracks, Vec<Track>, query: String);
 spclient_command!(lyrics, spclient::lyrics, Lyrics, track_id: String);
 
@@ -2226,6 +2245,7 @@ pub fn run() {
             update_playlist_details,
             liked_tracks,
             playlist_tracks,
+            context_tracks,
             search_tracks,
             lyrics,
             dj_mix,
