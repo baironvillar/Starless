@@ -469,7 +469,7 @@ async fn details_batch(owned: Session, chunk: Vec<String>) -> Result<Vec<(String
 /// desalinear sin que nada falle, y el síntoma es una columna de fechas correcta
 /// pegada a las canciones equivocadas. Como par, la fecha sobrevive el reordenado
 /// que hace esta función y sobrevive que una fila se caiga por metadata ilegible.
-fn hydrate(
+pub(crate) fn hydrate(
     session: &Session,
     rows: Vec<(String, Option<i64>)>,
 ) -> Result<Vec<Track>, String> {

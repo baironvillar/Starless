@@ -2579,11 +2579,32 @@ export default function App() {
        * servicio no la reconoce y la resuelve por la que está sonando. La cola
        * se vuelve a publicar cuando aparece uno nuevo.
        */
-      const uid = command.track_uid;
-      if (uid && command.track_id) {
-        const uri = `spotify:track:${command.track_id}`;
-        setJamUids((prev) => (prev[uri] === uid ? prev : { ...prev, [uri]: uid }));
-      }
+      /**
+       * Los ids que el servicio le dio a las canciones del comando.
+       *
+       * **El id es lo que hace que una canción entre en la cola compartida.**
+       * El servicio no reconoce una canción por su URI: la reconoce por el id
+       * que él le dio, y sin ese id la publica a ciegas.
+       */
+      setJamUids((prev) => {
+        const next = { ...prev };
+        let cambio = false;
+        if (command.track_uid && command.track_id) {
+          const uri = `spotify:track:${command.track_id}`;
+          if (next[uri] !== command.track_uid) {
+            next[uri] = command.track_uid;
+            cambio = true;
+          }
+        }
+        for (const song of command.queue ?? []) {
+          const uri = `spotify:track:${song.track.id}`;
+          if (next[uri] !== song.uid) {
+            next[uri] = song.uid;
+            cambio = true;
+          }
+        }
+        return cambio ? next : prev;
+      });
 
       if (command.endpoint === "skip_next") {
         /**
@@ -2635,6 +2656,22 @@ export default function App() {
         void seekPlayback(command.position_ms).catch(() => {});
         return;
       }
+      if (command.endpoint === "set_queue" && command.queue?.length) {
+        /**
+         * La cola del otro lado es la cola del jam.
+         *
+         * **El comando `set_queue` trae la cola completa del otro lado**, con el
+         * identificador que el servicio le dio a cada canción. Es la puerta por
+         * la que la cola compartida se arma de verdad: el servicio no puede
+         * apuntar a una pista que no tiene identificador, y sinSongs que no
+         * puede apuntar no llegan a la cola que los dos ven.
+         *
+         * **Y no se manda de vuelta.** Esta cola llegó porque el otro lado la
+         * mandó; devolverla sería un viaje de ida y vuelta sin parar.
+         */
+        setQueueOverride(command.queue.map((song) => song.track));
+        return;
+      }
       if (command.endpoint === "add_to_queue" && command.track) {
         /**
          * La canción que manda el otro lado va a la cola **de la app**.
@@ -2650,7 +2687,7 @@ export default function App() {
     return () => {
       unlisten.then((off) => off());
     };
-  }, [advance, playDirect, addToLocalQueue, status?.playing, visibleTracks]);
+  }, [advance, playDirect, addToLocalQueue, setQueueOverride, status?.playing, visibleTracks]);
 
   /**
    * La playlist entera a la cola, y no lo que el filtro dejó a la vista.

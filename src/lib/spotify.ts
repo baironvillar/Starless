@@ -554,6 +554,14 @@ export type JamCommand = {
    * without this id is a song the service cannot point at.
    */
   track_uid: string | null;
+  /**
+   * The whole queue, when the command is a `set_queue`.
+   *
+   * **This is the queue the other side is showing.** Each song comes with the
+   * id the service gave it, and without that id the service cannot point at
+   * any of them: the shared queue stays empty.
+   */
+  queue: { track: Track; uid: string }[];
   /** Where to jump, in milliseconds, when the command is a `seek_to`. */
   position_ms: number | null;
 };

@@ -46,6 +46,15 @@ const STATUS_ECHO_MS: u64 = 100;
 /// El tema por el que el backend manda los comandos del player.
 const COMMAND_TOPIC: &str = "hm://connect-state/v1/player/command";
 
+/// Una canción de la cola que manda el otro lado.
+#[derive(Serialize, Clone, Debug)]
+pub struct QueueSong {
+    /// La canción, con sus datos.
+    pub track: crate::models::Track,
+    /// El identificador que el servicio le dio a la pista.
+    pub uid: String,
+}
+
 /// Lo que el otro lado mandó, en la forma que el webview la entiende.
 #[derive(Serialize, Clone, Debug)]
 pub struct RemoteCommand {
@@ -66,6 +75,13 @@ pub struct RemoteCommand {
     pub track_uid: Option<String>,
     /// A qué milisegundo saltar, si el comando es un `seek_to`.
     pub position_ms: Option<u32>,
+    /// La cola entera, si el comando es un `set_queue`.
+    ///
+    /// **Es la cola que el otro lado está mostrando.** El comando `set_queue`
+    /// trae las canciones que van después, con el identificador que el
+    /// servicio les dio a cada una: sin ese identificador el servicio no puede
+    /// apuntar a ninguna, y la cola compartida se queda vacía.
+    pub queue: Vec<QueueSong>,
 }
 
 /// Escucha los comandos que manda el otro lado del jam.
@@ -156,6 +172,13 @@ pub fn watch_commands(app: AppHandle) {
                 if let (Some(id), Some(uid)) = (&command.track_id, &command.track_uid) {
                     track_uids().remember(&format!("spotify:track:{id}"), uid);
                 }
+                // **Los ids de la cola del otro lado también se anotan.** Es la
+                // lista completa de lo que el otro está mostrando, con el
+                // identificador que el servicio le dio a cada canción: sin
+                // ellos, publicar esa cola es publicar a ciegas.
+                for song in &command.queue {
+                    track_uids().remember(&format!("spotify:track:{}", song.track.id), &song.uid);
+                }
                 let _ = app.emit("jam://command", &command);
                 let _ = reply.send(librespot_core::dealer::manager::Reply::Success);
             }
@@ -176,6 +199,7 @@ async fn translate(
         track_id: None,
         track_uid: None,
         position_ms: None,
+        queue: Vec::new(),
     };
 
     match command {
@@ -224,6 +248,46 @@ async fn translate(
                 comando.track_id = Some(id.clone());
                 comando.track_uid = salto.and_then(|salto| salto.track_uid.clone());
                 comando.track = resolve(session, &id).await;
+            }
+            comando
+        }
+        Command::SetQueue(cola) => {
+            // **La cola entera del otro lado.** El comando `set_queue` es lo
+            // que hace que las dos colas sean la misma: el invitado manda las
+            // canciones que van después, cada una con el identificador que el
+            // servicio le dio. Sin ese identificador el servicio no puede
+            // apuntar a ninguna pista, y la cola compartida se queda vacía.
+            //
+            // Los nombres y las portadas no vienen en el comando: se piden
+            // después, en una tanda, porque el comando puede traer cientos de
+            // canciones y pedir una por una es un viaje por la red cada vez.
+            let canciones: Vec<(String, String)> = cola
+                .next_tracks
+                .iter()
+                .map(|pista| (pista.uri.rsplit(':').next().unwrap_or_default().to_string(), pista.uid.clone()))
+                .filter(|(id, _)| !id.is_empty())
+                .take(MAX_QUEUE_SONGS)
+                .collect();
+
+            let mut comando = RemoteCommand {
+                endpoint: "set_queue".to_string(),
+                ..nada
+            };
+            if !canciones.is_empty() {
+                let filas: Vec<(String, Option<i64>)> = canciones
+                    .iter()
+                    .map(|(id, _)| (id.clone(), None))
+                    .collect();
+                if let Ok(pistas) = crate::spclient::hydrate(session, filas) {
+                    comando.queue = pistas
+                        .into_iter()
+                        .zip(canciones.iter())
+                        .map(|(track, (_, uid))| QueueSong {
+                            track,
+                            uid: uid.clone(),
+                        })
+                        .collect();
+                }
             }
             comando
         }
@@ -284,6 +348,14 @@ const MAX_VOLUME: u16 = 65535;
 /// necesita saber en qué segundo va la canción para no quedar desfasado, y
 /// cinco segundos es la diferencia entre "va conmigo" y "va un rato atrasado".
 const PUBLISH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Cuántas canciones de la cola del otro lado se resuelven.
+///
+/// **La cola compartida llega entera y son cientos.** Los datos de cada una se
+/// piden en una tanda, así que el costo no crece canción por canción, pero
+/// tampoco tiene sentido traer quinientas: la cola que se ve es la de las
+/// primeras.
+const MAX_QUEUE_SONGS: usize = 100;
 
 /// La cola de la app: lo que va a sonar después de la de ahora.
 ///
