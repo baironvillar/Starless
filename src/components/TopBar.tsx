@@ -9,7 +9,7 @@ import {
   X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { StringKey } from "../lib/i18n";
 import type { Track } from "../lib/spotify";
 import { MIN_QUERY_LENGTH, SEARCH_MENU_ID, SearchMenu, searchOptionId } from "./SearchMenu";
@@ -172,6 +172,25 @@ export function TopBar({
     setDismissed(false);
     inputRef.current?.focus();
   };
+
+  /**
+   * Ctrl+F and Ctrl+L go to the search field, from anywhere.
+   *
+   * Both are claimed on purpose: left alone, WebView2 answers Ctrl+F with its
+   * own find-in-page bar, which searches the words on screen and not the
+   * catalogue — the same key doing two different searches.
+   */
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!event.ctrlKey || event.altKey || event.shiftKey || event.metaKey) return;
+      if (event.key !== "f" && event.key !== "F" && event.key !== "l" && event.key !== "L") return;
+      event.preventDefault();
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   return (
     <div ref={rootRef} className="contents">

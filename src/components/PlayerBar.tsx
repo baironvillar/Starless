@@ -29,6 +29,7 @@ import {
   trackArtists,
   useEffectsSettings,
 } from "../lib/spotify";
+import { useMediaSession, usePlayerKeys } from "../lib/usePlayerKeys";
 import { DjArtwork, DjMark } from "./DjArtwork";
 import { SmoothSlider } from "./SmoothSlider";
 
@@ -321,6 +322,51 @@ export function PlayerBar({
   /** Whether there is a song to ask about. The DJ's voice is not a song. */
   const noSong = !track;
 
+  // **Con el DJ hablando, "reproducir" es "empezá la música".**
+  //
+  // La frase es de la canción que viene, y la está introducing: la música no
+  // empezó porque el DJ habla primero. Apretar play es decir "no la quiero
+  // escuchar", y eso es lo mismo que apretar siguiente. El botón y las teclas
+  // pasan por acá, así que dicen lo mismo.
+  const playPause = () => {
+    if (dj) onNext();
+    else void togglePlayback().catch(() => {});
+  };
+
+  /**
+   * The level the keys last asked for, ahead of the backend's echo.
+   *
+   * The echo is throttled to 100 ms, and a held Ctrl+↑ repeats faster than
+   * that: stepping from `status.volume` would add the step to the same stale
+   * number three times and the volume would climb by one.
+   */
+  const askedVolume = useRef(status?.volume ?? 0);
+  useEffect(() => {
+    askedVolume.current = status?.volume ?? 0;
+  }, [status?.volume]);
+
+  usePlayerKeys({
+    toggle: idle || busy ? null : playPause,
+    playing: playing || !!dj,
+    next: idle ? null : onNext,
+    previous: idle ? null : onPrevious,
+    seekBy:
+      noSong || duration <= 0
+        ? null
+        : (delta) => requestSeek(Math.max(0, Math.min(duration, shownPosition + delta))),
+    volumeBy: (delta) => {
+      const next = Math.round(
+        Math.max(0, Math.min(MAX_VOLUME, askedVolume.current + delta * MAX_VOLUME)),
+      );
+      askedVolume.current = next;
+      void setVolume(next).catch(() => {});
+    },
+    toggleMute,
+    toggleShuffle: idle ? null : onToggleShuffle,
+    cycleRepeat: idle ? null : onCycleRepeat,
+  });
+  useMediaSession(track, dj, playing, t.djSpeaker);
+
   /**
    * What is sounding, as a key.
    *
@@ -433,16 +479,7 @@ export function PlayerBar({
 
           <motion.button
             type="button"
-            onClick={() => {
-              // **Con el DJ hablando, "reproducir" es "empezá la música".**
-              //
-              // La frase es de la canción que viene, y la está introducing: la
-              // música no empezó porque el DJ habla primero. Apretar play es
-              // decir "no la quiero escuchar", y eso es lo mismo que apretar
-              // siguiente.
-              if (dj) onNext();
-              else void togglePlayback().catch(() => {});
-            }}
+            onClick={playPause}
             disabled={idle || busy}
             whileTap={{ scale: 0.94 }}
             transition={SPRING}
