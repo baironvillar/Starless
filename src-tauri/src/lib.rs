@@ -14,6 +14,7 @@ mod history;
 // to, and a local module of the same name shadows it at the crate root — which
 // breaks every command in this file with an error that points nowhere useful.
 mod logging;
+mod media_keys;
 mod models;
 mod playback;
 mod report;
@@ -1697,6 +1698,13 @@ fn set_volume(state: State<PlaybackState>, volume: u16) {
     playback::set_volume(&state, volume);
 }
 
+/// What Windows shows on its media card, and whether the media keys answer.
+/// `None` hides the card: nothing is loaded.
+#[tauri::command]
+fn media_session(state: State<media_keys::MediaKeys>, now: Option<media_keys::NowPlaying>) {
+    state.update(now);
+}
+
 /// How opaque the menus are, as a percentage. The default is opaque, not 55%.
 #[tauri::command]
 fn menu_opacity() -> u8 {
@@ -1834,6 +1842,11 @@ fn set_effect(name: String, value: String) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let context = tauri::generate_context!();
+    // Before any window exists: the taskbar reads the id when the window is
+    // created, and the media card reads it when the session opens.
+    media_keys::claim_app_id(&context.config().identifier);
+
     let app = tauri::Builder::default()
         // **Registered first, on purpose.** The plugin works by holding a lock
         // that the second process cannot take, so it has to exist before anything
@@ -1913,6 +1926,9 @@ pub fn run() {
             // device is alive as far as `is_invalid` is concerned, and the
             // window looks perfect while the app is deaf.
             playback::watch(handle.clone());
+
+            // The media keys answer from here on, whatever the window is doing.
+            app.manage(media_keys::MediaKeys::start(handle.clone()));
 
             // **La conexión, cortada a propósito.**
             //
@@ -2033,6 +2049,7 @@ pub fn run() {
             toggle_playback,
             seek_playback,
             set_volume,
+            media_session,
             menu_opacity,
             set_menu_opacity,
             crossfade_seconds,
@@ -2066,7 +2083,7 @@ pub fn run() {
             feedback_report_preview,
             submit_feedback
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application");
 
     // `build` + `run` instead of the shorthand `.run(context)`, because the

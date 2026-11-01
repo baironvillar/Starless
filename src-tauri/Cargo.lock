@@ -4797,6 +4797,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
  "urlencoding",
+ "windows 0.62.2",
 ]
 
 [[package]]

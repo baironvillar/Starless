@@ -551,6 +551,34 @@ export async function setVolume(volume: number): Promise<void> {
   return invoke<void>("set_volume", { volume });
 }
 
+/** What Windows shows on its media card. Mirrors `media_keys::NowPlaying`. */
+export type NowPlaying = {
+  title: string;
+  artist: string;
+  album: string;
+  artwork: string | null;
+  playing: boolean;
+};
+
+/** Tell Windows what is playing; `null` hides the card and frees the media keys. */
+export async function mediaSession(now: NowPlaying | null): Promise<void> {
+  if (!hasBackend()) return;
+  return invoke<void>("media_session", { now });
+}
+
+export type MediaKey = "play" | "pause" | "next" | "previous";
+
+/**
+ * Subscribe to the media keys — the ones on a keyboard or a headset, and the
+ * buttons on Windows' media card. They arrive here even with the window
+ * minimised, because Windows routes them to the media session and not to the
+ * focused window (see `media_keys.rs`).
+ */
+export function onMediaKey(handler: (key: MediaKey) => void): Promise<UnlistenFn> | null {
+  if (!hasBackend()) return null;
+  return listen<MediaKey>("media://key", (event) => handler(event.payload));
+}
+
 /*
  * How opaque the menus are, as a percentage. A setting rather than a constant
  * because how far someone is willing to push a translucent surface over their own
