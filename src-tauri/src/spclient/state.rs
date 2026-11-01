@@ -407,7 +407,12 @@ fn build(session: &Session, snapshot: &Snapshot) -> PutStateRequest {
     PutStateRequest {
         member_type: EnumOrUnknown::new(MemberType::CONNECT_STATE),
         put_state_reason: EnumOrUnknown::new(PutStateReason::PLAYER_STATE_CHANGED),
-        is_active: crate::playback::es_el_device_activo(session),
+        // **El device está activo si es el que el jam dice que suena, y sólo
+        // si además está sonando.** Un device que está en el jam pero callado
+        // no es el que suena: si se declara activo, el otro lado no puede
+        // tomar el control, y la elección de "escuchar en mi teléfono" queda
+        // en una frase.
+        is_active: crate::playback::es_el_device_activo(session) && snapshot.playing,
         device: MessageField::some(Device {
             device_info: MessageField::some(DeviceInfo {
                 can_play: true,

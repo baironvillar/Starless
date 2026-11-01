@@ -536,6 +536,29 @@ pone una playlist al azar, la lista tiene que sonar al azar: una lista barajada
 que suena en el orden en que está guardada contradice al botón de aleatorio
 que la otra persona tiene encendido en su pantalla.
 
+## Un device que no publica no existe
+
+**Medido el 1 de noviembre de 2026**, con la app abierta y sin nada sonando: la
+otra persona entró al jam, puso una canción y **a Starless no le llegó ningún
+comando**. La canción apareció en la cola compartida y nada más: no sonó, no
+salió ningún comando.
+
+La causa: **el hilo que publica el estado del player se callaba cuando no
+había nada sonando.** El `PUT` a `/connect-state/v1/devices/<id>` es lo que
+pone al device en el cluster del servicio, y sin `PUT` el device no está: los
+comandos van dirigidos a un `connection id` que el otro lado aprende del
+cluster, y un device que no publica deja en el cluster su `connection id`
+viejo —el de antes de un reinicio—.
+
+**Y sonaba peor con la música sonando**: el device publicaba, el cluster lo
+tenía, los comandos llegaban. Por eso la app andaba con una canción corriendo
+y no andaba en silencio.
+
+**El estado vacío también se publica.** "No estoy sonando" es un estado
+legítimo de un device, y es lo que deja que el otro device tome el control:
+el `is_active` va con `playing`, así que un device en el jam que está callado no
+se declara activo y el otro lado puede elegir su teléfono.
+
 ## La cola compartida la llena el comando, no el estado del player
 
 **Medido el 1 de noviembre de 2026**, con las dos personas en el jam y la app

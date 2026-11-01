@@ -943,12 +943,18 @@ pub fn publish_state(app: AppHandle) {
                 // **No hay nada sonando: el estado se vacía.** Publicar la
                 // última canción como si siguiera sonando es una mentira que
                 // el otro lado cree.
+                //
+                // **Y se publica igual.** Un device que no publica no existe:
+                // el servicio no lo manda en el cluster y los comandos del otro
+                // lado no llegan a ninguna parte. Medido el 1 de noviembre de
+                // 2026: con la app sin nada sonando, la otra persona puso una
+                // canción y acá no llegó ni el comando —el device no estaba en
+                // el cluster— y la canción sólo apareció en la cola.
                 None => {
-                    if ultima.is_none() {
-                        continue;
+                    if ultima.is_some() {
+                        ultima = None;
+                        snapshot = crate::spclient::state::empty_snapshot();
                     }
-                    ultima = None;
-                    snapshot = crate::spclient::state::empty_snapshot();
                 }
             }
 
