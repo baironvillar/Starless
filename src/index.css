@@ -382,6 +382,32 @@
   }
 }
 
+/*
+ * The library's cascade: when one of its two shapes (riel or panel) comes in,
+ * its pieces arrive one after another, top to bottom, instead of all at once.
+ *
+ * Each piece says its place with `--i`. The step is short and the wave stops
+ * growing at the twelfth piece, so a long library does not keep the bottom
+ * rows waiting. Opacity and a 6 px rise only: nothing here costs a layout.
+ *
+ * **Leaving is not a cascade.** The shape that goes fades out as one, and its
+ * pieces drop back to zero only after that (the 150 ms delay), invisibly — if
+ * they reset at once the leaving shape would blink out instead of fading.
+ */
+.cascade {
+  transition:
+    opacity 260ms var(--ease-glass),
+    transform 260ms var(--ease-glass);
+  transition-delay: calc(80ms + min(var(--i, 0), 12) * 22ms);
+}
+
+[data-shown="false"] .cascade {
+  opacity: 0;
+  transform: translateY(6px);
+  transition-duration: 0ms;
+  transition-delay: 150ms;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -389,6 +415,11 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  /* A cascade without motion is a list that appears in pieces for no reason. */
+  .cascade {
+    transition-delay: 0s !important;
   }
 }
 
@@ -399,4 +430,8 @@
   animation-duration: 0.01ms !important;
   animation-iteration-count: 1 !important;
   transition-duration: 0.01ms !important;
+}
+
+:root[data-still] .cascade {
+  transition-delay: 0s !important;
 }
