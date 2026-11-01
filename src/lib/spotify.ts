@@ -723,6 +723,68 @@ export async function clearHistory(): Promise<void> {
   return invoke<void>("clear_history");
 }
 
+/** Mirrors `settings::AUDIO_QUALITIES`. */
+export type AudioQuality = "low" | "normal" | "high";
+
+/** Read when the player is built, so a change applies on the next launch. */
+export async function audioQuality(): Promise<AudioQuality> {
+  if (!hasBackend()) return "high";
+  return invoke<AudioQuality>("audio_quality");
+}
+
+export async function setAudioQuality(quality: AudioQuality): Promise<void> {
+  if (!hasBackend()) return;
+  return invoke<void>("set_audio_quality", { quality });
+}
+
+export async function normalisation(): Promise<boolean> {
+  if (!hasBackend()) return false;
+  return invoke<boolean>("normalisation");
+}
+
+export async function setNormalisation(on: boolean): Promise<void> {
+  if (!hasBackend()) return;
+  return invoke<void>("set_normalisation", { on });
+}
+
+export async function closeToTray(): Promise<boolean> {
+  if (!hasBackend()) return true;
+  return invoke<boolean>("close_to_tray");
+}
+
+export async function setCloseToTray(on: boolean): Promise<void> {
+  if (!hasBackend()) return;
+  return invoke<void>("set_close_to_tray", { on });
+}
+
+/** Asked of the registry each time, not remembered: see `startup.rs`. */
+export async function startWithWindows(): Promise<boolean> {
+  if (!hasBackend()) return false;
+  return invoke<boolean>("start_with_windows");
+}
+
+/**
+ * Answers with what is true afterwards, and that is what the switch draws: a
+ * development build never writes the registry, so there it does not move.
+ */
+export async function setStartWithWindows(on: boolean): Promise<boolean> {
+  if (!hasBackend()) return false;
+  return invoke<boolean>("set_start_with_windows", { on });
+}
+
+/** The tray menu's words, in the app's language. Mirrors `tray::TrayLabels`. */
+export async function trayLabels(labels: {
+  play: string;
+  pause: string;
+  next: string;
+  previous: string;
+  show: string;
+  quit: string;
+}): Promise<void> {
+  if (!hasBackend()) return;
+  return invoke<void>("tray_labels", { labels });
+}
+
 /** A play, back into a track the player and the queue understand. */
 export function trackFromPlay(play: Play): Track {
   return {

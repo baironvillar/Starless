@@ -312,13 +312,15 @@ export const strings = {
     colourModeOn: "Activado",
 
     audioQuality: "Calidad de audio",
-    audioQualityHint: "Más calidad significa más datos y algo menos de batería.",
+    audioQualityHint:
+      "Más calidad significa más datos y algo menos de batería. Se aplica la próxima vez que abras Starless.",
     qualityLow: "Baja",
     qualityNormal: "Normal",
     qualityHigh: "Alta",
 
     normalisation: "Normalizar volumen",
-    normalisationHint: "Iguala el volumen entre canciones para que no te sorprendan los picos.",
+    normalisationHint:
+      "Iguala el volumen entre canciones para que no te sorprendan los picos. Se aplica la próxima vez que abras Starless.",
     crossfade: "Transición entre canciones",
     crossfadeHint:
       "Cuando una canción termina sola, la siguiente empieza esos segundos antes y las dos se mezclan.",
@@ -327,6 +329,11 @@ export const strings = {
 
     startWithWindows: "Iniciar con Windows",
     startWithWindowsHint: "Starless se abre minimizado a la bandeja al arrancar el sistema.",
+    closeToTray: "Al cerrar, seguir en la bandeja",
+    closeToTrayHint:
+      "La X esconde la ventana y la música sigue. Para salir, usa Salir en el ícono de la bandeja.",
+    trayShow: "Mostrar Starless",
+    trayQuit: "Salir",
 
     signedInAs: "Sesión iniciada como",
     signOut: "Cerrar sesión",
@@ -740,13 +747,15 @@ export const strings = {
     colourModeOn: "On",
 
     audioQuality: "Audio quality",
-    audioQualityHint: "Higher quality uses more data and a little more battery.",
+    audioQualityHint:
+      "Higher quality uses more data and a little more battery. Takes effect the next time you open Starless.",
     qualityLow: "Low",
     qualityNormal: "Normal",
     qualityHigh: "High",
 
     normalisation: "Normalise volume",
-    normalisationHint: "Levels the volume across songs so no track jumps out at you.",
+    normalisationHint:
+      "Levels the volume across songs so no track jumps out at you. Takes effect the next time you open Starless.",
     crossfade: "Crossfade",
     crossfadeHint:
       "When a song ends on its own, the next one starts that many seconds early and the two blend.",
@@ -755,6 +764,11 @@ export const strings = {
 
     startWithWindows: "Start with Windows",
     startWithWindowsHint: "Starless opens minimised to the tray when the system starts.",
+    closeToTray: "Keep running in the tray when closed",
+    closeToTrayHint:
+      "The X hides the window and the music keeps going. To leave, use Quit on the tray icon.",
+    trayShow: "Show Starless",
+    trayQuit: "Quit",
 
     signedInAs: "Signed in as",
     signOut: "Sign out",

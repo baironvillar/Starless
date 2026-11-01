@@ -19,12 +19,15 @@ import type { Lang, StringKey } from "../lib/i18n";
 import { SPRING, SPRING_SHEET } from "../lib/motion";
 import {
   ACCENT_DEFAULT,
+  type AudioQuality,
   accentColor,
   applyAccentColor,
   applyEffects,
   applyMenuOpacity,
+  audioQuality,
   CROSSFADE_MAX,
   clearHistory,
+  closeToTray,
   crossfadeSeconds,
   EFFECTS_DEFAULT,
   EFFECTS_QUIET,
@@ -36,12 +39,18 @@ import {
   MENU_OPACITY_MAX,
   MENU_OPACITY_MIN,
   menuOpacity,
+  normalisation,
   setAccentColor,
+  setAudioQuality,
+  setCloseToTray,
   setCrossfadeSeconds,
   setEffect,
   setHistoryEnabled,
   setMenuOpacity,
+  setNormalisation,
+  setStartWithWindows,
   signOut,
+  startWithWindows,
   type Account as UserAccount,
   useEffectsSettings,
 } from "../lib/spotify";
@@ -419,12 +428,23 @@ function Audio({ t }: { t: Record<StringKey, string> }) {
       .catch(() => setCleared(false));
   };
 
+  // These two were drawn and did nothing: the select and the switch kept their
+  // own state, and every song played at librespot's default 160 kbps. Now
+  // they are saved, and the player reads them when it is built.
+  const [quality, changeQuality] = useBackendSetting<AudioQuality>(
+    audioQuality,
+    setAudioQuality,
+    "high",
+  );
+  const [levelled, changeLevelled] = useBackendSetting(normalisation, setNormalisation, false);
+
   return (
     <div className="max-w-[620px]">
       <Group>
         <Row label={t.audioQuality} hint={t.audioQualityHint}>
           <Select
-            defaultValue="high"
+            value={quality ?? "high"}
+            onChange={(value) => changeQuality(value as AudioQuality)}
             options={[
               { value: "low", label: t.qualityLow },
               { value: "normal", label: t.qualityNormal },
@@ -433,7 +453,7 @@ function Audio({ t }: { t: Record<StringKey, string> }) {
           />
         </Row>
         <Row label={t.normalisation} hint={t.normalisationHint}>
-          <Toggle />
+          <Toggle checked={levelled ?? false} onChange={changeLevelled} label={t.normalisation} />
         </Row>
         {/*
           A slider and not a switch: 0 is off, so one control says both whether
@@ -914,6 +934,28 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
 }
 
 function Account({ t, account }: { t: Record<StringKey, string>; account: UserAccount | null }) {
+  // The registry decides, not the switch: in a development build nothing is
+  // written, so the switch draws what came back and does not move.
+  const [atSignIn, setAtSignIn] = useState<boolean | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void startWithWindows()
+      .then((value) => {
+        if (alive) setAtSignIn(value);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const changeAtSignIn = (on: boolean) => {
+    setAtSignIn(on);
+    void setStartWithWindows(on)
+      .then(setAtSignIn)
+      .catch(() => setAtSignIn(!on));
+  };
+  const [toTray, changeToTray] = useBackendSetting(closeToTray, setCloseToTray, true);
+
   return (
     <div className="max-w-[620px]">
       <Group>
@@ -931,7 +973,14 @@ function Account({ t, account }: { t: Record<StringKey, string>; account: UserAc
           </span>
         </Row>
         <Row label={t.startWithWindows} hint={t.startWithWindowsHint}>
-          <Toggle />
+          <Toggle
+            checked={atSignIn ?? false}
+            onChange={changeAtSignIn}
+            label={t.startWithWindows}
+          />
+        </Row>
+        <Row label={t.closeToTray} hint={t.closeToTrayHint}>
+          <Toggle checked={toTray ?? true} onChange={changeToTray} label={t.closeToTray} />
         </Row>
       </Group>
       <div className="mt-5">
@@ -1112,6 +1161,41 @@ function Row({
       <div className="shrink-0">{children}</div>
     </div>
   );
+}
+
+/**
+ * A setting that lives in the backend: read once, written on every change.
+ *
+ * `null` until the read answers, so a control can tell "not known yet" from
+ * the default. A failed read falls back to `fallback` — the backend's own
+ * default — rather than leaving the control stuck on nothing.
+ */
+function useBackendSetting<T>(
+  read: () => Promise<T>,
+  write: (value: T) => Promise<void>,
+  fallback: T,
+): [T | null, (value: T) => void] {
+  const [value, setValue] = useState<T | null>(null);
+  const first = useRef({ read, fallback });
+  useEffect(() => {
+    let alive = true;
+    void first.current
+      .read()
+      .then((answer) => {
+        if (alive) setValue(answer);
+      })
+      .catch(() => {
+        if (alive) setValue(first.current.fallback);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const change = (next: T) => {
+    setValue(next);
+    void write(next).catch(() => {});
+  };
+  return [value, change];
 }
 
 function Select({

@@ -18,7 +18,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# `tray-icon` for the icon in the notification area (`tray.rs`).
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-opener = "2"
 # One Starless at a time. Two copies means two streaming sessions on one account,
 # and that is not a cosmetic duplicate: they compete for the same audio keys and
@@ -94,6 +95,7 @@ windows = { version = "0.62", features = [
     "Media",
     "Media_Playback",
     "Storage_Streams",
+    "Win32_System_Registry",
     "Win32_UI_Shell",
 ] }
 
