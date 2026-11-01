@@ -55,8 +55,10 @@ import {
   jamJoin,
   jamLeave,
   jamQueue,
+  jamSetQueue,
   jamStart,
   jamStatus,
+  jamTrackUid,
   keys,
   type LibrarySort,
   type LibraryView,
@@ -502,6 +504,20 @@ export default function App() {
    * goes to the session, the session knows whose device it is, and the song
    * lands in the queue that both sides read.
    */
+  /**
+   * The Jam as it was on the last render.
+   *
+   * **The same reason as the status, and for the same reason.** The queue that
+   * goes into the Jam is published with a timer, and a subscription that is
+   * torn down and set up again on every poll would cancel the timer before it
+   * ever fires.
+   */
+  const jamRef = useRef<JamSession | null>(null);
+  jamRef.current = jam;
+
+  /**
+   * Put a song in the Jam's shared queue, from the panel's button.
+   */
   const addToJam = useCallback(
     async (track: Track) => {
       if (!jam) return;
@@ -517,6 +533,22 @@ export default function App() {
     },
     [jam],
   );
+
+  /**
+   * Put a song into the Jam's shared queue, without touching the panel.
+   *
+   * **The panel's state belongs to the panel.** It says "adding…" and shows the
+   * failure when the person pressed the button; a song that goes in because the
+   * person played it has no button to press, and a panel that blinks for it
+   * would be lying about what the person asked for.
+   */
+  const publishToJam = useCallback((track: Track) => {
+    const sesion = jamRef.current;
+    if (!sesion) return;
+    void jamAddToQueue(sesion.session_id, track.id).catch((e) => {
+      console.error("Starless: no se pudo mandar la canción al jam", explain(e));
+    });
+  }, []);
 
   /**
    * How the shelf is ordered and drawn, read once at startup for the same reason the
@@ -1210,13 +1242,23 @@ export default function App() {
       // estaba por hablar no habla, y la que hable después es otra.
       intent.current += 1;
       setLoadedTrack(track);
+      /**
+       * **La canción que pone la persona también es del otro lado.**
+       *
+       * En un jam, lo que una persona pone lo ven las dos. La cola compartida
+       * la llena el comando `add_to_queue`, y la canción tiene que ir con el
+       * identificador que le dio el servicio: sin él, el comando entra pero el
+       * servicio lo aplica a la pista que está sonando, y al otro lado le
+       * entra la canción de siempre.
+       */
+      void publishToJam(track);
       playTrack(track).catch((e) => {
         // A refusal that only reaches the console is a refusal the user never sees.
         // The bar shows whatever `status.error` says; this is the console copy.
         console.error("Starless: no se pudo reproducir", explain(e));
       });
     },
-    [moveTo, visibleTracks],
+    [moveTo, visibleTracks, publishToJam],
   );
 
   /**
@@ -1529,6 +1571,56 @@ export default function App() {
   }, [publishTracks]);
 
   /**
+   * Los identificadores que faltan en la cola, de a uno.
+   *
+   * **Sin identificador una canción no entra en la cola compartida**, y el
+   * servicio sólo lo da en el contexto de la pista: hay que pedirlo. La cola
+   * de la app tiene canciones que el servicio todavía no nombró —las que están
+   * en la biblioteca de la persona—.
+   *
+   * **De a uno, con una pausa entre pedidos.** Son viajes al servicio, y el
+   * servicio corta al que pregunta de más.
+   */
+  useEffect(() => {
+    if (!jamRef.current) return;
+    const falta = publishTracks.find((track) => !track.uid);
+    if (!falta) return;
+    const id = window.setTimeout(() => {
+      void jamTrackUid(falta.uri.replace("spotify:track:", ""))
+        .then((uid) => {
+          if (!uid) return;
+          setJamUids((prev) => ({ ...prev, [falta.uri]: uid }));
+        })
+        .catch(() => {});
+    }, 500);
+    return () => window.clearTimeout(id);
+  }, [publishTracks]);
+
+  /**
+   * La cola de este device también se publica en la cola del jam.
+   *
+   * **La lista del jam la llena el comando, no el estado del player.** Medido el
+   * 1 de noviembre de 2026: el estado de Starless tenía 56 pistas y la lista
+   * compartida —la que los dos ven— seguía con 51 y con otras canciones. La
+   * lista la llena el comando `set_queue`, que es el que manda el cliente de
+   * escritorio.
+   *
+   * **Se manda con calma.** La puerta del jam cuenta los pedidos como cuenta
+   * los de la sesión, y una cola que cambia con cada avance llenaría el
+   * servicio de pedidos.
+   */
+  useEffect(() => {
+    const sesion = jamRef.current;
+    if (!sesion) return;
+    if (!publishTracks.length) return;
+    const id = window.setTimeout(() => {
+      void jamSetQueue(sesion.session_id, publishTracks).catch((e) => {
+        console.error("Starless: no se pudo publicar la cola en el jam", explain(e));
+      });
+    }, 1500);
+    return () => window.clearTimeout(id);
+  }, [publishTracks]);
+  /**
    * How many songs of the station's page are still ahead.
    *
    * **The station's count and the panel's list are not the same question.** The
@@ -1559,18 +1651,31 @@ export default function App() {
   const advancedRef = useRef<string | null>(null);
 
   const playDirect = useCallback(
-    (track: Track, at?: number) => {
+    (track: Track, at?: number, alJam = false) => {
       asked.current = track.id;
       moveTo(at ?? visibleTracks.findIndex((item) => item.id === track.id));
       // Un pedido nuevo: lo que estaba en camino deja de mandar.
       intent.current += 1;
       setLoadedTrack(track);
+      /**
+       * **La canción que pone la persona también es del otro lado.**
+       *
+       * En un jam, lo que una persona pone lo ven las dos. La cola compartida
+       * la llena el comando `add_to_queue`, y la canción tiene que ir con el
+       * identificador que le dio el servicio: sin él, el comando entra pero el
+       * servicio lo aplica a la pista que está sonando, y al otro lado le
+       * entra la canción de siempre.
+       *
+       * **Sólo cuando la puso la persona.** Las que llegan del otro lado no se
+       * mandan de vuelta, o el comando cruzaría de ida y vuelta sin parar.
+       */
+      if (alJam) publishToJam(track);
       playTrack(track).catch((e) => {
         advancedRef.current = null;
         console.error("Starless: no se pudo reproducir", explain(e));
       });
     },
-    [moveTo, visibleTracks],
+    [moveTo, visibleTracks, publishToJam],
   );
 
   /**
@@ -2769,18 +2874,24 @@ export default function App() {
       }
       if (command.endpoint === "set_queue" && command.queue?.length) {
         /**
-         * La cola del otro lado es la cola del jam.
+         * La cola del otro lado **no es la cola de esta app**.
          *
-         * **El comando `set_queue` trae la cola completa del otro lado**, con el
-         * identificador que el servicio le dio a cada canción. Es la puerta por
-         * la que la cola compartida se arma de verdad: el servicio no puede
-         * apuntar a una pista que no tiene identificador, y sinSongs que no
-         * puede apuntar no llegan a la cola que los dos ven.
+         * **La cola de la persona sigue siendo la suya.** Abrir un jam no
+         * borra lo que tenía puesto, y lo que el otro lado pone se suma a
+         * ella: reemplazarla por la cola del otro —que es una lista de cientos
+         * de canciones— es la forma de que la persona pierda su cola por
+         * entrar a un jam.
+         *
+         * **Lo que sí se usa de ella son los identificadores.** El comando
+         * `set_queue` trae la cola completa del otro lado con el
+         * identificador que el servicio le dio a cada canción, y ese
+         * identificador es lo que permite apuntar a una pista en la cola
+         * compartida. El backend los anota; acá no hay que hacer nada con la
+         * lista.
          *
          * **Y no se manda de vuelta.** Esta cola llegó porque el otro lado la
          * mandó; devolverla sería un viaje de ida y vuelta sin parar.
          */
-        setQueueOverride(command.queue.map((song) => song.track));
         return;
       }
       if (command.endpoint === "add_to_queue" && command.track) {

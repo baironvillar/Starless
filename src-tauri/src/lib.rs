@@ -1167,6 +1167,72 @@ async fn jam_add_to_queue(
     })?
 }
 
+/// El identificador que el servicio le dio a una pista.
+///
+/// **El servicio no reconoce una pista por su URI.** La reconoce por el id que
+/// él le dio cuando la metió en un contexto, y ese id es lo que hace que la
+/// canción entre en la cola compartida.
+///
+/// **Se pregunta una vez por pista y queda anotado.** La cola de la app tiene
+/// canciones que el servicio todavía no nombró —las que están en la biblioteca
+/// de la persona—, y sin su identificador no entran en la lista que los dos
+/// ven.
+#[tauri::command]
+async fn jam_track_uid(app: AppHandle, track_id: String) -> Result<Option<String>, String> {
+    let session = ready_session(&app).await?;
+    let uri = format!("spotify:track:{track_id}");
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let uid = spclient::state::uid_de_la_pista(&session, &uri);
+        if let Some(uid) = &uid {
+            playback::track_uids().remember(&uri, uid);
+        }
+        Ok(uid)
+    })
+    .await
+    .map_err(|e| {
+        eprintln!("Starless [command_failed]: {e}");
+        "command_failed".to_string()
+    })?
+}
+
+/// Publicar la cola de este device en la cola compartida del jam.
+///
+/// **La lista del jam la llena el comando, no el estado del player.** Medido el
+/// 1 de noviembre de 2026: el estado de Starless tenía 56 pistas y la lista
+/// compartida seguía con 51 y con otras canciones. El comando `set_queue` es lo
+/// que la llena, y es lo que manda el cliente de escritorio.
+///
+/// **La cola es la de la app.** Lo que la persona eligió y lo que se agregó
+/// después; el contexto de autoplay es la estación que armó el servicio y no es
+/// lo que la persona puso.
+#[tauri::command]
+async fn jam_set_queue(
+    app: AppHandle,
+    session_id: String,
+    tracks: Vec<PublishTrack>,
+) -> Result<(), String> {
+    let session = ready_session(&app).await?;
+
+    let pistas: Vec<(String, String)> = tracks
+        .into_iter()
+        .map(|track| (track.uri, track.uid))
+        .filter(|(uri, _)| uri.starts_with("spotify:track:"))
+        .collect();
+    if pistas.is_empty() {
+        return Ok(());
+    }
+
+    tauri::async_runtime::spawn_blocking(move || {
+        spclient::jam_set_queue(&session, &session_id, &pistas)
+    })
+    .await
+    .map_err(|e| {
+        eprintln!("Starless [command_failed]: {e}");
+        "command_failed".to_string()
+    })?
+}
+
 /// Una pista de la cola que la app va a publicar.
 ///
 /// **El `uid` es lo que decide si la pista llega a la cola compartida.** El
@@ -2172,6 +2238,8 @@ pub fn run() {
             jam_queue,
             jam_leave,
             jam_add_to_queue,
+            jam_set_queue,
+            jam_track_uid,
             set_publish_queue,
             radio_start,
             radio_more,

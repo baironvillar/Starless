@@ -498,6 +498,38 @@ export async function jamAddToQueue(sessionId: string, trackId: string): Promise
 }
 
 /**
+ * Publish this device's queue into the shared queue of the Jam.
+ *
+ * **The shared queue is filled by the command, not by the player state.** Measured
+ * on November 1st, 2026: the player state of Starless held 56 songs and the Jam's
+ * list —`spotify:list:jam-list:<session_id>`— still held 51, and other songs.
+ * What fills it is the `set_queue` command, which is what the desktop client sends.
+ *
+ * **Each song goes with the id the service gave it.** Without that id the service
+ * cannot point at it, and the song does not enter the queue both sides read.
+ */
+export async function jamSetQueue(
+  sessionId: string,
+  tracks: { uri: string; uid: string }[],
+): Promise<void> {
+  return invoke<void>("jam_set_queue", { sessionId, tracks });
+}
+
+/**
+ * The id the service gave a song.
+ *
+ * **The service does not recognize a song by its URI**: it recognizes it by the
+ * `uid` it assigned inside a context, and there is nowhere else to ask for it.
+ *
+ * It is asked once per song and it is remembered, so the queue of the app —which
+ * holds songs the service has not named yet, the ones in the person's own
+ * library— gets complete.
+ */
+export async function jamTrackUid(trackId: string): Promise<string | null> {
+  return invoke<string | null>("jam_track_uid", { trackId });
+}
+
+/**
  * The queue that is coming, so the service knows what this player will play.
  *
  * **The shared queue of a Jam is this queue.** The Jam's queue is not a list the

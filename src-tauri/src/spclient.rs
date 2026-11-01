@@ -2744,6 +2744,22 @@ pub fn jam_add_to_queue_with_uid(
     SpotifyId::from_base62(track_id).map_err(|_| "bad_track_id".to_string())?;
     let uri = format!("spotify:track:{track_id}");
 
+    // **Sin `uid` el comando se aplica a la pista que está sonando.** Es lo que
+    // se midió: el comando contestaba `SUCCESS` y la lista compartida no
+    // cambiaba. El identificador se pide antes de mandar el comando: es un
+    // viaje al servicio, y es lo que decide si la canción es la correcta.
+    let uid = match uid {
+        Some(uid) if !uid.is_empty() => Some(uid.to_owned()),
+        _ => {
+            let pedido = crate::spclient::state::uid_de_la_pista(session, &uri);
+            if let Some(pedido) = &pedido {
+                crate::playback::track_uids().remember(&uri, pedido);
+            }
+            pedido
+        }
+    };
+    let uid = uid.as_deref();
+
     let device = session.device_id().to_owned();
     let route = format!("/social-connect/v2/sessions/{session_id}/commands/from/{device}");
     let body = jam_command_body_with_track(
@@ -2874,6 +2890,170 @@ fn jam_command_body_with_track(
     })
     .to_string()
 }
+
+/// Publicar la cola de este device en la cola compartida del jam.
+///
+/// **La cola compartida la llena la puerta de comandos, no el estado del player.**
+/// Medido el 1 de noviembre de 2026: Starless publicaba su estado de player con
+/// 56 pistas y la lista del jam —`spotify:list:jam-list:<session_id>`— seguía
+/// con 51 y con otras canciones. Lo que la llena es el comando `set_queue`, que
+/// es el que manda el cliente de escritorio.
+///
+/// **Las pistas van con su `uid`.** Sin el identificador que el servicio les
+/// dio, el comando entra pero el servicio no puede apuntar a ninguna: es lo que
+/// se midió con `add_to_queue`, y es lo mismo acá.
+///
+/// **La cola se manda una sola vez por cambio.** La puerta del jam cuenta los
+/// pedidos como cuenta los de la sesión, y contestar `429` es la forma de que
+/// la cola compartida deje de existir.
+pub fn jam_set_queue(
+    session: &Session,
+    session_id: &str,
+    tracks: &[(String, String)],
+) -> Result<(), String> {
+    // **Las pistas sin identificador no entran en la lista.** Se pide el que
+    // falta y queda anotado, con un tope: son viajes al servicio, y el
+    // servicio corta al que pregunta de más. El tope se repone en la llamada
+    // siguiente, así que la cola entera se va completando.
+    let mut pistas: Vec<(String, String)> = tracks.to_vec();
+    let mut pedidos = 0;
+    for (uri, uid) in pistas.iter_mut() {
+        if !uid.is_empty() {
+            continue;
+        }
+        // **El identificador que ya se conoce no se vuelve a pedir.** El
+        // registro es global y guarda lo que el servicio dijo de cada pista: sin
+        // estalookup, cada vuelta volvería a preguntar lo mismo y el servicio
+        // termina cortando al que pregunta de más.
+        if let Some(conocido) = crate::playback::track_uids().get(uri) {
+            if !conocido.is_empty() {
+                *uid = conocido;
+                continue;
+            }
+        }
+        if pedidos >= MAX_UID_PEDIDOS {
+            break;
+        }
+        pedidos += 1;
+        if let Some(nuevo) = crate::spclient::state::uid_de_la_pista(session, uri) {
+            *uid = nuevo.clone();
+            crate::playback::track_uids().remember(uri, &nuevo);
+        }
+    }
+
+    let device = session.device_id().to_owned();
+    let route = format!("/social-connect/v2/sessions/{session_id}/commands/from/{device}");
+    let body = jam_set_queue_body(&pistas, &device);
+
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        reqwest::header::CONTENT_TYPE,
+        reqwest::header::HeaderValue::from_static("application/json"),
+    );
+
+    let owned = session.clone();
+    let answer = call(session, async move {
+        owned
+            .spclient()
+            .request(
+                &reqwest::Method::POST,
+                &route,
+                Some(headers),
+                Some(body.as_bytes()),
+            )
+            .await
+            .map_err(|e| {
+                log::error!("spclient: no se pudo mandar la cola al jam: {e}");
+                net_code(&e)
+            })
+    })?;
+
+    let status = serde_json::from_slice::<serde_json::Value>(&answer)
+        .ok()
+        .and_then(|v| v.get("status").and_then(|s| s.as_str()).map(str::to_owned));
+
+    match status.as_deref() {
+        Some("RECOVERED") | Some("SUCCESS") => {
+            log::info!("jam: la cola de este device se publicó en el jam");
+            Ok(())
+        }
+        Some(other) => {
+            log::warn!("spclient: el jam contestó {other} al comando de la cola");
+            Err("jam_command_rejected".to_string())
+        }
+        None => {
+            log::error!("spclient: el jam contestó sin estado al comando de la cola");
+            Err("bad_response".to_string())
+        }
+    }
+}
+
+/// El cuerpo del comando `set_queue`: las canciones que van después.
+///
+/// **El `queue_revision` va en cero.** Es la versión de la cola que el cliente
+/// de escritorio manda para que un device no pise lo que otro acaba de
+/// escribir, y no hay un número que sepa: lo que se manda es la cola entera, y
+/// el servicio la acomoda.
+fn jam_set_queue_body(tracks: &[(String, String)], device: &str) -> String {
+    let now = now_millis();
+
+    let siguientes: Vec<serde_json::Value> = tracks
+        .iter()
+        .map(|(uri, uid)| {
+            let mut pista = serde_json::Map::new();
+            pista.insert("uri".into(), serde_json::Value::String(uri.clone()));
+            if !uid.is_empty() {
+                pista.insert("uid".into(), serde_json::Value::String(uid.clone()));
+            }
+            serde_json::Value::Object(pista)
+        })
+        .collect();
+
+    let mut command = serde_json::Map::new();
+    command.insert(
+        "endpoint".into(),
+        serde_json::Value::String("set_queue".to_owned()),
+    );
+    command.insert("next_tracks".into(), serde_json::Value::Array(siguientes));
+    command.insert("prev_tracks".into(), serde_json::Value::Array(Vec::new()));
+    command.insert(
+        "queue_revision".into(),
+        serde_json::Value::String("0".to_owned()),
+    );
+    command.insert(
+        "options".into(),
+        serde_json::json!({
+            "override_restrictions": false,
+            "only_for_local_device": false,
+            "system_initiated": false,
+        }),
+    );
+    command.insert(
+        "logging_params".into(),
+        serde_json::json!({
+            "command_initiated_time": now,
+            "command_received_time": now,
+            "page_instance_ids": [],
+            "interaction_ids": [],
+            "device_identifier": device,
+            "command_id": jam_hex_id(),
+        }),
+    );
+
+    serde_json::json!({
+        "command": serde_json::Value::Object(command),
+        "connection_type": "wlan",
+        "intent_id": jam_hex_id(),
+    })
+    .to_string()
+}
+
+/// Cuántos identificadores se piden en una vuelta.
+///
+/// **Son viajes al servicio y el servicio corta al que pregunta de más.** Con
+/// ocho por vuelta la cola entera se completa en unas vueltas, y la cola
+/// compartida se va llenando de a poco en vez de de golpe.
+const MAX_UID_PEDIDOS: usize = 8;
 
 /// Un identificador hexadecimal de 32 caracteres, que es lo que el servicio
 /// espera en el `intent_id` y en el `command_id`.

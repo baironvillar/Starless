@@ -514,7 +514,37 @@ saber qué publicó la app y qué quedó reconocido.
 Starless lleva un registro `uri → uid`, lo publica con la cola, y lo manda en el
 comando de agregar cuando lo conoce.
 
-### La cola compartida es lo que publica el anfitrión, y el servicio lo borra
+### La cola compartida la llena el comando, no el estado del player
+
+**Medido el 1 de noviembre de 2026**, con las dos personas en el jam y la app
+publicando su estado de player:
+
+| | |
+| --- | --- |
+| el estado que publica Starless | 56 pistas, la primera es la que suena |
+| la cola compartida (`jam-list`) | 51 canciones, **y no son las de Starless** |
+
+La lista no se movió en toda la prueba: las canciones que puso Starless no
+aparecieron nunca del otro lado, y la lista siguió con las del otro device.
+
+**Lo que la llena es el comando `set_queue`**, que es lo que manda el cliente de
+escritorio: las canciones van en `next_tracks`, cada una con su `uid`. Y lo que
+la suma es `add_to_queue`, que ya se mandaba —pero sin `uid` cuando la
+canción no lo tenía, y sin `uid` el servicio lo aplica a la pista que está
+sonando en vez de a la que se mandó.
+
+**Los `uid` hay que pedirlos.** El servicio sólo los da en el contexto de la
+pista, y la cola de la app tiene canciones que el servicio todavía no nombró:
+las de la biblioteca de la persona. Se piden de a uno, con una pausa entre
+pedidos, y quedan anotados.
+
+**Y la cola que manda el otro lado no es la cola de esta app.** El comando
+`set_queue` del otro lado trae su cola entera —cientos de canciones—, y
+reemplazar la cola de la persona con esa es la forma de que pierda lo que tenía
+puesto por entrar a un jam. La cola de la persona sigue siendo la suya; lo que
+el otro pone se suma.
+
+## La cola compartida es lo que publica el anfitrión, y el servicio lo borra
 
 **Medido el 31 de octubre de 2026**, con dos personas en el jam. El servicio
 arma la cola compartida con lo que el último device publica, y **deja afuera las
@@ -1090,6 +1120,12 @@ Honesto, porque buena parte de esto no se comprobó:
   con `SUCCESS`. **Lo que falta es que las canciones de Starless entren en la
   cola compartida con el `uid` que el servicio les dio**: sin él, el servicio no
   las reconoce, y la cola compartida sigue siendo la del otro lado.
+- **Lo que el otro lado pone cuando es una playlist.** El comando `play` del
+  otro lado trae el contexto, y hoy la app sólo entiende el contexto de una
+  canción: si la otra persona pone una playlist, lo que tiene que sonar es la
+  playlist —con sus canciones en la cola— y, si la puso barajada, barajada.
+  **La parte de "en torno a la canción que puso" es el autoplay**, que es lo que
+  el servicio arma solo cuando el contexto es de una canción.
 - **Cómo se modifica una sesión.** `GET`, `POST`, `PUT` y `PATCH` sobre
   `/social-connect/v2/sessions/<id>` contestan `405`: el verbo es otro, y
   probablemente sea un `POST` con el cuerpo del proto. Los permisos
