@@ -21,6 +21,8 @@ mod report;
 mod selftest;
 mod settings;
 mod spclient;
+mod startup;
+mod tray;
 mod voice;
 
 use std::collections::HashMap;
@@ -790,7 +792,7 @@ fn auth_status(session_state: State<SessionState>) -> AuthStatus {
 ///
 /// From the backend, not from the webview: the window permissions this needs are
 /// not in `capabilities/default.json`, and the backend already has the handle.
-fn bring_to_front(app: &AppHandle) {
+pub(crate) fn bring_to_front(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
         let _ = window.show();
@@ -1701,8 +1703,64 @@ fn set_volume(state: State<PlaybackState>, volume: u16) {
 /// What Windows shows on its media card, and whether the media keys answer.
 /// `None` hides the card: nothing is loaded.
 #[tauri::command]
-fn media_session(state: State<media_keys::MediaKeys>, now: Option<media_keys::NowPlaying>) {
+fn media_session(
+    app: AppHandle,
+    state: State<media_keys::MediaKeys>,
+    now: Option<media_keys::NowPlaying>,
+) {
+    // The tray's first line is the same card, smaller.
+    tray::set_playing(&app, now.clone());
     state.update(now);
+}
+
+/// The tray menu's words, in the language the app is in. See `tray.rs`.
+#[tauri::command]
+fn tray_labels(app: AppHandle, labels: tray::TrayLabels) {
+    tray::set_labels(&app, labels);
+}
+
+/// Low, normal or high. Applies the next time the player is built — the next
+/// launch — because it is part of the player's configuration.
+#[tauri::command]
+fn audio_quality() -> &'static str {
+    settings::saved_audio_quality()
+}
+
+#[tauri::command]
+fn set_audio_quality(quality: String) {
+    settings::save_audio_quality(&quality);
+}
+
+#[tauri::command]
+fn normalisation() -> bool {
+    settings::saved_normalisation()
+}
+
+#[tauri::command]
+fn set_normalisation(on: bool) {
+    settings::save_normalisation(on);
+}
+
+#[tauri::command]
+fn close_to_tray() -> bool {
+    settings::saved_close_to_tray()
+}
+
+#[tauri::command]
+fn set_close_to_tray(on: bool) {
+    settings::save_close_to_tray(on);
+}
+
+#[tauri::command]
+fn start_with_windows() -> bool {
+    startup::enabled()
+}
+
+/// Answers with what the registry says afterwards, which is what the switch
+/// draws: in a development build it never changes (see `startup::set`).
+#[tauri::command]
+fn set_start_with_windows(on: bool) -> bool {
+    startup::set(on)
 }
 
 /// How opaque the menus are, as a percentage. The default is opaque, not 55%.
@@ -1868,6 +1926,19 @@ pub fn run() {
         // UI. An app that plays music must not install over itself mid-track, so
         // Starless asks instead — see `update.rs`.
         .plugin(tauri_plugin_updater::Builder::new().build())
+        // The close button, when the person chose the tray: the window goes,
+        // the app and the music stay. Alt+F4 and the button in the window's
+        // own controls both arrive here, so both do the same thing.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event
+                && window.label() == "main"
+                && settings::saved_close_to_tray()
+                && tray::exists(window.app_handle())
+            {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
         .manage(SessionState::default())
         .manage(PlaybackState::default())
         .manage(DjState::default())
@@ -1929,6 +2000,17 @@ pub fn run() {
 
             // The media keys answer from here on, whatever the window is doing.
             app.manage(media_keys::MediaKeys::start(handle.clone()));
+
+            // The tray, and then the window's first decision: a launch at
+            // sign-in starts in it. Only with a tray to come back from — a
+            // hidden window with no icon is a process nobody can reach.
+            tray::install(&handle);
+            if startup::launched_minimized()
+                && tray::exists(&handle)
+                && let Some(window) = handle.get_webview_window("main")
+            {
+                let _ = window.hide();
+            }
 
             // **La conexión, cortada a propósito.**
             //
@@ -2050,6 +2132,15 @@ pub fn run() {
             seek_playback,
             set_volume,
             media_session,
+            tray_labels,
+            audio_quality,
+            set_audio_quality,
+            normalisation,
+            set_normalisation,
+            close_to_tray,
+            set_close_to_tray,
+            start_with_windows,
+            set_start_with_windows,
             menu_opacity,
             set_menu_opacity,
             crossfade_seconds,

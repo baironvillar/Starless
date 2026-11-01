@@ -70,6 +70,9 @@ src-tauri/src/
   models.rs               las formas que el frontend ve
   playback.rs             el player de librespot y el volumen
   voice.rs                la voz del DJ: el sink propio y el audio de la narración
+  media_keys.rs           las teclas multimedia y la tarjeta de medios de Windows
+  tray.rs                 el ícono de la bandeja y su menú
+  startup.rs              "Iniciar con Windows": el valor en la clave Run
   report.rs               detección de crash, limpiado y envío
   settings.rs             lo que sobrevive a un reinicio
   logging.rs              el log local con rotación

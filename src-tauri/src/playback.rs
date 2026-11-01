@@ -17,7 +17,7 @@ use std::sync::{
 use librespot_core::{Session, SpotifyId, SpotifyUri};
 use librespot_metadata::{Metadata, Track as MetaTrack, audio::AudioFileFormat};
 use librespot_playback::{
-    config::{AudioFormat, PlayerConfig},
+    config::{AudioFormat, Bitrate, PlayerConfig},
     mixer::VolumeGetter,
     player::{Player, PlayerEvent},
 };
@@ -293,6 +293,18 @@ pub fn warm_audio_device(app: &AppHandle, session: Session) {
 fn build_player(app: &AppHandle, state: &PlaybackState, session: &Session) {
     let mut config = PlayerConfig::default();
     config.position_update_interval = Some(std::time::Duration::from_millis(POSITION_INTERVAL_MS));
+    // **Leídos acá y sólo acá: el player se arma una vez.** La calidad y la
+    // normalización viajan dentro de la configuración que el player recibe al
+    // nacer, y no hay forma de cambiarlas después. Rehacer el player para
+    // aplicarlas es abrir el dispositivo de audio otra vez —y el player es su
+    // dueño—, así que un cambio en Ajustes se aplica la próxima vez que se
+    // abre la app, y el texto del ajuste lo dice.
+    config.bitrate = match crate::settings::saved_audio_quality() {
+        "low" => Bitrate::Bitrate96,
+        "normal" => Bitrate::Bitrate160,
+        _ => Bitrate::Bitrate320,
+    };
+    config.normalisation = crate::settings::saved_normalisation();
 
     // La voz del DJ lee esta misma atenuación, así que el volumen de la app
     // es el volumen de la voz. Sin esto, mutear la app callaba la música y

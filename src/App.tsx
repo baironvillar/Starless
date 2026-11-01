@@ -88,6 +88,7 @@ import {
   trackArtists,
   trackFromPlay,
   trackListPrefs,
+  trayLabels,
   useAccount,
   useEffectsSettings,
   useHomeStats,
@@ -645,6 +646,19 @@ export default function App() {
   const queryClient = useQueryClient();
   const t = strings[lang];
   setErrorLanguage(lang);
+
+  // The tray menu is built in Rust, and its words live here with the others:
+  // sent on start, and again whenever the language changes.
+  useEffect(() => {
+    void trayLabels({
+      play: t.play,
+      pause: t.pause,
+      next: t.next,
+      previous: t.previous,
+      show: t.trayShow,
+      quit: t.trayQuit,
+    }).catch(() => {});
+  }, [t]);
 
   // These only ever run inside `AuthGate`'s children, which means they are never
   // mounted before there is a session — so no hook needs to ask "am I allowed to

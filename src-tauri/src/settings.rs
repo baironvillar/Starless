@@ -102,7 +102,30 @@ pub struct Settings {
     /// build knows — and a fourth effect should not need a fourth copy of it.
     #[serde(default)]
     pub effects: BTreeMap<String, String>,
+
+    /// The streaming quality, as one of [`AUDIO_QUALITIES`]. Read when the
+    /// player is built, so a change applies on the next launch.
+    #[serde(default)]
+    pub audio_quality: Option<String>,
+
+    /// Whether songs are levelled to the same loudness. Same moment as the
+    /// quality: it is part of the player's configuration.
+    #[serde(default)]
+    pub normalisation: Option<bool>,
+
+    /// Whether the window's close button hides Starless in the tray instead of
+    /// quitting it.
+    #[serde(default)]
+    pub close_to_tray: Option<bool>,
 }
+
+/// Low, normal and high: 96, 160 and 320 kbps.
+pub const AUDIO_QUALITIES: [&str; 3] = ["low", "normal", "high"];
+
+/// High, because the only accounts that can play at all are Premium, and every
+/// Premium account can stream 320. librespot's own default is 160, which is
+/// what every song played at before this setting did anything.
+pub const DEFAULT_AUDIO_QUALITY: &str = "high";
 
 /// Read-modify-write, so the day a third field appears this keeps working
 /// without anyone having to remember to touch it.
@@ -420,6 +443,49 @@ pub fn save_history_enabled(enabled: bool) {
 /// Whether the history is kept: on until the person says otherwise.
 pub fn saved_history_enabled() -> bool {
     load().history_enabled.unwrap_or(true)
+}
+
+/// Remember the streaming quality. Refuses anything outside [`AUDIO_QUALITIES`],
+/// like the library sort.
+pub fn save_audio_quality(quality: &str) {
+    if !AUDIO_QUALITIES.contains(&quality) {
+        log::warn!("calidad de audio ignorada, no es una calidad conocida: {quality}");
+        return;
+    }
+    if load().audio_quality.as_deref() == Some(quality) {
+        return;
+    }
+    update(|settings| settings.audio_quality = Some(quality.to_string()));
+}
+
+pub fn saved_audio_quality() -> &'static str {
+    known_or_default(load().audio_quality.as_deref(), &AUDIO_QUALITIES, DEFAULT_AUDIO_QUALITY)
+}
+
+pub fn save_normalisation(on: bool) {
+    if load().normalisation == Some(on) {
+        return;
+    }
+    update(|settings| settings.normalisation = Some(on));
+}
+
+/// Off until the person turns it on: it changes how every song sounds, and
+/// it is what the app did before the switch was wired.
+pub fn saved_normalisation() -> bool {
+    load().normalisation.unwrap_or(false)
+}
+
+pub fn save_close_to_tray(on: bool) {
+    if load().close_to_tray == Some(on) {
+        return;
+    }
+    update(|settings| settings.close_to_tray = Some(on));
+}
+
+/// On by default: a music app whose close button stops the music is the one
+/// people learn to minimise instead of closing.
+pub fn saved_close_to_tray() -> bool {
+    load().close_to_tray.unwrap_or(true)
 }
 
 /// The chosen crossfade in seconds, or 0 — off — when it was never chosen.
