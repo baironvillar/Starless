@@ -18,6 +18,9 @@ import { PlaylistTile } from "./PlaylistTile";
 const RAIL_PX = 72;
 const PANEL_PX = 240;
 
+/** A piece's place in the cascade a shape arrives in (`.cascade` in index.css). */
+const at = (index: number) => ({ "--i": index }) as React.CSSProperties;
+
 import { SHEET_EXIT, SPRING_SHEET } from "../lib/motion";
 
 type LibrarySidebarProps = {
@@ -185,15 +188,12 @@ export function LibrarySidebar({
               key={rail ? "rail" : "panel"}
               inert={!shown}
               aria-hidden={!shown}
+              // The arriving layer is visible at once and its pieces cascade in
+              // (`.cascade` in index.css); the leaving one fades out as a whole.
+              data-shown={shown}
               style={{ width: rail ? RAIL_PX : PANEL_PX }}
               className={`absolute inset-y-0 left-0 flex flex-col transition-opacity ease-[var(--ease-glass)] ${
-                shown
-                  ? rail
-                    ? // 60 ms and not 120: measured, the longer wait left both
-                      // layers near zero for a moment — an empty pane of glass.
-                      "opacity-100 delay-[60ms] duration-200"
-                    : "opacity-100 delay-[60ms] duration-[240ms]"
-                  : "pointer-events-none opacity-0 delay-0 duration-150"
+                shown ? "opacity-100 duration-100" : "pointer-events-none opacity-0 duration-150"
               }`}
             >
               {/* The title is alone in here on purpose. Sign-out used to sit next to it,
@@ -207,7 +207,8 @@ export function LibrarySidebar({
                 }`}
               >
                 <div
-                  className={`flex items-center gap-2 ${collapsed ? "w-full justify-center" : ""}`}
+                  style={at(0)}
+                  className={`cascade flex items-center gap-2 ${collapsed ? "w-full justify-center" : ""}`}
                 >
                   {!collapsed && (
                     <h2 className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-tight">
@@ -248,7 +249,7 @@ export function LibrarySidebar({
           away from being wide enough to answer.
         */}
                 {!collapsed && (
-                  <div className="flex items-center justify-end gap-1.5">
+                  <div style={at(1)} className="cascade flex items-center justify-end gap-1.5">
                     <button
                       type="button"
                       onClick={onNewPlaylist}
@@ -266,7 +267,8 @@ export function LibrarySidebar({
 
               {account && (
                 <div
-                  className={`flex shrink-0 items-center ${
+                  style={at(2)}
+                  className={`cascade flex shrink-0 items-center ${
                     collapsed ? "justify-center px-2 pb-3" : "gap-3 px-4 pb-4"
                   }`}
                 >
@@ -324,59 +326,66 @@ export function LibrarySidebar({
       */}
                 {!collapsed && view === "grid" ? (
                   <div className="grid grid-cols-2 gap-0.5 px-1 pb-1">
-                    <PlaylistTile
-                      title={t.likedSongs}
-                      artwork={<LikedCover />}
-                      active={activeId === "liked"}
-                      onOpen={() => onSelect("liked")}
-                    />
-                    {playlists.map((playlist) => (
+                    {/* The cascade lives on a wrapper and not on the tile: the
+                        tile's own colour transition would be overwritten. */}
+                    <div style={at(3)} className="cascade">
                       <PlaylistTile
-                        key={playlist.id}
-                        title={playlist.name}
-                        imageUrl={coverImage(playlist.images)?.url ?? null}
-                        // The DJ is drawn, not photographed: the service sends no cover for
-                        // its card, and the rail would otherwise show an empty square.
-                        artwork={isDjCard(playlist) ? <DjArtwork /> : undefined}
-                        active={activeId === playlist.id}
-                        onOpen={() => onSelect(playlist.id)}
-                        /*
+                        title={t.likedSongs}
+                        artwork={<LikedCover />}
+                        active={activeId === "liked"}
+                        onOpen={() => onSelect("liked")}
+                      />
+                    </div>
+                    {playlists.map((playlist, index) => (
+                      <div key={playlist.id} style={at(4 + index)} className="cascade">
+                        <PlaylistTile
+                          title={playlist.name}
+                          imageUrl={coverImage(playlist.images)?.url ?? null}
+                          // The DJ is drawn, not photographed: the service sends no cover for
+                          // its card, and the rail would otherwise show an empty square.
+                          artwork={isDjCard(playlist) ? <DjArtwork /> : undefined}
+                          active={activeId === playlist.id}
+                          onOpen={() => onSelect(playlist.id)}
+                          /*
                 Nothing to warm up for a card: the DJ's songs are not in the
                 playlist, so asking for them early would ask for nothing.
                 */
-                        onPrefetch={
-                          onPrefetch && !isDjCard(playlist)
-                            ? () => onPrefetch(playlist.id)
-                            : undefined
-                        }
-                      />
+                          onPrefetch={
+                            onPrefetch && !isDjCard(playlist)
+                              ? () => onPrefetch(playlist.id)
+                              : undefined
+                          }
+                        />
+                      </div>
                     ))}
                   </div>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => onSelect("liked")}
-                    title={t.likedSongs}
-                    aria-label={t.likedSongs}
-                    className={`relative flex w-full shrink-0 items-center rounded-[14px] text-left transition-colors duration-200 ${
-                      collapsed ? "justify-center py-1" : "gap-3 px-2 py-2"
-                    } ${activeId === "liked" ? "bg-white/12" : "hover:bg-white/6"}`}
-                  >
-                    {mark(activeId === "liked")}
-                    <span className="size-9 shrink-0 overflow-hidden rounded-[9px]">
-                      <LikedCover />
-                    </span>
-                    {!collapsed && (
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] font-semibold">
-                          {t.likedSongs}
-                        </span>
-                        <span className="tabular block truncate text-[12px] text-ink-muted">
-                          {likedCount !== null ? `${likedCount} ${t.songs}` : t.loading}
-                        </span>
+                  <div style={at(3)} className="cascade w-full">
+                    <button
+                      type="button"
+                      onClick={() => onSelect("liked")}
+                      title={t.likedSongs}
+                      aria-label={t.likedSongs}
+                      className={`relative flex w-full shrink-0 items-center rounded-[14px] text-left transition-colors duration-200 ${
+                        collapsed ? "justify-center py-1" : "gap-3 px-2 py-2"
+                      } ${activeId === "liked" ? "bg-white/12" : "hover:bg-white/6"}`}
+                    >
+                      {mark(activeId === "liked")}
+                      <span className="size-9 shrink-0 overflow-hidden rounded-[9px]">
+                        <LikedCover />
                       </span>
-                    )}
-                  </button>
+                      {!collapsed && (
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[13px] font-semibold">
+                            {t.likedSongs}
+                          </span>
+                          <span className="tabular block truncate text-[12px] text-ink-muted">
+                            {likedCount !== null ? `${likedCount} ${t.songs}` : t.loading}
+                          </span>
+                        </span>
+                      )}
+                    </button>
+                  </div>
                 )}
 
                 {/*
@@ -431,54 +440,58 @@ export function LibrarySidebar({
           at 72px there is no room to tell a row from a tile.
         */}
                 {(collapsed || view === "list") &&
-                  playlists.map((playlist) => {
+                  playlists.map((playlist, index) => {
                     const cover = coverImage(playlist.images);
                     const selected = activeId === playlist.id;
                     /* Nothing to warm up for a card: the DJ's songs are not in the
                 playlist, so asking for them early would ask for nothing. */
                     const warm = isDjCard(playlist) ? undefined : () => onPrefetch?.(playlist.id);
                     return (
-                      <button
-                        key={playlist.id}
-                        type="button"
-                        onClick={() => onSelect(playlist.id)}
-                        onPointerEnter={() => warm?.()}
-                        onFocus={() => warm?.()}
-                        title={playlist.name}
-                        className={`relative flex w-full shrink-0 items-center rounded-[14px] text-left transition-colors duration-200 ${
-                          collapsed ? "justify-center py-1" : "gap-3 px-2 py-2"
-                        } ${selected ? "bg-white/12" : "hover:bg-white/6"}`}
-                      >
-                        {mark(selected)}
-                        {isDjCard(playlist) ? (
-                          // The DJ has no cover: the service draws its card and sends no
-                          // picture for it. An empty square in the rail is a cover that
-                          // failed to load, and this one did not fail — it was never there.
-                          <span className="relative size-9 shrink-0 overflow-hidden rounded-[9px]">
-                            <DjArtwork />
-                          </span>
-                        ) : cover ? (
-                          <img
-                            src={cover.url}
-                            alt=""
-                            loading="lazy"
-                            className="size-9 shrink-0 rounded-[9px] object-cover"
-                          />
-                        ) : (
-                          <span className="size-9 shrink-0 rounded-[9px] bg-white/8" aria-hidden />
-                        )}
-                        {!collapsed && (
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[13px] font-medium">
-                              {playlist.name}
+                      <div key={playlist.id} style={at(4 + index)} className="cascade w-full">
+                        <button
+                          type="button"
+                          onClick={() => onSelect(playlist.id)}
+                          onPointerEnter={() => warm?.()}
+                          onFocus={() => warm?.()}
+                          title={playlist.name}
+                          className={`relative flex w-full shrink-0 items-center rounded-[14px] text-left transition-colors duration-200 ${
+                            collapsed ? "justify-center py-1" : "gap-3 px-2 py-2"
+                          } ${selected ? "bg-white/12" : "hover:bg-white/6"}`}
+                        >
+                          {mark(selected)}
+                          {isDjCard(playlist) ? (
+                            // The DJ has no cover: the service draws its card and sends no
+                            // picture for it. An empty square in the rail is a cover that
+                            // failed to load, and this one did not fail — it was never there.
+                            <span className="relative size-9 shrink-0 overflow-hidden rounded-[9px]">
+                              <DjArtwork />
                             </span>
-                            {/* No song count here on purpose. The rail is for finding the
+                          ) : cover ? (
+                            <img
+                              src={cover.url}
+                              alt=""
+                              loading="lazy"
+                              className="size-9 shrink-0 rounded-[9px] object-cover"
+                            />
+                          ) : (
+                            <span
+                              className="size-9 shrink-0 rounded-[9px] bg-white/8"
+                              aria-hidden
+                            />
+                          )}
+                          {!collapsed && (
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-[13px] font-medium">
+                                {playlist.name}
+                              </span>
+                              {/* No song count here on purpose. The rail is for finding the
                         playlist by name, and a number is one more line to read past
                         between two covers. The shelf over there is where the count
                         belongs. */}
-                          </span>
-                        )}
-                      </button>
+                            </span>
+                          )}
+                        </button>
+                      </div>
                     );
                   })}
               </nav>
