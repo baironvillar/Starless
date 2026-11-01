@@ -992,6 +992,16 @@ export default function App() {
   // changes when the user presses something is a timer that never earns its keep.
   const [status, setStatus] = useState<PlaybackStatus | null>(null);
   /**
+   * The status as it was on the last render.
+   *
+   * **The listener of the Jam reads it, and the listener does not re-subscribe
+   * for it.** A command that arrives while the state moves —a song ending, a
+   * volume change— would be lost if the subscription were torn down and set up
+   * again on every change of the status.
+   */
+  const statusRef = useRef<PlaybackStatus | null>(null);
+  statusRef.current = status;
+  /**
    * The last track the user asked for.
    *
    * The backend only knows a track id, and the player bar needs a title, an artist
@@ -1066,6 +1076,24 @@ export default function App() {
       unlisten.then((off) => off());
     };
   }, []);
+
+  /**
+   * El jam tiene un solo device sonando.
+   *
+   * **Cuando la otra persona elige su teléfono, esta app se hace a un lado.**
+   * Es lo que el jam pidió: el audio es del otro device, y seguir sonando acá
+   * es exactamente la forma de que los dos oigan canciones distintas.
+   *
+   * **El `toggle` es un pause y no un pause y un play.** Se llama sólo cuando
+   * está sonando, así que lo único que puede hacer es cortar.
+   */
+  const jamActive = status?.jamActive ?? true;
+  const sonando = status?.playing ?? false;
+  useEffect(() => {
+    if (jamActive) return;
+    if (!sonando) return;
+    void togglePlayback().catch(() => {});
+  }, [jamActive, sonando]);
   /**
    * El DJ terminó de hablar: la música arranca.
    *
@@ -1119,6 +1147,37 @@ export default function App() {
    */
   const lyricsTrackId = status?.trackId ?? loadedTrack?.id ?? null;
   const lyrics = useLyrics(lyricsTrackId);
+
+  /**
+   * La pista que está sonando, según el player.
+   *
+   * **La barra y las lyrics tienen que hablar de la misma canción.** La barra
+   * muestra el nombre de la pista que la app pidió y las lyrics piden las de
+   * la que el player dice que está sonando: si son distintas, la pantalla
+   * muestra una canción, el panel muestra otra y el audio suena una tercera.
+   *
+   * **Se sincroniza una vez por canción.** El player puede cambiar de pista
+   * solo —el poll de la cola del jam salta a la cabeza sin preguntar—, y la
+   * barra tiene que enterarse; pero la app también pide canciones, y si el
+   * efecto corrigiera mientras la petición está en camino, dejaría la pista
+   * vieja en pantalla y la nueva sonando.
+   *
+   * **La pista se busca en las listas que ya están en memoria.** No hace falta
+   * un viaje por la red: la canción que está sonando casi siempre está en la
+   * cola de la app o en la cola compartida del jam.
+   */
+  const sincronizado = useRef<string | null>(null);
+  useEffect(() => {
+    const id = status?.trackId;
+    if (!id) return;
+    if (sincronizado.current === id) return;
+    sincronizado.current = id;
+    const pista =
+      visibleTracks.find((t) => t.id === id) ??
+      jamSongs.find((t) => t.id === id) ??
+      queue?.tracks.find((t) => t.id === id);
+    if (pista) setLoadedTrack(pista);
+  }, [status?.trackId, visibleTracks, jamSongs, queue?.tracks]);
 
   /**
    * Closing the lyrics returns to whatever was on screen.
@@ -1370,6 +1429,18 @@ export default function App() {
           const before = jamHead.current;
           jamHead.current = head.id;
           if (before !== null && before !== head.id && head.id !== jamPlaying.current) {
+            /**
+             * **La barra tiene que mostrar la canción que va a sonar.**
+             *
+             * El player es el que manda: si la barra queda con la canción
+             * anterior, la pantalla muestra un nombre y el audio suena otro, y
+             * las lyrics —que salen del estado del player— muestran un
+             * tercero. Medido el 1 de noviembre de 2026: la barra decía "Joven
+             * promesa" con la duración de otra canción, y las lyrics eran de la
+             * que de verdad estaba sonando.
+             */
+            setLoadedTrack(head);
+            asked.current = head.id;
             playTrack(head).catch((e) => {
               console.error("Starless: no se pudo seguir la cola del jam", explain(e));
             });
@@ -2606,6 +2677,46 @@ export default function App() {
         return cambio ? next : prev;
       });
 
+      if (command.endpoint === "transfer") {
+        /**
+         * La música del jam cambió de device.
+         *
+         * **La cola que viene con el traspaso es la cola del jam.** Cada
+         * canción trae el identificador que le dio el servicio, y sin él la
+         * cola compartida no puede apuntar a ninguna de ellas.
+         */
+        if (command.queue?.length) {
+          setQueueOverride(command.queue.map((song) => song.track));
+        }
+        /**
+         * **La música es de esta app: se sigue con ella.**
+         *
+         * El traspaso trae la canción que suena y en qué milisegundo va, y es
+         * lo que el jam está reproduciendo: lo que esta app tiene que
+         * reproducir para que los dos oigan lo mismo.
+         */
+        if (command.for_me) {
+          if (command.track && command.track.id !== statusRef.current?.trackId) {
+            setLoadedTrack(command.track);
+            asked.current = command.track.id;
+            playTrack(command.track).catch((e) => {
+              console.error("Starless: no se pudo tomar la música del jam", explain(e));
+            });
+          }
+          if (command.position_ms != null) {
+            void seekPlayback(command.position_ms).catch(() => {});
+          }
+          return;
+        }
+        /**
+         * **La música es del otro device: esta app se hace a un lado.**
+         *
+         * Dos devices con música propia en el mismo jam son dos jams
+         * distintos, y cada uno oye una canción diferente.
+         */
+        if (statusRef.current?.playing) void togglePlayback().catch(() => {});
+        return;
+      }
       if (command.endpoint === "skip_next") {
         /**
          * El teléfono saltó a una canción concreta.
@@ -2628,12 +2739,12 @@ export default function App() {
         return;
       }
       if (command.endpoint === "pause") {
-        if (status?.playing) void togglePlayback().catch(() => {});
+        if (statusRef.current?.playing) void togglePlayback().catch(() => {});
         return;
       }
       if (command.endpoint === "resume") {
         // **Seguir es levantar lo que ya está sonando**, no poner otra cosa.
-        if (!status?.playing) void togglePlayback().catch(() => {});
+        if (!statusRef.current?.playing) void togglePlayback().catch(() => {});
         return;
       }
       if (command.endpoint === "play") {
@@ -2649,7 +2760,7 @@ export default function App() {
           playDirect(command.track);
           return;
         }
-        if (!status?.playing) void togglePlayback().catch(() => {});
+        if (!statusRef.current?.playing) void togglePlayback().catch(() => {});
         return;
       }
       if (command.endpoint === "seek_to" && command.position_ms != null) {
@@ -2687,7 +2798,7 @@ export default function App() {
     return () => {
       unlisten.then((off) => off());
     };
-  }, [advance, playDirect, addToLocalQueue, setQueueOverride, status?.playing, visibleTracks]);
+  }, [advance, playDirect, addToLocalQueue, setQueueOverride, visibleTracks]);
 
   /**
    * La playlist entera a la cola, y no lo que el filtro dejó a la vista.
@@ -2927,6 +3038,7 @@ export default function App() {
             <JamPanel
               t={t}
               session={jam}
+              active={status?.jamActive ?? true}
               busy={jamBusy}
               error={jamError}
               besideQueue={queueOpen}

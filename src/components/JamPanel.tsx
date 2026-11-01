@@ -11,6 +11,15 @@ type JamPanelProps = {
   t: Record<StringKey, string>;
   /** The open session, or `null` when there is none. */
   session: JamSession | null;
+  /**
+   * Whether this app is the device the Jam says is playing.
+   *
+   * **A Jam has one device playing.** The other side picks it —"here" or
+   * "Starless"— and the app that is not it steps aside. Without this the panel
+   * says nothing while the app goes quiet, and quiet with no explanation reads
+   * as a broken player.
+   */
+  active: boolean;
   /** A request is on its way: the buttons wait. */
   busy: boolean;
   /** What went wrong, in the words of the app. */
@@ -46,6 +55,7 @@ type JamPanelProps = {
 export function JamPanel({
   t,
   session,
+  active,
   busy,
   error,
   besideQueue,
@@ -100,6 +110,7 @@ export function JamPanel({
           <OpenJam
             t={t}
             session={session}
+            active={active}
             busy={busy}
             copied={copied}
             onCopy={onCopy}
@@ -194,6 +205,7 @@ export function JamPanel({
 function OpenJam({
   t,
   session,
+  active,
   busy,
   copied,
   onCopy,
@@ -201,6 +213,7 @@ function OpenJam({
 }: {
   t: Record<StringKey, string>;
   session: JamSession;
+  active: boolean;
   busy: boolean;
   copied: boolean;
   onCopy: () => void;
@@ -284,6 +297,17 @@ function OpenJam({
               <Member key={member.id} member={member} />
             ))}
           </ul>
+        )}
+        {/*
+            The music is on the other device, and this app is not playing.
+
+            **A silent app with no explanation reads as a broken player.** The
+            other side chose to listen on their phone, and the Jam says so; the
+            panel says it too, in the same breath as the list of who is in the
+            Jam.
+        */}
+        {!active && (
+          <p className="px-0.5 pt-2 text-[12.5px] text-ink-faint">{t.jamPlayingElsewhere}</p>
         )}
       </section>
 
