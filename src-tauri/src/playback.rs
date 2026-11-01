@@ -413,6 +413,12 @@ pub fn remember_jam_device(device: Option<String>) {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
     };
+    if *guard != device {
+        log::info!(
+            "jam: el device que suena ahora es {}",
+            device.clone().unwrap_or_else(|| "(ninguno)".to_string())
+        );
+    }
     *guard = device;
 }
 
