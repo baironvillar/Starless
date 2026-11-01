@@ -189,7 +189,9 @@ export function LibrarySidebar({
               className={`absolute inset-y-0 left-0 flex flex-col transition-opacity ease-[var(--ease-glass)] ${
                 shown
                   ? rail
-                    ? "opacity-100 delay-[120ms] duration-200"
+                    ? // 60 ms and not 120: measured, the longer wait left both
+                      // layers near zero for a moment — an empty pane of glass.
+                      "opacity-100 delay-[60ms] duration-200"
                     : "opacity-100 delay-[60ms] duration-[240ms]"
                   : "pointer-events-none opacity-0 delay-0 duration-150"
               }`}
