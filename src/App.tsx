@@ -192,6 +192,16 @@ const RECENT_FOR_RADIO = 5;
 const JAM_POLL_MS = 5000;
 
 /**
+ * Dónde se guarda el código del jam.
+ *
+ * **El código es lo que identifica la sesión**, y es lo que se comparte con
+ * la otra persona. Guardarlo es lo que hace que el jam sobreviva a un
+ * reinicio de la app: la sesión es del servicio, pero la pertenencia a ella
+ * es de la cuenta, y una app que arranca de cero ya no la ve.
+ */
+const JAM_TOKEN = "starless.jam.token";
+
+/**
  * Cuánto espera la app cuando el servicio dice que no.
  *
  * **El techo de la espera, no la espera.** La espera empieza en
@@ -424,7 +434,32 @@ export default function App() {
     jamAsked.current = Date.now();
     try {
       const found = await jamCurrent();
-      if (found) setJam(found);
+      if (found) {
+        setJam(found);
+        return;
+      }
+      /**
+       * **Un jam que ya no aparece se vuelve a entrar con su código.**
+       *
+       * La sesión del jam es del servicio, pero la pertenencia a ella es de
+       * esta cuenta: cuando la app se reinicia, la cuenta sigue en la sesión
+       * pero la app ya no la ve, y el jam se pierde a mitad de una prueba.
+       *
+       * El código es lo que la identifica —es lo que se comparte—, así que
+       * se guarda y se vuelve a entrar con él. Sin esto, cada reinicio
+       * deshacía el jam.
+       */
+      const guardado = window.localStorage.getItem(JAM_TOKEN);
+      if (!guardado) return;
+      try {
+        setJam(await jamJoin(guardado));
+      } catch (e) {
+        // **Un código que ya no sirve no se guarda para siempre.** El jam se
+        // terminó o el código caducó, y volver a intentarlo en cada arranque
+        // es preguntarle al servicio lo mismo una y otra vez.
+        window.localStorage.removeItem(JAM_TOKEN);
+        if (!isRateLimited(e)) setJamError(explain(e));
+      }
     } catch (e) {
       // **Un jam que no se puede leer no es un jam.** El panel sigue ofreciendo
       // empezar uno, que es lo que hay que ofrecer.
@@ -435,6 +470,19 @@ export default function App() {
   useEffect(() => {
     void askJam();
   }, [askJam]);
+
+  /**
+   * El código del jam queda anotado mientras el jam está.
+   *
+   * **Es lo que permite volver a entrar después de un reinicio.** La sesión
+   * es del servicio; esta cuenta sigue en ella, pero una app que arranca de
+   * cero ya no la ve —y sin el código no hay por dónde volver.
+   */
+  useEffect(() => {
+    const codigo = jam?.join_session_token;
+    if (!codigo) return;
+    window.localStorage.setItem(JAM_TOKEN, codigo);
+  }, [jam?.join_session_token]);
 
   useEffect(() => {
     if (!jamOpen) return;
@@ -491,6 +539,9 @@ export default function App() {
       setJam(null);
       setJamSongs([]);
       jamHead.current = null;
+      // **El código se borra con la salida.** Si se quedara, el siguiente
+      // arranque volvería a entrar a un jam al que la persona dejó.
+      window.localStorage.removeItem(JAM_TOKEN);
     } catch (e) {
       setJamError(explain(e));
     } finally {
@@ -498,13 +549,6 @@ export default function App() {
     }
   }, [jam]);
 
-  /**
-   * Put a song in the jam's shared queue.
-   *
-   * **The queue is filled with a command, not with a list write.** The command
-   * goes to the session, the session knows whose device it is, and the song
-   * lands in the queue that both sides read.
-   */
   /**
    * The Jam as it was on the last render.
    *
