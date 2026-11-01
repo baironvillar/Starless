@@ -987,6 +987,87 @@ formato del payload todavía no se miró y no hay código que lo escuche.
 completo —`{ uri, uid, gid, metadata }`— para apuntar a una canción y no a la
 que está sonando.
 
+## El traspaso: el comando que mueve la música entre devices
+
+El 1 de noviembre de 2026, con el invitado del otro lado, el log showed cuatro
+`transfer` que la app **ignoraba**: llegaban como `desconocido: endpoint: unknown
+transfer`. Son el aviso de que la otra persona eligió en qué device escuchar,
+y sin ellos los dos devices terminan con música distinta.
+
+**El comando no se puede leer con el deserializador de librespot.** El enum de
+`dealer` espera un `options` y un `logging_params` que el servicio no manda, así
+que el comando cae en `Unknown(Value)` con el JSON crudo adentro. Se lee a mano
+en `playback.rs`, y de ahí sale un `RemoteCommand` con `endpoint: "transfer"`.
+
+**El `data` es el estado de la música, y son dos formatos.** El `dealer` lo
+manda en **protobuf y en base64** —un `TransferState` de `transfer_state.proto`,
+que el crate de protocolo ya compila—, y hay versiones que lo mandan como JSON.
+Se leen los dos: un formato que no se entiende es un traspaso que no se aplica.
+
+**Lo que trae el `TransferState`:**
+
+| Campo | Qué es |
+|---|---|
+| `playback.current_track` | la canción que suena, con su `uri` y su `uid` |
+| `playback.position_as_of_timestamp` | en qué milisegundo va, medido en `timestamp` |
+| `playback.is_paused` | si la música estaba pausada |
+| `queue.tracks` | la cola entera, cada canción con su `uid` |
+
+**La cola del traspaso es la cola del jam**, con el `uid` de cada canción: es la
+misma forma que trae el `set_queue`, y sin ese identificador el servicio no
+puede apuntar a ninguna de ellas.
+
+**Y el `uid` de la canción que suena.** Es lo que hace que esa canción entre en
+la cola compartida, y viene del servicio —que es el único que puede darlo—.
+
+### El device activo del jam
+
+La sesión trae `host_active_device_id` —el device del **anfitrión** que está
+sonando—. **Un jam tiene un solo device sonando**, y el que no es ése tiene que
+hacerse a un lado: dos devices con música propia en el mismo jam son dos jams
+distintos, y cada uno oye una canción diferente.
+
+El campo vacío no es "no hay device": es **"el anfitrión no está sonando"**, que
+es lo que contesta el servicio cuando el invitado eligió escuchar desde su
+teléfono. Sin jam —o sin campo— esta app suena.
+
+**Para el invitado el campo no sirve.** Habla del device del anfitrión, y el
+invitado necesita saber del suyo: ése lo dice el `transfer`.
+
+### Lo que falta medir
+
+**El sentido de `from_device_identifier`.** El comando trae el device del que
+viene la música y el device que lo mandó (`sent_by_device_id`), pero no se
+midió todavía cuál de los dos es "el que tiene la música". El log los imprime
+juntos en cada traspaso:
+
+```
+jam: el transfer viene de <from_device> (mandado por <device>) · …
+```
+
+Por ahora la decisión la toma el jam —`host_active_device_id`— y no el
+comando: si el jam dice que esta app no es la que suena, la app se calla y
+avisa en el panel del jam. El `transfer` se aplica sobre eso.
+
+## La barra que mentía
+
+Medido el 1 de noviembre de 2026: la barra de abajo decía **"Joven promesa"** con
+la duración de otra canción, el panel de lyrics mostraba una tercera, y el audio
+que sonaba era una cuarta.
+
+**La causa: la barra y las lyrics leían fuentes distintas.** La barra muestra
+`loadedTrack` —la pista que la app pidió— y las lyrics piden las de
+`status.trackId` —la que el player dice que está sonando—. Y hay un camino por
+el que el player cambia de pista **sin que la app lo pregunte**: el poll de la
+cola compartida del jam salta a la cabeza de la cola cuando cambia, y lo hace
+con `playTrack` a secas, sin tocar la pista cargada.
+
+**El arreglo tiene dos partes.** La cabeza de la cola del jam actualiza la pista
+cargada, y un efecto busca en las listas que ya están en memoria la canción que
+el player dice que está sonando cuando la que está en pantalla no es la misma.
+No hace falta un viaje por la red: la canción que suena casi siempre está en la
+cola de la app o en la cola compartida.
+
 ## Lo que falta
 
 Honesto, porque buena parte de esto no se comprobó:
