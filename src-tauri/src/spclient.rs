@@ -2261,10 +2261,17 @@ pub fn jam_session(session: &Session, activate: bool) -> Result<JamSession, Stri
             })
     })?;
 
-    serde_json::from_slice(&body).map_err(|e| {
+    let sesion: JamSession = serde_json::from_slice(&body).map_err(|e| {
         log::error!("spclient: la sesión del jam vino con otra forma: {e}");
         "bad_response".to_string()
-    })
+    })?;
+
+    // **El device activo del jam se anota.** Un jam tiene un solo device
+    // sonando, y lo cambia quien está del otro lado cuando elige escuchar
+    // desde su teléfono. El que era activo tiene que hacerse a un lado.
+    crate::playback::remember_jam_device(sesion.host_active_device_id.clone());
+
+    Ok(sesion)
 }
 
 /// El jam que hay en la cuenta, si hay uno.
@@ -2306,6 +2313,8 @@ pub fn jam_current(session: &Session) -> Result<Option<JamSession>, String> {
     })?;
 
     if !hay {
+        // Sin jam no hay device activo: esta app suena.
+        crate::playback::remember_jam_device(None);
         return Ok(None);
     }
 
@@ -2371,10 +2380,17 @@ pub fn jam_join(session: &Session, token: &str) -> Result<JamSession, String> {
             })
     })?;
 
-    serde_json::from_slice(&body).map_err(|e| {
+    let sesion: JamSession = serde_json::from_slice(&body).map_err(|e| {
         log::error!("spclient: la sesión del jam vino con otra forma: {e}");
         "bad_response".to_string()
-    })
+    })?;
+
+    // **El device activo del jam se anota.** Un jam tiene un solo device
+    // sonando, y lo cambia quien está del otro lado cuando elige escuchar
+    // desde su teléfono. El que era activo tiene que hacerse a un lado.
+    crate::playback::remember_jam_device(sesion.host_active_device_id.clone());
+
+    Ok(sesion)
 }
 
 /// Salir de la sesión.

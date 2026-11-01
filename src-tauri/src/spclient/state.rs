@@ -364,6 +364,12 @@ fn context_tracks(context: &Context) -> Vec<Track> {
 /// **Los campos son los de `librespot-connect`, no los de la app oficial**: es
 /// el mismo `PutStateRequest` y el mismo `member_type`, porque el servicio
 /// espera ese formato y no otro.
+/// El nombre con el que esta app aparece en el jam.
+///
+/// **Es también el id del device para el servicio**, que es lo que contesta
+/// cuando pregunta cuál está sonando.
+pub const DEVICE_NAME: &str = "Starless";
+
 fn build(session: &Session, snapshot: &Snapshot) -> PutStateRequest {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -401,12 +407,12 @@ fn build(session: &Session, snapshot: &Snapshot) -> PutStateRequest {
     PutStateRequest {
         member_type: EnumOrUnknown::new(MemberType::CONNECT_STATE),
         put_state_reason: EnumOrUnknown::new(PutStateReason::PLAYER_STATE_CHANGED),
-        is_active: true,
+        is_active: crate::playback::es_el_device_activo(session),
         device: MessageField::some(Device {
             device_info: MessageField::some(DeviceInfo {
                 can_play: true,
                 volume: 100,
-                name: "Starless".to_string(),
+                name: DEVICE_NAME.to_string(),
                 device_id: session.device_id().to_string(),
                 // **El tipo de dispositivo es el de la app, no el de un parlante.**
                 // La sesión de Starless no manda tipo de dispositivo en el

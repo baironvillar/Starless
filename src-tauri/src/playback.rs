@@ -390,6 +390,43 @@ impl PublishQueue {
     }
 }
 
+/// El device que el jam dice que está sonando.
+///
+/// **Un jam tiene un solo device activo.** Cuando otra persona elige escuchar
+/// desde su teléfono, el servicio cambia el device activo, y el que era
+/// activo tiene que hacerse a un lado: si sigue publicando que está sonando,
+/// le roba el device activo de vuelta y la elección de la otra persona no pasa
+/// de una frase.
+static JAM_ACTIVE_DEVICE: Mutex<Option<String>> = Mutex::new(None);
+
+/// El device activo del jam, si el jam dijo cuál es.
+pub fn jam_active_device() -> Option<String> {
+    match JAM_ACTIVE_DEVICE.lock() {
+        Ok(guard) => guard.clone(),
+        Err(poisoned) => poisoned.into_inner().clone(),
+    }
+}
+
+/// Anota el device activo del jam.
+pub fn remember_jam_device(device: Option<String>) {
+    let mut guard = match JAM_ACTIVE_DEVICE.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    *guard = device;
+}
+
+/// Si esta app es el device que el jam dice que está sonando.
+///
+/// **Sin jam, siempre.** El jam es el que reparte el device activo, y lo que
+/// contesta es el nombre del device —`Starless`— o su id.
+pub fn es_el_device_activo(session: &Session) -> bool {
+    let Some(device) = jam_active_device() else {
+        return true;
+    };
+    device == crate::spclient::state::DEVICE_NAME || device == session.device_id().to_string()
+}
+
 /// Los identificadores que el servicio le dio a las pistas.
 ///
 /// **El `uid` es la identidad de una pista dentro de un contexto.** El servicio
