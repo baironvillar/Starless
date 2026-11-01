@@ -1,5 +1,5 @@
 import { PanelLeftClose, PanelLeftOpen, Plus, TriangleAlert } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
+import { motion } from "motion/react";
 import type { StringKey } from "../lib/i18n";
 import {
   type Account,
@@ -18,7 +18,7 @@ import { PlaylistTile } from "./PlaylistTile";
 const RAIL_PX = 72;
 const PANEL_PX = 240;
 
-import { EASE_GLASS, SHEET_EXIT, SPRING_SHEET } from "../lib/motion";
+import { SHEET_EXIT, SPRING_SHEET } from "../lib/motion";
 
 type LibrarySidebarProps = {
   t: Record<StringKey, string>;
@@ -114,6 +114,8 @@ export function LibrarySidebar({
   onNewPlaylist,
 }: LibrarySidebarProps) {
   const avatar = account ? coverImage(account.images) : null;
+  /** The shape the panel is in; each layer below draws one of the two. */
+  const railOnly = collapsed;
 
   /**
    * The mark that says where you are.
@@ -151,63 +153,83 @@ export function LibrarySidebar({
       className={`glass pointer-events-auto absolute top-[104px] ${barPresent ? "bottom-[144px]" : "bottom-5"} left-5 z-20 flex flex-col overflow-hidden rounded-card transition-[width,bottom] duration-300 ease-[var(--ease-glass)]`}
     >
       {/*
-        The inside changes shape only while nobody can see it.
+        Both shapes are always there, one over the other, and only their
+        opacity changes.
 
-        It used to swap in the first frame: expanding put the names, the
-        controls and the two-column grid into a panel that was still 72 px
-        wide, and collapsing threw the covers to the centre before the panel
-        had started to shrink. Now the old shape fades out first (90 ms), and
-        the new one fades in at its own width while the glass finishes
-        growing or shrinking around it.
+        **Swapping one for the other is what made it stutter.** The shapes
+        used to be keyed and remounted: every expand or collapse built the
+        whole grid of covers from nothing in the middle of the animation —
+        React render, layout and image decode on the frames that were meant
+        to be moving — and `mode="wait"` left a blank instant between the
+        shape that left and the one that came. Mounted once, the change is
+        two opacities, which the compositor does on its own, and each shape
+        keeps its own scroll.
+
+        The one leaving goes first and fast; the one arriving waits a beat,
+        so it fades in over glass that is already most of the way to its
+        width instead of over the shape it replaces.
 
         **Fixed at the width it is drawn for**, not at the panel's: the panel
         is mid-animation for most of the fade, and content laid out at 150 px
         reflows on every frame — names truncating and un-truncating — instead
         of being revealed by the edge that clips it.
       */}
-      <AnimatePresence mode="wait" initial={false}>
-        <motion.div
-          key={collapsed ? "rail" : "panel"}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1, transition: { duration: 0.2, ease: EASE_GLASS } }}
-          exit={{ opacity: 0, transition: { duration: 0.09, ease: EASE_GLASS } }}
-          style={{ width: collapsed ? RAIL_PX : PANEL_PX }}
-          className="flex min-h-0 flex-1 shrink-0 flex-col"
-        >
-          {/* The title is alone in here on purpose. Sign-out used to sit next to it,
+      <div className="relative min-h-0 flex-1">
+        {([true, false] as const).map((rail) => {
+          const shown = rail === railOnly;
+          // The shape this layer draws. It shadows the prop on purpose: the
+          // markup below is the same for both layers and asks `collapsed`.
+          const collapsed = rail;
+          return (
+            <div
+              key={rail ? "rail" : "panel"}
+              inert={!shown}
+              aria-hidden={!shown}
+              style={{ width: rail ? RAIL_PX : PANEL_PX }}
+              className={`absolute inset-y-0 left-0 flex flex-col transition-opacity ease-[var(--ease-glass)] ${
+                shown
+                  ? rail
+                    ? "opacity-100 delay-[120ms] duration-200"
+                    : "opacity-100 delay-[60ms] duration-[240ms]"
+                  : "pointer-events-none opacity-0 delay-0 duration-150"
+              }`}
+            >
+              {/* The title is alone in here on purpose. Sign-out used to sit next to it,
           and creating a playlist used to sit next to that: the first is a settings
           action rather than a library one, and the second is gone with the rest of
           what this channel can no longer do. The two controls below it are the ones
           that are about the library itself. */}
-          <header
-            className={`flex shrink-0 flex-col gap-2 pb-3 ${
-              collapsed ? "items-center px-2 pt-3" : "px-4 pt-4"
-            }`}
-          >
-            <div className={`flex items-center gap-2 ${collapsed ? "w-full justify-center" : ""}`}>
-              {!collapsed && (
-                <h2 className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-tight">
-                  {t.navLibrary}
-                </h2>
-              )}
-              {onToggleCollapsed && (
-                <button
-                  type="button"
-                  onClick={onToggleCollapsed}
-                  aria-label={collapsed ? t.expandLibrary : t.collapseLibrary}
-                  title={collapsed ? t.expandLibrary : t.collapseLibrary}
-                  className="grid size-8 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/8 hover:text-ink"
+              <header
+                className={`flex shrink-0 flex-col gap-2 pb-3 ${
+                  collapsed ? "items-center px-2 pt-3" : "px-4 pt-4"
+                }`}
+              >
+                <div
+                  className={`flex items-center gap-2 ${collapsed ? "w-full justify-center" : ""}`}
                 >
-                  {collapsed ? (
-                    <PanelLeftOpen className="size-4" strokeWidth={2} />
-                  ) : (
-                    <PanelLeftClose className="size-4" strokeWidth={2} />
+                  {!collapsed && (
+                    <h2 className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-tight">
+                      {t.navLibrary}
+                    </h2>
                   )}
-                </button>
-              )}
-            </div>
+                  {onToggleCollapsed && (
+                    <button
+                      type="button"
+                      onClick={onToggleCollapsed}
+                      aria-label={collapsed ? t.expandLibrary : t.collapseLibrary}
+                      title={collapsed ? t.expandLibrary : t.collapseLibrary}
+                      className="grid size-8 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/8 hover:text-ink"
+                    >
+                      {collapsed ? (
+                        <PanelLeftOpen className="size-4" strokeWidth={2} />
+                      ) : (
+                        <PanelLeftClose className="size-4" strokeWidth={2} />
+                      )}
+                    </button>
+                  )}
+                </div>
 
-            {/*
+                {/*
           Both library controls, together, under the title rather than beside it.
 
           Beside it they do not fit: the two of them plus the collapse button leave
@@ -223,63 +245,63 @@ export function LibrarySidebar({
           these are questions you ask with a name in them, and the rail is one click
           away from being wide enough to answer.
         */}
-            {!collapsed && (
-              <div className="flex items-center justify-end gap-1.5">
-                <button
-                  type="button"
-                  onClick={onNewPlaylist}
-                  aria-label={t.newPlaylist}
-                  title={t.newPlaylist}
-                  className="mr-auto grid size-8 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/8 hover:text-ink"
-                >
-                  <Plus className="size-4" strokeWidth={2} />
-                </button>
-                <LibrarySortMenu t={t} sort={sort} onSortChange={onSortChange} />
-                <LibraryViewToggle t={t} view={view} onViewChange={onViewChange} />
-              </div>
-            )}
-          </header>
+                {!collapsed && (
+                  <div className="flex items-center justify-end gap-1.5">
+                    <button
+                      type="button"
+                      onClick={onNewPlaylist}
+                      aria-label={t.newPlaylist}
+                      title={t.newPlaylist}
+                      className="mr-auto grid size-8 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/8 hover:text-ink"
+                    >
+                      <Plus className="size-4" strokeWidth={2} />
+                    </button>
+                    <LibrarySortMenu t={t} sort={sort} onSortChange={onSortChange} />
+                    <LibraryViewToggle t={t} view={view} onViewChange={onViewChange} />
+                  </div>
+                )}
+              </header>
 
-          {account && (
-            <div
-              className={`flex shrink-0 items-center ${
-                collapsed ? "justify-center px-2 pb-3" : "gap-3 px-4 pb-4"
-              }`}
-            >
-              {avatar ? (
-                <img
-                  src={avatar.url}
-                  alt=""
-                  className="size-9 shrink-0 rounded-pill object-cover"
-                />
-              ) : (
-                <span className="size-9 shrink-0 rounded-pill bg-accent/20" aria-hidden />
-              )}
-              {!collapsed && (
-                <div className="min-w-0">
-                  <p className="truncate text-[13px] font-semibold">
-                    {account.display_name || account.id}
-                  </p>
-                  <p className="truncate text-[12px] text-ink-muted">
-                    {account.product === "premium" ? t.planPremium : t.planFree}
-                  </p>
+              {account && (
+                <div
+                  className={`flex shrink-0 items-center ${
+                    collapsed ? "justify-center px-2 pb-3" : "gap-3 px-4 pb-4"
+                  }`}
+                >
+                  {avatar ? (
+                    <img
+                      src={avatar.url}
+                      alt=""
+                      className="size-9 shrink-0 rounded-pill object-cover"
+                    />
+                  ) : (
+                    <span className="size-9 shrink-0 rounded-pill bg-accent/20" aria-hidden />
+                  )}
+                  {!collapsed && (
+                    <div className="min-w-0">
+                      <p className="truncate text-[13px] font-semibold">
+                        {account.display_name || account.id}
+                      </p>
+                      <p className="truncate text-[12px] text-ink-muted">
+                        {account.product === "premium" ? t.planPremium : t.planFree}
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
-          )}
 
-          {/*
+              {/*
         `pr-3` and not `px-2`: Chromium draws the scrollbar inside the padding box,
         so padding on the right is the gap between the last row and the thumb. With
         the same 8px on both sides the thumb sat on the artwork's edge and read as
         part of the row rather than as something beside it.
       */}
-          <nav
-            className={`flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pb-3 ${
-              collapsed ? "items-center px-2" : "px-2 pr-3"
-            }`}
-          >
-            {/*
+              <nav
+                className={`flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pb-3 ${
+                  collapsed ? "items-center px-2" : "px-2 pr-3"
+                }`}
+              >
+                {/*
         Liked Songs, in whichever shape the rail is in.
 
         It is a tile in the grid and a row in the list, and the reason it changes
@@ -298,60 +320,64 @@ export function LibrarySidebar({
         grows with the tile, because a 16px heart in a 106px tile is a stamp on a
         blank card.
       */}
-            {!collapsed && view === "grid" ? (
-              <div className="grid grid-cols-2 gap-0.5 px-1 pb-1">
-                <PlaylistTile
-                  title={t.likedSongs}
-                  artwork={<LikedCover />}
-                  active={activeId === "liked"}
-                  onOpen={() => onSelect("liked")}
-                />
-                {playlists.map((playlist) => (
-                  <PlaylistTile
-                    key={playlist.id}
-                    title={playlist.name}
-                    imageUrl={coverImage(playlist.images)?.url ?? null}
-                    // The DJ is drawn, not photographed: the service sends no cover for
-                    // its card, and the rail would otherwise show an empty square.
-                    artwork={isDjCard(playlist) ? <DjArtwork /> : undefined}
-                    active={activeId === playlist.id}
-                    onOpen={() => onSelect(playlist.id)}
-                    /*
+                {!collapsed && view === "grid" ? (
+                  <div className="grid grid-cols-2 gap-0.5 px-1 pb-1">
+                    <PlaylistTile
+                      title={t.likedSongs}
+                      artwork={<LikedCover />}
+                      active={activeId === "liked"}
+                      onOpen={() => onSelect("liked")}
+                    />
+                    {playlists.map((playlist) => (
+                      <PlaylistTile
+                        key={playlist.id}
+                        title={playlist.name}
+                        imageUrl={coverImage(playlist.images)?.url ?? null}
+                        // The DJ is drawn, not photographed: the service sends no cover for
+                        // its card, and the rail would otherwise show an empty square.
+                        artwork={isDjCard(playlist) ? <DjArtwork /> : undefined}
+                        active={activeId === playlist.id}
+                        onOpen={() => onSelect(playlist.id)}
+                        /*
                 Nothing to warm up for a card: the DJ's songs are not in the
                 playlist, so asking for them early would ask for nothing.
                 */
-                    onPrefetch={
-                      onPrefetch && !isDjCard(playlist) ? () => onPrefetch(playlist.id) : undefined
-                    }
-                  />
-                ))}
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => onSelect("liked")}
-                title={t.likedSongs}
-                aria-label={t.likedSongs}
-                className={`relative flex w-full shrink-0 items-center rounded-[14px] text-left transition-colors duration-200 ${
-                  collapsed ? "justify-center py-1" : "gap-3 px-2 py-2"
-                } ${activeId === "liked" ? "bg-white/12" : "hover:bg-white/6"}`}
-              >
-                {mark(activeId === "liked")}
-                <span className="size-9 shrink-0 overflow-hidden rounded-[9px]">
-                  <LikedCover />
-                </span>
-                {!collapsed && (
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-semibold">{t.likedSongs}</span>
-                    <span className="tabular block truncate text-[12px] text-ink-muted">
-                      {likedCount !== null ? `${likedCount} ${t.songs}` : t.loading}
+                        onPrefetch={
+                          onPrefetch && !isDjCard(playlist)
+                            ? () => onPrefetch(playlist.id)
+                            : undefined
+                        }
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onSelect("liked")}
+                    title={t.likedSongs}
+                    aria-label={t.likedSongs}
+                    className={`relative flex w-full shrink-0 items-center rounded-[14px] text-left transition-colors duration-200 ${
+                      collapsed ? "justify-center py-1" : "gap-3 px-2 py-2"
+                    } ${activeId === "liked" ? "bg-white/12" : "hover:bg-white/6"}`}
+                  >
+                    {mark(activeId === "liked")}
+                    <span className="size-9 shrink-0 overflow-hidden rounded-[9px]">
+                      <LikedCover />
                     </span>
-                  </span>
+                    {!collapsed && (
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13px] font-semibold">
+                          {t.likedSongs}
+                        </span>
+                        <span className="tabular block truncate text-[12px] text-ink-muted">
+                          {likedCount !== null ? `${likedCount} ${t.songs}` : t.loading}
+                        </span>
+                      </span>
+                    )}
+                  </button>
                 )}
-              </button>
-            )}
 
-            {/*
+                {/*
         Said once, in place of the list, and only when the list is missing
         entirely. If some playlists arrived and one failed, the ones that arrived
         are still worth showing and the count on the row above already moved —
@@ -362,38 +388,38 @@ export function LibrarySidebar({
         tile with the explanation in its tooltip: the signal survives, the text
         waits for someone to expand the library.
         */}
-            {error &&
-              playlists.length === 0 &&
-              (collapsed ? (
-                <span
-                  role="img"
-                  className="grid size-9 shrink-0 place-items-center rounded-[9px] bg-warn/12 text-warn"
-                  title={`${t.libraryUnavailableTitle} — ${t.libraryUnavailableBody}`}
-                  aria-label={t.libraryUnavailableTitle}
-                >
-                  <TriangleAlert className="size-4" strokeWidth={2} />
-                </span>
-              ) : (
-                <div className="mt-1 rounded-card border border-white/8 bg-white/4 px-3 py-3">
-                  <p className="text-[12.5px] font-semibold">{t.libraryUnavailableTitle}</p>
-                  <p className="mt-1 text-[12px] leading-relaxed text-ink-muted">
-                    {t.libraryUnavailableBody}
-                  </p>
-                </div>
-              ))}
+                {error &&
+                  playlists.length === 0 &&
+                  (collapsed ? (
+                    <span
+                      role="img"
+                      className="grid size-9 shrink-0 place-items-center rounded-[9px] bg-warn/12 text-warn"
+                      title={`${t.libraryUnavailableTitle} — ${t.libraryUnavailableBody}`}
+                      aria-label={t.libraryUnavailableTitle}
+                    >
+                      <TriangleAlert className="size-4" strokeWidth={2} />
+                    </span>
+                  ) : (
+                    <div className="mt-1 rounded-card border border-white/8 bg-white/4 px-3 py-3">
+                      <p className="text-[12.5px] font-semibold">{t.libraryUnavailableTitle}</p>
+                      <p className="mt-1 text-[12px] leading-relaxed text-ink-muted">
+                        {t.libraryUnavailableBody}
+                      </p>
+                    </div>
+                  ))}
 
-            {/*
+                {/*
           The heading belongs to the list only. In the grid there is no section to
           label — it is one grid that starts with Liked Songs, and putting
           "TUS PLAYLISTS" on top of it would be a lie about the tile right under it.
         */}
-            {!collapsed && view === "list" && playlists.length > 0 && (
-              <h3 className="px-2 pt-3 pb-1.5 text-[12px] font-semibold tracking-wide uppercase text-ink-faint">
-                {t.yourPlaylists}
-              </h3>
-            )}
+                {!collapsed && view === "list" && playlists.length > 0 && (
+                  <h3 className="px-2 pt-3 pb-1.5 text-[12px] font-semibold tracking-wide uppercase text-ink-faint">
+                    {t.yourPlaylists}
+                  </h3>
+                )}
 
-            {/*
+                {/*
           The rows of the list view. The grid is up above, inside the liked tile's
           branch, because the grid is one grid: liked first and then the playlists.
           This is why that branch has to be one and not a row plus a grid — two grids
@@ -402,60 +428,62 @@ export function LibrarySidebar({
           The riel is one column of the same list, which is why it needs no control:
           at 72px there is no room to tell a row from a tile.
         */}
-            {(collapsed || view === "list") &&
-              playlists.map((playlist) => {
-                const cover = coverImage(playlist.images);
-                const selected = activeId === playlist.id;
-                /* Nothing to warm up for a card: the DJ's songs are not in the
+                {(collapsed || view === "list") &&
+                  playlists.map((playlist) => {
+                    const cover = coverImage(playlist.images);
+                    const selected = activeId === playlist.id;
+                    /* Nothing to warm up for a card: the DJ's songs are not in the
                 playlist, so asking for them early would ask for nothing. */
-                const warm = isDjCard(playlist) ? undefined : () => onPrefetch?.(playlist.id);
-                return (
-                  <button
-                    key={playlist.id}
-                    type="button"
-                    onClick={() => onSelect(playlist.id)}
-                    onPointerEnter={() => warm?.()}
-                    onFocus={() => warm?.()}
-                    title={playlist.name}
-                    className={`relative flex w-full shrink-0 items-center rounded-[14px] text-left transition-colors duration-200 ${
-                      collapsed ? "justify-center py-1" : "gap-3 px-2 py-2"
-                    } ${selected ? "bg-white/12" : "hover:bg-white/6"}`}
-                  >
-                    {mark(selected)}
-                    {isDjCard(playlist) ? (
-                      // The DJ has no cover: the service draws its card and sends no
-                      // picture for it. An empty square in the rail is a cover that
-                      // failed to load, and this one did not fail — it was never there.
-                      <span className="relative size-9 shrink-0 overflow-hidden rounded-[9px]">
-                        <DjArtwork />
-                      </span>
-                    ) : cover ? (
-                      <img
-                        src={cover.url}
-                        alt=""
-                        loading="lazy"
-                        className="size-9 shrink-0 rounded-[9px] object-cover"
-                      />
-                    ) : (
-                      <span className="size-9 shrink-0 rounded-[9px] bg-white/8" aria-hidden />
-                    )}
-                    {!collapsed && (
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] font-medium">
-                          {playlist.name}
-                        </span>
-                        {/* No song count here on purpose. The rail is for finding the
+                    const warm = isDjCard(playlist) ? undefined : () => onPrefetch?.(playlist.id);
+                    return (
+                      <button
+                        key={playlist.id}
+                        type="button"
+                        onClick={() => onSelect(playlist.id)}
+                        onPointerEnter={() => warm?.()}
+                        onFocus={() => warm?.()}
+                        title={playlist.name}
+                        className={`relative flex w-full shrink-0 items-center rounded-[14px] text-left transition-colors duration-200 ${
+                          collapsed ? "justify-center py-1" : "gap-3 px-2 py-2"
+                        } ${selected ? "bg-white/12" : "hover:bg-white/6"}`}
+                      >
+                        {mark(selected)}
+                        {isDjCard(playlist) ? (
+                          // The DJ has no cover: the service draws its card and sends no
+                          // picture for it. An empty square in the rail is a cover that
+                          // failed to load, and this one did not fail — it was never there.
+                          <span className="relative size-9 shrink-0 overflow-hidden rounded-[9px]">
+                            <DjArtwork />
+                          </span>
+                        ) : cover ? (
+                          <img
+                            src={cover.url}
+                            alt=""
+                            loading="lazy"
+                            className="size-9 shrink-0 rounded-[9px] object-cover"
+                          />
+                        ) : (
+                          <span className="size-9 shrink-0 rounded-[9px] bg-white/8" aria-hidden />
+                        )}
+                        {!collapsed && (
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[13px] font-medium">
+                              {playlist.name}
+                            </span>
+                            {/* No song count here on purpose. The rail is for finding the
                         playlist by name, and a number is one more line to read past
                         between two covers. The shelf over there is where the count
                         belongs. */}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-          </nav>
-        </motion.div>
-      </AnimatePresence>
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+              </nav>
+            </div>
+          );
+        })}
+      </div>
     </motion.aside>
   );
 }
