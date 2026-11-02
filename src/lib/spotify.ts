@@ -828,6 +828,8 @@ export const EFFECTS = {
   beat: ["strong", "soft", "off"],
   bloom: ["normal", "soft", "off"],
   motion: ["on", "off"],
+  shape: ["top", "corners", "center", "side"],
+  grain: ["off", "on"],
 } as const;
 
 export type EffectName = keyof typeof EFFECTS;
@@ -840,10 +842,21 @@ export const EFFECTS_DEFAULT: Effects = {
   beat: "strong",
   bloom: "normal",
   motion: "on",
+  shape: "top",
+  grain: "off",
 };
 
-/** Everything still: what the quiet mode switch writes. */
-export const EFFECTS_QUIET: Effects = { glow: "off", beat: "off", bloom: "off", motion: "off" };
+/**
+ * Everything still: what the quiet mode switch writes. Only the movement —
+ * `shape` and `grain` are how the ground looks, and turning the effects off is
+ * not a reason to move the light somewhere else.
+ */
+export const EFFECTS_QUIET = {
+  glow: "off",
+  beat: "off",
+  bloom: "off",
+  motion: "off",
+} as const satisfies Partial<Effects>;
 
 /** Keep only what this build knows, the same gate Rust keeps. */
 function knownEffects(raw: Record<string, unknown>): Effects {
@@ -895,6 +908,85 @@ export async function setEffect<K extends EffectName>(name: K, value: Effects[K]
     return;
   }
   return invoke<void>("set_effect", { name, value });
+}
+
+/**
+ * The person's own picture behind the glass, and how dark and soft it is drawn.
+ *
+ * A store for the same reason as the effects: the ground is drawn by `App` and
+ * changed from the settings panel while it is on screen behind it.
+ *
+ * `url` is an object URL over the bytes Rust hands back, never a path: the
+ * webview has no business reading the disk, and the copy lives where sign-out
+ * cannot delete it (`background.rs`).
+ */
+export type Background = { url: string | null; dim: number; blur: number };
+
+/** Mirrors `settings::BACKGROUND_DIM_MAX` and the defaults beside it. */
+export const BACKGROUND_DIM_MAX = 90;
+const BACKGROUND_DEFAULT: Background = { url: null, dim: 50, blur: 20 };
+
+/** The same limit `background.rs` keeps, checked here first so a huge pick never crosses. */
+const BACKGROUND_MAX_BYTES = 25 * 1024 * 1024;
+
+let currentBackground = BACKGROUND_DEFAULT;
+const backgroundListeners = new Set<() => void>();
+
+function setBackgroundState(next: Background): void {
+  if (currentBackground.url && currentBackground.url !== next.url) {
+    URL.revokeObjectURL(currentBackground.url);
+  }
+  currentBackground = next;
+  for (const listener of backgroundListeners) listener();
+}
+
+export function useBackground(): Background {
+  return useSyncExternalStore(
+    (listener) => {
+      backgroundListeners.add(listener);
+      return () => backgroundListeners.delete(listener);
+    },
+    () => currentBackground,
+  );
+}
+
+/** Read the saved picture and look, once, at startup. */
+export async function loadBackground(): Promise<void> {
+  if (!hasBackend()) return;
+  const [bytes, look] = await Promise.all([
+    invoke<ArrayBuffer>("background_image"),
+    invoke<{ dim: number; blur: number }>("background_look"),
+  ]);
+  const url = bytes.byteLength > 0 ? URL.createObjectURL(new Blob([bytes])) : null;
+  setBackgroundState({ url, ...look });
+}
+
+/**
+ * Store a picked file and draw it. Rust checks the format by its bytes; the
+ * size is checked here too so twenty-five megabytes are not copied across the
+ * bridge only to be refused on the other side.
+ */
+export async function pickBackground(file: File): Promise<void> {
+  if (file.size > BACKGROUND_MAX_BYTES) throw "image_too_large";
+  if (hasBackend()) {
+    await invoke<void>("set_background_image", new Uint8Array(await file.arrayBuffer()));
+  }
+  setBackgroundState({ ...currentBackground, url: URL.createObjectURL(file) });
+}
+
+export async function clearBackground(): Promise<void> {
+  if (hasBackend()) await invoke<void>("clear_background_image");
+  setBackgroundState({ ...currentBackground, url: null });
+}
+
+/** Draw a look at once, without saving it: the sliders call this per step. */
+export function applyBackgroundLook(dim: number, blur: number): void {
+  setBackgroundState({ ...currentBackground, dim, blur });
+}
+
+export async function saveBackgroundLook(dim: number, blur: number): Promise<void> {
+  if (!hasBackend()) return;
+  return invoke<void>("set_background_look", { dim, blur });
 }
 
 /**

@@ -6,6 +6,7 @@
 // needs the frontend to read a token, that is the bug, not the design.
 
 mod auth;
+mod background;
 mod beat;
 mod crossfade;
 mod history;
@@ -2162,6 +2163,11 @@ pub fn run() {
             set_track_view,
             effects,
             set_effect,
+            background::background_image,
+            background::set_background_image,
+            background::clear_background_image,
+            background::background_look,
+            background::set_background_look,
             previous_session_crashed,
             announce_clean_exit,
             log_frontend_error,
