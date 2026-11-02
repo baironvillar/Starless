@@ -3,24 +3,97 @@
 Cómo llevar Starless a un teléfono Android, qué del código actual se rompe en
 el camino, y qué hay que medir antes de prometerlo.
 
-**Nada de esto está medido en un teléfono todavía.** Lo que sigue se sacó de
-leer el código de este repositorio y el de sus dependencias —las versiones
-exactas del `Cargo.lock`—, no de correrlo. Cada afirmación lleva el archivo y la
-línea de donde sale, para que se pueda comprobar sin creerle a este documento.
-Lo que se mida se escribe acá con su fecha y su resultado, como en
-`docs/jam.md`, y lo que se descarte se queda escrito con el porqué.
+El análisis se sacó de leer el código de este repositorio y el de sus
+dependencias —las versiones exactas del `Cargo.lock`—, no de correrlo. Cada
+afirmación lleva el archivo y la línea de donde sale, para que se pueda
+comprobar sin creerle a este documento.
+
+**El 2 de noviembre de 2026 se midió en un teléfono**, con la prueba de concepto
+de la rama `feat/android-proof-of-concept`. Lo que salió, y las tres cosas que
+leer el código no anticipó, están en [Lo que se midió](#lo-que-se-midió). Lo que
+se descarte se queda escrito con el porqué, como en `docs/jam.md`.
 
 En corto:
 
 | | |
 | --- | --- |
 | Dónde vive | en este repositorio: Tauri 2 compila el mismo backend y el mismo frontend para Android |
-| Estado | investigación, sin versión (`ROADMAP.md`, «Sin fecha — Investigar primero») |
+| Estado | investigación, sin versión (`ROADMAP.md`, «Sin fecha — Investigar primero»); la prueba de concepto **suena en un teléfono**, DJ incluido |
 | Lo que ya está listo | `crate-type` con `cdylib` y `staticlib`, `#[cfg_attr(mobile, tauri::mobile_entry_point)]` en `run()`, el `host` de Vite para `TAURI_DEV_HOST`, y los stubs fuera de Windows de `media_keys.rs` y `startup.rs` |
 | Lo que no compila | cuatro cosas: la bandeja, `bring_to_front`, el plugin de instancia única y OpenSSL (ver [Lo que no compila](#lo-que-no-compila)) |
 | Lo que compila y no anda | cinco cosas, y tres de ellas impiden escuchar una sola canción (ver [Lo que compila y no anda](#lo-que-compila-y-no-anda)) |
 | Lo que decide si se sigue | login, una canción y una frase del DJ sonando en un teléfono real |
 | iOS | después, y sólo por instalación lateral: la App Store no acepta un cliente no oficial |
+
+## Lo que se midió
+
+En un Galaxy S22 (SM-S901E), Android 16 (API 36), ARM64, con ahorro de batería
+prendido, el 2 de noviembre de 2026. La build es de debug, instalada por `adb`.
+
+| Qué | Resultado | Cómo se supo |
+| --- | --- | --- |
+| Compila | sí, sin warnings | `cargo check --target aarch64-linux-android` |
+| El navegador del login se abre | sí | captura de pantalla: `accounts.spotify.com` |
+| El callback vuelve a `127.0.0.1:8989` | **no**, hasta agregar el servicio en primer plano | `ss` y `dumpsys netpolicy` (abajo) |
+| La sesión conecta | sí | log: `Authenticated as …`, país `CL` |
+| La sesión se restaura al reabrir | sí, sin navegador, en menos de 2 s | log |
+| Las carpetas | sí: `Starless/starless.log` y `credentials/Starless`, separadas | `run-as … find` |
+| El dispositivo de audio | sí: AAudio, abierto en 1 ms | log: `cpal host: AAudio` |
+| La biblioteca | **no**, hasta el parche de `librespot-core` | log: hash cash y `BAD_REQUEST` (abajo) |
+| Una playlist, las letras | sí: 590 ms y 942 ms | log |
+| Una canción suena | sí: primera muestra a los 1260 ms | log y oído |
+| Sigue con la pantalla apagada | sí | oído |
+| El DJ | **no**, hasta llevar el parche al User-Agent; después sí, con su voz | log: `500`, y después `la voz del DJ: … 11.9s` |
+
+Lo que el análisis marcaba como sin medir y quedó medido: el `ndk_context`
+llega inicializado a `cpal` —el dispositivo abre—, 44,1 kHz se consigue sin
+remuestrear, y el `tmp_dir` en la caché de la app resuelve la descarga de cada
+pista.
+
+### Lo que leer el código no anticipó
+
+**1. Android le corta la red a una app en segundo plano, loopback incluido.**
+Con el navegador en primer plano, el callback no llegaba: la app estaba viva y
+escuchando, `ss` mostraba seis conexiones del navegador en `SYN_SENT` —ni el
+saludo de TCP contestado— y `dumpsys netpolicy` decía
+`blocked=BATTERY_SAVER|APP_BACKGROUND`. El análisis se preguntaba si Android
+mantenía vivo el proceso; el proceso estaba vivo, lo que no tenía era red.
+Lo arregla un servicio en primer plano de tipo `mediaPlayback`
+(`KeepAliveService.kt`), que es también lo que hace falta para que la música
+siga con la pantalla apagada: una sola pieza para las dos cosas.
+
+**2. La identidad de Android no le sirve a esta sesión.** La sección
+[La identidad](#la-identidad-lo-que-spotify-ve-distinto) lo anticipaba como
+algo a volver a medir; resultó un bloqueo. El `clienttoken` con
+`ANDROID_CLIENT_ID` contesta un hash cash que `librespot-core` no resuelve
+(`Unable to solve any of 3 hash cash challenges`), y `login5` rechaza el resto
+(`Login request was denied: BAD_REQUEST`): la sesión conecta y la biblioteca no
+se lee. Y con los tokens arreglados el DJ seguía en `500` mientras el
+User-Agent dijera `Android/16` con la versión móvil. `librespot-core` 0.8.0 va
+copiado en `src-tauri/vendor/` con cuatro cambios marcados `Starless:` para que
+Android pida los tokens, y se nombre en HTTP, como Windows. El handshake se
+queda Linux ARM: Windows en ARM ahí sería `PLATFORM_WINDOWS_CE_ARM`, que nunca
+se midió.
+
+**3. Las herramientas.** Tres cosas que no están en el código:
+
+- `bun run tauri android …` hace panic en el CLI 2.12.3
+  (`crates\tauri-cli\src\mobile\init.rs:92`): se llama como
+  `./node_modules/.bin/tauri android …`.
+- `tauri android build` termina con un symlink de la librería a `jniLibs/`, y
+  Windows no deja crear symlinks sin el *Modo de desarrollador*. Sin él, se
+  copia `target/aarch64-linux-android/debug/libstarless_lib.so` a mano y se
+  corre `gradlew assembleArm64Debug -x rustBuildArm64Debug`.
+- `tauri android init` genera `minSdk = 24`, y `cpal` usa AAudio con
+  `api-level-26`: el mínimo es 26, en `tauri.conf.json` y en el Gradle.
+
+### Lo que sigue sin medir
+
+El cambio de ruta del audio con auriculares Bluetooth, qué hace Spotify con dos
+dispositivos de la misma cuenta (el teléfono ya se presenta como
+`Starless-Android`), el reporte de crash en móvil —va apagado—, el nombre del
+hilo en el hook de panic, una build de release y su tamaño, y todo el
+frontend: la prueba usa el layout de escritorio.
 
 ## Por qué en el mismo repositorio
 
@@ -398,17 +471,21 @@ documenta con el mismo cuidado que la `pubkey` del updater.
 ## El orden
 
 La prueba de concepto es una sola rama, `feat/android-proof-of-concept`, y
-termina cuando suena una canción en un teléfono:
+**pasó**: suena una canción en un teléfono, y habla el DJ. Lo que hizo,
+en el orden en que se rompió:
 
 1. Lo que no compila: la bandeja y `bring_to_front` detrás de `cfg`, el plugin
    de instancia única y el updater sólo en escritorio, la capability partida, y
-   la pila TLS.
-2. Las rutas: la base de las carpetas en un `OnceLock` resuelto en `setup`, y
-   `tmp_dir` en `session_config`.
+   la pila TLS por plataforma.
+2. Las rutas: la base de las carpetas en un `OnceLock` resuelto en `setup`
+   (`paths.rs`), y `tmp_dir` en `session_config`.
 3. El login: el PKCE con la URL abierta por `tauri-plugin-opener`.
-4. Medir: login, una canción, una frase del DJ, y las sondas de `spclient` con
-   la identidad de Android.
+4. El servicio en primer plano, que el plan dejaba para después y resultó
+   necesario para el login.
+5. `librespot-core` copiado con la identidad de Windows en Android.
 
-Lo que queda para después de la prueba, y sólo si pasa: el servicio en primer
-plano y la `MediaSession` en Kotlin, el reporte de crash en móvil, el layout,
-la CI del APK, y la decisión en `PRODUCT.md` y `DESIGN.md`.
+Lo que queda, y en este orden porque cada uno es lo que una persona notaría
+primero: el layout del teléfono —el de escritorio esconde detrás del hover el
+menú de cada canción—, la `MediaSession` en Kotlin para la pantalla bloqueada y
+los auriculares, el reporte de crash en móvil, la CI del APK, y la decisión en
+`PRODUCT.md` y `DESIGN.md`.
