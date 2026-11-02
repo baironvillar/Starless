@@ -138,7 +138,7 @@ export function FeedbackPanel({ t, onClose }: FeedbackPanelProps) {
         className="glass-overlay flex max-h-full w-full max-w-[560px] flex-col gap-5 overflow-auto rounded-card px-8 py-8"
       >
         <div>
-          <p className="text-[12px] font-semibold uppercase tracking-wide text-accent">
+          <p className="text-[12px] font-semibold uppercase tracking-wide text-accent-ink">
             {t.feedbackKicker}
           </p>
           <h1 className="mt-2 text-[21px] font-semibold tracking-tight">{t.feedbackTitle}</h1>
@@ -230,7 +230,7 @@ export function FeedbackPanel({ t, onClose }: FeedbackPanelProps) {
         </div>
 
         {error && (
-          <p className="rounded-[14px] border border-warn/30 bg-warn/10 px-4 py-3 text-[12.5px] leading-relaxed text-warn">
+          <p className="rounded-[14px] border border-warn/30 bg-warn/10 px-4 py-3 text-[12.5px] leading-relaxed text-warn-ink">
             {error}
           </p>
         )}

@@ -181,7 +181,7 @@ export function JamPanel({
           </>
         )}
 
-        {error && <p className="text-[12.5px] text-live">{error}</p>}
+        {error && <p className="text-[12.5px] text-live-ink">{error}</p>}
       </div>
     </motion.aside>
   );

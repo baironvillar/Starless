@@ -404,7 +404,7 @@ export function LibrarySidebar({
                   (collapsed ? (
                     <span
                       role="img"
-                      className="grid size-9 shrink-0 place-items-center rounded-[9px] bg-warn/12 text-warn"
+                      className="grid size-9 shrink-0 place-items-center rounded-[9px] bg-warn/12 text-warn-ink"
                       title={`${t.libraryUnavailableTitle} — ${t.libraryUnavailableBody}`}
                       aria-label={t.libraryUnavailableTitle}
                     >

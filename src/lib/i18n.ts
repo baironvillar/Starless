@@ -305,8 +305,8 @@ export const strings = {
     backgroundImagePick: "Elegir imagen",
     backgroundImageChange: "Cambiar",
     backgroundImageRemove: "Quitar",
-    backgroundDim: "Oscurecer",
-    backgroundDimHint: "Más oscuro hace que el texto se lea mejor encima.",
+    backgroundDim: "Atenuar",
+    backgroundDimHint: "Más atenuada, el texto se lee mejor encima.",
     backgroundBlur: "Difuminar",
     backgroundBlurHint: "Más difuminada, la foto queda en colores y no compite con la app.",
     effectOff: "Apagado",
@@ -320,6 +320,7 @@ export const strings = {
 
     theme: "Tema",
     themeDark: "Oscuro",
+    themeLight: "Claro",
     themeSystem: "Del sistema",
 
     colourMode: "Modo daltónico",
@@ -758,8 +759,8 @@ export const strings = {
     backgroundImagePick: "Choose picture",
     backgroundImageChange: "Change",
     backgroundImageRemove: "Remove",
-    backgroundDim: "Darken",
-    backgroundDimHint: "Darker keeps the text on top easy to read.",
+    backgroundDim: "Fade",
+    backgroundDimHint: "The more faded, the easier the text on top is to read.",
     backgroundBlur: "Blur",
     backgroundBlurHint:
       "The softer the photo, the more it turns to colour and stays out of the way.",
@@ -774,6 +775,7 @@ export const strings = {
 
     theme: "Theme",
     themeDark: "Dark",
+    themeLight: "Light",
     themeSystem: "Match system",
 
     colourMode: "Colour mode",

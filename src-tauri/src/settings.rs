@@ -93,6 +93,10 @@ pub struct Settings {
     #[serde(default)]
     pub track_order: Option<String>,
 
+    /// Dark, light or the system's, as one of [`THEMES`].
+    #[serde(default)]
+    pub theme: Option<String>,
+
     /// List or compact, as one of [`TRACK_VIEWS`].
     #[serde(default)]
     pub track_view: Option<String>,
@@ -368,6 +372,27 @@ pub fn save_track_view(view: &str) {
 
 pub fn saved_track_view() -> &'static str {
     known_or_default(load().track_view.as_deref(), &TRACK_VIEWS, DEFAULT_TRACK_VIEW)
+}
+
+/// Dark first: it is what the app is designed around and what it shipped as.
+/// `system` follows Windows, and the frontend resolves it, because the
+/// webview is what hears the system change while the app is open.
+pub const THEMES: [&str; 3] = ["dark", "light", "system"];
+
+/// Same gate as the track view.
+pub fn save_theme(theme: &str) {
+    if !THEMES.contains(&theme) {
+        log::warn!("tema ignorado, no es uno conocido: {theme}");
+        return;
+    }
+    if load().theme.as_deref() == Some(theme) {
+        return;
+    }
+    update(|settings| settings.theme = Some(theme.to_string()));
+}
+
+pub fn saved_theme() -> &'static str {
+    known_or_default(load().theme.as_deref(), &THEMES, THEMES[0])
 }
 
 /// Every effect and the values it takes, **the shipped one first**.

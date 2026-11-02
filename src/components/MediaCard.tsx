@@ -183,7 +183,7 @@ export function MediaCard({
       )}
       <p
         className={`mt-0.5 truncate text-[13.5px] font-semibold transition-colors duration-200 ${
-          onOpen ? "group-hover/card:text-accent" : ""
+          onOpen ? "group-hover/card:text-accent-ink" : ""
         } ${round ? "text-center" : ""}`}
       >
         {title}

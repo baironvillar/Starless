@@ -76,6 +76,32 @@ The accent and the live mark share Ember by default, and that is accepted rather
 
 WCAG AA wants 4.5:1 for body text. `--color-ink-faint` `#8C8992` gives 5.7:1 on Void and 5.3:1 on Night `#15151B`, the opaque end of the glass base. **Any new tertiary text token must be checked against `#0B0B0F` and against `#15151B`, not against a screenshot.** Never tint a text token toward the accent to make it feel integrated; that is exactly how contrast quietly disappears.
 
+## The light theme
+
+Settings → General → Theme: dark (the default, and what everything above is written around), light, or the system's. The light theme is the same design with the brand's two ends swapped: **Bone for the ground and Night for the ink**. It is one block in `index.css` under `:root[data-theme="light"]`, plus a handful of channels (`--glass-rgb`, `--line-rgb`, `--bloom-a/b`, `--lift-alpha`, `--glass-lift`, `--glass-saturate`) that the dark theme sets on `:root`.
+
+| Token | Light value | On ground `#E4E1DA` | On glass `#F4F2ED` |
+|---|---|---|---|
+| `--color-ground` | `#E4E1DA` | — | — |
+| `--color-night` | `#F4F2ED` | — | — |
+| `--color-eclipse` | `#CFCBC2` | — | — |
+| `--color-ink` | `#15151B` | 13.9:1 | 16.3:1 |
+| `--color-ink-muted` | `#4F4C55` | 6.4:1 | 7.5:1 |
+| `--color-ink-faint` | `#5F5C66` | 5.0:1 | 5.9:1 |
+| `--color-live-ink` | `#A3311A` | 5.3:1 | 6.2:1 |
+| `--color-warn-ink` | `#855600` | 4.8:1 | 5.6:1 |
+| `--color-accent-ink` | the accent mixed 55% with black | 4.8 to 7.2:1 for the six presets | higher |
+
+**`--color-white` is Night in the light theme, on purpose.** About two hundred veils and hairlines are written `bg-white/6` or `border-white/8`, which on black means "a little lighter". On Bone the same intent is "a little darker", so redefining white turns every one of them in one line. The cost is a rule: **a thing that must be white in both themes — a toggle's knob — is written `#fff`, never `white`.**
+
+**Colour as text has its own token.** Ember on Bone is 2.4:1, so `text-accent`, `text-live` and `text-warn` became `text-accent-ink`, `text-live-ink` and `text-warn-ink`. In dark they are the colours themselves; in light they darken. A fill (`bg-accent`, `bg-live`) keeps the bright colour in both.
+
+**A light glass lets colour through.** At 55% over a pink cover, the settings sheet turned pink: a dark tint swallows what is behind it and a light one does not. The light theme keeps the person's alpha as a position on the slider and lifts it toward solid (`--glass-lift`: 55% draws at 73%, 100% stays 100%), and the blur saturates at 130% instead of 180%.
+
+The bloom and the pointer light become white on Bone. Grain is inverted, because white noise on Bone is invisible. The picture's veil is the ground colour, so it darkens in dark and lightens in light — the control says "Atenuar", not "Oscurecer".
+
+The choice is saved in Rust like every other setting, and also cached in localStorage, because the first frame is painted before any `invoke` answers. `system` listens to Windows while it is the choice.
+
 ## Type
 
 `Syne` (700/800, −0.02em) for `h1`/`h2` and the wordmark, `DM Sans` for everything else, `DM Mono` for numbers — timecodes, counts, the version (`.tabular`, with tabular figures, so a countdown never shifts). The landing uses the same three. Not Inter: the detector flags it as `overused-font`.

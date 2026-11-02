@@ -364,7 +364,7 @@ export function AuthGate({
                 </div>
 
                 {message && (
-                  <p className="w-full rounded-[14px] border border-warn/30 bg-warn/10 px-4 py-3 text-left text-[12.5px] leading-relaxed text-warn">
+                  <p className="w-full rounded-[14px] border border-warn/30 bg-warn/10 px-4 py-3 text-left text-[12.5px] leading-relaxed text-warn-ink">
                     {message}
                   </p>
                 )}
@@ -415,7 +415,7 @@ export function AuthGate({
                 )}
 
                 <ul className="flex w-full flex-col gap-2.5 border-t border-white/8 pt-6 text-left">
-                  <Note icon={Crown} tone="text-accent">
+                  <Note icon={Crown} tone="text-accent-ink">
                     {t.authPremium}
                   </Note>
                   <Note icon={Lock} tone="text-ink-muted">

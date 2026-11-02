@@ -416,7 +416,7 @@ export function PlayerBar({
 
               <div className="min-w-0">
                 {error ? (
-                  <p className="flex items-center gap-1.5 truncate text-[13px] font-semibold text-warn">
+                  <p className="flex items-center gap-1.5 truncate text-[13px] font-semibold text-warn-ink">
                     <TriangleAlert className="size-[13px] shrink-0" strokeWidth={2} />
                     <span className="truncate">{t.playbackErrorTitle}</span>
                   </p>
@@ -545,7 +545,10 @@ export function PlayerBar({
 
         {/* The refusal, in full, where there is room for it. */}
         {error && (
-          <p className="w-full truncate text-center text-[12px] text-warn" title={explain(error)}>
+          <p
+            className="w-full truncate text-center text-[12px] text-warn-ink"
+            title={explain(error)}
+          >
             {explain(error)}
           </p>
         )}
@@ -639,7 +642,7 @@ export function PlayerBar({
             aria-label={muted ? t.unmute : t.mute}
             title={muted ? t.unmute : t.mute}
             className={`shrink-0 transition-colors duration-200 ${
-              muted ? "text-live" : "text-ink-muted hover:text-ink"
+              muted ? "text-live-ink" : "text-ink-muted hover:text-ink"
             }`}
           >
             {muted ? (
@@ -714,7 +717,7 @@ function TransportToggle({
       title={label}
       aria-pressed={on}
       className={`grid size-9 shrink-0 place-items-center rounded-pill transition-colors duration-200 disabled:pointer-events-none disabled:opacity-35 ${
-        on ? "bg-accent/15 text-accent" : "text-ink-faint hover:bg-white/8 hover:text-ink"
+        on ? "bg-accent/15 text-accent-ink" : "text-ink-faint hover:bg-white/8 hover:text-ink"
       }`}
     >
       {children}

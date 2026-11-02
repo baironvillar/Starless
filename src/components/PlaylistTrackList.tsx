@@ -181,9 +181,9 @@ export function PlaylistTrackList({
                   <span
                     className={`tabular text-[13px] ${
                       isFailed
-                        ? "text-warn"
+                        ? "text-warn-ink"
                         : isPlaying
-                          ? "text-accent"
+                          ? "text-accent-ink"
                           : "text-ink-faint group-hover:opacity-0"
                     } ${isLoading && !isPlaying ? "opacity-0" : ""}`}
                   >
@@ -205,7 +205,7 @@ export function PlaylistTrackList({
                       isPlaying
                         ? "opacity-100"
                         : isFailed
-                          ? "text-warn opacity-100 group-hover:opacity-0"
+                          ? "text-warn-ink opacity-100 group-hover:opacity-0"
                           : "text-ink opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                     }`}
                   >
@@ -238,7 +238,7 @@ export function PlaylistTrackList({
                   )}
                   <div className={compact ? "flex min-w-0 items-baseline gap-2" : "min-w-0"}>
                     <p
-                      className={`truncate text-[13.5px] font-semibold ${isPlaying ? "text-accent" : ""}`}
+                      className={`truncate text-[13.5px] font-semibold ${isPlaying ? "text-accent-ink" : ""}`}
                     >
                       {track.name}
                     </p>
@@ -350,7 +350,7 @@ function Note({
   return (
     <p
       className={`border-b border-white/8 px-5 py-6 text-center text-[13px] last:border-b-0 ${
-        tone === "warn" ? "text-warn" : "text-ink-faint"
+        tone === "warn" ? "text-warn-ink" : "text-ink-faint"
       }`}
     >
       {children}

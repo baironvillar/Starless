@@ -1887,6 +1887,16 @@ fn set_track_view(view: String) {
     settings::save_track_view(&view);
 }
 
+#[tauri::command]
+fn theme() -> String {
+    settings::saved_theme().to_string()
+}
+
+#[tauri::command]
+fn set_theme(theme: String) {
+    settings::save_theme(&theme);
+}
+
 /// The background effects, every one with its value. See `settings::EFFECTS`.
 #[tauri::command]
 fn effects() -> std::collections::BTreeMap<&'static str, &'static str> {
@@ -2161,6 +2171,8 @@ pub fn run() {
             set_track_order,
             track_view,
             set_track_view,
+            theme,
+            set_theme,
             effects,
             set_effect,
             background::background_image,

@@ -113,7 +113,7 @@ export function SearchMenu({
           <p className="px-4 py-2 text-[13px] text-ink-faint">{t.searchNoMatches}</p>
         )}
 
-        {error && <p className="px-4 py-2 text-[13px] text-warn">{error}</p>}
+        {error && <p className="px-4 py-2 text-[13px] text-warn-ink">{error}</p>}
 
         {suggestions.map((track, index) => {
           const active = highlighted === index;
@@ -155,7 +155,7 @@ export function SearchMenu({
 
               <CornerDownLeft
                 className={`size-3.5 shrink-0 transition-opacity duration-150 ${
-                  active ? "text-accent opacity-100" : "opacity-0"
+                  active ? "text-accent-ink opacity-100" : "opacity-0"
                 }`}
                 strokeWidth={2}
               />
@@ -186,7 +186,7 @@ export function SearchMenu({
             )}
             <CornerDownLeft
               className={`size-3.5 shrink-0 transition-opacity duration-150 ${
-                highlighted === allIndex ? "text-accent opacity-100" : "opacity-0"
+                highlighted === allIndex ? "text-accent-ink opacity-100" : "opacity-0"
               }`}
               strokeWidth={2}
             />
