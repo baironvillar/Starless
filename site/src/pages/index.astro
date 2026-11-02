@@ -69,27 +69,17 @@
   .key:hover svg { transform: translateY(2px); }
   @media (prefers-reduced-motion: reduce) { .key::before, .key::after, .key svg { transition: none; } }
 
-  /* The rings: one oval around the pool for each section, further out as the
-     page goes down. */
-  #rings { position: absolute; z-index: 0; left: 0; top: 0; width: 100%; pointer-events: none; }
-  /* No `vector-effect: non-scaling-stroke` here. The SVG has no viewBox, so
-     one user unit is one pixel and the stroke is a hairline at every radius
-     anyway. Asking for a non-scaling stroke makes Chrome stroke the path
-     again in device space on every tile, and these ovals cover the whole
-     page: the text that shares those tiles was left unpainted while it did. */
-  /* Every ring is an oval and not a circle. Closed, the first section's ring
-     read as a round shape around the pool among the open ones, and a round
-     shape among open curves reads as a mistake. An oval is wider than it is
-     tall, so every one of them crosses the page and none of them can close. */
-  /* Every ring is the same hairline. The ring of the section being played
-     used to be brighter, and one brighter line among identical ones reads as
-     a mistake — the family is the structure, and the only thing on the page
-     that changes brightness is the wave travelling over it. */
-  #rings ellipse { fill: none; stroke: var(--line); stroke-width: 1; }
-  /* The mark of the section being read: a dot on its ring, where the ring
-     touches the section's top edge. It rides the wave, so it arrives with it
-     and lands where the wave lands. */
-  #rings circle.mark { fill: rgb(237 234 227 / 0.55); stroke: none; }
+  /* The mark: the one dot that says where you are on the page.
+     The rings that used to live here are gone. They were the family of
+     concentric curves that separated the sections, and a page whose sections
+     are separated by curves reads as a diagram of itself: the curves were
+     decoration pretending to be structure, and the one that carried the
+     position was brighter than its neighbours, which made the whole family
+     read as a mistake. What separates the sections now is the content and
+     its hairlines, and the only thing on the page that says where you are is
+     this dot. */
+  #mark-layer { position: absolute; z-index: 0; left: 0; top: 0; width: 100%; pointer-events: none; }
+  #mark-layer circle.mark { fill: rgb(237 234 227 / 0.55); stroke: none; }
 
   /* The pool */
   .hero { position: relative; z-index: 1; min-height: 100svh; display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
@@ -237,7 +227,7 @@
       }
 
       /* Leaving the pool: the words lift away faster than the page and the
-         liquid sinks into the floor, so the rings it sits in show through.
+         liquid sinks into the floor, so the dish it sits in shows through.
          The fade lasts the whole way out: if it ended halfway, there was a
          stretch of page with the hero gone and the next section not yet
          arrived — a screen with nothing on it. */
@@ -380,7 +370,7 @@
 </style>
 </head>
 <body>
-<svg id="rings" aria-hidden="true"><g id="ring-centre"></g></svg>
+<svg id="mark-layer" aria-hidden="true"><g id="mark-centre"></g></svg>
 <main>
   <section class="hero" id="inicio" data-track="Starless">
     <canvas id="ferro" aria-hidden="true"></canvas>
@@ -721,7 +711,7 @@ void main() {
 
   const phone = () => innerWidth <= 860;
   // Where the pool sits, as fractions of the hero: right of the words on a
-  // desk screen, above them on a phone. The shader and the rings both use it.
+  // desk screen, above them on a phone. The shader and the mark both use it.
   const stage = document.querySelector(".stage");
   // In CSS pixels from the hero's top left. On a phone the pool fills its
   // band: the spikes rise about 0.9 radii above the centre and the dish
@@ -830,123 +820,62 @@ void main() {
     };
   }
 
-  // The rings around the pool. Each section's ring passes through its top
-  // edge under the pool, so going down the page is going further out.
-  const svg = document.getElementById("rings");
-  const centre = document.getElementById("ring-centre");
+  // The mark: the one dot that says where you are on the page. It sits on the
+  // edge of the section being read, on the pool's centre line, and it moves
+  // to the next section's edge when the page moves on.
+  //
+  // The rings that used to be here are gone. They were the family of
+  // concentric curves that separated the sections, and a page whose sections
+  // are separated by curves reads as a diagram of itself: the curves were
+  // decoration pretending to be structure, and the one that carried the
+  // position was brighter than its neighbours, which made the whole family
+  // read as a mistake. What separates the sections now is the content and its
+  // hairlines.
+  const svg = document.getElementById("mark-layer");
+  const centre = document.getElementById("mark-centre");
   const ringed = ["promesas", "app", "dj", "que-hace", "mezcla", "sin", "antes", "fin"].map((id) => document.getElementById(id));
   const NS = "http://www.w3.org/2000/svg";
-  // How much wider than tall each oval is. A ring that is as wide as it is
-  // tall closes into a circle, and a circle around the pool reads as a
-  // mistake among the open curves.
-  const SPREAD = 1.9;
-  let radii = [];
-  let rings = [];
-  // The mark of the section being read: a dot on its ring, at the place the
-  // ring touches the section's top edge. Every ring is the same hairline, so
-  // the dot is what says where you are, and it rides the wave: it arrives
-  // with it and lands where the wave lands.
   const mark = document.createElementNS(NS, "circle");
   mark.setAttribute("class", "mark");
   mark.setAttribute("r", "3");
+  // The edge of every section, measured from the pool's centre: the hero's
+  // own edge is the centre itself, so the mark has no place in it.
+  let edges = [];
   const placeMark = () => {
-    const r = radii[at] || 0;
-    mark.setAttribute("cy", r.toFixed(1));
-    mark.setAttribute("opacity", r > 0 ? "1" : "0");
+    const e = edges[at] || 0;
+    mark.setAttribute("cy", e.toFixed(1));
+    mark.setAttribute("opacity", e > 0 ? "1" : "0");
   };
-  function layoutRings() {
+  function layoutMark() {
     const p = pool();
-    const cx = p.x, cy = p.y;
     svg.style.height = `${document.documentElement.scrollHeight}px`;
-    centre.setAttribute("transform", `translate(${cx} ${cy})`);
-    // The hero has a ring of its own, and it is the centre of the pool: the
-    // wave is born there when the page starts moving.
-    radii = [0, ...ringed.map((el) => el.offsetTop - cy)];
-    rings = radii.map((r) => {
-      const e = document.createElementNS(NS, "ellipse");
-      e.setAttribute("rx", (r * SPREAD).toFixed(1));
-      e.setAttribute("ry", r.toFixed(1));
-      return e;
-    });
-    centre.replaceChildren(...rings, mark);
+    centre.setAttribute("transform", `translate(${p.x} ${p.y})`);
+    edges = [0, ...ringed.map((el) => el.offsetTop - p.y)];
+    centre.replaceChildren(mark);
     placeMark();
   }
 
-  // A new track pushes the last one's ring outward, like a drop displacing
-  // the one before it.
+  // A new track moves the mark to the edge of the section that is playing.
   const order = ["inicio", "promesas", "app", "dj", "que-hace", "mezcla", "sin", "antes"];
   let at = 0;
-  let flight = null;
-  // A wave still in the air is dropped and every ring goes back to its own
-  // place: a scroll that crosses two sections at once must not leave a wave
-  // stranded halfway between two rings.
-  const settle = () => {
-    flight?.cancel();
-    flight = null;
-    for (const e of centre.children) e.getAnimations().forEach((a) => a.cancel());
-  };
   function push(to) {
     const from = at;
     at = to;
-    if (reduce || from === to || !radii.length) return;
-    settle();
-    // The wave is not another ring drawn on top of the others: it is the ring
-    // of the section being left, growing to the next one and going out as it
-    // goes. One stroke moves, so there are never two curves of different
-    // sizes at once — which is what used to show up as a second wave next to
-    // the one that was already there. The ring the wave is heading for stays
-    // hidden until the wave lands on it, and from there on the two are the
-    // same curve in the same place.
-    const wave = rings[from];
-    const land = rings[to];
-    const fromX = (radii[from] * SPREAD).toFixed(1);
-    const fromY = radii[from].toFixed(1);
-    const toX = (radii[to] * SPREAD).toFixed(1);
-    const toY = radii[to].toFixed(1);
-    const a = wave.animate(
-      [
-        { rx: `${fromX}px`, ry: `${fromY}px`, opacity: 1, stroke: "rgb(237 234 227 / 0.1)" },
-        { rx: `${fromX}px`, ry: `${fromY}px`, opacity: 1, stroke: "rgb(237 234 227 / 0.5)", offset: 0.12 },
-        { rx: `${toX}px`, ry: `${toY}px`, opacity: 1, stroke: "rgb(237 234 227 / 0.5)", offset: 0.5 },
-        { rx: `${toX}px`, ry: `${toY}px`, opacity: 0, stroke: "rgb(237 234 227 / 0.5)" },
-      ],
-      { duration: 1400, easing: "cubic-bezier(0.23, 1, 0.32, 1)", fill: "forwards" },
-    );
-    flight = a;
-    // The mark travels with the wave: it is on the wave's lowest point, so it
-    // leaves the section it was in and lands on the edge of the next one,
-    // exactly where the wave lands. The keyframes are the wave's own, so the
-    // two move together to the pixel.
-    const fromOn = fromY > 0 ? 1 : 0;
-    const toOn = toY > 0 ? 1 : 0;
+    if (reduce || from === to || !edges.length) return;
+    const fromY = edges[from];
+    const toY = edges[to];
+    // The mark is where the new section starts before it moves: the animation
+    // takes it from the old edge to the new one, and the attributes behind it
+    // already say the new edge, so nothing jumps when it lands.
+    placeMark();
+    for (const a of mark.getAnimations()) a.cancel();
     mark.animate(
       [
-        { cy: `${fromY}px`, opacity: fromOn },
-        { cy: `${fromY}px`, opacity: fromOn, offset: 0.12 },
-        { cy: `${toY}px`, opacity: toOn, offset: 0.5 },
-        { cy: `${toY}px`, opacity: toOn },
+        { cy: `${fromY}px`, opacity: fromY > 0 ? 1 : 0 },
+        { cy: `${toY}px`, opacity: toY > 0 ? 1 : 0 },
       ],
-      { duration: 1400, easing: "cubic-bezier(0.23, 1, 0.32, 1)" },
+      { duration: 700, easing: "cubic-bezier(0.23, 1, 0.32, 1)" },
     );
-    // The ring the wave lands on comes up under it: the same curve, in the
-    // same place, so the two are never two waves of different sizes.
-    land.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 600, delay: 700, fill: "both" });
-    a.finished
-      .then(() => {
-        if (flight !== a) return;
-        flight = null;
-        // The wave has landed. The ring it was goes back to its own place and
-        // comes back dim: the page's shape does not depend on where the wave
-        // is. Its geometry never left the attributes, so cancelling the wave
-        // puts it back where it belongs, and only the opacity fades in —
-        // nothing travels backwards, and nothing blinks.
-        a.cancel();
-        wave.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 400, easing: "ease-out" });
-        land.getAnimations().forEach((x) => x.cancel());
-        // The mark has arrived: it belongs to the section that is playing.
-        placeMark();
-      })
-      .catch(() => {});
   }
 
   for (const k of keys) {
@@ -962,9 +891,9 @@ void main() {
     k.addEventListener("pointerleave", off);
     k.addEventListener("blur", off);
   }
-  new ResizeObserver(layoutRings).observe(document.body);
-  document.fonts.ready.then(layoutRings);
-  layoutRings();
+  new ResizeObserver(layoutMark).observe(document.body);
+  document.fonts.ready.then(layoutMark);
+  layoutMark();
 
   new IntersectionObserver(([e]) => { heroVisible = e.isIntersecting; }).observe(hero);
 
