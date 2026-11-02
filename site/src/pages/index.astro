@@ -1,3 +1,7 @@
+---
+import Screen from "../components/Screen.astro";
+---
+
 <!doctype html>
 <html lang="es">
 <head>
@@ -110,15 +114,18 @@
   .promise p { font-size: 17px; line-height: 1.65; color: var(--body); }
 
   /* The screens: one window with its pictures stacked, and the list of what
-     each one is. Without scroll timelines only the first picture shows. */
+     each one is. Without scroll timelines only the first picture shows.
+     The pictures are drawings of the app and not photographs of an account:
+     the names are bars and the covers are gradients, because `public/` is
+     published and a photograph of somebody's library is a disclosure. The
+     container lets each drawing measure itself against the window it is in. */
   .shots { margin-top: 48px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.9fr); gap: 48px; align-items: center; }
   .steps { list-style: none; padding: 0; border-top: 1px solid var(--line); }
   .steps li { padding: 18px 0; border-bottom: 1px solid var(--line); }
   .steps h3 { font-size: 21px; }
   .steps p { margin-top: 6px; color: var(--body); font-size: 15px; line-height: 1.55; }
   .window { position: relative; aspect-ratio: 16 / 9; border-radius: 14px; overflow: hidden; background: var(--night); box-shadow: 0 0 0 1px var(--line), 0 30px 80px rgb(0 0 0 / 0.5); }
-  .shot { position: absolute; inset: 0; display: grid; place-items: center; color: var(--mute); font-size: 13px; background: var(--night); }
-  .shot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: top left; }
+  .shot { position: absolute; inset: 0; display: grid; place-items: center; color: var(--mute); font-size: 13px; background: var(--night); container-type: inline-size; }
   .shot + .shot { opacity: 0; }
 
   /* The DJ: its ring, in ink like the app's own button, and what it says. */
@@ -411,10 +418,10 @@
             <li><h3>A tu gusto</h3><p>El color de acento y qué tan sólidos se ven los menús.</p></li>
           </ol>
           <figure class="window" aria-label="Pantallas de Starless">
-            <div class="shot"><img src={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/shots/1-biblioteca.webp`} alt="La biblioteca de Starless, con sus playlists" width="1462" height="917" /></div>
-            <div class="shot"><img src={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/shots/2-playlist.webp`} alt="Una playlist abierta en Starless" width="1881" height="1053" /></div>
-            <div class="shot"><img src={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/shots/3-cola.webp`} alt="La cola de reproducción sobre una playlist" width="1447" height="939" /></div>
-            <div class="shot"><img src={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/shots/4-ajustes.webp`} alt="Los ajustes de personalización de Starless" width="1299" height="664" /></div>
+            <div class="shot"><Screen variant="library" /></div>
+            <div class="shot"><Screen variant="playlist" /></div>
+            <div class="shot"><Screen variant="queue" /></div>
+            <div class="shot"><Screen variant="settings" /></div>
           </figure>
         </div>
       </div>

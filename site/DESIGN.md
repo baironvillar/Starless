@@ -215,6 +215,13 @@ Circles and capsules echo the speaker: the pool, the player's round bead, the ca
 - **Energy:** 0.42 base plus a kick at 112 BPM that decays fast, plus scroll velocity, plus a surge while a download key is hovered or focused. Rendering pauses when the hero leaves the viewport.
 - **Reduced motion:** a single frame at fixed energy; no travelling mark, no title roll.
 
+### The app window (drawn, not photographed)
+- **What it is:** the app's own window, drawn in HTML and CSS — the glass, the riel, the table of tracks, the bar that comes with the music. Four screens: the library, a playlist, the queue, the settings, and the hand scrolls from one to the next.
+- **Why it is drawn:** the captures that used to be here were photographs of a real account: its playlists, its songs, its name and other people's artwork. `public/` is published with the site, so a photograph in it is a disclosure. A drawing is not.
+- **What is left out:** the names are bars where the word would be, and the covers are gradients that belong to nobody. The app's own words stay — "Tu biblioteca", "Cola de reproducción", "Orden personalizado" — because the chrome is the product.
+- **How it scales:** the drawing is made at 1440 and every size is a multiple of `--u`, a hundredth of the window's width, so the window shows the app at its own size instead of a shrunk photograph of a bigger one.
+- **Don't** put a real name, a real song, a real playlist or anyone's artwork in there, and don't bring the photographs back.
+
 ### Between the sections (nothing)
 - **What there was:** a family of concentric hairline curves centred on the pool, one per section, and a wave that travelled over them. The rings were the page's structure: reading down the page was travelling outward from the speaker.
 - **Why it is gone:** a page whose sections are separated by curves reads as a diagram of itself. The curves were decoration pretending to be structure, and every version of them — circles, arcs, ovals, the wave — was harder to read than the content they sat behind: the first one closed into a round shape around the pool, the arcs became a page of scribbles, and the one that carried the position was brighter than its neighbours. The dot that replaced them was the same idea in miniature, a mark laid over the content, and it went too.
@@ -244,7 +251,6 @@ Circles and capsules echo the speaker: the pool, the player's round bead, the ca
 - **Don't** let a decoration repaint the page while it is read: no scaled SVG stroke, no giant path re-stroked over the whole document, nothing that leaves a frame unpainted.
 
 <!-- OPEN ITEMS (not part of the system):
-- The app section's window shows real captures in `public/shots/`. `1-biblioteca` and `3-cola` were retaken with the new identity; `2-playlist` and `4-ajustes` still show the old pink look and need retaking.
 - Fonts load from Google Fonts; the Astro build could self-host Syne, DM Sans and DM Mono.
 Direction: .impeccable/surfaces/index-html.md, seed:493bf2d1c9f053b5 -->
 
