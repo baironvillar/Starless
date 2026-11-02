@@ -81,8 +81,11 @@
      read as a round shape around the pool among the open ones, and a round
      shape among open curves reads as a mistake. An oval is wider than it is
      tall, so every one of them crosses the page and none of them can close. */
-  #rings ellipse { fill: none; stroke: var(--line); stroke-width: 1; transition: stroke 700ms var(--ease-out); }
-  #rings ellipse.lit { stroke: rgb(237 234 227 / 0.3); }
+  /* Every ring is the same hairline. The ring of the section being played
+     used to be brighter, and one brighter line among identical ones reads as
+     a mistake — the family is the structure, and the only thing on the page
+     that changes brightness is the wave travelling over it. */
+  #rings ellipse { fill: none; stroke: var(--line); stroke-width: 1; }
 
   /* The pool */
   .hero { position: relative; z-index: 1; min-height: 100svh; display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
@@ -835,10 +838,6 @@ void main() {
   const SPREAD = 1.9;
   let radii = [];
   let rings = [];
-  // The ring of the section that is playing stays lit, so the rings say
-  // where on the page you are and not only that you moved.
-  let litRing = -1;
-  const lightRing = () => rings.forEach((e, i) => e.classList.toggle("lit", i === litRing));
   function layoutRings() {
     const p = pool();
     const cx = p.x, cy = p.y;
@@ -854,7 +853,6 @@ void main() {
       return e;
     });
     centre.replaceChildren(...rings);
-    lightRing();
   }
 
   // A new track pushes the last one's ring outward, like a drop displacing
@@ -873,8 +871,6 @@ void main() {
   function push(to) {
     const from = at;
     at = to;
-    litRing = to;
-    lightRing();
     if (reduce || from === to || !radii.length) return;
     settle();
     // The wave is not another ring drawn on top of the others: it is the ring
@@ -892,7 +888,7 @@ void main() {
     const toY = radii[to].toFixed(1);
     const a = wave.animate(
       [
-        { rx: `${fromX}px`, ry: `${fromY}px`, opacity: 1, stroke: "rgb(237 234 227 / 0.14)" },
+        { rx: `${fromX}px`, ry: `${fromY}px`, opacity: 1, stroke: "rgb(237 234 227 / 0.1)" },
         { rx: `${fromX}px`, ry: `${fromY}px`, opacity: 1, stroke: "rgb(237 234 227 / 0.5)", offset: 0.12 },
         { rx: `${toX}px`, ry: `${toY}px`, opacity: 1, stroke: "rgb(237 234 227 / 0.5)", offset: 0.5 },
         { rx: `${toX}px`, ry: `${toY}px`, opacity: 0, stroke: "rgb(237 234 227 / 0.5)" },
