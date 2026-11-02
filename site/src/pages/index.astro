@@ -5,7 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Starless</title>
 <meta name="description" content="Un cliente de escritorio liviano y no oficial para tu cuenta Premium. Para Windows." />
-<link rel="icon" type="image/svg+xml" href="starless.svg" />
+<!-- The files in public/ are served at the root of the site, and Astro asks
+     for their URLs to carry the base. A relative path only finds them when
+     the URL ends with a slash: without it the logo and the screenshots come
+     out broken while the text and the styles load fine. -->
+<link rel="icon" type="image/svg+xml" href={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/starless.svg`} />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;500;600&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
@@ -371,12 +375,12 @@
   <section class="hero" id="inicio" data-track="Starless">
     <canvas id="ferro" aria-hidden="true"></canvas>
     <header class="top">
-      <span class="brand"><img src="starless.svg" alt="" width="28" height="28" /><span class="sl-wordmark">starless</span><span class="nums"><span data-version>0.5.5</span></span></span>
+      <span class="brand"><img src={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/starless.svg`} alt="" width="28" height="28" /><span class="sl-wordmark">starless</span><span class="nums"><span data-version>0.5.5</span></span></span>
       <nav aria-label="Secciones"><a href="#que-hace">Qué hace</a><a href="#antes">Antes de instalar</a><a href="https://github.com/baironvillar/Starless">GitHub</a></nav>
     </header>
     <div class="stage" aria-hidden="true"></div>
     <div class="pitch">
-      <div class="plate sl-glass"><img src="starless-glass.svg" alt="" width="128" height="128" /></div>
+      <div class="plate sl-glass"><img src={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/starless-glass.svg`} alt="" width="128" height="128" /></div>
       <h1 class="sl-wordmark">starless</h1>
       <p>Un cliente de escritorio liviano y no oficial para tu cuenta Premium. Suena directo y no le cuenta a nadie lo que escuchas.</p>
       <a class="key" href="https://github.com/baironvillar/Starless/releases/download/v0.5.5/Starless_0.5.5_x64.msi" data-msi>
@@ -410,10 +414,10 @@
             <li><h3>A tu gusto</h3><p>El color de acento y qué tan sólidos se ven los menús.</p></li>
           </ol>
           <figure class="window" aria-label="Pantallas de Starless">
-            <div class="shot"><img src="shots/1-biblioteca.webp" alt="La biblioteca de Starless, con sus playlists" width="1462" height="917" /></div>
-            <div class="shot"><img src="shots/2-playlist.webp" alt="Una playlist abierta en Starless" width="1881" height="1053" /></div>
-            <div class="shot"><img src="shots/3-cola.webp" alt="La cola de reproducción sobre una playlist" width="1447" height="939" /></div>
-            <div class="shot"><img src="shots/4-ajustes.webp" alt="Los ajustes de personalización de Starless" width="1299" height="664" /></div>
+            <div class="shot"><img src={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/shots/1-biblioteca.webp`} alt="La biblioteca de Starless, con sus playlists" width="1462" height="917" /></div>
+            <div class="shot"><img src={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/shots/2-playlist.webp`} alt="Una playlist abierta en Starless" width="1881" height="1053" /></div>
+            <div class="shot"><img src={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/shots/3-cola.webp`} alt="La cola de reproducción sobre una playlist" width="1447" height="939" /></div>
+            <div class="shot"><img src={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/shots/4-ajustes.webp`} alt="Los ajustes de personalización de Starless" width="1299" height="664" /></div>
           </figure>
         </div>
       </div>
