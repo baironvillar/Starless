@@ -69,17 +69,15 @@
   .key:hover svg { transform: translateY(2px); }
   @media (prefers-reduced-motion: reduce) { .key::before, .key::after, .key svg { transition: none; } }
 
-  /* The mark: the one dot that says where you are on the page.
-     The rings that used to live here are gone. They were the family of
-     concentric curves that separated the sections, and a page whose sections
-     are separated by curves reads as a diagram of itself: the curves were
-     decoration pretending to be structure, and the one that carried the
-     position was brighter than its neighbours, which made the whole family
-     read as a mistake. What separates the sections now is the content and
-     its hairlines, and the only thing on the page that says where you are is
-     this dot. */
-  #mark-layer { position: absolute; z-index: 0; left: 0; top: 0; width: 100%; pointer-events: none; }
-  #mark-layer circle.mark { fill: rgb(237 234 227 / 0.55); stroke: none; }
+  /* Nothing divides the sections. The rings that used to live here were the
+     family of concentric curves that separated them, and a page whose
+     sections are separated by curves reads as a diagram of itself: they were
+     decoration pretending to be structure. The dot that replaced them was the
+     same idea in miniature — a mark saying where you are, laid over the
+     content. What separates the sections now is the content and the
+     hairlines between its rows, and where you are is said by the player bar,
+     which names the section. Nothing else is needed and nothing else is
+     drawn. */
 
   /* The pool */
   .hero { position: relative; z-index: 1; min-height: 100svh; display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
@@ -370,7 +368,6 @@
 </style>
 </head>
 <body>
-<svg id="mark-layer" aria-hidden="true"><g id="mark-centre"></g></svg>
 <main>
   <section class="hero" id="inicio" data-track="Starless">
     <canvas id="ferro" aria-hidden="true"></canvas>
@@ -701,6 +698,7 @@ void main() {
 </script>
 <script is:inline>
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const NS = "http://www.w3.org/2000/svg";
   const canvas = document.getElementById("ferro");
   const hero = document.getElementById("inicio");
   const dot = document.getElementById("dot");
@@ -711,7 +709,7 @@ void main() {
 
   const phone = () => innerWidth <= 860;
   // Where the pool sits, as fractions of the hero: right of the words on a
-  // desk screen, above them on a phone. The shader and the mark both use it.
+  // desk screen, above them on a phone. The shader uses it.
   const stage = document.querySelector(".stage");
   // In CSS pixels from the hero's top left. On a phone the pool fills its
   // band: the spikes rise about 0.9 radii above the centre and the dish
@@ -820,63 +818,14 @@ void main() {
     };
   }
 
-  // The mark: the one dot that says where you are on the page. It sits on the
-  // edge of the section being read, on the pool's centre line, and it moves
-  // to the next section's edge when the page moves on.
-  //
-  // The rings that used to be here are gone. They were the family of
-  // concentric curves that separated the sections, and a page whose sections
-  // are separated by curves reads as a diagram of itself: the curves were
-  // decoration pretending to be structure, and the one that carried the
-  // position was brighter than its neighbours, which made the whole family
-  // read as a mistake. What separates the sections now is the content and its
-  // hairlines.
-  const svg = document.getElementById("mark-layer");
-  const centre = document.getElementById("mark-centre");
-  const ringed = ["promesas", "app", "dj", "que-hace", "mezcla", "sin", "antes", "fin"].map((id) => document.getElementById(id));
-  const NS = "http://www.w3.org/2000/svg";
-  const mark = document.createElementNS(NS, "circle");
-  mark.setAttribute("class", "mark");
-  mark.setAttribute("r", "3");
-  // The edge of every section, measured from the pool's centre: the hero's
-  // own edge is the centre itself, so the mark has no place in it.
-  let edges = [];
-  const placeMark = () => {
-    const e = edges[at] || 0;
-    mark.setAttribute("cy", e.toFixed(1));
-    mark.setAttribute("opacity", e > 0 ? "1" : "0");
-  };
-  function layoutMark() {
-    const p = pool();
-    svg.style.height = `${document.documentElement.scrollHeight}px`;
-    centre.setAttribute("transform", `translate(${p.x} ${p.y})`);
-    edges = [0, ...ringed.map((el) => el.offsetTop - p.y)];
-    centre.replaceChildren(mark);
-    placeMark();
-  }
-
-  // A new track moves the mark to the edge of the section that is playing.
-  const order = ["inicio", "promesas", "app", "dj", "que-hace", "mezcla", "sin", "antes"];
-  let at = 0;
-  function push(to) {
-    const from = at;
-    at = to;
-    if (reduce || from === to || !edges.length) return;
-    const fromY = edges[from];
-    const toY = edges[to];
-    // The mark is where the new section starts before it moves: the animation
-    // takes it from the old edge to the new one, and the attributes behind it
-    // already say the new edge, so nothing jumps when it lands.
-    placeMark();
-    for (const a of mark.getAnimations()) a.cancel();
-    mark.animate(
-      [
-        { cy: `${fromY}px`, opacity: fromY > 0 ? 1 : 0 },
-        { cy: `${toY}px`, opacity: toY > 0 ? 1 : 0 },
-      ],
-      { duration: 700, easing: "cubic-bezier(0.23, 1, 0.32, 1)" },
-    );
-  }
+  // There is nothing between the sections. The rings that used to be here
+  // were the family of concentric curves that divided the page, and a page
+  // whose sections are divided by curves reads as a diagram of itself: they
+  // were decoration pretending to be structure. The dot that replaced them
+  // was the same idea in miniature — a mark saying where you are, laid over
+  // the content. What separates the sections now is the content and the
+  // hairlines between its rows, and where you are is said by the player bar,
+  // which names the section. Nothing else is needed and nothing else is drawn.
 
   for (const k of keys) {
     const on = () => { keyWant = 0.35; };
@@ -891,9 +840,6 @@ void main() {
     k.addEventListener("pointerleave", off);
     k.addEventListener("blur", off);
   }
-  new ResizeObserver(layoutMark).observe(document.body);
-  document.fonts.ready.then(layoutMark);
-  layoutMark();
 
   new IntersectionObserver(([e]) => { heroVisible = e.isIntersecting; }).observe(hero);
 
@@ -1032,7 +978,6 @@ void main() {
     const text = section.dataset.track;
     if (text === current) return;
     current = text;
-    push(order.indexOf(section.id));
     if (reduce) { currentSpan.textContent = text; return; }
     // A roll is still arriving: the title changes under it instead of
     // starting a second one.

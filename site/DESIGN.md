@@ -113,13 +113,13 @@ The page is a still room with one thing moving in it: a pool of black ferrofluid
 
 **Nothing on the page may be dimmed out of sight, and nothing on it may flicker.** The scroll drives the page, not the reader: an effect may bring something in, draw it, light it or take it away, but whatever is on screen is legible. A section that fades to a tenth of its opacity on the way out reads as a broken page, not as a transition, and the same goes for a row that cannot be read and a digit that vanishes — the first version of this page did all three, and scrolling it felt like losing the text. A frame that leaves the text unpainted is the same failure by another road: the words are there, and the reader sees them blink out and back. So the decoration may never make the page stutter while it is read.
 
-Order comes from the flow itself, not from boxes and not from curves. Sections are separated by space and by the hairlines between their rows: nothing sits in a card, nothing behind glass, and nothing is divided by a drawn curve. The one mark on the page is a dot on the edge of the section being read, and it moves to the next edge as the page goes.
+Order comes from the flow itself, not from boxes and not from curves. Sections are separated by space and by the hairlines between their rows: nothing sits in a card, nothing behind glass, and nothing is divided by a drawn curve. Nothing marks the section being read either — the player bar names it.
 
 Colour is withheld on purpose. Void for the ground, glass over Night for the one floating surface, Bone for type, and frosted glass with an Ember light under it for the single action. Ember is the one hue: under the download keys and on the player's progress fill, nothing else; everything else is reflected light. The user rejected a colourful, retro, giant-condensed world before this one; this system is the answer to that rejection.
 
 **Key Characteristics:**
 - One moving object (the pool); everything else still.
-- The content's own hairlines as the page's structure; one dot marking the section being read.
+- The content's own hairlines as the page's structure; nothing drawn between the sections.
 - Grey palette; one warm light (Ember) on the progress fill; otherwise hue only as reflected light.
 - One action, the download key: frosted glass with an ember breathing under it.
 - Hairline rules instead of containers.
@@ -140,7 +140,7 @@ A grey ramp from Void to Bone, faintly warm, with one accent: Ember.
 - **Bone** (frost, `#EDEAE3`): headings, the active player title, focus outline, selection.
 - **Body** (body, `#C4C1C8`): reading copy in paragraphs, ledes and lists; one step under frost so headings lead.
 - **Smoke** (mute, `#9A97A0`): metadata, nav links at rest, version numbers, fine print, captions.
-- **Hairline** (hairline): frost at 10% for every rule. A stronger frost at 45% marks the single lead block in "Antes de instalar"; the mark is frost at 55%.
+- **Hairline** (hairline): frost at 10% for every rule. A stronger frost at 45% marks the single lead block in "Antes de instalar".
 - **Groove** (track): the empty progress track under the player title.
 
 ### Named Rules
@@ -174,8 +174,6 @@ A grey ramp from Void to Bone, faintly warm, with one accent: Ember.
 
 A centred container of 1200px inside a fluid gutter (clamp 20–56px). The hero fills the viewport: the pool's canvas spans it full-bleed with the pool centred at 66% across and 50% down, and the words (max 34rem) sit left, vertically centred. Sections stack with tall vertical padding (clamp 96–160px) so each one owns its own space. Inside sections, structure is a two-column grid (1fr : 1.2fr for promises; 1fr : 1fr for the install notes) or a numbered list of rows (number, title, line, version), separated only by hairlines. Blocks start 48–56px under their headline.
 
-The mark is a document-sized SVG behind the content, centred on the pool. Its position is measured, not fixed: the dot sits on the edge of the section being read — the distance from the pool's centre to that section's top — and it is re-laid on resize and font load. The hero has no edge of its own, so the dot is hidden while the hero is on screen.
-
 At 860px and below the pool moves above the words (centred at 50% across, 34% down, radius 42% of the shorter side) and the words drop to the bottom of the hero. Two-column grids collapse to one; feature rows fold their description under the title; the nav keeps only its last link; the player key drops its label to an icon. The footer leaves 150px at the bottom so the fixed player never covers content.
 
 ## Elevation & Depth
@@ -190,7 +188,7 @@ Flat ground; depth is rendered, not stacked. The pool's depth comes from the obl
 
 ## Shapes
 
-Circles and capsules echo the speaker: the pool, the player's round bead, the mark, the capsule key (999px). The player bar has gently rounded corners (18px). Everything in the reading flow is square-cornered and unbordered, separated by full-width hairlines top and bottom. The mark is a 3px dot at frost 55%: the only shape on the page that is not the pool's or the type's.
+Circles and capsules echo the speaker: the pool, the player's round bead, the capsule key (999px). The player bar has gently rounded corners (18px). Everything in the reading flow is square-cornered and unbordered, separated by full-width hairlines top and bottom. There is no other shape on the page: no rings, no dot, nothing drawn between the sections.
 
 ## Components
 
@@ -217,18 +215,18 @@ Circles and capsules echo the speaker: the pool, the player's round bead, the ma
 - **Energy:** 0.42 base plus a kick at 112 BPM that decays fast, plus scroll velocity, plus a surge while a download key is hovered or focused. Rendering pauses when the hero leaves the viewport.
 - **Reduced motion:** a single frame at fixed energy; no travelling mark, no title roll.
 
-### The mark (signature)
-- **Style:** a 3px dot at frost 55% on the edge of the section being read, on the pool's centre line. The ring that used to carry the position was brighter than its neighbours, and one brighter line among identical ones reads as a mistake; the dot says the same thing without lifting a line.
-- **Why there are no rings:** the rings were the family of concentric curves that separated the sections, and a page whose sections are separated by curves reads as a diagram of itself. They were decoration pretending to be structure, and every version of them — circles, arcs, ovals, and the wave that travelled over them — was harder to read than the content they sat behind. What divides the sections now is the content and its hairlines.
-- **How it moves:** the dot glides from the edge of the section being left to the edge of the one being entered, 700ms on the page's ease-out. The hero has no edge of its own, so the dot is hidden there and fades as it leaves.
-- **What it replaces:** the player bar names the section being read, so the position is never in doubt.
+### Between the sections (nothing)
+- **What there was:** a family of concentric hairline curves centred on the pool, one per section, and a wave that travelled over them. The rings were the page's structure: reading down the page was travelling outward from the speaker.
+- **Why it is gone:** a page whose sections are separated by curves reads as a diagram of itself. The curves were decoration pretending to be structure, and every version of them — circles, arcs, ovals, the wave — was harder to read than the content they sat behind: the first one closed into a round shape around the pool, the arcs became a page of scribbles, and the one that carried the position was brighter than its neighbours. The dot that replaced them was the same idea in miniature, a mark laid over the content, and it went too.
+- **What is left:** the content and the hairlines between its rows, and the player bar naming the section being read. Nothing else is drawn between the sections, and nothing says where you are except that bar.
+- **Don't** bring any of it back: no ring, no arc, no dot, no curve drawn over the content.
 
 ## Do's and Don'ts
 
 ### Do:
 - **Do** keep the pool the only continuously moving thing on a page; everything else moves only in answer to the visitor.
 - **Do** separate content with frost hairlines at 10% and let each section own its space.
-- **Do** use ease-out cubic-bezier(0.23, 1, 0.32, 1) for every transition: 420ms for the title roll, 700ms for the mark's glide, 320–420ms for the ember under the key, 800ms for its specular line.
+- **Do** use ease-out cubic-bezier(0.23, 1, 0.32, 1) for every transition: 420ms for the title roll, 320–420ms for the ember under the key, 800ms for its specular line.
 - **Do** set every number in tabular figures.
 - **Do** keep reading copy in body colour and metadata in mute, with headlines in frost.
 - **Do** render the liquid's light computationally so it reads as reflection, at dpr 1 for the full-screen shader.
@@ -242,8 +240,8 @@ Circles and capsules echo the speaker: the pool, the player's round bead, the ma
 - **Don't** add a second glowing object, or glass beyond the player, the logo plate and the download keys.
 - **Don't** use condensed widths or giant poster type beyond the hero wordmark.
 - **Don't** dim, hide or replace what is on screen: no text below its reading opacity, no number that vanishes under a meter, no scroll range that leaves the page empty.
-- **Don't** separate the sections with drawn curves, and don't bring the rings back: the content's own hairlines divide the page. **Don't** make the mark bigger than it needs to be — it says where you are, it doesn't announce itself.
-- **Don't** let a decoration repaint the page while it is read: no scaled SVG stroke, no giant path re-stroked over the whole document, nothing that leaves a frame unpainted. The mark is the page's background, and the background has to keep up with the scroll.
+- **Don't** separate the sections with drawn curves, and don't bring the rings back: the content's own hairlines divide the page, and the player bar says where you are. **Don't** replace them with a dot either.
+- **Don't** let a decoration repaint the page while it is read: no scaled SVG stroke, no giant path re-stroked over the whole document, nothing that leaves a frame unpainted.
 
 <!-- OPEN ITEMS (not part of the system):
 - The app section's window shows real captures in `public/shots/`. `1-biblioteca` and `3-cola` were retaken with the new identity; `2-playlist` and `4-ajustes` still show the old pink look and need retaking.
