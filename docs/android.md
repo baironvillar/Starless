@@ -42,7 +42,7 @@ prendido, el 2 de noviembre de 2026. La build es de debug, instalada por `adb`.
 | La biblioteca | **no**, hasta el parche de `librespot-core` | log: hash cash y `BAD_REQUEST` (abajo) |
 | Una playlist, las letras | sí: 590 ms y 942 ms | log |
 | Una canción suena | sí: primera muestra a los 1260 ms | log y oído |
-| Sigue con la pantalla apagada | sí | oído |
+| Sigue con la pantalla apagada | **con cortes** a los dos minutos en debug; sin cortes con las dependencias optimizadas | log: `PositionCorrection` cada 2 s, después ninguno en 4 min; `top -H` (abajo) |
 | El DJ | **no**, hasta llevar el parche al User-Agent; después sí, con su voz | log: `500`, y después `la voz del DJ: … 11.9s` |
 
 Lo que el análisis marcaba como sin medir y quedó medido: el `ndk_context`
@@ -86,6 +86,16 @@ se midió.
   corre `gradlew assembleArm64Debug -x rustBuildArm64Debug`.
 - `tauri android init` genera `minSdk = 24`, y `cpal` usa AAudio con
   `api-level-26`: el mínimo es 26, en `tauri.conf.json` y en el Gradle.
+- **Una build de debug sin optimizar no alcanza en el teléfono.** Con la
+  pantalla apagada, Android pasa la app a su grupo de CPU de segundo plano
+  (`cpu:/background`), y ahí el decodificador de librespot sin optimizar —39 %
+  de un núcleo, más 21 % la salida de audio— se atrasaba a los dos minutos: la
+  música se cortaba y librespot contestaba un `PositionCorrection` cada dos
+  segundos. Con las dependencias en `opt-level = 3` también en debug
+  (`[profile.dev.package."*"]`), la salida de audio baja a 3,4 % y cuatro
+  minutos con la pantalla apagada no dieron ni una corrección. El precio es el
+  APK de debug: 1 GB, porque las dependencias optimizadas siguen llevando su
+  información de depuración.
 
 ### Lo que sigue sin medir
 
