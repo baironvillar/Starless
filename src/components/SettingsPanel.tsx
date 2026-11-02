@@ -81,7 +81,13 @@ import {
   subscribeUpdate,
   updateState,
 } from "../lib/updater";
-import { appVersion, isPrerelease, isPublicBuild, subscribePublicBuild } from "../lib/version";
+import {
+  appVersion,
+  isMobile,
+  isPrerelease,
+  isPublicBuild,
+  subscribePublicBuild,
+} from "../lib/version";
 import { DevPanel } from "./DevPanel";
 import { SmoothSlider } from "./SmoothSlider";
 
@@ -335,9 +341,14 @@ function General({
         </Row>
       </Group>
 
-      <Updates t={t} />
+      {/* A phone has no updater: the system installs the app. */}
+      {!isMobile() && (
+        <>
+          <Updates t={t} />
 
-      <Prerelease t={t} />
+          <Prerelease t={t} />
+        </>
+      )}
 
       <DevPanel t={t} />
     </div>
@@ -1216,16 +1227,21 @@ function Account({ t, account }: { t: Record<StringKey, string>; account: UserAc
             )}
           </span>
         </Row>
-        <Row label={t.startWithWindows} hint={t.startWithWindowsHint}>
-          <Toggle
-            checked={atSignIn ?? false}
-            onChange={changeAtSignIn}
-            label={t.startWithWindows}
-          />
-        </Row>
-        <Row label={t.closeToTray} hint={t.closeToTrayHint}>
-          <Toggle checked={toTray ?? true} onChange={changeToTray} label={t.closeToTray} />
-        </Row>
+        {/* Windows' sign-in and its tray; a phone has neither. */}
+        {!isMobile() && (
+          <>
+            <Row label={t.startWithWindows} hint={t.startWithWindowsHint}>
+              <Toggle
+                checked={atSignIn ?? false}
+                onChange={changeAtSignIn}
+                label={t.startWithWindows}
+              />
+            </Row>
+            <Row label={t.closeToTray} hint={t.closeToTrayHint}>
+              <Toggle checked={toTray ?? true} onChange={changeToTray} label={t.closeToTray} />
+            </Row>
+          </>
+        )}
       </Group>
       <div className="mt-5">
         <button

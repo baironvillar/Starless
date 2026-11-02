@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import type { StringKey } from "../lib/i18n";
 import type { Track } from "../lib/spotify";
+import { isMobile } from "../lib/version";
 import { MIN_QUERY_LENGTH, SEARCH_MENU_ID, SearchMenu, searchOptionId } from "./SearchMenu";
 import { WindowControls } from "./WindowControls";
 
@@ -315,8 +316,13 @@ export function TopBar({
             the right, so that is where they are — and being last also means they
             are the hardest to hit by accident.
           */}
-          <span className="mx-1.5 h-6 w-px shrink-0 bg-white/10" />
-          <WindowControls t={t} />
+          {/* A phone has no window to minimise, maximise or close. */}
+          {!isMobile() && (
+            <>
+              <span className="mx-1.5 h-6 w-px shrink-0 bg-white/10" />
+              <WindowControls t={t} />
+            </>
+          )}
         </div>
       </motion.header>
 
