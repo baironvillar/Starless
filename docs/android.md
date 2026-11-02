@@ -52,25 +52,25 @@ Los llamadores que hay que cubrir, todos en `lib.rs`:
 
 | Línea | Qué | Qué hace en Android |
 | --- | --- | --- |
-| `1932-1941` | `on_window_event` → `tray::exists` | no hay botón de cerrar; el bloque entero es de escritorio |
-| `2007-2013` | `tray::install` y `startup::launched_minimized` | no hay bandeja ni arranque con el sistema |
-| `1712` | `media_session` → `tray::set_playing` | la tarjeta de medios sigue; la línea de la bandeja no |
-| `1717-1720` | el comando `tray_labels` y el tipo `tray::TrayLabels` | el comando queda en `generate_handler!` (no admite entradas condicionales) |
+| `1943-1952` | `on_window_event` → `tray::exists` | no hay botón de cerrar; el bloque entero es de escritorio |
+| `2018-2024` | `tray::install` y `startup::launched_minimized` | no hay bandeja ni arranque con el sistema |
+| `1713` | `media_session` → `tray::set_playing` | la tarjeta de medios sigue; la línea de la bandeja no |
+| `1718-1721` | el comando `tray_labels` y el tipo `tray::TrayLabels` | el comando queda en `generate_handler!` (no admite entradas condicionales) |
 
 La forma es la que ya usan `media_keys.rs:187` y `startup.rs:65`: un `mod imp`
 real y un stub con la misma firma. Así `lib.rs` no cambia, y `tray_labels`
 recibe el mismo tipo en las dos plataformas.
 
-### 2. `bring_to_front` (`lib.rs:795-801`)
+### 2. `bring_to_front` (`lib.rs:796-802`)
 
 Llama a `unminimize()`, y en Tauri 2.12.4 ese método vive en un
 `impl` con `#[cfg(desktop)]` (`tauri/src/webview/webview_window.rs:2031-2103`).
 `show()` y `set_focus()` sí existen en móvil (`webview_window.rs:2316` en
-adelante). Tiene dos llamadores: la segunda instancia (`lib.rs:1922`) y el
-callback del login (`lib.rs:818`). En Android el sistema es el que trae la app
+adelante). Tiene dos llamadores: la segunda instancia (`lib.rs:1933`) y el
+callback del login (`lib.rs:819`). En Android el sistema es el que trae la app
 al frente cuando el navegador la devuelve, así que la función es un no-op ahí.
 
-### 3. `tauri-plugin-single-instance` (`lib.rs:1920`)
+### 3. `tauri-plugin-single-instance` (`lib.rs:1931`)
 
 El crate 2.5.4 empieza con `#![cfg(not(any(target_os = "android", target_os = "ios")))]`
 (`src/lib.rs:16`): en Android compila **vacío**, y `init` no existe. La
@@ -156,6 +156,7 @@ Todos los archivos de la app salen del crate `dirs 6.0.0`:
 | el log | `logging.rs:34` | `dirs::data_local_dir()` |
 | el historial | `history.rs:38` | `dirs::data_local_dir()` |
 | los marcadores de crash y el panic | `report.rs:61` | `dirs::data_local_dir()` |
+| la imagen de fondo | `background.rs:23-25` | la carpeta de `settings.rs:28`, o sea `dirs::data_local_dir()` |
 
 `dirs` no tiene implementación para Android: cae en la de Linux (`src/lib.rs:33-43`
 excluye sólo Windows, macOS, iOS y wasm), que responde
@@ -170,6 +171,10 @@ Lo que pasa con cada una:
   `open_cache()` falla. **No se puede iniciar sesión.**
 - **Los ajustes, el log y el historial:** devuelven `None` y la app sigue sin
   ellos, en silencio. Nada se recuerda entre aperturas.
+- **La imagen de fondo:** `background_image` contesta un cuerpo vacío, que es su
+  respuesta normal cuando no hay imagen, y `set_background_image` devuelve
+  `command_failed` (`background.rs:74`): un código que no dice que falta la
+  carpeta.
 - **El crash:** sin carpeta no hay marcador, así que el crash tampoco se ve.
 
 La ruta correcta en Android es la del sandbox, y Tauri la da:
@@ -204,7 +209,7 @@ informa `track_unavailable`. El arreglo es una línea en `session_config`:
 
 ### 4. Cada apertura parece un crash
 
-El marcador de sesión se borra en `RunEvent::Exit` (`lib.rs:2186-2190`). En
+El marcador de sesión se borra en `RunEvent::Exit` (`lib.rs:2204-2208`). En
 Android el sistema mata el proceso cuando quiere —al deslizar la app de las
 recientes, por memoria— y `Exit` no llega. El marcador sobrevive, y la apertura
 siguiente ofrece mandar un reporte por un crash que no existió: la misma
@@ -228,10 +233,10 @@ actualización que ofrecer, y la app hace lo que `AGENTS.md` ya advierte: un
 fallo al comprobar se ve igual que "no hay".
 
 En Android el updater no se registra: el plugin va detrás de `#[cfg(desktop)]`,
-`check_prerelease_manifest` y `check_public_manifest` (`lib.rs:431` y `512`)
+`check_prerelease_manifest` y `check_public_manifest` (`lib.rs:432` y `513`)
 contestan un error en móvil, y el frontend no llama a `checkForUpdate`
-(`App.tsx:1844`, `SettingsPanel.tsx:363`) ni muestra `UpdateAlert`
-(`App.tsx:2974`).
+(`App.tsx:1890`, `SettingsPanel.tsx:407`) ni muestra `UpdateAlert`
+(`App.tsx:3038`).
 
 **Y la vuelta a la línea pública no existe en Android.** El instalador del
 sistema rechaza un `versionCode` menor que el instalado, así que "Volver a la
@@ -306,7 +311,7 @@ Lo que no se sabe y hay que medir:
   notificación. Sin eso, la música se corta a los pocos minutos de bloquear la
   pantalla. Tauri no trae ese servicio: va en Kotlin, como un plugin.
 - **Las teclas y la tarjeta de medios.** En Windows son `media_keys.rs`; en
-  Android son una `MediaSession`. El comando `media_session` (`lib.rs:1706-1714`)
+  Android son una `MediaSession`. El comando `media_session` (`lib.rs:1707-1715`)
   ya manda todo lo que la tarjeta necesita (`NowPlaying`), así que el plugin de
   Kotlin es otro `imp` de `media_keys.rs`, no un comando nuevo.
 
@@ -316,11 +321,11 @@ El frontend compila igual; lo que no anda es la forma de usarlo.
 
 | Qué | Dónde | Qué pasa en Android |
 | --- | --- | --- |
-| botones de minimizar, maximizar y cerrar | `WindowControls.tsx:66-77` | no hay ventana que manejar; se ocultan |
+| botones de minimizar, maximizar y cerrar | `WindowControls.tsx:66-77`, y el estado de maximizado en `32-45` (`isMaximized` y `onResized`) | no hay ventana que manejar; se ocultan |
 | zonas de arrastre | 8 `data-tauri-drag-region` | no hacen nada; no estorban |
-| controles que aparecen al pasar el mouse | 25 `group-hover` / `opacity-0` en `HomeScreen`, `NumberedTrackList`, `PlaylistDetailsDialog`, `PlaylistTrackList`, `QueuePanel`, `TrackList` y `TrackMenu` | **no hay hover**: el menú de una canción y los botones de la fila no se pueden alcanzar |
+| controles que aparecen al pasar el mouse | 11 `group-hover:opacity` / `group-hover:visible` en `HomeScreen`, `NumberedTrackList` (3), `PlaylistDetailsDialog`, `PlaylistTrackList` (3), `QueuePanel`, `TrackList` y `TrackMenu` | **no hay hover**: el menú de una canción y los botones de la fila no se pueden alcanzar |
 | `CursorGlow` | `CursorGlow.tsx` | sigue al mouse; en táctil no tiene a quién seguir |
-| "Iniciar con Windows" y "seguir en la bandeja" | `SettingsPanel.tsx:942-983` | se ocultan; sus textos en `i18n.ts:330-333` y `765-768` se quedan para escritorio |
+| "Iniciar con Windows" y "seguir en la bandeja" | `SettingsPanel.tsx:1168` (la lectura) y `1201-1209` (las filas) | se ocultan; sus textos en `i18n.ts:348-352` y `802-806` se quedan para escritorio |
 | la alerta y el botón de actualizar | `App.tsx:1844`, `App.tsx:2974`, `SettingsPanel.tsx:363` | se ocultan (ver el punto 5 de arriba) |
 | `usePlayerKeys` | `lib/usePlayerKeys.ts` | se queda: un teclado Bluetooth existe |
 | abrir el issue de un reporte | `CrashPrompt.tsx`, `FeedbackPanel.tsx` | `plugin-opener` funciona en Android |
