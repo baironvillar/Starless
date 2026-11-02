@@ -223,6 +223,58 @@ clothes, and there are only two of these, so one recipe covers both.
 - The content area carries the only large artwork. Chrome stays quiet so the album is the brightest thing on screen.
 - Spanish and English ship together; every string comes from a translation map, never inline.
 
+## The phone
+
+Decided with the user on 2026-11-02, one question at a time. The desktop layout does not
+change; this is a second shape of the same glass for a screen about 360dp wide, chosen by
+`isMobile()` —a fact of the build, never the window's width.
+
+**Why a second shape and not the first one squeezed.** On a phone the rail, the 20px
+insets and the side panels ate a third of the width: the settings panel put its section
+list across most of the screen and its content against the edge. A phone is held in one
+hand and read in a column, and the thumb lives at the bottom.
+
+**The glass stays floating, with a 12px inset.** Rounded, detached surfaces are the
+direction, and a phone does not change that; it changes how many pixels the inset can
+spend. 12px on every side, and the same radius as on the desktop.
+
+| Layer | On the phone |
+|---|---|
+| Tab bar | Floating at the bottom: Inicio, Buscar, Biblioteca. Where the thumb is |
+| Mini player | Floating just above the tab bar, with the music, like the desktop bar |
+| Content | One column between the top inset and the mini player |
+
+There is no top bar and no rail. **Three tabs, not four**: Settings opens a few times
+in the life of the app and does not earn a place under the thumb, so it is a gear at the
+top right of Inicio. The library is a tab and a full screen, not a riel.
+
+**The player is two sizes.** The mini player is the artwork, the title and the artist,
+play/pause and next. Tapping it, or swiping it up, opens the full player: the large
+artwork, the seek bar with the running-time column, the transport, and two buttons that
+put the queue or the lyrics *where the artwork was*. The transport stays put underneath:
+reading or choosing never costs the controls. Swiping the full player down, or its ⌄,
+closes it. Swiping the mini player sideways skips forward or back.
+
+**No volume control on the phone.** The phone's buttons are the volume, as in every
+music app, and the app's own attenuation stays at its maximum: two volumes that multiply
+are a sound that is quiet for no visible reason.
+
+**Every song row shows its ⋯, and holding the row opens the same menu.** The desktop's
+"controls appear on approach" rule has no approach on a touch screen: a hover that never
+comes hides the menu for good. The button is what can be seen; the long press is the
+shortcut of somebody who already knows. The menu is a sheet of glass rising from the
+bottom with the song at its top and options a finger can hit, closed by swiping it down
+or tapping outside —not the desktop popover, whose rows are sized for a pointer and
+whose edge is the screen's.
+
+**Playlists are a list, with the cover and the whole name.** The two-column shelf cut
+the names ("Canciones qu…"); a row fits more and cuts none. The library's own list/grid
+choice is still respected; the list is the phone's default.
+
+**Settings are two levels.** The section list fills the screen; a section opens over it
+with a back arrow. The rows and cards are the panel's own —it is still the reference—
+only the side column is gone.
+
 ## Open
 
 - Whether glass is the only layer treatment, or solid surfaces are offered as a performance fallback in settings.
