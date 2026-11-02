@@ -221,23 +221,41 @@ export function SettingsPanel({
         </div>
       </nav>
 
-      <div className="flex-1 overflow-y-auto p-8">
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label={t.close}
-          className="ml-auto grid size-9 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink"
-        >
-          <X className="size-[18px]" strokeWidth={2} />
-        </button>
+      {/*
+          The content column: a header that does not move, and the scroll under it.
 
-        {section === "sectionGeneral" && <General t={t} lang={lang} onLangChange={onLangChange} />}
-        {section === "sectionAudio" && <Audio t={t} />}
-        {section === "sectionAccount" && <Account t={t} account={account} />}
-        {section === "sectionCustom" && <Custom t={t} />}
-        {section === "sectionDiagnostics" && (
-          <Diagnostics t={t} version={version} lang={lang} onOpenFeedback={onOpenFeedback} />
-        )}
+          **The close button was inside the scroll**, so it left with the content:
+          in the sections long enough to scroll —Personalización, Diagnóstico— the
+          way out of the panel disappeared exactly when the person was looking
+          for it, and the only way back was to scroll up again.
+
+          A door that closes when you walk towards it is not a door. The button
+          now lives in a row of its own, above the scroll, and it stays where it
+          is however far down the section goes.
+      */}
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="flex shrink-0 justify-end px-8 pt-8">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={t.close}
+            className="grid size-9 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink"
+          >
+            <X className="size-[18px]" strokeWidth={2} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-8 pb-8">
+          {section === "sectionGeneral" && (
+            <General t={t} lang={lang} onLangChange={onLangChange} />
+          )}
+          {section === "sectionAudio" && <Audio t={t} />}
+          {section === "sectionAccount" && <Account t={t} account={account} />}
+          {section === "sectionCustom" && <Custom t={t} />}
+          {section === "sectionDiagnostics" && (
+            <Diagnostics t={t} version={version} lang={lang} onOpenFeedback={onOpenFeedback} />
+          )}
+        </div>
       </div>
     </motion.div>
   );
