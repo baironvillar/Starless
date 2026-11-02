@@ -460,7 +460,7 @@ export function PlaylistScreen({
           whileTap={{ scale: 0.94 }}
           transition={SPRING}
           className={`grid size-9 place-items-center rounded-pill transition-colors duration-200 disabled:opacity-40 ${
-            shuffle ? "text-accent" : "text-ink-muted hover:text-ink"
+            shuffle ? "text-accent-ink" : "text-ink-muted hover:text-ink"
           }`}
         >
           <Shuffle className="size-5" strokeWidth={2} />
@@ -765,7 +765,7 @@ function OrderMenu({ t, order, descending, onOrderChange, view, onViewChange }: 
               }
               onClick={() => onOrderChange(option)}
               className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] transition-colors duration-150 ${
-                current ? "font-medium text-accent" : "hover:bg-white/6"
+                current ? "font-medium text-accent-ink" : "hover:bg-white/6"
               }`}
             >
               <span className="min-w-0 flex-1">{t[ORDER_LABEL[option]]}</span>
@@ -788,7 +788,7 @@ function OrderMenu({ t, order, descending, onOrderChange, view, onViewChange }: 
               aria-selected={current}
               onClick={() => onViewChange(option)}
               className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] transition-colors duration-150 ${
-                current ? "font-medium text-accent" : "hover:bg-white/6"
+                current ? "font-medium text-accent-ink" : "hover:bg-white/6"
               }`}
             >
               <Icon className="size-4 shrink-0" strokeWidth={2} aria-hidden />

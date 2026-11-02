@@ -186,7 +186,7 @@ export function PlaylistPicker({ t, track, onDone, onNewPlaylist }: PlaylistPick
         <p
           role="status"
           className={`mx-3 mb-1 mt-0.5 rounded-[8px] px-2 py-1.5 text-[12px] ${
-            failure !== null ? "text-warn" : "text-accent"
+            failure !== null ? "text-warn-ink" : "text-accent-ink"
           }`}
         >
           {failure !== null ? failure : t.addedToPlaylist.replace("{name}", added ?? "")}

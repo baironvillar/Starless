@@ -118,7 +118,7 @@ export function NumberedTrackList({
               <span className="relative grid place-items-center text-right">
                 <span
                   className={`text-[13px] tabular ${
-                    isFailed ? "text-warn" : "text-ink-faint group-hover:opacity-0"
+                    isFailed ? "text-warn-ink" : "text-ink-faint group-hover:opacity-0"
                   } ${isPlaying || isLoading ? "opacity-0" : ""}`}
                 >
                   {index + 1}
@@ -137,9 +137,9 @@ export function NumberedTrackList({
                   aria-label={`${t.play} — ${track.name}`}
                   className={`absolute grid size-8 place-items-center rounded-pill transition-opacity duration-150 ${
                     isPlaying
-                      ? "text-live opacity-100"
+                      ? "text-live-ink opacity-100"
                       : isFailed
-                        ? "text-warn opacity-100 group-hover:opacity-0"
+                        ? "text-warn-ink opacity-100 group-hover:opacity-0"
                         : "text-ink opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                   }`}
                 >
@@ -165,7 +165,7 @@ export function NumberedTrackList({
                 )}
                 <div className="min-w-0">
                   <p
-                    className={`truncate text-[13.5px] font-semibold ${isPlaying ? "text-accent" : ""}`}
+                    className={`truncate text-[13.5px] font-semibold ${isPlaying ? "text-accent-ink" : ""}`}
                   >
                     {track.name}
                   </p>
@@ -211,7 +211,7 @@ function Note({
   return (
     <p
       className={`border-b border-white/8 px-5 py-6 text-center text-[13px] last:border-b-0 ${
-        tone === "warn" ? "text-warn" : "text-ink-faint"
+        tone === "warn" ? "text-warn-ink" : "text-ink-faint"
       }`}
     >
       {children}

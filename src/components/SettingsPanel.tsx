@@ -26,6 +26,7 @@ import {
   applyBackgroundLook,
   applyEffects,
   applyMenuOpacity,
+  applyTheme,
   audioQuality,
   BACKGROUND_DIM_MAX,
   CROSSFADE_MAX,
@@ -47,6 +48,7 @@ import {
   normalisation,
   pickBackground,
   saveBackgroundLook,
+  theme as savedTheme,
   setAccentColor,
   setAudioQuality,
   setCloseToTray,
@@ -56,8 +58,10 @@ import {
   setMenuOpacity,
   setNormalisation,
   setStartWithWindows,
+  setTheme,
   signOut,
   startWithWindows,
+  type Theme,
   type Account as UserAccount,
   useBackground,
   useEffectsSettings,
@@ -209,7 +213,7 @@ export function SettingsPanel({
           <p className="tabular mt-0.5 flex items-center gap-1.5 text-[12px] text-ink-faint">
             <span>v{version}</span>
             {prerelease && (
-              <span className="rounded-pill bg-accent/15 px-1.5 py-px text-[10.5px] font-semibold tracking-wide uppercase text-accent">
+              <span className="rounded-pill bg-accent/15 px-1.5 py-px text-[10.5px] font-semibold tracking-wide uppercase text-accent-ink">
                 {publicBuild ? t.publicBadge : t.prereleaseBadge}
               </span>
             )}
@@ -239,6 +243,44 @@ export function SettingsPanel({
   );
 }
 
+/**
+ * The theme applies the moment it is picked: the whole window is the preview.
+ * The read waits for the backend so the control never shows a choice that is
+ * not the saved one, and the paint already happened at startup from the cache.
+ */
+function ThemeSelect({ t }: { t: Record<StringKey, string> }) {
+  const [value, setValue] = useState<Theme | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void savedTheme()
+      .then((saved) => {
+        if (alive) setValue(saved);
+      })
+      .catch(() => {
+        if (alive) setValue("dark");
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return (
+    <Select
+      value={value ?? "dark"}
+      onChange={(next) => {
+        const choice = next as Theme;
+        setValue(choice);
+        applyTheme(choice);
+        void setTheme(choice).catch(() => {});
+      }}
+      options={[
+        { value: "dark", label: t.themeDark },
+        { value: "light", label: t.themeLight },
+        { value: "system", label: t.themeSystem },
+      ]}
+    />
+  );
+}
+
 function General({
   t,
   lang,
@@ -262,13 +304,7 @@ function General({
           />
         </Row>
         <Row label={t.theme}>
-          <Select
-            defaultValue="dark"
-            options={[
-              { value: "dark", label: t.themeDark },
-              { value: "system", label: t.themeSystem },
-            ]}
-          />
+          <ThemeSelect t={t} />
         </Row>
         <Row label={t.colourMode} hint={t.colourModeHint}>
           <Select
@@ -349,7 +385,7 @@ function Updates({ t }: { t: Record<StringKey, string> }) {
               <button
                 type="button"
                 onClick={() => void installUpdate(update)}
-                className="flex items-center gap-2 rounded-pill bg-live px-4 py-2.5 text-[13px] font-semibold text-ground transition-[filter] duration-200 hover:brightness-110"
+                className="flex items-center gap-2 rounded-pill bg-live px-4 py-2.5 text-[13px] font-semibold text-[#0b0b0f] transition-[filter] duration-200 hover:brightness-110"
               >
                 <Download className="size-4" strokeWidth={2} />
                 {goingBack ? backLabel.replace("{version}", version ?? "") : t.updateInstall}
@@ -869,7 +905,7 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
                   className="pointer-events-none absolute inset-0 rounded-pill bg-black/45"
                 />
                 <Pencil
-                  className="pointer-events-none absolute inset-0 m-auto size-3.5 text-white"
+                  className="pointer-events-none absolute inset-0 m-auto size-3.5 text-[#fff]"
                   strokeWidth={2}
                 />
                 {isCustom && (
@@ -1276,7 +1312,7 @@ function Changelog({ t, lang }: { t: Record<StringKey, string>; lang: Lang }) {
           <div className="flex items-baseline gap-2.5">
             <h3 className="tabular text-[15px] font-semibold">v{entry.version}</h3>
             {!entry.released && (
-              <span className="rounded-pill bg-accent/15 px-2 py-0.5 text-[11px] font-semibold tracking-wide uppercase text-accent">
+              <span className="rounded-pill bg-accent/15 px-2 py-0.5 text-[11px] font-semibold tracking-wide uppercase text-accent-ink">
                 {t.changelogUnreleased}
               </span>
             )}
@@ -1408,7 +1444,7 @@ function Select({
         className="min-w-[164px] appearance-none rounded-pill border border-white/14 bg-white/6 py-2.5 pr-10 pl-4 text-[13px] font-medium outline-none transition-colors duration-200 hover:bg-white/10"
       >
         {options.map((o) => (
-          <option key={o.value} value={o.value} className="bg-[#15151b]">
+          <option key={o.value} value={o.value} className="bg-night">
             {o.label}
           </option>
         ))}
@@ -1452,7 +1488,7 @@ function Toggle({
       <motion.span
         layout
         transition={{ type: "spring", stiffness: 520, damping: 34 }}
-        className={`absolute top-1 size-4 rounded-pill bg-white shadow-sm ${on ? "right-1" : "left-1"}`}
+        className={`absolute top-1 size-4 rounded-pill bg-[#fff] shadow-sm ${on ? "right-1" : "left-1"}`}
       />
       {on && (
         <Check className="pointer-events-none absolute top-1/2 left-1.5 size-3 -translate-y-1/2 text-on-accent" />

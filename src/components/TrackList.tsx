@@ -109,7 +109,7 @@ export function TrackList({
 
       {loading && <Row className="justify-center py-6 text-[13px] text-ink-faint">{t.loading}</Row>}
 
-      {error && !loading && <Row className="py-6 text-[13px] text-warn">{error}</Row>}
+      {error && !loading && <Row className="py-6 text-[13px] text-warn-ink">{error}</Row>}
 
       {!loading && !error && empty && tracks.length === 0 && (
         <Row className="justify-center py-6 text-[13px] text-ink-faint">{empty}</Row>
@@ -178,11 +178,11 @@ export function TrackList({
 
               {showStatus && (
                 <span className="flex w-[132px] items-center gap-1.5 text-[12px] font-medium text-ink-muted">
-                  {isPlaying && <span className="text-live">{t.nowPlaying}</span>}
+                  {isPlaying && <span className="text-live-ink">{t.nowPlaying}</span>}
                   {isLoading && !isPlaying && (
-                    <span className="text-accent">{t.loadingPlayback}</span>
+                    <span className="text-accent-ink">{t.loadingPlayback}</span>
                   )}
-                  {isFailed && !isPlaying && <span className="text-warn">{t.failed}</span>}
+                  {isFailed && !isPlaying && <span className="text-warn-ink">{t.failed}</span>}
                 </span>
               )}
 

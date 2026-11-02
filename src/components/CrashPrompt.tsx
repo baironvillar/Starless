@@ -112,7 +112,7 @@ export function CrashPrompt({ t, barPresent }: CrashPromptProps) {
         className="glass-overlay flex w-full max-w-[520px] flex-col gap-5 rounded-card px-8 py-8"
       >
         <div>
-          <p className="text-[12px] font-semibold uppercase tracking-wide text-warn">
+          <p className="text-[12px] font-semibold uppercase tracking-wide text-warn-ink">
             {t.crashKicker}
           </p>
           <h1 className="mt-2 text-[21px] font-semibold tracking-tight">{t.crashTitle}</h1>
@@ -142,7 +142,7 @@ export function CrashPrompt({ t, barPresent }: CrashPromptProps) {
         </div>
 
         {error && (
-          <p className="rounded-[14px] border border-warn/30 bg-warn/10 px-4 py-3 text-[12.5px] leading-relaxed text-warn">
+          <p className="rounded-[14px] border border-warn/30 bg-warn/10 px-4 py-3 text-[12.5px] leading-relaxed text-warn-ink">
             {error}
           </p>
         )}

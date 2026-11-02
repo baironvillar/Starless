@@ -911,6 +911,77 @@ export async function setEffect<K extends EffectName>(name: K, value: Effects[K]
 }
 
 /**
+ * Dark, light or the system's. Mirrors `settings::THEMES`, the shipped one first.
+ *
+ * The choice is stored in Rust like every other setting, and **also cached in
+ * localStorage**, because the first frame is painted before any `invoke` can
+ * answer: a light-theme user would otherwise see the dark app flash on every
+ * launch. The cache is a convenience for that frame; the backend is the truth.
+ */
+export const THEMES = ["dark", "light", "system"] as const;
+export type Theme = (typeof THEMES)[number];
+
+const THEME_KEY = "starless:theme";
+const SYSTEM_LIGHT = "(prefers-color-scheme: light)";
+
+let currentTheme: Theme = "dark";
+let systemQuery: MediaQueryList | null = null;
+
+function isTheme(value: unknown): value is Theme {
+  return (THEMES as readonly unknown[]).includes(value);
+}
+
+function paintTheme(): void {
+  const light =
+    currentTheme === "light" ||
+    (currentTheme === "system" && window.matchMedia(SYSTEM_LIGHT).matches);
+  document.documentElement.dataset.theme = light ? "light" : "dark";
+}
+
+/**
+ * Apply a choice. `system` listens to Windows while it is the choice, so
+ * switching Windows to light mode with the app open repaints it at once.
+ */
+export function applyTheme(next: Theme): void {
+  currentTheme = next;
+  try {
+    window.localStorage.setItem(THEME_KEY, next);
+  } catch {
+    // A blocked storage only costs the first frame.
+  }
+  if (next === "system" && !systemQuery) {
+    systemQuery = window.matchMedia(SYSTEM_LIGHT);
+    systemQuery.addEventListener("change", paintTheme);
+  } else if (next !== "system" && systemQuery) {
+    systemQuery.removeEventListener("change", paintTheme);
+    systemQuery = null;
+  }
+  paintTheme();
+}
+
+/** The cached choice, synchronously, for the frame before the backend answers. */
+export function applyCachedTheme(): void {
+  let cached: unknown = null;
+  try {
+    cached = window.localStorage.getItem(THEME_KEY);
+  } catch {
+    // Same as above.
+  }
+  applyTheme(isTheme(cached) ? cached : "dark");
+}
+
+export async function theme(): Promise<Theme> {
+  if (!hasBackend()) return currentTheme;
+  const value = await invoke<string>("theme");
+  return isTheme(value) ? value : "dark";
+}
+
+export async function setTheme(next: Theme): Promise<void> {
+  if (!hasBackend()) return;
+  return invoke<void>("set_theme", { theme: next });
+}
+
+/**
  * The person's own picture behind the glass, and how dark and soft it is drawn.
  *
  * A store for the same reason as the effects: the ground is drawn by `App` and

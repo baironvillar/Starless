@@ -358,7 +358,7 @@ export function PlaylistDetailsDialog({
                 disabled={busy}
                 className={`self-start rounded-pill px-3 py-1.5 text-[12px] font-medium transition-colors duration-200 disabled:opacity-35 ${
                   removeCover
-                    ? "bg-accent/20 text-accent"
+                    ? "bg-accent/20 text-accent-ink"
                     : "text-ink-muted hover:bg-white/8 hover:text-ink"
                 }`}
               >
@@ -367,7 +367,7 @@ export function PlaylistDetailsDialog({
             )}
 
             {failure !== null && (
-              <p role="alert" className="text-[12px] text-warn">
+              <p role="alert" className="text-[12px] text-warn-ink">
                 {t[FAILURES[failure] ?? "playlistDetailsFailed"]}
               </p>
             )}
@@ -436,7 +436,7 @@ function Switch({
       <motion.span
         layout
         transition={{ type: "spring", stiffness: 520, damping: 34 }}
-        className={`absolute top-1 size-4 rounded-pill bg-white shadow-sm ${on ? "right-1" : "left-1"}`}
+        className={`absolute top-1 size-4 rounded-pill bg-[#fff] shadow-sm ${on ? "right-1" : "left-1"}`}
       />
       {on && (
         <Check className="pointer-events-none absolute top-1/2 left-1.5 size-3 -translate-y-1/2 text-on-accent" />

@@ -168,7 +168,7 @@ export function PlaylistMenu({
           label={copied === "failed" ? t.copyFailed : t.copyLink}
           icon={
             copied === "done" ? (
-              <Check className="size-4 text-accent" strokeWidth={2.5} />
+              <Check className="size-4 text-accent-ink" strokeWidth={2.5} />
             ) : (
               <Link2 className="size-4" strokeWidth={2} />
             )

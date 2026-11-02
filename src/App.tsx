@@ -38,6 +38,7 @@ import {
   applyAccentColor,
   applyEffects,
   applyMenuOpacity,
+  applyTheme,
   createPlaylist as createPlaylistCall,
   DEFAULT_TRACK_LIST_PREFS,
   type DjNarration,
@@ -77,6 +78,7 @@ import {
   radioStart,
   recordPlay,
   SESSION_ERRORS,
+  theme as savedTheme,
   setErrorLanguage,
   setLibrarySort,
   setLibraryView,
@@ -272,21 +274,21 @@ const BLOOM_OPACITY = { normal: 1, soft: 0.5, off: 0 } as const;
  */
 const BLOOM_SHAPES = {
   top: [
-    "radial-gradient(90% 70% at 50% -6%, rgb(237 234 227 / 0.24) 0%, transparent 64%)",
-    "radial-gradient(70% 70% at 104% 108%, rgb(196 193 200 / 0.18) 0%, transparent 60%)",
-    "radial-gradient(60% 60% at -6% 96%, rgb(237 234 227 / 0.10) 0%, transparent 60%)",
+    "radial-gradient(90% 70% at 50% -6%, rgb(var(--bloom-a) / 0.24) 0%, transparent 64%)",
+    "radial-gradient(70% 70% at 104% 108%, rgb(var(--bloom-b) / 0.18) 0%, transparent 60%)",
+    "radial-gradient(60% 60% at -6% 96%, rgb(var(--bloom-a) / 0.10) 0%, transparent 60%)",
   ],
   corners: [
-    "radial-gradient(65% 65% at -4% -6%, rgb(237 234 227 / 0.22) 0%, transparent 62%)",
-    "radial-gradient(65% 65% at 104% 106%, rgb(196 193 200 / 0.20) 0%, transparent 62%)",
+    "radial-gradient(65% 65% at -4% -6%, rgb(var(--bloom-a) / 0.22) 0%, transparent 62%)",
+    "radial-gradient(65% 65% at 104% 106%, rgb(var(--bloom-b) / 0.20) 0%, transparent 62%)",
   ],
   center: [
-    "radial-gradient(60% 55% at 50% 46%, rgb(237 234 227 / 0.16) 0%, transparent 70%)",
-    "radial-gradient(110% 90% at 50% 50%, rgb(196 193 200 / 0.07) 0%, transparent 72%)",
+    "radial-gradient(60% 55% at 50% 46%, rgb(var(--bloom-a) / 0.16) 0%, transparent 70%)",
+    "radial-gradient(110% 90% at 50% 50%, rgb(var(--bloom-b) / 0.07) 0%, transparent 72%)",
   ],
   side: [
-    "radial-gradient(55% 95% at -8% 40%, rgb(237 234 227 / 0.24) 0%, transparent 64%)",
-    "radial-gradient(40% 60% at 104% 100%, rgb(196 193 200 / 0.10) 0%, transparent 60%)",
+    "radial-gradient(55% 95% at -8% 40%, rgb(var(--bloom-a) / 0.24) 0%, transparent 64%)",
+    "radial-gradient(40% 60% at 104% 100%, rgb(var(--bloom-b) / 0.10) 0%, transparent 60%)",
   ],
 } as const;
 
@@ -630,6 +632,14 @@ export default function App() {
     return () => {
       alive = false;
     };
+  }, []);
+
+  // The theme was painted from the cache before React ran; the backend is the
+  // truth, and a cache that disagrees (cleared, or another build) is corrected.
+  useEffect(() => {
+    void savedTheme()
+      .then(applyTheme)
+      .catch(() => {});
   }, []);
 
   // The picture behind the glass, same moment and same reason as the effects.
@@ -2563,7 +2573,7 @@ export default function App() {
               transform: background.blur > 0 ? "scale(1.08)" : undefined,
             }}
           />
-          <div className="absolute inset-0 bg-black" style={{ opacity: background.dim / 100 }} />
+          <div className="absolute inset-0 bg-ground" style={{ opacity: background.dim / 100 }} />
         </div>
       )}
       <div
@@ -2955,7 +2965,7 @@ export default function App() {
           )}
 
           {account.data && account.data.product !== "premium" && (
-            <p className="mt-5 text-[12px] text-warn">{t.premiumRequired}</p>
+            <p className="mt-5 text-[12px] text-warn-ink">{t.premiumRequired}</p>
           )}
         </main>
 

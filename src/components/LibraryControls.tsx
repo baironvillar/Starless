@@ -152,7 +152,7 @@ export function LibrarySortMenu({ t, sort, onSortChange, className = "" }: Libra
                     <span className="min-w-0 flex-1">{t[SORT_LABEL[option]]}</span>
                     <Check
                       className={`size-3.5 shrink-0 transition-opacity duration-150 ${
-                        active ? "text-accent opacity-100" : "opacity-0"
+                        active ? "text-accent-ink opacity-100" : "opacity-0"
                       }`}
                       strokeWidth={2.5}
                     />
