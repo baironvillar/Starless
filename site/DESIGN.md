@@ -111,7 +111,7 @@ The SVGs in `site/public` are written by `bun run logo` at the repo root, from t
 
 The page is a still room with one thing moving in it: a pool of black ferrofluid, rendered live, that raises its spikes on a 112 BPM kick and on the speed of the visitor's hand. Everything else stays monochrome and moves only with the hand: the page is a playlist, and scrolling is what changes the track. A section arrives as it comes up from the bottom and stays lit for as long as it is on screen, hairlines draw themselves in, the app's window changes screen while it holds still, the DJ says its line a word at a time, the feature list lights the row in the middle of the screen, and each thing Starless doesn't do is crossed out. All of it is scroll-driven CSS; without scroll timelines, or with reduced motion, the page is still and complete. The music is made visible; the interface stays out of its way.
 
-**Nothing on the page may be dimmed out of sight.** The scroll drives the page, not the reader: an effect may bring something in, draw it, light it or take it away, but whatever is on screen is legible. A section that fades to a tenth of its opacity on the way out reads as a broken page, not as a transition, and the same goes for a row that cannot be read and a digit that vanishes — the first version of this page did all three, and scrolling it felt like losing the text.
+**Nothing on the page may be dimmed out of sight, and nothing on it may flicker.** The scroll drives the page, not the reader: an effect may bring something in, draw it, light it or take it away, but whatever is on screen is legible. A section that fades to a tenth of its opacity on the way out reads as a broken page, not as a transition, and the same goes for a row that cannot be read and a digit that vanishes — the first version of this page did all three, and scrolling it felt like losing the text. A frame that leaves the text unpainted is the same failure by another road: the words are there, and the reader sees them blink out and back. So the decoration may never make the page stutter while it is read.
 
 Order comes from rings, not boxes. Concentric hairline circles centred on the pool pass through the top edge of every section, so reading down the page is travelling outward from the speaker; each section change sends a wave from one ring to the next. Content sits on the ground between hairlines, never in cards, never behind glass.
 
@@ -190,7 +190,7 @@ Flat ground; depth is rendered, not stacked. The pool's depth comes from the obl
 
 ## Shapes
 
-Circles and capsules echo the speaker: the pool, the rings, the player's round bead, the capsule key (999px). The player bar has gently rounded corners (18px). Everything in the reading flow is square-cornered and unbordered, separated by full-width hairlines top and bottom. Rings use non-scaling 1px strokes so they stay hairlines at every radius.
+Circles and capsules echo the speaker: the pool, the rings, the player's round bead, the capsule key (999px). The player bar has gently rounded corners (18px). Everything in the reading flow is square-cornered and unbordered, separated by full-width hairlines top and bottom. Rings are 1px strokes that stay hairlines at every radius: the ring SVG has no viewBox, so one unit is one pixel and the stroke needs no correction to stay thin.
 
 ## Components
 
@@ -218,7 +218,8 @@ Circles and capsules echo the speaker: the pool, the rings, the player's round b
 - **Reduced motion:** a single frame at fixed energy; no wave, no title roll.
 
 ### Rings (signature)
-- **Style:** hairline circles centred on the pool, one per section top and one at the footer. A frost wave at 50% scales from the previous ring to the new one and fades over 1400ms on each track change.
+- **Style:** hairline circles centred on the pool, one per section top and one at the footer. A frost wave at 50% grows from the previous ring to the new one and fades over 1400ms on each track change.
+- **How it moves:** the wave grows its radius; it is never scaled. A scale of thousands on a one-unit circle makes the browser stroke the path again in device space on every tile of the page, and the text that shares those tiles goes unpainted while it does — the page flickers and the reader loses the words. Growing the radius keeps the same picture and paints in time.
 
 ## Do's and Don'ts
 
@@ -239,6 +240,7 @@ Circles and capsules echo the speaker: the pool, the rings, the player's round b
 - **Don't** add a second glowing object, or glass beyond the player, the logo plate and the download keys.
 - **Don't** use condensed widths or giant poster type beyond the hero wordmark.
 - **Don't** dim, hide or replace what is on screen: no text below its reading opacity, no number that vanishes under a meter, no scroll range that leaves the page empty.
+- **Don't** let a decoration repaint the page while it is read: no scaled SVG stroke, no giant path re-stroked over the whole document, nothing that leaves a frame unpainted. The rings and the wave are the page's background, and the background has to keep up with the scroll.
 
 <!-- OPEN ITEMS (not part of the system):
 - The app section's window shows real captures in `public/shots/`. `1-biblioteca` and `3-cola` were retaken with the new identity; `2-playlist` and `4-ajustes` still show the old pink look and need retaking.

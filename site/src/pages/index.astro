@@ -67,8 +67,13 @@
 
   /* The rings: one set of circles around the pool, one further out per section. */
   #rings { position: absolute; z-index: 0; left: 0; top: 0; width: 100%; pointer-events: none; }
-  #rings circle { fill: none; stroke: var(--line); vector-effect: non-scaling-stroke; }
-  #rings .wave { stroke: rgb(237 234 227 / 0.5); opacity: 0; transform-box: fill-box; transform-origin: center; }
+  /* No `vector-effect: non-scaling-stroke` here. The SVG has no viewBox, so
+     one user unit is one pixel and the stroke is a hairline at every radius
+     anyway. Asking for a non-scaling stroke makes Chrome stroke the path
+     again in device space on every tile, and these circles cover the whole
+     page: the text that shares those tiles was left unpainted while it did. */
+  #rings circle { fill: none; stroke: var(--line); stroke-width: 1; }
+  #rings .wave { stroke: rgb(237 234 227 / 0.5); opacity: 0; }
 
   /* The pool */
   .hero { position: relative; z-index: 1; min-height: 100svh; display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
@@ -854,10 +859,14 @@ void main() {
     litRing = to - 1;
     lightRing();
     if (reduce || from === to || !radii.length) return;
+    // The wave travels from one ring to the next by growing its radius, not
+    // by being scaled: a scale of thousands on a circle of one unit made
+    // Chrome re-stroke it in device space over the whole page, and the text
+    // that shares those tiles went missing while it did.
     wave.animate(
       [
-        { transform: `scale(${radii[from]})`, opacity: 0.9 },
-        { transform: `scale(${radii[to]})`, opacity: 0 },
+        { r: `${radii[from]}px`, opacity: 0.9 },
+        { r: `${radii[to]}px`, opacity: 0 },
       ],
       { duration: 1400, easing: "cubic-bezier(0.23, 1, 0.32, 1)" },
     );
