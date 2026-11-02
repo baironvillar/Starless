@@ -2614,10 +2614,6 @@ export default function App() {
           searching={searching}
           searchError={searchError}
           onOpenSettings={() => setSettingsOpen(true)}
-          onOpenJam={() => {
-            setJamOpen((v) => !v);
-          }}
-          jamActive={jam !== null}
           updateVersion={updateVersion}
         />
 
@@ -2672,6 +2668,11 @@ export default function App() {
             different questions —what is playing here, and who else is
             listening— and both of them are worth having open at the same
             time. When the queue is there, the jam docks to its left.
+
+            **The jam is on standby, so nothing opens this panel**: the door to
+            it is gone from the bar and from the queue. The panel and the
+            session behind it stay in the code, waiting for the day the shared
+            queue really works.
         */}
         <AnimatePresence>
           {jamOpen && (

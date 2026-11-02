@@ -1,13 +1,4 @@
-import {
-  Ellipsis,
-  House,
-  Library,
-  MonitorSmartphone,
-  Search,
-  SlidersHorizontal,
-  Users,
-  X,
-} from "lucide-react";
+import { House, Library, Search, Settings, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import type { StringKey } from "../lib/i18n";
@@ -32,16 +23,6 @@ type TopBarProps = {
   onNavigate: (key: StringKey) => void;
   onToggleLibrary: () => void;
   onOpenSettings: () => void;
-  /**
-   * Open the jam —the shared session— and where it lives.
-   *
-   * **The door is where Spotify keeps it: top right, next to the friends.**
-   * The jam is the one feature that is about other people, so it sits with the
-   * other people, not with the app's own settings.
-   */
-  onOpenJam: () => void;
-  /** A jam is open: the button says so. */
-  jamActive?: boolean;
   /**
    * A newer version exists, or `null`.
    *
@@ -86,8 +67,6 @@ export function TopBar({
   onNavigate,
   onToggleLibrary,
   onOpenSettings,
-  onOpenJam,
-  jamActive = false,
   updateVersion = null,
 }: TopBarProps) {
   /* Search ---------------------------------------------------------------- */
@@ -302,31 +281,22 @@ export function TopBar({
 
         {/* Secondary actions */}
         <div className="flex min-w-0 items-center justify-end gap-1 overflow-hidden">
-          {/* No queue button here on purpose: the player bar carries one, and the
-              queue is about what is sounding, which is what the player bar is
-              about. Two buttons for the same panel in two bars is one too many. */}
-          <IconButton label={t.device} className="hidden xl:grid">
-            <MonitorSmartphone className="size-[17px]" strokeWidth={2} />
-          </IconButton>
-
           {/*
-              The jam: the shared session.
+              One icon, and it is the gear.
 
-              **It goes before the settings, and next to the friends.** In Spotify
-              this is the button that opens the listening activity, and the Jam is
-              offered from there. It is the one feature of this app that is about
-              other people, so it belongs with them and not with the app's own
-              settings.
+              **The row used to have four.** The jam's door, the device, the
+              settings and the "more" —and three of those four were not doors to
+              anything: the device and the "more" were placeholders, and the jam
+              is on standby, so its door opens a room that is not ready.
+
+              An icon that leads nowhere reads as a broken promise, and a row of
+              four icons where one works is a row where the person has to guess
+              which one is real. So the row says one thing: the settings, and the
+              dot that means a new version is waiting —the only thing in this row
+              that is true today.
           */}
-          <IconButton label={t.jam} onClick={onOpenJam} badge={jamActive}>
-            <Users className="size-[17px]" strokeWidth={2} />
-          </IconButton>
-
           <IconButton label={t.navSettings} onClick={onOpenSettings} badge={updateVersion !== null}>
-            <SlidersHorizontal className="size-[17px]" strokeWidth={2} />
-          </IconButton>
-          <IconButton label={t.more} className="hidden xl:grid">
-            <Ellipsis className="size-[17px]" strokeWidth={2} />
+            <Settings className="size-[17px]" strokeWidth={2} />
           </IconButton>
 
           {/*

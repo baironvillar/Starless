@@ -234,8 +234,6 @@ export const strings = {
     queueNowPlaying: "Ahora suena",
     queueNextUp: "A continuación",
     queueEmpty: "Nada en cola",
-    device: "Dispositivo",
-    more: "Más opciones",
 
     // El jam: la sesión compartida.
     //
@@ -689,8 +687,6 @@ export const strings = {
     queueNowPlaying: "Now playing",
     queueNextUp: "Next up",
     queueEmpty: "Nothing queued",
-    device: "Device",
-    more: "More options",
 
     // The jam: the shared session.
     //
