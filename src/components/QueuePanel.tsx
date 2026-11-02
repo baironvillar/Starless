@@ -1,9 +1,11 @@
-import { Play, Plus, Users, X } from "lucide-react";
+import { Play, X } from "lucide-react";
 import { motion } from "motion/react";
 import { useRef } from "react";
 import type { StringKey } from "../lib/i18n";
 import { SPRING, SPRING_SHEET } from "../lib/motion";
 import {
+  type Album,
+  type Artist,
   coverImage,
   type DjNarration,
   formatDuration,
@@ -13,6 +15,7 @@ import {
 } from "../lib/spotify";
 import { useRowWindow } from "../lib/useRowWindow";
 import { DjArtwork } from "./DjArtwork";
+import { TrackMenu } from "./TrackMenu";
 
 type QueuePanelProps = {
   t: Record<StringKey, string>;
@@ -65,23 +68,19 @@ type QueuePanelProps = {
   onPlay: (track: Track, row: number) => void;
   onClose: () => void;
   /**
-   * Open the jam, next to this panel.
+   * Add a song to the queue that is on screen.
    *
-   * **Spotify starts a Jam from the queue**, and the queue stays open: the two
-   * panels are about different things —what is playing here, and who else is
-   * listening— and neither one has to make room for the other.
+   * **The row's own "add to queue".** It is the app's queue, the one the panel
+   * is showing: a song that is put here goes right after the one that is
+   * sounding.
    */
-  onOpenJam: () => void;
-  /**
-   * Whether a jam is open, and what to do with a song.
-   *
-   * **The plus only shows up with a jam open**, because without one there is
-   * nowhere to put the song. And it is only on the songs that come next: the
-   * one that is sounding is already in the jam's queue —that is what a jam is—
-   * and adding it again would be adding the same song twice.
-   */
-  jamOpen?: boolean;
-  onAddToJam?: (track: Track) => void;
+  onAddToQueue: (track: Track) => void;
+  /** The row's menu: the artist of the song. */
+  onOpenArtist?: (artist: Artist) => void;
+  /** The row's menu: the album of the song. */
+  onOpenAlbum?: (album: Album) => void;
+  /** The row's menu: the playlist the song goes into. */
+  onNewPlaylist: (track: Track) => void;
 };
 
 /**
@@ -133,9 +132,10 @@ export function QueuePanel({
   barPresent,
   onPlay,
   onClose,
-  onOpenJam,
-  jamOpen,
-  onAddToJam,
+  onAddToQueue,
+  onOpenArtist,
+  onOpenAlbum,
+  onNewPlaylist,
 }: QueuePanelProps) {
   const rowKeys = trackRowKeys(upNext);
   const nextRef = useRef<HTMLUListElement>(null);
@@ -153,38 +153,24 @@ export function QueuePanel({
     >
       <header className="flex shrink-0 items-center justify-between gap-2 px-4 pt-4 pb-3">
         <h2 className="truncate text-[15px] font-semibold tracking-tight">{t.queue}</h2>
-        <div className="flex items-center gap-1">
-          {/*
-              The Jam opens from here, and the queue stays open.
+        {/*
+            Only the close.
 
-              **Spotify starts a Jam from the queue**, and that is the right
-              place for it: the queue is what is being played, and a Jam is
-              about playing it with somebody else. Closing this panel to get
-              there is the wrong way round.
-          */}
-          <motion.button
-            type="button"
-            onClick={onOpenJam}
-            whileTap={{ scale: 0.9 }}
-            transition={SPRING_SHEET}
-            aria-label={t.jam}
-            title={t.jam}
-            className="grid size-8 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink"
-          >
-            <Users className="size-[17px]" strokeWidth={2} />
-          </motion.button>
-          <motion.button
-            type="button"
-            onClick={onClose}
-            whileTap={{ scale: 0.9 }}
-            transition={SPRING_SHEET}
-            aria-label={t.close}
-            title={t.close}
-            className="grid size-8 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink"
-          >
-            <X className="size-[17px]" strokeWidth={2} />
-          </motion.button>
-        </div>
+            **The jam used to open from here**, next to this panel, and its icon
+            is gone while the jam is on standby: an icon that opens a shared
+            session that does not work yet is a door to a room that is not built.
+        */}
+        <motion.button
+          type="button"
+          onClick={onClose}
+          whileTap={{ scale: 0.9 }}
+          transition={SPRING_SHEET}
+          aria-label={t.close}
+          title={t.close}
+          className="grid size-8 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink"
+        >
+          <X className="size-[17px]" strokeWidth={2} />
+        </motion.button>
       </header>
 
       {/* `pr-3` is the gap between the covers and the thumb; see the same note in
@@ -228,8 +214,10 @@ export function QueuePanel({
                     position={first + offset + 1}
                     onPlay={onPlay}
                     row={first + offset}
-                    jamOpen={jamOpen}
-                    onAddToJam={onAddToJam}
+                    onAddToQueue={onAddToQueue}
+                    onOpenArtist={onOpenArtist}
+                    onOpenAlbum={onOpenAlbum}
+                    onNewPlaylist={onNewPlaylist}
                   />
                 ))}
                 {last < upNext.length && (
@@ -359,16 +347,20 @@ function QueueRow({
   track,
   position,
   onPlay,
-  jamOpen,
-  onAddToJam,
+  onAddToQueue,
+  onOpenArtist,
+  onOpenAlbum,
+  onNewPlaylist,
   row,
 }: {
   t: Record<StringKey, string>;
   track: Track;
   position?: number;
   onPlay: (track: Track, row: number) => void;
-  jamOpen?: boolean;
-  onAddToJam?: (track: Track) => void;
+  onAddToQueue: (track: Track) => void;
+  onOpenArtist?: (artist: Artist) => void;
+  onOpenAlbum?: (album: Album) => void;
+  onNewPlaylist: (track: Track) => void;
   row: number;
 }) {
   return (
@@ -418,19 +410,27 @@ function QueueRow({
           </span>
         </button>
 
-        {jamOpen && onAddToJam ? (
-          <motion.button
-            type="button"
-            onClick={() => onAddToJam(track)}
-            whileTap={{ scale: 0.9 }}
-            transition={SPRING}
-            aria-label={t.addToJam}
-            title={t.addToJam}
-            className="grid size-7 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink"
-          >
-            <Plus className="size-4" strokeWidth={2.2} />
-          </motion.button>
-        ) : null}
+        {/*
+            The three dots of the row, and nothing else.
+
+            **The same menu the songs have everywhere else.** It is not the jam's:
+            adding to a playlist, adding to the queue, going to the artist or the
+            album and copying the link are the app's own business, and they were
+            here before the jam and they are here without it.
+
+            The menu appears on approach, like every other control in a row: a
+            button that is always there gives every song a permanent question
+            mark, and the list goes from something you read to something you
+            operate.
+        */}
+        <TrackMenu
+          t={t}
+          track={track}
+          onOpenArtist={onOpenArtist}
+          onOpenAlbum={onOpenAlbum}
+          onAddToQueue={onAddToQueue}
+          onNewPlaylist={onNewPlaylist}
+        />
       </div>
     </motion.li>
   );
