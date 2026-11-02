@@ -31,7 +31,7 @@ const MAX_BYTES: u64 = 2 * 1024 * 1024;
 /// the user's data, `%LOCALAPPDATA%` stays on the machine and holds what belongs
 /// to this installation. A log belongs to the second kind.
 pub fn log_path() -> Option<PathBuf> {
-    dirs::data_local_dir().map(|base| base.join("Starless").join("starless.log"))
+    crate::paths::data_local_dir().map(|base| base.join("Starless").join("starless.log"))
 }
 
 /// Writes each line to both the file and the terminal.

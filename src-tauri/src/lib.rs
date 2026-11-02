@@ -5,6 +5,11 @@
 // cookies and the librespot session itself stay in Rust. If a future bug ever
 // needs the frontend to read a token, that is the bug, not the design.
 
+// On a phone the updater's helpers and the media card's fields have no reader
+// yet: the updater is the system's, and the card waits for a `MediaSession`.
+// The desktop build keeps the warning, and that is the one that finds dead code.
+#![cfg_attr(mobile, allow(dead_code))]
+
 mod auth;
 mod background;
 mod beat;
@@ -17,13 +22,37 @@ mod history;
 mod logging;
 mod media_keys;
 mod models;
+mod paths;
 mod playback;
 mod report;
 mod selftest;
 mod settings;
 mod spclient;
 mod startup;
+#[cfg(desktop)]
 mod tray;
+/// A phone has no notification area: `tauri::tray` and `tauri::menu` do not
+/// exist there. Same calls, nothing behind them — the way `media_keys` and
+/// `startup` answer off Windows.
+#[cfg(mobile)]
+mod tray {
+    use tauri::AppHandle;
+
+    use crate::media_keys::NowPlaying;
+
+    #[derive(Debug, Clone, Default, serde::Deserialize)]
+    pub struct TrayLabels {}
+
+    pub fn install(_app: &AppHandle) {}
+
+    pub fn exists(_app: &AppHandle) -> bool {
+        false
+    }
+
+    pub fn set_labels(_app: &AppHandle, _labels: TrayLabels) {}
+
+    pub fn set_playing(_app: &AppHandle, _now: Option<NowPlaying>) {}
+}
 mod voice;
 
 use std::collections::HashMap;
@@ -35,6 +64,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 // The develop channel builds the same updater as the stable one, pointed at
 // another manifest. The trait is what hands out that builder.
+#[cfg(desktop)]
 use tauri_plugin_updater::UpdaterExt;
 
 use playback::{PlaybackState, PlaybackStatus};
@@ -428,6 +458,7 @@ async fn find_prerelease_manifest(
 /// **The comparison is left to the webview.** The updater is asked for the
 /// update whatever the versions say, because "you are already running it" is
 /// an answer too, and only the frontend knows what is installed.
+#[cfg(desktop)]
 #[tauri::command]
 async fn check_prerelease_manifest(
     webview: tauri::Webview,
@@ -509,6 +540,22 @@ struct PublicChannel {
     same_build: bool,
 }
 
+/// **A phone has no updater.** The system installs the app, and the plugin's
+/// install answers `UnsupportedOs` there. The two commands stay in the handler
+/// list —`generate_handler!` takes no conditional entries— and say so.
+#[cfg(mobile)]
+#[tauri::command]
+async fn check_prerelease_manifest() -> Result<Option<serde_json::Value>, String> {
+    Err("el teléfono no tiene updater: lo instala el sistema".into())
+}
+
+#[cfg(mobile)]
+#[tauri::command]
+async fn check_public_manifest() -> Result<PublicChannel, String> {
+    Err("el teléfono no tiene updater: lo instala el sistema".into())
+}
+
+#[cfg(desktop)]
 #[tauri::command]
 async fn check_public_manifest(webview: tauri::Webview) -> Result<PublicChannel, String> {
     let client = github_client()?;
@@ -795,6 +842,8 @@ fn auth_status(session_state: State<SessionState>) -> AuthStatus {
 /// not in `capabilities/default.json`, and the backend already has the handle.
 pub(crate) fn bring_to_front(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
+        // A phone brings the app back by itself; there is nothing minimised.
+        #[cfg(desktop)]
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
@@ -815,8 +864,18 @@ async fn begin_login(
     // comes back by itself the moment the browser is done, instead of waiting
     // to be clicked.
     let window = app.clone();
+    let opener = app.clone();
     let session = tauri::async_runtime::spawn_blocking(move || {
-        auth::login_interactively(move || bring_to_front(&window))
+        auth::login_interactively(
+            // Only the phone uses it: see `auth::pkce`.
+            move |url| {
+                use tauri_plugin_opener::OpenerExt;
+                if let Err(error) = opener.opener().open_url(url, None::<&str>) {
+                    log::error!("[oauth_unavailable]: no se pudo abrir el navegador: {error}");
+                }
+            },
+            move || bring_to_front(&window),
+        )
     })
     .await
     .map_err(|e| {
@@ -1916,27 +1975,33 @@ pub fn run() {
     // created, and the media card reads it when the session opens.
     media_keys::claim_app_id(&context.config().identifier);
 
-    let app = tauri::Builder::default()
-        // **Registered first, on purpose.** The plugin works by holding a lock
-        // that the second process cannot take, so it has to exist before anything
-        // else in `setup` can fail — otherwise the copy that starts while a crash
-        // is being handled sails through to a second session.
-        //
-        // What the second copy does is exit. What it must not do is reach
-        // `setup`: one account, one session. Two of them authenticate with the
-        // same credentials, and the one that loses the audio-key race hands its
-        // own bytes to the other one's decoder — six tracks burned in fourteen
-        // seconds, every one of them reported as a song Spotify would not
-        // deliver. See `AGENTS.md`.
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            log::info!("segunda instancia: le cedo el lugar a la que ya está");
-            bring_to_front(app);
-        }))
-        .plugin(tauri_plugin_opener::init())
-        // The updater only downloads and verifies; *when* it runs is decided by the
-        // UI. An app that plays music must not install over itself mid-track, so
-        // Starless asks instead — see `update.rs`.
-        .plugin(tauri_plugin_updater::Builder::new().build())
+    let builder = tauri::Builder::default();
+    // **Registered first, on purpose.** The plugin works by holding a lock
+    // that the second process cannot take, so it has to exist before anything
+    // else in `setup` can fail — otherwise the copy that starts while a crash
+    // is being handled sails through to a second session.
+    //
+    // What the second copy does is exit. What it must not do is reach
+    // `setup`: one account, one session. Two of them authenticate with the
+    // same credentials, and the one that loses the audio-key race hands its
+    // own bytes to the other one's decoder — six tracks burned in fourteen
+    // seconds, every one of them reported as a song Spotify would not
+    // deliver. See `AGENTS.md`.
+    //
+    // Desktop only: a phone already keeps one process per app.
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        log::info!("segunda instancia: le cedo el lugar a la que ya está");
+        bring_to_front(app);
+    }));
+    let builder = builder.plugin(tauri_plugin_opener::init());
+    // The updater only downloads and verifies; *when* it runs is decided by the
+    // UI. An app that plays music must not install over itself mid-track, so
+    // Starless asks instead — see `update.rs`. A phone's updates are the
+    // system's.
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    let app = builder
         // The close button, when the person chose the tray: the window goes,
         // the app and the music stay. Alt+F4 and the button in the window's
         // own controls both arrive here, so both do the same thing.
@@ -1955,6 +2020,11 @@ pub fn run() {
         .manage(DjState::default())
         .manage(RadioState::default())
         .setup(|app| {
+            // Before the log and the crash marker: on a phone they have no
+            // folder until the app says where its sandbox is. See `paths`.
+            #[cfg(mobile)]
+            paths::init(app.handle());
+
             // librespot narrates every refusal through `log`, and Starless is a
             // windowed app with no console to narrate into. Both halves matter:
             // without a logger a refusal is invisible, and without a file it is

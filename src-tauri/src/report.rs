@@ -58,7 +58,7 @@ const LOG_TAIL_BYTES: usize = 48 * 1024;
 // ---------------------------------------------------------------------------
 
 fn local_dir() -> Option<PathBuf> {
-    dirs::data_local_dir().map(|base| base.join("Starless"))
+    crate::paths::data_local_dir().map(|base| base.join("Starless"))
 }
 
 fn marker_path() -> Option<PathBuf> {
@@ -161,7 +161,15 @@ fn counts_as_crash(ran_for: Option<Duration>, panicked: bool) -> bool {
 /// Readable at any point in this run's life, including from the frontend, because
 /// `mark_session_start` moved the evidence out of the way rather than overwriting
 /// it.
+///
+/// **Never on a phone.** Android ends a process when it wants to —swiped away
+/// from the recents, short on memory— and `RunEvent::Exit` does not come, so
+/// the marker would turn every launch into a crash report about a crash that
+/// did not happen. See `docs/android.md`.
 pub fn previous_session_crashed() -> bool {
+    if cfg!(mobile) {
+        return false;
+    }
     let Some(crash) = crash_marker_path() else {
         return false;
     };

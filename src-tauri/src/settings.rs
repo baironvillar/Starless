@@ -25,7 +25,7 @@ use std::path::PathBuf;
 
 /// Where the file lives.
 pub fn settings_path() -> Option<PathBuf> {
-    dirs::data_local_dir().map(|base| base.join("Starless").join("settings.json"))
+    crate::paths::data_local_dir().map(|base| base.join("Starless").join("settings.json"))
 }
 
 /// Every field is optional, and every field defaults.
