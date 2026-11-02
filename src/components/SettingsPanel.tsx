@@ -10,11 +10,20 @@ import {
   MessageSquarePlus,
   Pencil,
   RefreshCw,
+  Search,
   User,
   X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { type CSSProperties, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  type CSSProperties,
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { CHANGELOG, PREVIOUS_NOTE } from "../lib/changelog";
 import type { Lang, StringKey } from "../lib/i18n";
 import { SPRING, SPRING_SHEET } from "../lib/motion";
@@ -130,6 +139,52 @@ const SECTIONS = [
 type Section = (typeof SECTIONS)[number];
 
 /**
+ * The parts of the customisation.
+ *
+ * **The section was one long list, and the list was going to keep growing.** The
+ * app wants to be personalisable, so the number of options in here only goes up,
+ * and a list that only goes up is a list that ends in a scroll. These three are
+ * the split that keeps every screen short: how the app looks, what is behind it,
+ * and what moves.
+ */
+const CUSTOM_PARTS = ["customAppearance", "customBackground", "customEffects"] as const;
+type CustomPart = (typeof CUSTOM_PARTS)[number];
+
+/**
+ * What the person is looking for.
+ *
+ * **The search lives in the panel and the rows read it.** A search that every
+ * row has to be told about is a search that every section has to remember to
+ * honour —and the one that forgets is the one that shows the wrong answer. Here
+ * the row asks the panel what is being looked for and decides for itself.
+ */
+const SearchContext = createContext("");
+
+function useSearch(): string {
+  return useContext(SearchContext);
+}
+
+/**
+ * Whether a row is the answer.
+ *
+ * **Without case and without accents.** The person types "atenuar" and the label
+ * says "Atenuar": it is the same word and the keyboard does not care about the
+ * tilde. The hint counts too, because some names are only in the explanation.
+ */
+function matchesSearch(query: string, label: string, hint?: string): boolean {
+  const needle = fold(query);
+  if (!needle) return true;
+  return fold(label).includes(needle) || fold(hint ?? "").includes(needle);
+}
+
+function fold(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+/**
  * Settings, as a large floating panel: sections down the left, grouped rows on
  * the right, each row a labelled description with its control opposite.
  */
@@ -142,6 +197,25 @@ export function SettingsPanel({
   onLangChange,
 }: SettingsPanelProps) {
   const [section, setSection] = useState<Section>("sectionGeneral");
+  /**
+   * What the person is looking for.
+   *
+   * **It lives here and not in the rows.** Every row of every section reads it,
+   * so a section that forgets to honour it is a section that shows the wrong
+   * answer, and the person has no way of knowing that.
+   */
+  const [query, setQuery] = useState("");
+  /**
+   * The box with the rows of the section that is on screen.
+   *
+   * **It is how the panel knows whether the search found anything.** The rows
+   * that do not match are not rendered, so what is in the box is what the
+   * person is being offered.
+   */
+  const rowsBox = useRef<HTMLDivElement>(null);
+  const [found, setFound] = useState(true);
+  /** Which part of the customisation is on screen. */
+  const [customPart, setCustomPart] = useState<CustomPart>("customAppearance");
   const [version, setVersion] = useState<string>("");
   /**
    * Whether this build is a prerelease.
@@ -165,6 +239,22 @@ export function SettingsPanel({
   useEffect(() => {
     void appVersion().then(setVersion);
   }, []);
+
+  /**
+   * Whether the search found anything.
+   *
+   * **It is asked after the rows are drawn, and again when the section
+   * changes.** The answer lives in the document: a row that does not match is
+   * not rendered, so counting the rows is counting the answers.
+   */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the rows change with the section, and the section is not read here — it is the trigger.
+  useEffect(() => {
+    if (query.trim() === "") {
+      setFound(true);
+      return;
+    }
+    setFound((rowsBox.current?.querySelectorAll(".setting-row").length ?? 0) > 0);
+  }, [query, section]);
 
   return (
     <motion.div
@@ -235,27 +325,100 @@ export function SettingsPanel({
           is however far down the section goes.
       */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="flex shrink-0 justify-end px-8 pt-8">
+        {/*
+            The header: the search on the left, the way out on the right.
+
+            **The search is here because the options are going to be many.** The
+            app wants to be personalisable, so the list of things a person can
+            change only grows, and a list that only grows ends in a scroll. The
+            search is the other half of the answer: the sub-sections keep each
+            screen short, and this finds the one option in a hurry.
+        */}
+        <div className="flex shrink-0 items-center gap-3 px-8 pt-8">
+          {/* The field is capped: a search that runs the whole width of the
+              panel reads as an address bar, and the thing that says what is
+              behind it —the X, in the corner— loses its neighbour. */}
+          <div className="glass-control flex h-9 min-w-0 max-w-[440px] flex-1 items-center gap-2.5 rounded-pill px-4">
+            <Search className="size-4 shrink-0 text-ink-faint" strokeWidth={2} />
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={t.settingsSearch}
+              aria-label={t.settingsSearch}
+              className="w-full min-w-0 bg-transparent text-[13px] outline-none placeholder:text-ink-faint [&::-webkit-search-cancel-button]:hidden"
+            />
+          </div>
           <button
             type="button"
             onClick={onClose}
             aria-label={t.close}
-            className="grid size-9 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink"
+            className="ml-auto grid size-9 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink"
           >
             <X className="size-[18px]" strokeWidth={2} />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-8 pb-8">
-          {section === "sectionGeneral" && (
-            <General t={t} lang={lang} onLangChange={onLangChange} />
-          )}
-          {section === "sectionAudio" && <Audio t={t} />}
-          {section === "sectionAccount" && <Account t={t} account={account} />}
-          {section === "sectionCustom" && <Custom t={t} />}
-          {section === "sectionDiagnostics" && (
-            <Diagnostics t={t} version={version} lang={lang} onOpenFeedback={onOpenFeedback} />
-          )}
+        {/*
+            The parts of the customisation, as tabs under the search.
+
+            **Only the section that has parts shows them.** Personalización grew
+            into three screens, and each one is short enough to read without
+            scrolling; the other sections are still one screen each, and tabs
+            that do not change anything are tabs that lie.
+        */}
+        {section === "sectionCustom" && !query && (
+          <div className="flex shrink-0 items-center gap-1.5 px-8 pt-4">
+            {CUSTOM_PARTS.map((part) => (
+              <button
+                key={part}
+                type="button"
+                onClick={() => setCustomPart(part)}
+                aria-current={part === customPart ? "page" : undefined}
+                className={`rounded-pill px-3.5 py-2 text-[13px] font-medium transition-colors duration-200 ${
+                  part === customPart
+                    ? "bg-white/12 text-ink"
+                    : "text-ink-muted hover:bg-white/6 hover:text-ink"
+                }`}
+              >
+                {t[part]}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="flex-1 overflow-y-auto px-8 pt-6 pb-8">
+          <SearchContext.Provider value={query}>
+            <div ref={rowsBox}>
+              {section === "sectionGeneral" && (
+                <General t={t} lang={lang} onLangChange={onLangChange} />
+              )}
+              {section === "sectionAudio" && <Audio t={t} />}
+              {section === "sectionAccount" && <Account t={t} account={account} />}
+              {section === "sectionCustom" && <Custom t={t} part={customPart} />}
+              {section === "sectionDiagnostics" && (
+                <Diagnostics t={t} version={version} lang={lang} onOpenFeedback={onOpenFeedback} />
+              )}
+            </div>
+
+            {/*
+                The search that found nothing.
+
+                **It says so, instead of leaving a blank page.** A search that
+                returns silence reads as a broken app, and the person has no way
+                of knowing whether the option they are looking for does not
+                exist or whether the search is the one that is broken.
+
+                The rows that do not match are not in the document at all, so
+                counting them is counting the answers. The CSS can hide a card
+                with no rows —`:has()` inside `:not()` is allowed— but it cannot
+                do this: the answer is in a sibling, and a `:has()` inside a
+                `:has()` is a selector the browsers refuse to parse.
+            */}
+            {query.trim() !== "" && !found && (
+              <p className="px-1 text-[13px] text-ink-faint">{t.settingsNoResults}</p>
+            )}
+          </SearchContext.Provider>
         </div>
       </div>
     </motion.div>
@@ -717,7 +880,7 @@ function Prerelease({ t }: { t: Record<StringKey, string> }) {
  * One control on purpose: this section earns its place by existing, and the second
  * option is the one that decides what belongs in it.
  */
-function Custom({ t }: { t: Record<StringKey, string> }) {
+function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart }) {
   const [opacity, setOpacity] = useState<number | null>(null);
   const [accent, setAccent] = useState<string | null>(null);
   const commitTimer = useRef<number | null>(null);
@@ -823,83 +986,124 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
     })();
   };
 
-  return (
-    <div className="max-w-[620px]">
-      {/*
-          El tema va primero.
-
-          **Es la decisión de la que dependen las demás.** El acento, el
-          vidrio, la forma de los controles y hasta el texto de esta ventana se
-          leen contra el tema elegido: es lo que hay que mirar antes de
-          personalizar nada más. Y estaba en General, que es la sección donde
-          vive lo que la app decide —no lo que decide la persona.
-      */}
-      <Group>
-        <Row label={t.theme}>
-          <ThemeSelect t={t} />
-        </Row>
-      </Group>
-
-      <div className="mt-9">
-        <Group>
-          <Row label={t.menuOpacity} hint={t.menuOpacityHint}>
-            <span className="flex items-center gap-3">
-              <span className="min-w-[74px] text-right text-[12px] text-ink-faint tabular">
-                {opacity === null ? "…" : `${opacity}%`}
-              </span>
-              <SmoothSlider
-                value={opacity ?? MENU_OPACITY_DEFAULT}
-                min={MENU_OPACITY_MIN}
-                max={MENU_OPACITY_MAX}
-                step={5}
-                disabled={opacity === null}
-                onChange={change}
-                label={t.menuOpacity}
-                className="w-[180px]"
-              />
-              {/*
-              The swatch is what makes this control legible while it is being
-              dragged. Every surface that actually reads the value is a popover
-              sitting outside the panel, and this one is an opaque sheet — so
-              without a legend right here the thumb moves and nothing answers.
-
-              It reads its own alpha, not the one the menus read: the legend is
-              a gradient over a 46x28 box and can answer at pointer speed, while
-              `--menu-alpha` only moves once the hand stops.
-            */}
-              <span
-                aria-hidden="true"
-                className="menu-legend"
-                style={
-                  {
-                    "--legend-alpha": (opacity ?? MENU_OPACITY_DEFAULT) / 100,
-                  } as CSSProperties
+  /**
+   * The three screens of the customisation.
+   *
+   * **Each one is a grid of cards, and the grid is two columns wide.** The
+   * window is wide and the settings were using a third of it: the space was
+   * there and the scroll was not necessary. A grid and not columns, because a
+   * column balances by height and leaves a hole under the shorter one, and a
+   * card that is in the second column says nothing about the one next to it.
+   */
+  const cards = (which: CustomPart) => {
+    if (which === "customBackground") {
+      return <BackgroundSettings t={t} effect={effect} changeEffect={changeEffect} />;
+    }
+    if (which === "customEffects") {
+      return (
+        <>
+          {/*
+            The movement under the glass, each one a thing to take back: the light
+            that trails the pointer, the pulse on the volume, the bloom and the
+            interface's own animation. Applied the moment it is picked, because all
+            of them are on screen behind this panel. Quiet mode is not a fifth
+            setting: it is on when the other four are off, and writes all four.
+          */}
+          <Group narrow>
+            <Row label={t.quietMode} hint={t.quietModeHint}>
+              <Toggle
+                checked={quiet}
+                onChange={(on) =>
+                  changeAllEffects(
+                    on
+                      ? EFFECTS_QUIET
+                      : {
+                          glow: EFFECTS_DEFAULT.glow,
+                          beat: EFFECTS_DEFAULT.beat,
+                          bloom: EFFECTS_DEFAULT.bloom,
+                          motion: EFFECTS_DEFAULT.motion,
+                        },
+                  )
                 }
+                label={t.quietMode}
               />
-            </span>
+            </Row>
+            <Row label={t.pointerGlow} hint={t.pointerGlowHint}>
+              <Toggle
+                checked={effect.glow === "on"}
+                onChange={(on) => changeEffect("glow", on ? "on" : "off")}
+                label={t.pointerGlow}
+              />
+            </Row>
+            <Row label={t.beatPulse} hint={t.beatPulseHint}>
+              <Select
+                value={effect.beat}
+                onChange={(value) => changeEffect("beat", value as Effects["beat"])}
+                options={[
+                  { value: "strong", label: t.beatStrong },
+                  { value: "soft", label: t.beatSoft },
+                  { value: "off", label: t.effectOff },
+                ]}
+              />
+            </Row>
+          </Group>
+          <Group narrow>
+            <Row label={t.bloomLight} hint={t.bloomLightHint}>
+              <Select
+                value={effect.bloom}
+                onChange={(value) => changeEffect("bloom", value as Effects["bloom"])}
+                options={[
+                  { value: "normal", label: t.bloomNormal },
+                  { value: "soft", label: t.bloomSoft },
+                  { value: "off", label: t.effectOff },
+                ]}
+              />
+            </Row>
+            <Row label={t.uiMotion} hint={t.uiMotionHint}>
+              <Toggle
+                checked={effect.motion === "on"}
+                onChange={(on) => changeEffect("motion", on ? "on" : "off")}
+                label={t.uiMotion}
+              />
+            </Row>
+          </Group>
+        </>
+      );
+    }
+    return (
+      <>
+        {/*
+            El tema va primero.
+
+            **Es la decisión de la que dependen las demás.** El acento, el
+            vidrio, la forma de los controles y hasta el texto de esta ventana se
+            leen contra el tema elegido: es lo que hay que mirar antes de
+            personalizar nada más. Y estaba en General, que es la sección donde
+            vive lo que la app decide —no lo que decide la persona.
+        */}
+        <Group narrow>
+          <Row label={t.theme}>
+            <ThemeSelect t={t} />
           </Row>
         </Group>
-      </div>
-      <p className="mt-4 flex max-w-[520px] justify-between text-[11.5px] text-ink-faint">
-        <span>{t.menuOpacitySolid}</span>
-        <span>{t.menuOpacityGlass}</span>
-      </p>
 
-      {/*
-        The accent is the one colour the user owns outright. It reaches the Inicio
-        button, the mark beside the selected playlist, the play buttons and every
-        primary action in the app — so the control shows the consequence instead of
-        describing it: the swatches *are* the accent, and picking one repaints this
-        panel's own controls while the finger is still on it.
+        {/*
+          The accent is the one colour the user owns outright. It reaches the Inicio
+          button, the mark beside the selected playlist, the play buttons and every
+          primary action in the app — so the control shows the consequence instead of
+          describing it: the swatches *are* the accent, and picking one repaints this
+          panel's own controls while the finger is still on it.
 
-        Presets first and the native picker last: the presets are the colours that
-        are known to keep a readable label on top of them, and the picker is the
-        door for the one that is not.
-      */}
-      <div className="mt-9">
-        <Group>
+          Presets first and the native picker last: the presets are the colours that
+          are known to keep a readable label on top of them, and the picker is the
+          door for the one that is not.
+        */}
+        <Group narrow>
           <Row label={t.accentColor} hint={t.accentColorHint}>
-            <span className="flex items-center gap-2">
+            {/* The swatches are tight on purpose: seven of them plus the wheel
+                have to fit next to the label in a card that is half a screen
+                wide, and a row that wraps leaves the card looking empty. */}
+            <span className="flex items-center gap-1">
               {ACCENT_PRESETS.map((hex) => (
                 <button
                   key={hex}
@@ -951,74 +1155,90 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
             </span>
           </Row>
         </Group>
-      </div>
 
-      <BackgroundSettings t={t} effect={effect} changeEffect={changeEffect} />
+        {/*
+            The opacity is the one control that does not fit in half a column.
 
-      {/*
-        The movement under the glass, each one a thing to take back: the light
-        that trails the pointer, the pulse on the volume, the bloom and the
-        interface's own animation. Applied the moment it is picked, because all
-        of them are on screen behind this panel. Quiet mode is not a fifth
-        setting: it is on when the other four are off, and writes all four.
-      */}
-      <div className="mt-9">
-        <Group>
-          <Row label={t.quietMode} hint={t.quietModeHint}>
-            <Toggle
-              checked={quiet}
-              onChange={(on) =>
-                changeAllEffects(
-                  on
-                    ? EFFECTS_QUIET
-                    : {
-                        glow: EFFECTS_DEFAULT.glow,
-                        beat: EFFECTS_DEFAULT.beat,
-                        bloom: EFFECTS_DEFAULT.bloom,
-                        motion: EFFECTS_DEFAULT.motion,
-                      },
-                )
-              }
-              label={t.quietMode}
-            />
-          </Row>
-          <Row label={t.pointerGlow} hint={t.pointerGlowHint}>
-            <Toggle
-              checked={effect.glow === "on"}
-              onChange={(on) => changeEffect("glow", on ? "on" : "off")}
-              label={t.pointerGlow}
-            />
-          </Row>
-          <Row label={t.beatPulse} hint={t.beatPulseHint}>
-            <Select
-              value={effect.beat}
-              onChange={(value) => changeEffect("beat", value as Effects["beat"])}
-              options={[
-                { value: "strong", label: t.beatStrong },
-                { value: "soft", label: t.beatSoft },
-                { value: "off", label: t.effectOff },
-              ]}
-            />
-          </Row>
-          <Row label={t.bloomLight} hint={t.bloomLightHint}>
-            <Select
-              value={effect.bloom}
-              onChange={(value) => changeEffect("bloom", value as Effects["bloom"])}
-              options={[
-                { value: "normal", label: t.bloomNormal },
-                { value: "soft", label: t.bloomSoft },
-                { value: "off", label: t.effectOff },
-              ]}
-            />
-          </Row>
-          <Row label={t.uiMotion} hint={t.uiMotionHint}>
-            <Toggle
-              checked={effect.motion === "on"}
-              onChange={(on) => changeEffect("motion", on ? "on" : "off")}
-              label={t.uiMotion}
-            />
+            **The number, the slider and the swatch add up to more than a
+            column holds,** and a row that does not fit does not get smaller:
+            it gets broken. So this card crosses both columns, and the ends of
+            the scale —Sólido, Translúcido— sit under the slider, which is the
+            thing they are the ends of.
+        */}
+        <Group span narrow>
+          <Row label={t.menuOpacity} hint={t.menuOpacityHint}>
+            <span className="flex items-center gap-3">
+              <span className="min-w-[74px] text-right text-[12px] text-ink-faint tabular">
+                {opacity === null ? "…" : `${opacity}%`}
+              </span>
+              <span className="flex flex-col gap-1.5">
+                <SmoothSlider
+                  value={opacity ?? MENU_OPACITY_DEFAULT}
+                  min={MENU_OPACITY_MIN}
+                  max={MENU_OPACITY_MAX}
+                  step={5}
+                  disabled={opacity === null}
+                  onChange={change}
+                  label={t.menuOpacity}
+                  className="w-[180px]"
+                />
+                <span className="flex justify-between text-[11.5px] text-ink-faint">
+                  <span>{t.menuOpacitySolid}</span>
+                  <span>{t.menuOpacityGlass}</span>
+                </span>
+              </span>
+              {/*
+                The swatch is what makes this control legible while it is being
+                dragged. Every surface that actually reads the value is a popover
+                sitting outside the panel, and this one is an opaque sheet — so
+                without a legend right here the thumb moves and nothing answers.
+
+                It reads its own alpha, not the one the menus read: the legend is
+                a gradient over a 46x28 box and can answer at pointer speed, while
+                `--menu-alpha` only moves once the hand stops.
+              */}
+              <span
+                aria-hidden="true"
+                className="menu-legend"
+                style={
+                  {
+                    "--legend-alpha": (opacity ?? MENU_OPACITY_DEFAULT) / 100,
+                  } as CSSProperties
+                }
+              />
+            </span>
           </Row>
         </Group>
+      </>
+    );
+  };
+
+  /**
+   * What is on screen.
+   *
+   * **The search crosses the three parts.** The person who types "atenuar" does
+   * not know or care which part that option lives in —they know the word they
+   * are looking for. So while there is a search, every part is drawn and the
+   * rows that do not match leave; the parts that end up empty leave too.
+   */
+  const query = useSearch();
+  const searching = query.trim() !== "";
+
+  return (
+    <div className="max-w-[1120px]">
+      <div className="not-has-[.setting-row]:hidden">
+        {searching ? (
+          CUSTOM_PARTS.map((part) => (
+            <section key={part} className="not-has-[.setting-row]:hidden mb-8 last:mb-0">
+              <h3 className="mb-2.5 px-1 text-[11.5px] font-semibold tracking-[0.12em] uppercase text-ink-faint">
+                {t[part]}
+              </h3>
+              <div className="grid items-start gap-5 lg:grid-cols-2">{cards(part)}</div>
+            </section>
+          ))
+        ) : (
+          <div className="grid items-start gap-5 lg:grid-cols-2">{cards(part)}</div>
+        )}
       </div>
     </div>
   );
@@ -1085,8 +1305,13 @@ function BackgroundSettings({
   };
 
   return (
-    <div className="mt-9">
-      <Group>
+    <>
+      {/*
+          The picture and the light over it are one card, and the shape of the
+          light is another: the second one is about the app itself and it would
+          be a strange neighbour to the button that picks a file.
+      */}
+      <Group narrow>
         <Row label={t.backgroundImage} hint={error ?? t.backgroundImageHint}>
           <span className="flex items-center gap-2">
             {background.url && (
@@ -1168,6 +1393,8 @@ function BackgroundSettings({
             </Row>
           </>
         )}
+      </Group>
+      <Group narrow>
         <Row label={t.bloomShape} hint={t.bloomShapeHint}>
           <Select
             value={effect.shape}
@@ -1188,7 +1415,7 @@ function BackgroundSettings({
           />
         </Row>
       </Group>
-    </div>
+    </>
   );
 }
 
@@ -1396,9 +1623,36 @@ function ChangelogGroup({ title, items }: { title: string; items: string[] }) {
   );
 }
 
-function Group({ children }: { children: React.ReactNode }) {
+/**
+ * A card of settings.
+ *
+ * **A card with nothing in it is a card that should not be there.** When the
+ * search hides every row of a group, the group goes with them: an empty frame
+ * with a border around it is a hole in the page, and the person would read it
+ * as a setting that is broken. The row marks itself with `setting-row`, and
+ * the card asks the browser whether any of them is still standing.
+ *
+ * `span` is for the card whose control is wider than half a column: it crosses
+ * both columns instead of being squeezed into one. `narrow` makes the card a
+ * container, so its rows can ask how much room they have.
+ */
+function Group({
+  children,
+  span,
+  narrow,
+}: {
+  children: React.ReactNode;
+  span?: boolean;
+  narrow?: boolean;
+}) {
   return (
-    <div className="overflow-hidden rounded-card border border-white/8 bg-white/4">{children}</div>
+    <div
+      className={`not-has-[.setting-row]:hidden overflow-hidden rounded-card border border-white/8 bg-white/4 ${
+        span ? "lg:col-span-2" : ""
+      } ${narrow ? "@container" : ""}`}
+    >
+      {children}
+    </div>
   );
 }
 
@@ -1411,13 +1665,35 @@ function Row({
   hint?: string;
   children: React.ReactNode;
 }) {
+  const query = useSearch();
+
+  /**
+   * The row that is not the answer does not exist.
+   *
+   * **Not "dimmed", not "moved down".** A search that leaves the rows it does
+   * not match on screen, in grey, is a search that made the page longer —the
+   * opposite of what it was for. The row leaves, and the card it was in leaves
+   * with it if it was the last one.
+   */
+  if (!matchesSearch(query, label, hint)) return null;
+
+  /**
+   * The label keeps its width and the control keeps its own.
+   *
+   * **The row stacks when the card is narrow.** A card in one column of the
+   * grid is half a screen wide, and a control that does not fit in half a
+   * screen cannot be squeezed into it: the label would be left with a column
+   * of two letters —"Opacidad / de / los / menús"— and the hint would be four
+   * lines tall. So the row asks the card how much room there is, and when
+   * there is little the label goes on top and the control goes under it.
+   */
   return (
-    <div className="flex items-center gap-6 border-b border-white/8 px-5 py-4 last:border-b-0">
-      <div className="min-w-0 flex-1">
+    <div className="setting-row flex flex-wrap items-center gap-x-6 gap-y-3 border-b border-white/8 px-5 py-4 last:border-b-0 @max-lg:flex-col @max-lg:items-start @max-lg:gap-2.5">
+      <div className="min-w-[100px] flex-1">
         <p className="text-[13.5px] font-semibold">{label}</p>
         {hint && <p className="mt-1 text-[12.5px] leading-relaxed text-ink-muted">{hint}</p>}
       </div>
-      <div className="shrink-0">{children}</div>
+      <div className="ml-auto w-fit shrink-0">{children}</div>
     </div>
   );
 }
