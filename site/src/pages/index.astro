@@ -69,15 +69,21 @@
   .key:hover svg { transform: translateY(2px); }
   @media (prefers-reduced-motion: reduce) { .key::before, .key::after, .key svg { transition: none; } }
 
-  /* The rings: one set of circles around the pool, one further out per section. */
+  /* The rings: one arc around the pool for each section, further out as the
+     page goes down. */
   #rings { position: absolute; z-index: 0; left: 0; top: 0; width: 100%; pointer-events: none; }
   /* No `vector-effect: non-scaling-stroke` here. The SVG has no viewBox, so
      one user unit is one pixel and the stroke is a hairline at every radius
      anyway. Asking for a non-scaling stroke makes Chrome stroke the path
      again in device space on every tile, and these circles cover the whole
      page: the text that shares those tiles was left unpainted while it did. */
-  #rings circle { fill: none; stroke: var(--line); stroke-width: 1; }
-  #rings .wave { stroke: rgb(237 234 227 / 0.5); opacity: 0; }
+  /* Each ring is the arc that crosses the page, never the whole circle:
+     closed, the first section's ring read as a round shape around the pool
+     among the open ones. The dash is a 50 degree arc of the circle, and
+     `pathLength` keeps it that size at every radius. */
+  #rings circle { fill: none; stroke: var(--line); stroke-width: 1; stroke-dasharray: 50 310; stroke-dashoffset: -65; }
+  #rings circle { transition: stroke 700ms var(--ease-out); }
+  #rings circle.lit { stroke: rgb(237 234 227 / 0.3); }
 
   /* The pool */
   .hero { position: relative; z-index: 1; min-height: 100svh; display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
@@ -172,8 +178,6 @@
   .tracks .soon { color: var(--frost); }
   /* The meter only exists where the scroll can light it. */
   .eq { display: none; }
-  #rings circle:not(.wave) { transition: stroke 700ms var(--ease-out); }
-  #rings circle.lit { stroke: rgb(237 234 227 / 0.3); }
 
   .before { margin-top: 48px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; }
   .lead { align-self: start; padding-top: 20px; border-top: 1px solid rgb(237 234 227 / 0.45); }
@@ -831,23 +835,22 @@ void main() {
   // where on the page you are and not only that you moved.
   let litRing = -1;
   const lightRing = () =>
-    centre.querySelectorAll("circle:not(.wave)").forEach((c, i) => c.classList.toggle("lit", i === litRing));
-  const wave = document.createElementNS(NS, "circle");
-  wave.setAttribute("r", "1");
-  wave.setAttribute("class", "wave");
+    centre.querySelectorAll("circle").forEach((c, i) => c.classList.toggle("lit", i === litRing));
   function layoutRings() {
     const p = pool();
     const cx = p.x, cy = p.y;
     svg.style.height = `${document.documentElement.scrollHeight}px`;
     centre.setAttribute("transform", `translate(${cx} ${cy})`);
-    radii = [p.r * 1.2, ...ringed.map((el) => el.offsetTop - cy)];
+    // The hero has a ring of its own, and it is the centre of the pool: the
+    // wave is born there when the page starts moving.
+    radii = [0, ...ringed.map((el) => el.offsetTop - cy)];
     centre.replaceChildren(
-      ...radii.slice(1).map((r) => {
+      ...radii.map((r) => {
         const c = document.createElementNS(NS, "circle");
         c.setAttribute("r", r.toFixed(1));
+        c.setAttribute("pathLength", "360");
         return c;
       }),
-      wave,
     );
     lightRing();
   }
@@ -859,18 +862,21 @@ void main() {
   function push(to) {
     const from = at;
     at = to;
-    // The first circle is the first section's: the hero has none of its own.
-    litRing = to - 1;
+    litRing = to;
     lightRing();
     if (reduce || from === to || !radii.length) return;
-    // The wave travels from one ring to the next by growing its radius, not
-    // by being scaled: a scale of thousands on a circle of one unit made
-    // Chrome re-stroke it in device space over the whole page, and the text
-    // that shares those tiles went missing while it did.
-    wave.animate(
+    // The wave is not another ring drawn on top of the others: it is the ring
+    // of the section being left, growing to the next one and going out as it
+    // goes. One stroke moves and there are never two rings of different
+    // sizes at once, which is what used to show up as a round shape among the
+    // open arcs. The ring goes back to its own place at the end, and comes
+    // back lit when the page returns to that section.
+    centre.children[from]?.animate(
       [
-        { r: `${radii[from]}px`, opacity: 0.9 },
-        { r: `${radii[to]}px`, opacity: 0 },
+        { r: `${radii[from]}px`, opacity: 1, stroke: "rgb(237 234 227 / 0.5)" },
+        { r: `${radii[to]}px`, opacity: 0, stroke: "rgb(237 234 227 / 0.5)", offset: 0.75 },
+        { r: `${radii[from]}px`, opacity: 0, stroke: "rgb(237 234 227 / 0.5)", offset: 0.9 },
+        { r: `${radii[from]}px`, opacity: 1, stroke: "rgb(237 234 227 / 0.5)" },
       ],
       { duration: 1400, easing: "cubic-bezier(0.23, 1, 0.32, 1)" },
     );
