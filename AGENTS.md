@@ -81,6 +81,7 @@ relay/                    el Worker que recibe los reportes y crea los issues
 docs/updates.md           cómo se publica una versión
 docs/escribir-playlists.md el protocolo para crear una playlist, y cómo se supo
 docs/jam.md               el protocolo de la sesión compartida, y cómo se supo
+docs/android.md           llevar la app a Android: lo que hay que medir antes
 ```
 
 **Antes de tocar la creación de playlists, lee `docs/escribir-playlists.md`.** Es

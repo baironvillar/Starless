@@ -228,6 +228,35 @@ cambiar sin aviso, como todo lo que usa librespot. Y si el servicio pide una
 identidad que la sesión no tiene, la respuesta es que no se puede, y este punto
 se cierra en vez de buscar otra identidad (ver la regla 7 de `AGENTS.md`).
 
+### Starless en Android
+
+**El problema.** Starless sólo existe en la computadora. Tauri 2 compila el
+mismo backend y el mismo frontend para Android, así que la app no se reescribe:
+se lleva.
+
+**Lo que hay que investigar, en este orden** —el detalle, con el archivo y la
+línea de cada punto, está en [`docs/android.md`](docs/android.md)—:
+
+1. **Que compile.** La bandeja, `bring_to_front`, el plugin de instancia única
+   y OpenSSL cortan la build para Android.
+2. **Que guarde y descargue.** Las carpetas salen de `dirs`, que no sabe de
+   Android, y la carpeta temporal de librespot es una en la que una app no
+   puede escribir: sin credenciales no hay login, y sin temporal no suena
+   ninguna canción.
+3. **El login.** El navegador no se abre —el crate que lo abre no conoce
+   Android— y el redirect a `127.0.0.1` no se puede cambiar: hay que medir si
+   Android mantiene viva la app mientras la persona está en el navegador.
+4. **El audio y la identidad.** Que una canción y la voz del DJ suenen en el
+   teléfono, y volver a medir las puertas de `spclient`: librespot se presenta
+   distinto en Android, y todo lo de `docs/` se midió desde Windows.
+5. **El segundo plano.** Que la música siga con la pantalla bloqueada, lo que en
+   Android pide un servicio en primer plano escrito en Kotlin.
+
+**El riesgo.** Va antes que la 0.8.0, que es la que saca a la app de Windows, y
+una app inestable en dos plataformas es el doble de trabajo. Por eso entra como
+investigación y no como versión: si el login no sobrevive en Android, este punto
+se cierra. La distribución sería por las releases de GitHub, no por una tienda.
+
 ### Las preguntas abiertas de verdad
 
 Estas están escritas como preguntas en `PRODUCT.md` y `DESIGN.md` y siguen sin
