@@ -83,6 +83,7 @@ import {
 } from "../lib/updater";
 import { appVersion, isPrerelease, isPublicBuild, subscribePublicBuild } from "../lib/version";
 import { DevPanel } from "./DevPanel";
+import { Select } from "./Select";
 import { SmoothSlider } from "./SmoothSlider";
 
 type SettingsPanelProps = {
@@ -320,9 +321,6 @@ function General({
               { value: "en", label: "English" },
             ]}
           />
-        </Row>
-        <Row label={t.theme}>
-          <ThemeSelect t={t} />
         </Row>
         <Row label={t.colourMode} hint={t.colourModeHint}>
           <Select
@@ -827,23 +825,39 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
 
   return (
     <div className="max-w-[620px]">
+      {/*
+          El tema va primero.
+
+          **Es la decisión de la que dependen las demás.** El acento, el
+          vidrio, la forma de los controles y hasta el texto de esta ventana se
+          leen contra el tema elegido: es lo que hay que mirar antes de
+          personalizar nada más. Y estaba en General, que es la sección donde
+          vive lo que la app decide —no lo que decide la persona.
+      */}
       <Group>
-        <Row label={t.menuOpacity} hint={t.menuOpacityHint}>
-          <span className="flex items-center gap-3">
-            <span className="min-w-[74px] text-right text-[12px] text-ink-faint tabular">
-              {opacity === null ? "…" : `${opacity}%`}
-            </span>
-            <SmoothSlider
-              value={opacity ?? MENU_OPACITY_DEFAULT}
-              min={MENU_OPACITY_MIN}
-              max={MENU_OPACITY_MAX}
-              step={5}
-              disabled={opacity === null}
-              onChange={change}
-              label={t.menuOpacity}
-              className="w-[180px]"
-            />
-            {/*
+        <Row label={t.theme}>
+          <ThemeSelect t={t} />
+        </Row>
+      </Group>
+
+      <div className="mt-9">
+        <Group>
+          <Row label={t.menuOpacity} hint={t.menuOpacityHint}>
+            <span className="flex items-center gap-3">
+              <span className="min-w-[74px] text-right text-[12px] text-ink-faint tabular">
+                {opacity === null ? "…" : `${opacity}%`}
+              </span>
+              <SmoothSlider
+                value={opacity ?? MENU_OPACITY_DEFAULT}
+                min={MENU_OPACITY_MIN}
+                max={MENU_OPACITY_MAX}
+                step={5}
+                disabled={opacity === null}
+                onChange={change}
+                label={t.menuOpacity}
+                className="w-[180px]"
+              />
+              {/*
               The swatch is what makes this control legible while it is being
               dragged. Every surface that actually reads the value is a popover
               sitting outside the panel, and this one is an opaque sheet — so
@@ -853,18 +867,19 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
               a gradient over a 46x28 box and can answer at pointer speed, while
               `--menu-alpha` only moves once the hand stops.
             */}
-            <span
-              aria-hidden="true"
-              className="menu-legend"
-              style={
-                {
-                  "--legend-alpha": (opacity ?? MENU_OPACITY_DEFAULT) / 100,
-                } as CSSProperties
-              }
-            />
-          </span>
-        </Row>
-      </Group>
+              <span
+                aria-hidden="true"
+                className="menu-legend"
+                style={
+                  {
+                    "--legend-alpha": (opacity ?? MENU_OPACITY_DEFAULT) / 100,
+                  } as CSSProperties
+                }
+              />
+            </span>
+          </Row>
+        </Group>
+      </div>
       <p className="mt-4 flex max-w-[520px] justify-between text-[11.5px] text-ink-faint">
         <span>{t.menuOpacitySolid}</span>
         <span>{t.menuOpacityGlass}</span>
@@ -1440,39 +1455,6 @@ function useBackendSetting<T>(
     void write(next).catch(() => {});
   };
   return [value, change];
-}
-
-function Select({
-  value,
-  defaultValue,
-  onChange,
-  options,
-}: {
-  value?: string;
-  defaultValue?: string;
-  onChange?: (value: string) => void;
-  options: { value: string; label: string }[];
-}) {
-  return (
-    <div className="relative">
-      <select
-        value={value}
-        defaultValue={defaultValue}
-        onChange={(e) => onChange?.(e.target.value)}
-        className="min-w-[164px] appearance-none rounded-pill border border-white/14 bg-white/6 py-2.5 pr-10 pl-4 text-[13px] font-medium outline-none transition-colors duration-200 hover:bg-white/10"
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value} className="bg-night">
-            {o.label}
-          </option>
-        ))}
-      </select>
-      <ChevronDown
-        className="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-ink-muted"
-        strokeWidth={2}
-      />
-    </div>
-  );
 }
 
 /** Uncontrolled unless `checked` is passed: the audio and account rows are still placeholders. */
