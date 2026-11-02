@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">"Starless"</string>
+    <string name="main_activity_title">"Starless"</string>
+    <string name="keepalive_channel">"Playback"</string>
+    <string name="keepalive_text">"Running in the background"</string>
+</resources>

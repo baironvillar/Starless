@@ -1,0 +1,4 @@
+<resources>
+    <string name="keepalive_channel">"Reproducción"</string>
+    <string name="keepalive_text">"Sigue funcionando en segundo plano"</string>
+</resources>

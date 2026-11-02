@@ -21,13 +21,6 @@ tauri-build = { version = "2", features = [] }
 # `tray-icon` for the icon in the notification area (`tray.rs`).
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-opener = "2"
-# One Starless at a time. Two copies means two streaming sessions on one account,
-# and that is not a cosmetic duplicate: they compete for the same audio keys and
-# the loser feeds the other one's ciphertext to the decoder.
-tauri-plugin-single-instance = "2"
-# Updates for people who already have Starless installed. See `docs/updates.md`
-# for the release flow and for why the updater signature is not optional.
-tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
@@ -37,13 +30,17 @@ serde_json = "1"
 # The audio backend is pinned explicitly: `rodio-backend` routes through cpal to
 # WASAPI on Windows, which is the only reason we are here. The default feature
 # set also drags in the ALSA backend, which is dead weight on this platform.
-librespot-core = "0.8"
-librespot-metadata = "0.8"
+#
+# **No default features, because the default is a TLS stack.** Every librespot
+# crate defaults to `native-tls`, which is schannel on Windows and OpenSSL on
+# Android — and there is no OpenSSL built for a phone. The TLS feature is named
+# per platform at the bottom of this file. See `docs/android.md`.
+librespot-core = { version = "0.8", default-features = false }
+librespot-metadata = { version = "0.8", default-features = false }
 librespot-playback = { version = "0.8", default-features = false, features = [
     "rodio-backend",
 ] }
-librespot-connect = "0.8"
-librespot-oauth = "0.8"
+librespot-connect = { version = "0.8", default-features = false }
 # For the `playlist4_external` messages themselves. Named directly because
 # `spclient` decodes them by hand: the library response is a protobuf, not the
 # JSON the Web API speaks, and reading one means holding its type.
@@ -74,7 +71,7 @@ dirs = "6"
 # every caller is already inside `spawn_blocking` — a blocking client cannot be
 # built inside an async runtime. `urlencoding` builds the report URL handed back
 # when no signing token is compiled in.
-reqwest = { version = "0.12", features = ["blocking", "json"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json"] }
 urlencoding = "2"
 # Scrubbing a log before it leaves the machine. Already in the tree through Tauri,
 # so naming it directly costs no extra build time.
@@ -98,6 +95,52 @@ windows = { version = "0.62", features = [
     "Win32_System_Registry",
     "Win32_UI_Shell",
 ] }
+
+# What only a desktop has. On a phone the system already keeps one process per
+# app and installs the updates, and the single-instance crate compiles empty
+# there. The TLS is the one Starless has always used: schannel on Windows.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+# One Starless at a time. Two copies means two streaming sessions on one account,
+# and that is not a cosmetic duplicate: they compete for the same audio keys and
+# the loser feeds the other one's ciphertext to the decoder.
+tauri-plugin-single-instance = "2"
+# Updates for people who already have Starless installed. See `docs/updates.md`
+# for the release flow and for why the updater signature is not optional.
+tauri-plugin-updater = "2"
+librespot-core = { version = "0.8", default-features = false, features = ["native-tls"] }
+# The browser login. Desktop only: it opens the browser through the `open`
+# crate, which does not know Android — the phone builds its own (`auth.rs`).
+librespot-oauth = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["default-tls"] }
+
+# Android: TLS without OpenSSL, and the pieces of the browser login that
+# `librespot-oauth` cannot do there. The roots are compiled in (`webpki`) and do
+# not depend on where the phone keeps its certificates. All of these are already
+# in the tree through librespot and Tauri.
+[target.'cfg(target_os = "android")'.dependencies]
+librespot-core = { version = "0.8", default-features = false, features = [
+    "rustls-tls-webpki-roots",
+] }
+reqwest = { version = "0.12", default-features = false, features = [
+    "rustls-tls-webpki-roots",
+] }
+base64 = "0.22"
+rand = "0.9"
+sha2 = "0.10"
+url = "2"
+
+# librespot-core 0.8.0 with four places changed, all marked `Starless:`. On
+# Android it asked Spotify for its tokens as an Android client, with a client id
+# the session does not carry: the client token came behind a hash cash the crate
+# cannot solve and login5 refused the rest, so the session connected and the
+# library could not be read. Now Android asks as Windows does, and says so in
+# every HTTP request too (User-Agent and version) — the DJ answered 500 to an
+# Android User-Agent carrying a Windows token. The handshake stays Linux ARM:
+# Windows on ARM there would be `PLATFORM_WINDOWS_CE_ARM`, never measured. The
+# Windows and macOS paths are byte for byte the published crate. Bumping
+# librespot means copying the new version here and carrying the changes over.
+[patch.crates-io]
+librespot-core = { path = "vendor/librespot-core" }
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

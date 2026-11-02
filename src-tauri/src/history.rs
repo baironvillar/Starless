@@ -35,7 +35,7 @@ const DAY_MS: i64 = 86_400_000;
 
 /// Where the file lives: next to `settings.json`.
 fn history_path() -> Option<PathBuf> {
-    dirs::data_local_dir().map(|base| base.join("Starless").join("history.jsonl"))
+    crate::paths::data_local_dir().map(|base| base.join("Starless").join("history.jsonl"))
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
