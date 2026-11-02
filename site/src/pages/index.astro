@@ -194,22 +194,22 @@
   .bar i { display: block; height: 100%; background: var(--ember); transform-origin: left; transform: scaleX(0); }
   .player .key { padding: 12px 18px; font-size: 14px; }
 
-  /* Sections crossfade like tracks: the one leaving fades down as the next
-     fades up, tied to the scroll so it is the hand that does the mix. Scroll
-     timelines run off the main thread; without them the page is just still. */
+  /* The page moves with the scroll: a section arrives as it comes up, the
+     rows draw their own lines, the window changes screen. Scroll timelines
+     run off the main thread; without them the page is just still. Nothing
+     here may hide what is on screen: the content is the page, and a fade
+     that takes it down to a tenth reads as a bug, not as a transition. */
   @supports (animation-timeline: view()) {
     @media (prefers-reduced-motion: no-preference) {
-      .ring > .wrap { animation: track linear both; animation-timeline: view(); animation-range: entry 0% exit 100%; }
-      /* The last track has nothing after it to fade into: it only arrives. */
-      #antes > .wrap { animation-name: arrive; animation-range: entry 0% entry 100%; }
+      /* A section arrives as it comes up from the bottom and stays lit for
+         the whole time it is on screen. It used to crossfade: down to a
+         tenth of its opacity on the way in and on the way out, which is
+         what made the page look empty in the middle of a scroll — the
+         text was there, at ten percent, and the eye read it as gone. */
+      .ring > .wrap { animation: arrive linear both; animation-timeline: view(); animation-range: entry 0% entry 100%; }
       .ring h2 { animation: title linear both; animation-timeline: view(); animation-range: entry 5% entry 60%; }
-      @keyframes track {
-        0% { opacity: 0.1; transform: translateY(56px); }
-        28%, 72% { opacity: 1; transform: none; }
-        100% { opacity: 0.1; transform: translateY(-40px); }
-      }
       @keyframes arrive {
-        from { opacity: 0.1; transform: translateY(56px); }
+        from { opacity: 0; transform: translateY(56px); }
         to { opacity: 1; transform: none; }
       }
       @keyframes title {
@@ -218,9 +218,12 @@
       }
 
       /* Leaving the pool: the words lift away faster than the page and the
-         liquid sinks into the floor, so the rings it sits in show through. */
+         liquid sinks into the floor, so the rings it sits in show through.
+         The fade lasts the whole way out: if it ended halfway, there was a
+         stretch of page with the hero gone and the next section not yet
+         arrived — a screen with nothing on it. */
       .hero { view-timeline: --hero; }
-      .pitch, .top { animation: lift linear both; animation-timeline: --hero; animation-range: exit 0% exit 55%; }
+      .pitch, .top { animation: lift linear both; animation-timeline: --hero; animation-range: exit 0% exit 100%; }
       #ferro { animation: sink linear both; animation-timeline: --hero; animation-range: exit 0% exit 90%; }
       @keyframes lift { to { opacity: 0; transform: translateY(-12vh); } }
       @keyframes sink { to { opacity: 0.2; } }
@@ -248,16 +251,22 @@
 
       /* The two tall sections hold still while the page runs under them. Their
          own fade replaces the section crossfade, which over a section three
-         screens tall would leave them half-faded while pinned. */
+         screens tall would leave them half-faded while pinned. The pin lights
+         up as the section comes in and leaves as it goes out: a range of
+         "entry 80%" meant two thousand pixels of scrolling with the window
+         still at a tenth, and the screen black in the seam between the two
+         sections. */
       .ring.tall { height: 340vh; padding: 0; view-timeline: --sec; }
       #dj.tall { height: 260vh; }
       .ring.tall > .wrap { animation: none; height: 100%; }
-      .pin { position: sticky; top: 0; min-height: 100svh; display: grid; align-content: center; padding: 48px 0 110px; animation: arrive linear both, leave linear forwards; animation-timeline: --sec, --sec; animation-range: entry 0% entry 80%, exit 10% exit 70%; }
-      @keyframes leave { to { opacity: 0.1; transform: translateY(-40px); } }
+      .pin { position: sticky; top: 0; min-height: 100svh; display: grid; align-content: center; padding: 48px 0 110px; animation: arrive linear both, leave linear forwards; animation-timeline: --sec, --sec; animation-range: entry 0% entry 30%, exit 0% exit 100%; }
+      @keyframes leave { to { opacity: 0; transform: translateY(-40px); } }
 
       /* The window tips up off the desk as it arrives, then changes screen as
-         the hand scrolls: one picture holds, the next one fades in over it. */
-      .window { transform-origin: 50% 100%; animation: tilt linear both; animation-timeline: --sec; animation-range: entry 20% entry 100%; }
+         the hand scrolls: one picture holds, the next one fades in over it.
+         The tip is tied to the pin's arrival: over "entry 100%" of a section
+         three screens tall it was still tilting a thousand pixels later. */
+      .window { transform-origin: 50% 100%; animation: tilt linear both; animation-timeline: --sec; animation-range: entry 0% entry 30%; }
       @keyframes tilt { from { opacity: 0.3; transform: perspective(1400px) rotateX(22deg) scale(0.9); } to { opacity: 1; transform: none; } }
       .shot, .steps li { animation: linear both; animation-timeline: --sec; animation-range: contain 0% contain 100%; }
       .shot:nth-child(1), .steps li:nth-child(1) { animation-name: s1; }
@@ -271,14 +280,17 @@
       @keyframes s2 { 0%, 20% { opacity: var(--off, 0); } 27%, 45% { opacity: 1; } 52%, 100% { opacity: var(--off, 0); } }
       @keyframes s3 { 0%, 45% { opacity: var(--off, 0); } 52%, 70% { opacity: 1; } 77%, 100% { opacity: var(--off, 0); } }
       @keyframes s4 { 0%, 70% { opacity: var(--off, 0); } 77%, 100% { opacity: 1; } }
-      .steps li { --off: 0.3; }
+      /* Dimmed, not gone: the step that is not playing still has to be read. */
+      .steps li { --off: 0.45; }
 
       /* The DJ draws its ring, then says its line a word at a time while the
-         section holds; the song it chose comes in last. */
+         section holds; the song it chose comes in last. The words that were
+         not said yet stay legible: at a sixteenth they were a ghost of a
+         sentence, and the section read as empty until it was said. */
       .dj-mark circle { animation: ring linear both; animation-timeline: --sec; animation-range: contain 0% contain 20%; }
       @keyframes ring { from { stroke-dasharray: 0 239; } to { stroke-dasharray: 212 27; } }
       .dj-line .w { animation: say linear both; animation-timeline: --sec; }
-      @keyframes say { from { opacity: 0.16; } to { opacity: 1; } }
+      @keyframes say { from { opacity: 0.4; } to { opacity: 1; } }
       .dj-next { animation: rise linear both; animation-timeline: --sec; animation-range: contain 84% contain 94%; }
 
       /* Each thing it doesn't do is crossed out as it reaches the middle of
@@ -293,19 +305,23 @@
       @keyframes play { from { left: 0; } to { left: 100%; } }
 
       /* The feature list is a playlist whose current track is the one in the
-         middle of the screen: it comes up to full light and its number turns
-         into a meter on the beat. The rest wait, dimmed. */
+         middle of the screen: it comes up to full light and a meter starts
+         on its beat. The rest wait, dimmed. The number stays: the meter used
+         to take its place, and a digit that vanishes is a thing the reader
+         looks for and does not find. */
       .tracks li { animation: enter linear both; animation-timeline: --row; animation-range: entry 0% entry 100%; }
       .tracks li > * { animation: focus linear both; animation-timeline: --row; animation-range: cover 0% cover 100%; }
       .tracks .n { position: relative; }
-      .tracks .n > span { display: inline-block; animation: num linear both; animation-timeline: --row; animation-range: cover 42% cover 58%; }
-      .eq { display: flex; position: absolute; right: 0; bottom: 3px; height: 12px; gap: 2px; align-items: end; opacity: 0; animation: meter linear both; animation-timeline: --row; animation-range: cover 42% cover 58%; }
+      /* The meter sits next to the number, not on it. */
+      .eq { display: flex; position: absolute; right: 12px; bottom: 3px; height: 12px; gap: 2px; align-items: end; opacity: 0; animation: meter linear both; animation-timeline: --row; animation-range: cover 42% cover 58%; }
       .eq b { width: 3px; height: 100%; background: var(--frost); border-radius: 1px; transform-origin: bottom; animation: bounce 268ms ease-in-out infinite alternate; }
       .eq b:nth-child(2) { animation-delay: -120ms; }
       .eq b:nth-child(3) { animation-delay: -210ms; }
       @keyframes enter { from { transform: translateY(24px); } to { transform: none; } }
-      @keyframes focus { 0%, 32%, 68%, 100% { opacity: 0.3; } 46%, 54% { opacity: 1; } }
-      @keyframes num { 0%, 100% { opacity: 1; } 30%, 70% { opacity: 0; } }
+      /* The row in the middle of the screen comes up to full light and the
+         rest wait for it. Dimmed, not gone: at three tenths the rows that
+         were not playing could not be read. */
+      @keyframes focus { 0%, 32%, 68%, 100% { opacity: 0.45; } 46%, 54% { opacity: 1; } }
       @keyframes meter { 0%, 100% { opacity: 0; } 30%, 70% { opacity: 1; } }
       /* 268ms each way is one full bar up and down per beat at 112 BPM. */
       @keyframes bounce { from { transform: scaleY(0.3); } to { transform: none; } }
@@ -993,22 +1009,32 @@ void main() {
     .catch(() => {});
 
   let current = "Starless";
+  // The title that is on screen, and the one that is on its way out. Two
+  // rolls in flight at once put the two texts on top of each other, and a
+  // fast scroll crosses two sections at a time.
+  let currentSpan = line.querySelector("span");
   function show(section) {
     const text = section.dataset.track;
     if (text === current) return;
     current = text;
     push(order.indexOf(section.id));
-    if (reduce) { line.querySelector("span").textContent = text; return; }
-    const old = line.querySelector("span:not(.out)");
+    if (reduce) { currentSpan.textContent = text; return; }
+    // A roll is still arriving: the title changes under it instead of
+    // starting a second one.
+    if (currentSpan.classList.contains("in")) { currentSpan.textContent = text; return; }
+    const old = currentSpan;
     const next = document.createElement("span");
     next.textContent = text;
     next.className = "in";
     line.appendChild(next);
-    requestAnimationFrame(() => {
-      old.classList.add("out");
-      next.classList.remove("in");
-      setTimeout(() => old.remove(), 460);
-    });
+    currentSpan = next;
+    // The new title has to be painted in its "in" state before it is told
+    // to come in, or there is nothing to transition from and it lands on
+    // top of the old one.
+    void next.offsetWidth;
+    old.classList.add("out");
+    next.classList.remove("in");
+    setTimeout(() => old.remove(), 460);
   }
   const io = new IntersectionObserver((entries) => {
     for (const e of entries) if (e.isIntersecting) show(e.target);

@@ -109,7 +109,9 @@ The SVGs in `site/public` are written by `bun run logo` at the repo root, from t
 
 **Creative North Star: "The Ferrofluid Speaker"**
 
-The page is a still room with one thing moving in it: a pool of black ferrofluid, rendered live, that raises its spikes on a 112 BPM kick and on the speed of the visitor's hand. Everything else stays monochrome and moves only with the hand: the page is a playlist, and scrolling is what changes the track. Sections crossfade like songs, hairlines draw themselves in, the app's window changes screen while it holds still, the DJ says its line a word at a time, the feature list lights the row in the middle of the screen, and each thing Starless doesn't do is crossed out. All of it is scroll-driven CSS; without scroll timelines, or with reduced motion, the page is still and complete. The music is made visible; the interface stays out of its way.
+The page is a still room with one thing moving in it: a pool of black ferrofluid, rendered live, that raises its spikes on a 112 BPM kick and on the speed of the visitor's hand. Everything else stays monochrome and moves only with the hand: the page is a playlist, and scrolling is what changes the track. A section arrives as it comes up from the bottom and stays lit for as long as it is on screen, hairlines draw themselves in, the app's window changes screen while it holds still, the DJ says its line a word at a time, the feature list lights the row in the middle of the screen, and each thing Starless doesn't do is crossed out. All of it is scroll-driven CSS; without scroll timelines, or with reduced motion, the page is still and complete. The music is made visible; the interface stays out of its way.
+
+**Nothing on the page may be dimmed out of sight.** The scroll drives the page, not the reader: an effect may bring something in, draw it, light it or take it away, but whatever is on screen is legible. A section that fades to a tenth of its opacity on the way out reads as a broken page, not as a transition, and the same goes for a row that cannot be read and a digit that vanishes — the first version of this page did all three, and scrolling it felt like losing the text.
 
 Order comes from rings, not boxes. Concentric hairline circles centred on the pool pass through the top edge of every section, so reading down the page is travelling outward from the speaker; each section change sends a wave from one ring to the next. Content sits on the ground between hairlines, never in cards, never behind glass.
 
@@ -202,10 +204,11 @@ Circles and capsules echo the speaker: the pool, the rings, the player's round b
 
 ### Feature rows
 - **Style:** an ordered list of four-column rows (number, title, line, version) at 20px vertical padding between hairlines. Hover lifts the row to frost at 4% over 200ms. An upcoming item carries "Próxima" in frost in place of a version.
+- **The row in the middle of the screen** comes up to full light and a meter starts on its beat next to its number; the rest wait dimmed at 45%, which is dim enough to read. The number never goes away: the meter sits beside it, not on it.
 
 ### Player bar (signature)
 - **Structure:** fixed 16px above the bottom, centred, max 760px, glass over Night, 18px corners. A 42px round bead at left, the current track title (15px, 600) over a mute subline, a 2px progress groove filled in Ember, and the compact download key at right.
-- **Behaviour:** the title is the section in view, named as a track; changes roll the old title up and the new one in from below over 420ms. The progress fill follows scroll position. The bead pulses with the kick and scroll speed.
+- **Behaviour:** the title is the section in view, named as a track; changes roll the old title up and the new one in from below over 420ms. One roll at a time: a fast scroll crosses two sections at once, and the title that is still arriving changes its text instead of starting a second roll — two rolls in flight put the two titles on top of each other. The progress fill follows scroll position. The bead pulses with the kick and scroll speed.
 
 ### Ferrofluid pool (signature)
 - **Render:** a full-screen WebGL fragment shader at one pixel per CSS pixel. An oblique view (foreshortened ground, height lifting on screen) marched in 64 steps plus 6 bisections, early-out to the dish's footprint; outside the dish only the floor is shaded.
@@ -226,6 +229,7 @@ Circles and capsules echo the speaker: the pool, the rings, the player's round b
 - **Do** set every number in tabular figures.
 - **Do** keep reading copy in body colour and metadata in mute, with headlines in frost.
 - **Do** render the liquid's light computationally so it reads as reflection, at dpr 1 for the full-screen shader.
+- **Do** let a section arrive over its entry phase and stay lit while it is on screen, and let the two pinned sections light up as they come in: a fade-out that takes the content down to a tenth on the way out empties the page exactly where the eye expects to find the next section.
 
 ### Don't:
 - **Don't** introduce any hue besides Ember on the progress fill; colour otherwise comes only from reflected light.
@@ -234,6 +238,7 @@ Circles and capsules echo the speaker: the pool, the rings, the player's round b
 - **Don't** use gradients as decoration; they exist only where they render light: the liquid, the glass, the ember, the silver wordmark.
 - **Don't** add a second glowing object, or glass beyond the player, the logo plate and the download keys.
 - **Don't** use condensed widths or giant poster type beyond the hero wordmark.
+- **Don't** dim, hide or replace what is on screen: no text below its reading opacity, no number that vanishes under a meter, no scroll range that leaves the page empty.
 
 <!-- OPEN ITEMS (not part of the system):
 - The app section's window shows real captures in `public/shots/`. `1-biblioteca` and `3-cola` were retaken with the new identity; `2-playlist` and `4-ajustes` still show the old pink look and need retaking.
