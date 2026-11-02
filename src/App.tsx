@@ -61,6 +61,7 @@ import {
   librarySort,
   libraryView,
   listCount,
+  loadBackground,
   MIN_LISTENED_MS,
   menuOpacity,
   onDjVoice,
@@ -90,6 +91,7 @@ import {
   trackListPrefs,
   trayLabels,
   useAccount,
+  useBackground,
   useEffectsSettings,
   useHomeStats,
   useLikedTracks,
@@ -263,8 +265,37 @@ function useNarrowWindow(): boolean {
 /** "Suave" is half the frost, not a dimmer bloom of its own: same light, less of it. */
 const BLOOM_OPACITY = { normal: 1, soft: 0.5, off: 0 } as const;
 
+/**
+ * Where the bloom sits. Every shape is the same two greys, Bone and silver, so
+ * changing it moves the light and never brings hue back (DESIGN.md). `top` is
+ * the one the app shipped with, byte for byte.
+ */
+const BLOOM_SHAPES = {
+  top: [
+    "radial-gradient(90% 70% at 50% -6%, rgb(237 234 227 / 0.24) 0%, transparent 64%)",
+    "radial-gradient(70% 70% at 104% 108%, rgb(196 193 200 / 0.18) 0%, transparent 60%)",
+    "radial-gradient(60% 60% at -6% 96%, rgb(237 234 227 / 0.10) 0%, transparent 60%)",
+  ],
+  corners: [
+    "radial-gradient(65% 65% at -4% -6%, rgb(237 234 227 / 0.22) 0%, transparent 62%)",
+    "radial-gradient(65% 65% at 104% 106%, rgb(196 193 200 / 0.20) 0%, transparent 62%)",
+  ],
+  center: [
+    "radial-gradient(60% 55% at 50% 46%, rgb(237 234 227 / 0.16) 0%, transparent 70%)",
+    "radial-gradient(110% 90% at 50% 50%, rgb(196 193 200 / 0.07) 0%, transparent 72%)",
+  ],
+  side: [
+    "radial-gradient(55% 95% at -8% 40%, rgb(237 234 227 / 0.24) 0%, transparent 64%)",
+    "radial-gradient(40% 60% at 104% 100%, rgb(196 193 200 / 0.10) 0%, transparent 60%)",
+  ],
+} as const;
+
+/** The blur slider's 0..100 onto pixels. Past 40 the picture is only its colours. */
+const BACKGROUND_BLUR_PX = 40;
+
 export default function App() {
   const effect = useEffectsSettings();
+  const background = useBackground();
   const [lang, setLang] = useState<Lang>("es");
   const [active, setActive] = useState<StringKey>("navHome");
   const [libraryOpen, setLibraryOpen] = useState(true);
@@ -599,6 +630,11 @@ export default function App() {
     return () => {
       alive = false;
     };
+  }, []);
+
+  // The picture behind the glass, same moment and same reason as the effects.
+  useEffect(() => {
+    void loadBackground().catch(() => {});
   }, []);
 
   // The effects, at startup for the same reason: the bloom is the first thing
@@ -2509,17 +2545,35 @@ export default function App() {
         with the pointer: a backdrop that animates on its own under blurred glass
         repaints the blur every frame — see DESIGN.md.
       */}
+      {background.url && (
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
+          {/*
+            Scaled past the window so the blur has picture to pull from at the
+            edges: blurred at its own size, the border fades to the black under
+            it and the photo gets a dark frame nobody chose.
+          */}
+          <div
+            className="absolute inset-0 bg-cover bg-center"
+            style={{
+              backgroundImage: `url(${background.url})`,
+              filter:
+                background.blur > 0
+                  ? `blur(${(background.blur / 100) * BACKGROUND_BLUR_PX}px)`
+                  : undefined,
+              transform: background.blur > 0 ? "scale(1.08)" : undefined,
+            }}
+          />
+          <div className="absolute inset-0 bg-black" style={{ opacity: background.dim / 100 }} />
+        </div>
+      )}
       <div
         className="pointer-events-none absolute inset-0 transition-opacity duration-300"
         style={{
           opacity: BLOOM_OPACITY[effect.bloom],
-          background: [
-            "radial-gradient(90% 70% at 50% -6%, rgb(237 234 227 / 0.24) 0%, transparent 64%)",
-            "radial-gradient(70% 70% at 104% 108%, rgb(196 193 200 / 0.18) 0%, transparent 60%)",
-            "radial-gradient(60% 60% at -6% 96%, rgb(237 234 227 / 0.10) 0%, transparent 60%)",
-          ].join(", "),
+          background: BLOOM_SHAPES[effect.shape].join(", "),
         }}
       />
+      {effect.grain === "on" && <div aria-hidden="true" className="grain" />}
       {effect.glow === "on" && <CursorGlow />}
 
       <AuthGate t={t} onReport={() => setFeedbackOpen(true)} onSignedOut={resetView}>

@@ -117,6 +117,15 @@ pub struct Settings {
     /// quitting it.
     #[serde(default)]
     pub close_to_tray: Option<bool>,
+
+    /// How dark the background picture is drawn, 0..=[`BACKGROUND_DIM_MAX`].
+    /// The picture itself is a file beside this one (`background.rs`).
+    #[serde(default)]
+    pub background_dim: Option<u8>,
+
+    /// How soft the background picture is drawn, 0..=100 of the frontend's range.
+    #[serde(default)]
+    pub background_blur: Option<u8>,
 }
 
 /// Low, normal and high: 96, 160 and 320 kbps.
@@ -368,11 +377,16 @@ pub fn saved_track_view() -> &'static str {
 /// `bloom` the frost light behind the glass. They are the movement DESIGN.md
 /// allows under the glass, so whoever finds it too much can take it back.
 /// `motion` is the interface's own: springs, entrances and press feedback.
-pub const EFFECTS: [(&str, &[&str]); 4] = [
+///
+/// `shape` and `grain` are not movement but the look of the ground: where the
+/// bloom sits, and a fixed film of noise over it. Quiet mode leaves them alone.
+pub const EFFECTS: [(&str, &[&str]); 6] = [
     ("glow", &["on", "off"]),
     ("beat", &["strong", "soft", "off"]),
     ("bloom", &["normal", "soft", "off"]),
     ("motion", &["on", "off"]),
+    ("shape", &["top", "corners", "center", "side"]),
+    ("grain", &["off", "on"]),
 ];
 
 /// Remember one effect. Same gate as `save_library_sort`: an unknown name or
@@ -430,6 +444,39 @@ pub fn saved_menu_opacity() -> u8 {
         .menu_opacity
         .unwrap_or(DEFAULT_MENU_OPACITY)
         .clamp(MENU_OPACITY_MIN, MENU_OPACITY_MAX)
+}
+
+/// The darkest the picture can be drawn. Not 100: a black picture is the
+/// absence of one, and the control for that is "remove".
+pub const BACKGROUND_DIM_MAX: u8 = 90;
+
+/// Half dark and a little soft, so the first picture anyone picks already sits
+/// behind the glass instead of competing with the text on it.
+pub const DEFAULT_BACKGROUND_DIM: u8 = 50;
+pub const DEFAULT_BACKGROUND_BLUR: u8 = 20;
+
+/// Remember how the background picture is drawn. Clamped on the way in, like
+/// the menu opacity: both end up in CSS.
+pub fn save_background_look(dim: u8, blur: u8) {
+    let dim = dim.min(BACKGROUND_DIM_MAX);
+    let blur = blur.min(100);
+    let saved = load();
+    if saved.background_dim == Some(dim) && saved.background_blur == Some(blur) {
+        return;
+    }
+    update(|settings| {
+        settings.background_dim = Some(dim);
+        settings.background_blur = Some(blur);
+    });
+}
+
+/// `(dim, blur)`, clamped, or the defaults.
+pub fn saved_background_look() -> (u8, u8) {
+    let saved = load();
+    (
+        saved.background_dim.unwrap_or(DEFAULT_BACKGROUND_DIM).min(BACKGROUND_DIM_MAX),
+        saved.background_blur.unwrap_or(DEFAULT_BACKGROUND_BLUR).min(100),
+    )
 }
 
 /// Remember whether the history is kept.

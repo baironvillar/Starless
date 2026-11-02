@@ -4,6 +4,7 @@ import {
   ChevronDown,
   Download,
   FlaskConical,
+  ImagePlus,
   Loader2,
   LogOut,
   MessageSquarePlus,
@@ -22,10 +23,13 @@ import {
   type AudioQuality,
   accentColor,
   applyAccentColor,
+  applyBackgroundLook,
   applyEffects,
   applyMenuOpacity,
   audioQuality,
+  BACKGROUND_DIM_MAX,
   CROSSFADE_MAX,
+  clearBackground,
   clearHistory,
   closeToTray,
   crossfadeSeconds,
@@ -33,6 +37,7 @@ import {
   EFFECTS_QUIET,
   type EffectName,
   type Effects,
+  explain,
   historyEnabled,
   historyKey,
   MENU_OPACITY_DEFAULT,
@@ -40,6 +45,8 @@ import {
   MENU_OPACITY_MIN,
   menuOpacity,
   normalisation,
+  pickBackground,
+  saveBackgroundLook,
   setAccentColor,
   setAudioQuality,
   setCloseToTray,
@@ -52,6 +59,7 @@ import {
   signOut,
   startWithWindows,
   type Account as UserAccount,
+  useBackground,
   useEffectsSettings,
 } from "../lib/spotify";
 import {
@@ -748,16 +756,17 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
     applyEffects({ ...effect, [name]: value });
     void setEffect(name, value).catch(() => {});
   };
-  const quiet = (Object.keys(EFFECTS_QUIET) as EffectName[]).every(
+  const quiet = (Object.keys(EFFECTS_QUIET) as (keyof typeof EFFECTS_QUIET)[]).every(
     (name) => effect[name] === EFFECTS_QUIET[name],
   );
-  const changeAllEffects = (next: Effects) => {
-    applyEffects(next);
+  // Only the movement: `shape` and `grain` stay as the person set them.
+  const changeAllEffects = (next: Partial<Effects>) => {
+    applyEffects({ ...effect, ...next });
     // One after another: each save reads and rewrites settings.json, and four
     // at once could each overwrite the others with the file as it found it.
     void (async () => {
       for (const name of Object.keys(next) as EffectName[]) {
-        await setEffect(name, next[name]).catch(() => {});
+        await setEffect(name, next[name] as Effects[typeof name]).catch(() => {});
       }
     })();
   };
@@ -875,6 +884,8 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
         </Group>
       </div>
 
+      <BackgroundSettings t={t} effect={effect} changeEffect={changeEffect} />
+
       {/*
         The movement under the glass, each one a thing to take back: the light
         that trails the pointer, the pulse on the volume, the bloom and the
@@ -887,7 +898,18 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
           <Row label={t.quietMode} hint={t.quietModeHint}>
             <Toggle
               checked={quiet}
-              onChange={(on) => changeAllEffects(on ? EFFECTS_QUIET : EFFECTS_DEFAULT)}
+              onChange={(on) =>
+                changeAllEffects(
+                  on
+                    ? EFFECTS_QUIET
+                    : {
+                        glow: EFFECTS_DEFAULT.glow,
+                        beat: EFFECTS_DEFAULT.beat,
+                        bloom: EFFECTS_DEFAULT.bloom,
+                        motion: EFFECTS_DEFAULT.motion,
+                      },
+                )
+              }
               label={t.quietMode}
             />
           </Row>
@@ -929,6 +951,174 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
           </Row>
         </Group>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The ground behind the glass: the person's own picture, and where the grey
+ * light sits over it. Same split as the menu opacity — the sliders' numbers
+ * follow the hand, and the window (a blurred photo the size of the screen)
+ * changes once the hand stops.
+ */
+function BackgroundSettings({
+  t,
+  effect,
+  changeEffect,
+}: {
+  t: Record<StringKey, string>;
+  effect: Effects;
+  changeEffect: <K extends EffectName>(name: K, value: Effects[K]) => void;
+}) {
+  const background = useBackground();
+  const [dim, setDim] = useState(background.dim);
+  const [blur, setBlur] = useState(background.blur);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  const commitTimer = useRef<number | null>(null);
+
+  // The saved look can arrive after the panel is already open.
+  useEffect(() => {
+    setDim(background.dim);
+    setBlur(background.blur);
+  }, [background.dim, background.blur]);
+
+  useEffect(() => {
+    return () => {
+      if (commitTimer.current !== null) window.clearTimeout(commitTimer.current);
+    };
+  }, []);
+
+  const changeLook = (nextDim: number, nextBlur: number) => {
+    setDim(nextDim);
+    setBlur(nextBlur);
+    if (commitTimer.current !== null) window.clearTimeout(commitTimer.current);
+    commitTimer.current = window.setTimeout(() => {
+      commitTimer.current = null;
+      applyBackgroundLook(nextDim, nextBlur);
+      void saveBackgroundLook(nextDim, nextBlur).catch(() => {});
+    }, OPACITY_COMMIT_MS);
+  };
+
+  const pick = (file: File | undefined) => {
+    if (!file) return;
+    setError(null);
+    setBusy(true);
+    void pickBackground(file)
+      .catch((e) => setError(explain(e)))
+      .finally(() => setBusy(false));
+  };
+
+  const remove = () => {
+    setError(null);
+    void clearBackground().catch((e) => setError(explain(e)));
+  };
+
+  return (
+    <div className="mt-9">
+      <Group>
+        <Row label={t.backgroundImage} hint={error ?? t.backgroundImageHint}>
+          <span className="flex items-center gap-2">
+            {background.url && (
+              <span
+                aria-hidden="true"
+                className="h-9 w-14 shrink-0 rounded-[8px] border border-white/14 bg-cover bg-center"
+                style={{ backgroundImage: `url(${background.url})` }}
+              />
+            )}
+            {/* The native picker is the door; the button is what shows. */}
+            <input
+              ref={input}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              className="hidden"
+              onChange={(e) => {
+                pick(e.target.files?.[0]);
+                // Picking the same file twice is a choice too.
+                e.target.value = "";
+              }}
+            />
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => input.current?.click()}
+              className="flex items-center gap-2 rounded-pill border border-white/14 bg-white/6 px-4 py-2 text-[13px] font-medium transition-colors duration-200 hover:bg-white/10 disabled:opacity-50"
+            >
+              {busy ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <ImagePlus className="size-4" />
+              )}
+              {background.url ? t.backgroundImageChange : t.backgroundImagePick}
+            </button>
+            {background.url && (
+              <button
+                type="button"
+                onClick={remove}
+                className="h-9 rounded-pill px-3 text-[13px] font-medium text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink"
+              >
+                {t.backgroundImageRemove}
+              </button>
+            )}
+          </span>
+        </Row>
+        {background.url && (
+          <>
+            <Row label={t.backgroundDim} hint={t.backgroundDimHint}>
+              <span className="flex items-center gap-3">
+                <span className="min-w-[40px] text-right text-[12px] text-ink-faint tabular">
+                  {dim}%
+                </span>
+                <SmoothSlider
+                  value={dim}
+                  min={0}
+                  max={BACKGROUND_DIM_MAX}
+                  step={5}
+                  onChange={(value) => changeLook(value, blur)}
+                  label={t.backgroundDim}
+                  className="w-[180px]"
+                />
+              </span>
+            </Row>
+            <Row label={t.backgroundBlur} hint={t.backgroundBlurHint}>
+              <span className="flex items-center gap-3">
+                <span className="min-w-[40px] text-right text-[12px] text-ink-faint tabular">
+                  {blur}%
+                </span>
+                <SmoothSlider
+                  value={blur}
+                  min={0}
+                  max={100}
+                  step={5}
+                  onChange={(value) => changeLook(dim, value)}
+                  label={t.backgroundBlur}
+                  className="w-[180px]"
+                />
+              </span>
+            </Row>
+          </>
+        )}
+        <Row label={t.bloomShape} hint={t.bloomShapeHint}>
+          <Select
+            value={effect.shape}
+            onChange={(value) => changeEffect("shape", value as Effects["shape"])}
+            options={[
+              { value: "top", label: t.bloomShapeTop },
+              { value: "corners", label: t.bloomShapeCorners },
+              { value: "center", label: t.bloomShapeCenter },
+              { value: "side", label: t.bloomShapeSide },
+            ]}
+          />
+        </Row>
+        <Row label={t.grain} hint={t.grainHint}>
+          <Toggle
+            checked={effect.grain === "on"}
+            onChange={(on) => changeEffect("grain", on ? "on" : "off")}
+            label={t.grain}
+          />
+        </Row>
+      </Group>
     </div>
   );
 }

@@ -87,6 +87,8 @@ Behind everything sits a static bloom of pale light on black: three radials in B
 
 **The person can take the movement back.** Settings → Personalisation has the pointer light (on/off), the pulse on the volume (with waves, soft, off), the bloom (normal, soft at half, off) and the interface animations (on/off: off forces Motion's reduced motion through `MotionConfig` and stops every CSS transition and keyframe under `:root[data-still]`, the same rule the system's reduced motion gets). **Quiet mode** sits above them: it is not a stored setting, it is on when all four are off, and switching it writes all four — off, or back to the shipped values. The shipped values are the ones described here; `settings::EFFECTS` lists them, first value first.
 
+**The ground is also the person's to shape, and it stays still.** The bloom has four shapes (top, corners, centre, side), all the same two greys, so moving the light never brings hue back. Grain is a fixed tile of noise at 7% over the ground: texture, and it breaks the bands a soft gradient draws over black. And the person can put **their own picture** behind the glass, darkened (0–90%) and blurred (0–40px): the one place hue may come back, because it is chosen once by the person and does not change with the music — the per-album tint that this section forbids was neither. The picture is copied to `%LOCALAPPDATA%\Starless\background` (`background.rs`), sits under the bloom and the grain, and never animates. Quiet mode does not touch any of the three: they are how the ground looks, not movement.
+
 ## The glass recipe
 
 A glass surface is three stacked things, never one. Omitting the middle layer is what turns translucency into unreadable.
