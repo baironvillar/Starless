@@ -113,7 +113,7 @@ The page is a still room with one thing moving in it: a pool of black ferrofluid
 
 **Nothing on the page may be dimmed out of sight, and nothing on it may flicker.** The scroll drives the page, not the reader: an effect may bring something in, draw it, light it or take it away, but whatever is on screen is legible. A section that fades to a tenth of its opacity on the way out reads as a broken page, not as a transition, and the same goes for a row that cannot be read and a digit that vanishes — the first version of this page did all three, and scrolling it felt like losing the text. A frame that leaves the text unpainted is the same failure by another road: the words are there, and the reader sees them blink out and back. So the decoration may never make the page stutter while it is read.
 
-Order comes from rings, not boxes. Concentric hairline arcs centred on the pool pass through the top edge of every section, so reading down the page is travelling outward from the speaker; each section change sends the ring of the section being left out to the next one. Content sits on the ground between hairlines, never in cards, never behind glass.
+Order comes from rings, not boxes. Concentric hairline ovals centred on the pool pass through the top edge of every section, so reading down the page is travelling outward from the speaker; each section change sends the ring of the section being left out to the next one. Content sits on the ground between hairlines, never in cards, never behind glass.
 
 Colour is withheld on purpose. Void for the ground, glass over Night for the one floating surface, Bone for type, and frosted glass with an Ember light under it for the single action. Ember is the one hue: under the download keys and on the player's progress fill, nothing else; everything else is reflected light. The user rejected a colourful, retro, giant-condensed world before this one; this system is the answer to that rejection.
 
@@ -174,7 +174,7 @@ A grey ramp from Void to Bone, faintly warm, with one accent: Ember.
 
 A centred container of 1200px inside a fluid gutter (clamp 20–56px). The hero fills the viewport: the pool's canvas spans it full-bleed with the pool centred at 66% across and 50% down, and the words (max 34rem) sit left, vertically centred. Sections stack with tall vertical padding (clamp 96–160px) so each one owns a ring's band. Inside sections, structure is a two-column grid (1fr : 1.2fr for promises; 1fr : 1fr for the install notes) or a numbered list of rows (number, title, line, version), separated only by hairlines. Blocks start 48–56px under their headline.
 
-The ring layer is a document-sized SVG behind the content, centred on the pool. Ring radii are measured, not fixed: each one equals the distance from the pool's centre to a section's top, with the last at the footer, and they are re-laid on resize and font load. The hero has a ring of its own at the centre of the pool, where the wave is born. Each ring is drawn as the arc of its circle that crosses the page — 50 degrees of it, held at that size at every radius by `pathLength` — so no ring ever closes into a round shape among the open ones.
+The ring layer is a document-sized SVG behind the content, centred on the pool. Ring radii are measured, not fixed: each one equals the distance from the pool's centre to a section's top, with the last at the footer, and they are re-laid on resize and font load. The hero has a ring of its own at the centre of the pool, where the wave is born. Every ring is an oval and not a circle — 1.9 times wider than it is tall — so all of them cross the page and none of them can close into a round shape among the open ones.
 
 At 860px and below the pool moves above the words (centred at 50% across, 34% down, radius 42% of the shorter side) and the words drop to the bottom of the hero. Two-column grids collapse to one; feature rows fold their description under the title; the nav keeps only its last link; the player key drops its label to an icon. The footer leaves 150px at the bottom so the fixed player never covers content.
 
@@ -190,7 +190,7 @@ Flat ground; depth is rendered, not stacked. The pool's depth comes from the obl
 
 ## Shapes
 
-Circles and capsules echo the speaker: the pool, the rings, the player's round bead, the capsule key (999px). The player bar has gently rounded corners (18px). Everything in the reading flow is square-cornered and unbordered, separated by full-width hairlines top and bottom. Rings are 1px strokes that stay hairlines at every radius: the ring SVG has no viewBox, so one unit is one pixel and the stroke needs no correction to stay thin. They are arcs and never closed circles, so they all read as the same open curve.
+Circles and capsules echo the speaker: the pool, the rings, the player's round bead, the capsule key (999px). The player bar has gently rounded corners (18px). Everything in the reading flow is square-cornered and unbordered, separated by full-width hairlines top and bottom. Rings are 1px strokes that stay hairlines at every radius: the ring SVG has no viewBox, so one unit is one pixel and the stroke needs no correction to stay thin. They are ovals and never closed circles, so they all read as the same open curve.
 
 ## Components
 
@@ -218,9 +218,9 @@ Circles and capsules echo the speaker: the pool, the rings, the player's round b
 - **Reduced motion:** a single frame at fixed energy; no wave, no title roll.
 
 ### Rings (signature)
-- **Style:** hairline arcs centred on the pool, one per section top and one at the footer. Each arc is the 50 degree stretch of its circle that crosses the page, never the whole circle: closed, the first section's ring read as a round shape around the pool among the open ones, and two rings of different sizes at once read as noise.
-- **How the wave works:** the wave is not another ring drawn on top. It is the ring of the section being left, growing to the next one and going out as it goes, so one stroke moves and there are never two rings of different sizes at the same time. The hero's own ring is the centre of the pool, so the wave is born inside the ferrofluid.
-- **How it moves:** the wave grows its radius; it is never scaled. A scale of thousands on a one-unit circle makes the browser stroke the path again in device space on every tile of the page, and the text that shares those tiles goes unpainted while it does — the page flickers and the reader loses the words. Growing the radius keeps the same picture and paints in time.
+- **Style:** hairline ovals centred on the pool, one per section top and one at the footer. Each one is 1.9 times wider than it is tall: closed, the first section's ring read as a round shape around the pool among the open ones, and two curves of different sizes at once read as noise.
+- **How the wave works:** the wave is not another ring drawn on top. It is the ring of the section being left, growing to the next one and going out as it goes, so one stroke moves and there are never two rings of different sizes at the same time. The ring the wave is heading for is not drawn until the wave lands on it, and from there on the two are the same curve in the same place. The hero's own ring is the centre of the pool, so the wave is born inside the ferrofluid.
+- **How it moves:** the wave grows its two radii; it is never scaled. A scale of thousands on a one-unit circle makes the browser stroke the path again in device space on every tile of the page, and the text that shares those tiles goes unpainted while it does — the page flickers and the reader loses the words. Growing the shape keeps the same picture and paints in time.
 
 ## Do's and Don'ts
 
@@ -241,7 +241,7 @@ Circles and capsules echo the speaker: the pool, the rings, the player's round b
 - **Don't** add a second glowing object, or glass beyond the player, the logo plate and the download keys.
 - **Don't** use condensed widths or giant poster type beyond the hero wordmark.
 - **Don't** dim, hide or replace what is on screen: no text below its reading opacity, no number that vanishes under a meter, no scroll range that leaves the page empty.
-- **Don't** close a ring into a circle, and never show two rings of different sizes at once: the arcs are the page's language, and a round shape among the open ones reads as a mistake.
+- **Don't** close a ring into a circle, and never show two curves of different sizes at once: the ovals are the page's language, and a round shape among the open ones reads as a mistake.
 - **Don't** let a decoration repaint the page while it is read: no scaled SVG stroke, no giant path re-stroked over the whole document, nothing that leaves a frame unpainted. The rings and the wave are the page's background, and the background has to keep up with the scroll.
 
 <!-- OPEN ITEMS (not part of the system):

@@ -69,21 +69,20 @@
   .key:hover svg { transform: translateY(2px); }
   @media (prefers-reduced-motion: reduce) { .key::before, .key::after, .key svg { transition: none; } }
 
-  /* The rings: one arc around the pool for each section, further out as the
+  /* The rings: one oval around the pool for each section, further out as the
      page goes down. */
   #rings { position: absolute; z-index: 0; left: 0; top: 0; width: 100%; pointer-events: none; }
   /* No `vector-effect: non-scaling-stroke` here. The SVG has no viewBox, so
      one user unit is one pixel and the stroke is a hairline at every radius
      anyway. Asking for a non-scaling stroke makes Chrome stroke the path
-     again in device space on every tile, and these circles cover the whole
+     again in device space on every tile, and these ovals cover the whole
      page: the text that shares those tiles was left unpainted while it did. */
-  /* Each ring is the arc that crosses the page, never the whole circle:
-     closed, the first section's ring read as a round shape around the pool
-     among the open ones. The dash is a 50 degree arc of the circle, and
-     `pathLength` keeps it that size at every radius. */
-  #rings circle { fill: none; stroke: var(--line); stroke-width: 1; stroke-dasharray: 50 310; stroke-dashoffset: -65; }
-  #rings circle { transition: stroke 700ms var(--ease-out); }
-  #rings circle.lit { stroke: rgb(237 234 227 / 0.3); }
+  /* Every ring is an oval and not a circle. Closed, the first section's ring
+     read as a round shape around the pool among the open ones, and a round
+     shape among open curves reads as a mistake. An oval is wider than it is
+     tall, so every one of them crosses the page and none of them can close. */
+  #rings ellipse { fill: none; stroke: var(--line); stroke-width: 1; transition: stroke 700ms var(--ease-out); }
+  #rings ellipse.lit { stroke: rgb(237 234 227 / 0.3); }
 
   /* The pool */
   .hero { position: relative; z-index: 1; min-height: 100svh; display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
@@ -830,12 +829,16 @@ void main() {
   const centre = document.getElementById("ring-centre");
   const ringed = ["promesas", "app", "dj", "que-hace", "mezcla", "sin", "antes", "fin"].map((id) => document.getElementById(id));
   const NS = "http://www.w3.org/2000/svg";
+  // How much wider than tall each oval is. A ring that is as wide as it is
+  // tall closes into a circle, and a circle around the pool reads as a
+  // mistake among the open curves.
+  const SPREAD = 1.9;
   let radii = [];
+  let rings = [];
   // The ring of the section that is playing stays lit, so the rings say
   // where on the page you are and not only that you moved.
   let litRing = -1;
-  const lightRing = () =>
-    centre.querySelectorAll("circle").forEach((c, i) => c.classList.toggle("lit", i === litRing));
+  const lightRing = () => rings.forEach((e, i) => e.classList.toggle("lit", i === litRing));
   function layoutRings() {
     const p = pool();
     const cx = p.x, cy = p.y;
@@ -844,14 +847,13 @@ void main() {
     // The hero has a ring of its own, and it is the centre of the pool: the
     // wave is born there when the page starts moving.
     radii = [0, ...ringed.map((el) => el.offsetTop - cy)];
-    centre.replaceChildren(
-      ...radii.map((r) => {
-        const c = document.createElementNS(NS, "circle");
-        c.setAttribute("r", r.toFixed(1));
-        c.setAttribute("pathLength", "360");
-        return c;
-      }),
-    );
+    rings = radii.map((r) => {
+      const e = document.createElementNS(NS, "ellipse");
+      e.setAttribute("rx", (r * SPREAD).toFixed(1));
+      e.setAttribute("ry", r.toFixed(1));
+      return e;
+    });
+    centre.replaceChildren(...rings);
     lightRing();
   }
 
@@ -859,27 +861,62 @@ void main() {
   // the one before it.
   const order = ["inicio", "promesas", "app", "dj", "que-hace", "mezcla", "sin", "antes"];
   let at = 0;
+  let flight = null;
+  // A wave still in the air is dropped and every ring goes back to its own
+  // place: a scroll that crosses two sections at once must not leave a wave
+  // stranded halfway between two rings.
+  const settle = () => {
+    flight?.cancel();
+    flight = null;
+    for (const e of rings) e.getAnimations().forEach((a) => a.cancel());
+  };
   function push(to) {
     const from = at;
     at = to;
     litRing = to;
     lightRing();
     if (reduce || from === to || !radii.length) return;
+    settle();
     // The wave is not another ring drawn on top of the others: it is the ring
     // of the section being left, growing to the next one and going out as it
-    // goes. One stroke moves and there are never two rings of different
-    // sizes at once, which is what used to show up as a round shape among the
-    // open arcs. The ring goes back to its own place at the end, and comes
-    // back lit when the page returns to that section.
-    centre.children[from]?.animate(
+    // goes. One stroke moves, so there are never two curves of different
+    // sizes at once — which is what used to show up as a second wave next to
+    // the one that was already there. The ring the wave is heading for stays
+    // hidden until the wave lands on it, and from there on the two are the
+    // same curve in the same place.
+    const wave = rings[from];
+    const land = rings[to];
+    const fromX = (radii[from] * SPREAD).toFixed(1);
+    const fromY = radii[from].toFixed(1);
+    const toX = (radii[to] * SPREAD).toFixed(1);
+    const toY = radii[to].toFixed(1);
+    const a = wave.animate(
       [
-        { r: `${radii[from]}px`, opacity: 1, stroke: "rgb(237 234 227 / 0.5)" },
-        { r: `${radii[to]}px`, opacity: 0, stroke: "rgb(237 234 227 / 0.5)", offset: 0.75 },
-        { r: `${radii[from]}px`, opacity: 0, stroke: "rgb(237 234 227 / 0.5)", offset: 0.9 },
-        { r: `${radii[from]}px`, opacity: 1, stroke: "rgb(237 234 227 / 0.5)" },
+        { rx: `${fromX}px`, ry: `${fromY}px`, opacity: 1, stroke: "rgb(237 234 227 / 0.14)" },
+        { rx: `${fromX}px`, ry: `${fromY}px`, opacity: 1, stroke: "rgb(237 234 227 / 0.5)", offset: 0.12 },
+        { rx: `${toX}px`, ry: `${toY}px`, opacity: 1, stroke: "rgb(237 234 227 / 0.5)", offset: 0.5 },
+        { rx: `${toX}px`, ry: `${toY}px`, opacity: 0, stroke: "rgb(237 234 227 / 0.5)" },
       ],
-      { duration: 1400, easing: "cubic-bezier(0.23, 1, 0.32, 1)" },
+      { duration: 1400, easing: "cubic-bezier(0.23, 1, 0.32, 1)", fill: "forwards" },
     );
+    flight = a;
+    // The ring the wave lands on comes up under it: the same curve, in the
+    // same place, so the two are never two waves of different sizes.
+    land.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 600, delay: 700, fill: "both" });
+    a.finished
+      .then(() => {
+        if (flight !== a) return;
+        flight = null;
+        // The wave has landed. The ring it was goes back to its own place and
+        // comes back dim: the page's shape does not depend on where the wave
+        // is. Its geometry never left the attributes, so cancelling the wave
+        // puts it back where it belongs, and only the opacity fades in —
+        // nothing travels backwards, and nothing blinks.
+        a.cancel();
+        wave.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 400, easing: "ease-out" });
+        land.getAnimations().forEach((x) => x.cancel());
+      })
+      .catch(() => {});
   }
 
   for (const k of keys) {
