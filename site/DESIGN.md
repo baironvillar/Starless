@@ -218,7 +218,8 @@ Circles and capsules echo the speaker: the pool, the rings, the player's round b
 - **Reduced motion:** a single frame at fixed energy; no wave, no title roll.
 
 ### Rings (signature)
-- **Style:** hairline ovals centred on the pool, one per section top and one at the footer. Each one is 1.9 times wider than it is tall: closed, the first section's ring read as a round shape around the pool among the open ones, and two curves of different sizes at once read as noise. All of them are the same hairline: the ring of the section being played used to be brighter, and one brighter line among identical ones reads as a mistake. The family is the structure, and the only thing on the page that changes brightness is the wave travelling over it.
+- **Style:** hairline ovals centred on the pool, one per section top and one at the footer. Each one is 1.9 times wider than it is tall: closed, the first section's ring read as a round shape around the pool among the open ones, and two curves of different sizes at once read as noise. All of them are the same hairline: the family of curves is the page's structure, not an indicator.
+- **The mark:** a dot on the ring of the section being read, at the place the ring touches that section's top edge. The ring of the section being played used to be brighter instead, and one brighter line among identical ones reads as a mistake. The dot rides the wave: it leaves the section it was in and lands on the edge of the next one, exactly where the wave lands.
 - **How the wave works:** the wave is not another ring drawn on top. It is the ring of the section being left, growing to the next one and going out as it goes, so one stroke moves and there are never two rings of different sizes at the same time. The ring the wave is heading for is not drawn until the wave lands on it, and from there on the two are the same curve in the same place. The hero's own ring is the centre of the pool, so the wave is born inside the ferrofluid.
 - **How it moves:** the wave grows its two radii; it is never scaled. A scale of thousands on a one-unit circle makes the browser stroke the path again in device space on every tile of the page, and the text that shares those tiles goes unpainted while it does — the page flickers and the reader loses the words. Growing the shape keeps the same picture and paints in time.
 
@@ -241,7 +242,7 @@ Circles and capsules echo the speaker: the pool, the rings, the player's round b
 - **Don't** add a second glowing object, or glass beyond the player, the logo plate and the download keys.
 - **Don't** use condensed widths or giant poster type beyond the hero wordmark.
 - **Don't** dim, hide or replace what is on screen: no text below its reading opacity, no number that vanishes under a meter, no scroll range that leaves the page empty.
-- **Don't** close a ring into a circle, and never show two curves of different sizes at once: the ovals are the page's language, and a round shape among the open ones reads as a mistake.
+- **Don't** close a ring into a circle, and never show two curves of different sizes at once: the ovals are the page's language, and a round shape among the open ones reads as a mistake. **Don't** make one of them brighter than the others either — say where you are with the mark.
 - **Don't** let a decoration repaint the page while it is read: no scaled SVG stroke, no giant path re-stroked over the whole document, nothing that leaves a frame unpainted. The rings and the wave are the page's background, and the background has to keep up with the scroll.
 
 <!-- OPEN ITEMS (not part of the system):

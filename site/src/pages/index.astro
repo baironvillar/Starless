@@ -86,6 +86,10 @@
      a mistake — the family is the structure, and the only thing on the page
      that changes brightness is the wave travelling over it. */
   #rings ellipse { fill: none; stroke: var(--line); stroke-width: 1; }
+  /* The mark of the section being read: a dot on its ring, where the ring
+     touches the section's top edge. It rides the wave, so it arrives with it
+     and lands where the wave lands. */
+  #rings circle.mark { fill: rgb(237 234 227 / 0.55); stroke: none; }
 
   /* The pool */
   .hero { position: relative; z-index: 1; min-height: 100svh; display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
@@ -838,6 +842,18 @@ void main() {
   const SPREAD = 1.9;
   let radii = [];
   let rings = [];
+  // The mark of the section being read: a dot on its ring, at the place the
+  // ring touches the section's top edge. Every ring is the same hairline, so
+  // the dot is what says where you are, and it rides the wave: it arrives
+  // with it and lands where the wave lands.
+  const mark = document.createElementNS(NS, "circle");
+  mark.setAttribute("class", "mark");
+  mark.setAttribute("r", "3");
+  const placeMark = () => {
+    const r = radii[at] || 0;
+    mark.setAttribute("cy", r.toFixed(1));
+    mark.setAttribute("opacity", r > 0 ? "1" : "0");
+  };
   function layoutRings() {
     const p = pool();
     const cx = p.x, cy = p.y;
@@ -852,7 +868,8 @@ void main() {
       e.setAttribute("ry", r.toFixed(1));
       return e;
     });
-    centre.replaceChildren(...rings);
+    centre.replaceChildren(...rings, mark);
+    placeMark();
   }
 
   // A new track pushes the last one's ring outward, like a drop displacing
@@ -866,7 +883,7 @@ void main() {
   const settle = () => {
     flight?.cancel();
     flight = null;
-    for (const e of rings) e.getAnimations().forEach((a) => a.cancel());
+    for (const e of centre.children) e.getAnimations().forEach((a) => a.cancel());
   };
   function push(to) {
     const from = at;
@@ -896,6 +913,21 @@ void main() {
       { duration: 1400, easing: "cubic-bezier(0.23, 1, 0.32, 1)", fill: "forwards" },
     );
     flight = a;
+    // The mark travels with the wave: it is on the wave's lowest point, so it
+    // leaves the section it was in and lands on the edge of the next one,
+    // exactly where the wave lands. The keyframes are the wave's own, so the
+    // two move together to the pixel.
+    const fromOn = fromY > 0 ? 1 : 0;
+    const toOn = toY > 0 ? 1 : 0;
+    mark.animate(
+      [
+        { cy: `${fromY}px`, opacity: fromOn },
+        { cy: `${fromY}px`, opacity: fromOn, offset: 0.12 },
+        { cy: `${toY}px`, opacity: toOn, offset: 0.5 },
+        { cy: `${toY}px`, opacity: toOn },
+      ],
+      { duration: 1400, easing: "cubic-bezier(0.23, 1, 0.32, 1)" },
+    );
     // The ring the wave lands on comes up under it: the same curve, in the
     // same place, so the two are never two waves of different sizes.
     land.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 600, delay: 700, fill: "both" });
@@ -911,6 +943,8 @@ void main() {
         a.cancel();
         wave.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 400, easing: "ease-out" });
         land.getAnimations().forEach((x) => x.cancel());
+        // The mark has arrived: it belongs to the section that is playing.
+        placeMark();
       })
       .catch(() => {});
   }
