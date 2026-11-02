@@ -37,6 +37,15 @@ export default defineConfig(({ mode }) => ({
     __STARLESS_CHANNEL__: JSON.stringify(
       process.env.STARLESS_CHANNEL ?? (mode === "development" ? "develop" : "release"),
     ),
+    /**
+     * Whether this bundle is for a phone. Tauri hands the target platform to
+     * the commands it runs before a build or a dev server, so this is decided
+     * when the bundle is made, like the channel —and not by the window's width:
+     * a narrow desktop window is not a phone.
+     */
+    __STARLESS_MOBILE__: JSON.stringify(
+      process.env.TAURI_ENV_PLATFORM === "android" || process.env.TAURI_ENV_PLATFORM === "ios",
+    ),
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

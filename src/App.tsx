@@ -103,6 +103,7 @@ import {
 } from "./lib/spotify";
 import { checkForUpdate, newerVersion, subscribeUpdate, updateState } from "./lib/updater";
 import { useSearch } from "./lib/useSearch";
+import { isMobile } from "./lib/version";
 
 /**
  * How many tracks in a row may fail before Starless stops skipping.
@@ -1887,6 +1888,9 @@ export default function App() {
    * make a fast launch feel slow.
    */
   useEffect(() => {
+    // A phone's updates are the system's: the check would fail and say "up to
+    // date", which is the silence `AGENTS.md` warns about.
+    if (isMobile()) return;
     const id = setTimeout(() => void checkForUpdate(), 2500);
     return () => clearTimeout(id);
   }, []);
@@ -3037,7 +3041,7 @@ export default function App() {
           announced in — the whole point of the badge is that it is still there
           once someone signs in — and a notice that is not mounted yet cannot mark
           the Settings button the notice is pointing at. */}
-      <UpdateAlert t={t} />
+      {!isMobile() && <UpdateAlert t={t} />}
     </div>
   );
 }
