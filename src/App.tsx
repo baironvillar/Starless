@@ -2656,9 +2656,10 @@ export default function App() {
               barPresent={barPresent}
               onPlay={onPlayFromQueue}
               onClose={() => setQueueOpen(false)}
-              onOpenJam={() => setJamOpen(true)}
-              jamOpen={jam !== null}
-              onAddToJam={(track) => void addToJam(track)}
+              onAddToQueue={onAddToQueue}
+              onOpenArtist={openArtist}
+              onOpenAlbum={openAlbum}
+              onNewPlaylist={openNaming}
             />
           )}
         </AnimatePresence>
