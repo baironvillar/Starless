@@ -142,6 +142,16 @@ url = "2"
 [patch.crates-io]
 librespot-core = { path = "vendor/librespot-core" }
 
+# **The dependencies are optimized in a development build too.** librespot
+# decodes and converts every sample in Rust, and unoptimized that is not a
+# player: on a phone, with the screen off and the app in the background CPU
+# group, the decoder took 39% of a core and fell behind real time within two
+# minutes — the music stuttered and librespot answered with a
+# `PositionCorrection` every two seconds. Starless's own crate stays at the
+# default, so a change to it still compiles fast.
+[profile.dev.package."*"]
+opt-level = 3
+
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]
 codegen-units = 1
