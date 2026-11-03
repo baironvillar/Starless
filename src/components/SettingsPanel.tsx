@@ -1,20 +1,33 @@
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  Activity,
+  AudioLines,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Download,
   FlaskConical,
   ImagePlus,
   Loader2,
   LogOut,
   MessageSquarePlus,
+  Palette,
   Pencil,
   RefreshCw,
+  Settings2,
   User,
   X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { type CSSProperties, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  type CSSProperties,
+  isValidElement,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { CHANGELOG, PREVIOUS_NOTE } from "../lib/changelog";
 import type { Lang, StringKey } from "../lib/i18n";
 import { SPRING, SPRING_SHEET } from "../lib/motion";
@@ -171,6 +184,43 @@ export function SettingsPanel({
     void appVersion().then(setVersion);
   }, []);
 
+  const body = (key: Section) => (
+    <>
+      {key === "sectionGeneral" && <General t={t} lang={lang} onLangChange={onLangChange} />}
+      {key === "sectionAudio" && <Audio t={t} />}
+      {key === "sectionAccount" && <Account t={t} account={account} />}
+      {key === "sectionCustom" && <Custom t={t} />}
+      {key === "sectionDiagnostics" && (
+        <Diagnostics t={t} version={version} lang={lang} onOpenFeedback={onOpenFeedback} />
+      )}
+    </>
+  );
+  /*
+      Which build this is, in words.
+
+      **The inverted icon says it too, but only to somebody who knows
+      what it means.** Two copies of the app on the same machine look
+      the same otherwise, and "which one am I running" is the question
+      that comes up exactly when something is wrong. A prerelease says
+      so here; a release says nothing, because there is nothing to say.
+      And a build that was compiled from `develop` but published as the
+      public one says "public", because that is the line it is on.
+  */
+  const build = (
+    <p className="tabular mt-0.5 flex items-center gap-1.5 text-[12px] text-ink-faint">
+      <span>v{version}</span>
+      {prerelease && (
+        <span className="rounded-pill bg-accent/15 px-1.5 py-px text-[10.5px] font-semibold tracking-wide uppercase text-accent-ink">
+          {publicBuild ? t.publicBadge : t.prereleaseBadge}
+        </span>
+      )}
+    </p>
+  );
+
+  if (isMobile()) {
+    return <PhoneSettings t={t} onClose={onClose} body={body} build={build} />;
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.97, y: 12 }}
@@ -205,25 +255,7 @@ export function SettingsPanel({
 
         <div className="mt-auto border-t border-white/8 px-2 pt-3">
           <p className="text-[12px] text-ink-muted">{t.savedAutomatically}</p>
-          {/*
-              Which build this is, in words.
-
-              **The inverted icon says it too, but only to somebody who knows
-              what it means.** Two copies of the app on the same machine look
-              the same otherwise, and "which one am I running" is the question
-              that comes up exactly when something is wrong. A prerelease says
-              so here; a release says nothing, because there is nothing to say.
-              And a build that was compiled from `develop` but published as the
-              public one says "public", because that is the line it is on.
-          */}
-          <p className="tabular mt-0.5 flex items-center gap-1.5 text-[12px] text-ink-faint">
-            <span>v{version}</span>
-            {prerelease && (
-              <span className="rounded-pill bg-accent/15 px-1.5 py-px text-[10.5px] font-semibold tracking-wide uppercase text-accent-ink">
-                {publicBuild ? t.publicBadge : t.prereleaseBadge}
-              </span>
-            )}
-          </p>
+          {build}
         </div>
       </nav>
 
@@ -251,18 +283,116 @@ export function SettingsPanel({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-8 pb-8">
-          {section === "sectionGeneral" && (
-            <General t={t} lang={lang} onLangChange={onLangChange} />
-          )}
-          {section === "sectionAudio" && <Audio t={t} />}
-          {section === "sectionAccount" && <Account t={t} account={account} />}
-          {section === "sectionCustom" && <Custom t={t} />}
-          {section === "sectionDiagnostics" && (
-            <Diagnostics t={t} version={version} lang={lang} onOpenFeedback={onOpenFeedback} />
-          )}
-        </div>
+        <div className="flex-1 overflow-y-auto px-8 pb-8">{body(section)}</div>
       </div>
+    </motion.div>
+  );
+}
+
+const SECTION_ICONS: Record<Section, typeof User> = {
+  sectionGeneral: Settings2,
+  sectionAudio: AudioLines,
+  sectionAccount: User,
+  sectionCustom: Palette,
+  sectionDiagnostics: Activity,
+};
+
+/**
+ * Settings on the phone: two levels instead of a side column.
+ *
+ * The desktop's column of sections took more than half a phone's width, so
+ * the list is the first screen and a section is the second, entering from the
+ * right with a back arrow —the way a phone navigates, so the arrow means what
+ * it says. The list does not stay under the section: both layers are on the
+ * same glass, and a translucent page over another is two pages read at once.
+ * It slides a little to the left and fades, and comes back the same way.
+ *
+ * The rows and cards inside a section are the panel's own (DESIGN.md, "The
+ * phone"); only `Row` changes, which puts a wide control under its text.
+ */
+function PhoneSettings({
+  t,
+  onClose,
+  body,
+  build,
+}: {
+  t: Record<StringKey, string>;
+  onClose: () => void;
+  body: (key: Section) => React.ReactNode;
+  build: React.ReactNode;
+}) {
+  const [open, setOpen] = useState<Section | null>(null);
+  const header = (title: string, onBack: () => void, label: string) => (
+    <div className="flex shrink-0 items-center gap-1 px-2 pt-2 pb-3">
+      <button
+        type="button"
+        onClick={onBack}
+        aria-label={label}
+        className="grid size-10 place-items-center rounded-pill text-ink-muted active:bg-white/10"
+      >
+        <ChevronLeft className="size-6" strokeWidth={2} />
+      </button>
+      <h2 className="text-[19px] font-semibold tracking-tight">{title}</h2>
+    </div>
+  );
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 24 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={SPRING_SHEET}
+      className="glass-sheet fixed inset-x-3 top-[max(12px,env(safe-area-inset-top))] bottom-[max(12px,env(safe-area-inset-bottom))] z-40 overflow-hidden rounded-card"
+      role="dialog"
+      aria-modal="true"
+      aria-label={t.settingsTitle}
+    >
+      <motion.div
+        animate={open ? { x: -64, opacity: 0 } : { x: 0, opacity: 1 }}
+        transition={SPRING_SHEET}
+        className={`absolute inset-0 flex flex-col ${open ? "pointer-events-none" : ""}`}
+        aria-hidden={open ? true : undefined}
+      >
+        {header(t.settingsTitle, onClose, t.close)}
+        <div className="flex-1 overflow-y-auto px-4 pb-4">
+          <Group>
+            {SECTIONS.map((key) => {
+              const Icon = SECTION_ICONS[key];
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setOpen(key)}
+                  className="flex w-full items-center gap-3.5 border-b border-white/8 px-4 py-3.5 text-left last:border-b-0 active:bg-white/6"
+                >
+                  <Icon className="size-[19px] shrink-0 text-ink-muted" strokeWidth={2} />
+                  <span className="flex-1 text-[14.5px] font-medium">{t[key]}</span>
+                  <ChevronRight className="size-[18px] shrink-0 text-ink-faint" strokeWidth={2} />
+                </button>
+              );
+            })}
+          </Group>
+          <div className="mt-4 px-1">
+            <p className="text-[12px] text-ink-muted">{t.savedAutomatically}</p>
+            {build}
+          </div>
+        </div>
+      </motion.div>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            key={open}
+            initial={{ x: "100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "100%" }}
+            transition={SPRING_SHEET}
+            className="absolute inset-0 flex flex-col"
+          >
+            {header(t[open], () => setOpen(null), t.back)}
+            <div className="flex-1 overflow-y-auto px-4 pb-6">{body(open)}</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
@@ -978,24 +1108,29 @@ function Custom({ t }: { t: Record<StringKey, string> }) {
               label={t.quietMode}
             />
           </Row>
-          <Row label={t.pointerGlow} hint={t.pointerGlowHint}>
-            <Toggle
-              checked={effect.glow === "on"}
-              onChange={(on) => changeEffect("glow", on ? "on" : "off")}
-              label={t.pointerGlow}
-            />
-          </Row>
-          <Row label={t.beatPulse} hint={t.beatPulseHint}>
-            <Select
-              value={effect.beat}
-              onChange={(value) => changeEffect("beat", value as Effects["beat"])}
-              options={[
-                { value: "strong", label: t.beatStrong },
-                { value: "soft", label: t.beatSoft },
-                { value: "off", label: t.effectOff },
-              ]}
-            />
-          </Row>
+          {/* No pointer and no volume control on the phone: these two would do nothing there. */}
+          {!isMobile() && (
+            <>
+              <Row label={t.pointerGlow} hint={t.pointerGlowHint}>
+                <Toggle
+                  checked={effect.glow === "on"}
+                  onChange={(on) => changeEffect("glow", on ? "on" : "off")}
+                  label={t.pointerGlow}
+                />
+              </Row>
+              <Row label={t.beatPulse} hint={t.beatPulseHint}>
+                <Select
+                  value={effect.beat}
+                  onChange={(value) => changeEffect("beat", value as Effects["beat"])}
+                  options={[
+                    { value: "strong", label: t.beatStrong },
+                    { value: "soft", label: t.beatSoft },
+                    { value: "off", label: t.effectOff },
+                  ]}
+                />
+              </Row>
+            </>
+          )}
           <Row label={t.bloomLight} hint={t.bloomLightHint}>
             <Select
               value={effect.bloom}
@@ -1412,6 +1547,22 @@ function Row({
   hint?: string;
   children: React.ReactNode;
 }) {
+  /*
+      On the phone a wide control goes under its text, at the whole width: a
+      164px select beside a description leaves the description a column of
+      three words. A switch is small enough to stay where it is.
+  */
+  if (isMobile() && !(isValidElement(children) && children.type === Toggle)) {
+    return (
+      <div className="border-b border-white/8 px-5 py-4 last:border-b-0">
+        <p className="text-[13.5px] font-semibold">{label}</p>
+        {hint && <p className="mt-1 text-[12.5px] leading-relaxed text-ink-muted">{hint}</p>}
+        <div className="mt-3 [&_[data-slider]]:w-auto [&_[data-slider]]:flex-1 [&_select]:w-full [&>div]:w-full [&>span]:w-full">
+          {children}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="flex items-center gap-6 border-b border-white/8 px-5 py-4 last:border-b-0">
       <div className="min-w-0 flex-1">

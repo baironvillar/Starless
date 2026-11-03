@@ -58,6 +58,8 @@ type QueuePanelProps = {
    * the window's own inset: that space is the queue's, not empty ground.
    */
   barPresent: boolean;
+  /** Inside the phone's full player, where the artwork was: no panel of its own. */
+  embedded?: boolean;
   /**
    * Play a song from the panel, and say which row it was.
    *
@@ -130,6 +132,7 @@ export function QueuePanel({
   dj,
   station,
   barPresent,
+  embedded = false,
   onPlay,
   onClose,
   onAddToQueue,
@@ -149,7 +152,14 @@ export function QueuePanel({
       transition={SPRING_SHEET}
       role="dialog"
       aria-label={t.queue}
-      className={`glass-sheet pointer-events-auto absolute top-[104px] right-5 ${barPresent ? "bottom-[144px]" : "bottom-5"} z-30 flex w-[240px] flex-col overflow-hidden rounded-card transition-[bottom] duration-300 ease-[var(--ease-glass)]`}
+      // On the phone the queue takes the artwork's place in the full player
+      // (DESIGN.md, "The phone"): the same list, without the side panel's glass
+      // and position, inside a surface that already has them.
+      className={
+        embedded
+          ? "flex h-full min-h-0 flex-col overflow-hidden"
+          : `glass-sheet pointer-events-auto absolute top-[104px] right-5 ${barPresent ? "bottom-[144px]" : "bottom-5"} z-30 flex w-[240px] flex-col overflow-hidden rounded-card transition-[bottom] duration-300 ease-[var(--ease-glass)]`
+      }
     >
       <header className="flex shrink-0 items-center justify-between gap-2 px-4 pt-4 pb-3">
         <h2 className="truncate text-[15px] font-semibold tracking-tight">{t.queue}</h2>
@@ -159,18 +169,22 @@ export function QueuePanel({
             **The jam used to open from here**, next to this panel, and its icon
             is gone while the jam is on standby: an icon that opens a shared
             session that does not work yet is a door to a room that is not built.
+
+            Embedded, the full player's own queue button is the close.
         */}
-        <motion.button
-          type="button"
-          onClick={onClose}
-          whileTap={{ scale: 0.9 }}
-          transition={SPRING_SHEET}
-          aria-label={t.close}
-          title={t.close}
-          className="grid size-8 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink"
-        >
-          <X className="size-[17px]" strokeWidth={2} />
-        </motion.button>
+        {!embedded && (
+          <motion.button
+            type="button"
+            onClick={onClose}
+            whileTap={{ scale: 0.9 }}
+            transition={SPRING_SHEET}
+            aria-label={t.close}
+            title={t.close}
+            className="grid size-8 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink"
+          >
+            <X className="size-[17px]" strokeWidth={2} />
+          </motion.button>
+        )}
       </header>
 
       {/* `pr-3` is the gap between the covers and the thumb; see the same note in

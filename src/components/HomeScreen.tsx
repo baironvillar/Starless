@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { StringKey } from "../lib/i18n";
 import { SPRING } from "../lib/motion";
 import { type Artist, type HomeStats, isDjCard, type Play, type Playlist } from "../lib/spotify";
+import { isMobile } from "../lib/version";
 import { DjArtwork } from "./DjArtwork";
 import { LikedCover } from "./LikedCover";
 import { cardImage, MediaCard } from "./MediaCard";
@@ -158,7 +159,16 @@ export function HomeScreen({
         transition={SPRING}
         aria-label={t.quickAccess}
       >
-        <h1 className="mb-5 px-1 font-display text-[34px] leading-tight font-semibold tracking-tight">
+        {/*
+            On the phone the Settings gear sits at the top right of Home, on the
+            line of this title: a long name ran under it. The title stops short
+            of the gear and is a size down, so "Buenas tardes, …" fits in two lines.
+        */}
+        <h1
+          className={`mb-5 px-1 font-display leading-tight font-semibold tracking-tight ${
+            isMobile() ? "pr-12 text-[28px]" : "text-[34px]"
+          }`}
+        >
           {title}
         </h1>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">

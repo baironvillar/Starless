@@ -43,6 +43,9 @@ export const strings = {
     collapseLibrary: "Contraer la biblioteca",
     expandLibrary: "Expandir la biblioteca",
     navSettings: "Ajustes",
+    navSearch: "Buscar",
+    tabLibrary: "Biblioteca",
+    backToLibrary: "Volver a la biblioteca",
 
     libraryTitle: "Tu biblioteca",
     likedSongs: "Canciones que te gustan",
@@ -498,6 +501,9 @@ export const strings = {
     collapseLibrary: "Collapse the library",
     expandLibrary: "Expand the library",
     navSettings: "Settings",
+    navSearch: "Search",
+    tabLibrary: "Library",
+    backToLibrary: "Back to the library",
 
     libraryTitle: "Your library",
     likedSongs: "Liked Songs",

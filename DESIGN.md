@@ -253,7 +253,15 @@ play/pause and next. Tapping it, or swiping it up, opens the full player: the la
 artwork, the seek bar with the running-time column, the transport, and two buttons that
 put the queue or the lyrics *where the artwork was*. The transport stays put underneath:
 reading or choosing never costs the controls. Swiping the full player down, or its ⌄,
-closes it. Swiping the mini player sideways skips forward or back.
+closes it, and the drag starts anywhere in its top half: the strip, the artwork, and the
+queue or the lyrics once they are scrolled to the top — a list that is not at its top
+scrolls instead.
+
+**Skipping is a carousel.** Swiping the mini player or the full artwork sideways moves
+the song with the finger; let go past the threshold and it leaves by that side while the
+next one comes in by the other. The skip buttons bring the next song in the same way. A
+song that changes on its own — the queue advancing — rises into the mini player, as on
+the desktop bar.
 
 **No volume control on the phone.** The phone's buttons are the volume, as in every
 music app, and the app's own attenuation stays at its maximum: two volumes that multiply
@@ -271,9 +279,13 @@ whose edge is the screen's.
 the names ("Canciones qu…"); a row fits more and cuts none. The library's own list/grid
 choice is still respected; the list is the phone's default.
 
-**Settings are two levels.** The section list fills the screen; a section opens over it
-with a back arrow. The rows and cards are the panel's own —it is still the reference—
-only the side column is gone.
+**Settings are two levels.** The section list fills the screen: one group of rows, each an
+icon, the name and a ›, with "saved automatically" and the build under it. A section
+enters from the right with a back arrow, and the list slides a little to the left and
+fades —the two share one glass, and a translucent page over another is two pages read at
+once. The rows and cards are the panel's own —it is still the reference— with one change:
+a switch stays beside its text, and every wider control (a select, a slider, buttons) goes
+under it at the whole width.
 
 ## Open
 
