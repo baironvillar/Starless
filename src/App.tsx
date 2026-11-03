@@ -1,5 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
+import { ChevronLeft, Search, Settings } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { AlbumScreen } from "./components/AlbumScreen";
@@ -12,6 +13,8 @@ import { HomeScreen } from "./components/HomeScreen";
 import { JamPanel } from "./components/JamPanel";
 import { LibrarySidebar } from "./components/LibrarySidebar";
 import { LyricsPanel } from "./components/LyricsPanel";
+import { MobileLibrary } from "./components/MobileLibrary";
+import { type MobileTab, MobileTabBar } from "./components/MobileTabBar";
 import { NewPlaylistDialog } from "./components/NewPlaylistDialog";
 import { PlayerBar, type RepeatMode } from "./components/PlayerBar";
 import { PlaylistScreen } from "./components/PlaylistScreen";
@@ -296,6 +299,9 @@ const BLOOM_SHAPES = {
 /** The blur slider's 0..100 onto pixels. Past 40 the picture is only its colours. */
 const BACKGROUND_BLUR_PX = 40;
 
+/** The phone's layout (DESIGN.md, "The phone"), decided when the bundle was made. */
+const MOBILE = isMobile();
+
 export default function App() {
   const effect = useEffectsSettings();
   const background = useBackground();
@@ -326,9 +332,20 @@ export default function App() {
    * had to change: it already survives navigation, and Escape, the X and the button
    * are the only ways out.
    */
-  const [queueOpen, setQueueOpen] = useState(true);
+  const [queueOpen, setQueueOpen] = useState(!MOBILE);
   const [lyricsOpen, setLyricsOpen] = useState(false);
   const [activeItem, setActiveItem] = useState("liked");
+  /**
+   * On the phone, whether the Biblioteca tab shows the list or the playlist
+   * opened from it. The desktop has no such question: its rail and the
+   * playlist are on screen together.
+   */
+  const [libraryList, setLibraryList] = useState(true);
+  // Opening a playlist from anywhere —Home, the list— lands on the playlist.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the id changing is the event.
+  useEffect(() => {
+    setLibraryList(false);
+  }, [activeItem]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   /**
    * The feedback form lives up here, outside `AuthGate`, because the people who
@@ -2291,6 +2308,29 @@ export default function App() {
     [orderedPlaylists, onPlayDj, setQueueOverride, leaveResults],
   );
 
+  /**
+   * The phone's tab, read from the same `active` the desktop's top bar moves:
+   * one answer to "where am I", with Buscar as the one value the desktop has
+   * no use for.
+   */
+  const mobileTab: MobileTab =
+    active === "navSearch" ? "navSearch" : isHome ? "navHome" : "navLibrary";
+
+  const onSelectTab = useCallback(
+    (tab: MobileTab) => {
+      setLyricsOpen(false);
+      setDetail(null);
+      // A search's results are the search tab's; they would otherwise cover
+      // Home and the library, which read them first.
+      if (tab !== "navSearch") leaveResults();
+      // The library tab always lands on the list, whether it was open on a
+      // playlist or somewhere else entirely.
+      if (tab === "navLibrary") setLibraryList(true);
+      setActive(tab);
+    },
+    [leaveResults],
+  );
+
   const onCycleRepeat = useCallback(() => {
     setRepeat((mode) => (mode === "off" ? "all" : mode === "all" ? "one" : "off"));
   }, []);
@@ -2329,10 +2369,18 @@ export default function App() {
    * `TrackList` still exists below it as the honest "we have not loaded it yet"
    * answer rather than a screen with no name on it.
    */
-  const playlistView = !lyricsOpen && !showResults && !isHome && !isLiked && !detail;
+  /**
+   * Whether the lyrics take the main surface. On the phone they never do: they
+   * take the full player's artwork, and the screen underneath stays what it was.
+   */
+  const lyricsInMain = lyricsOpen && !MOBILE;
+  const playlistView = !lyricsInMain && !showResults && !isHome && !isLiked && !detail;
   const playlistScreen = playlistView && selected !== undefined;
   // Liked Songs is drawn by the same screen, so it shares the big button too.
-  const likedScreen = !lyricsOpen && !showResults && !isHome && isLiked && !detail;
+  const likedScreen = !lyricsInMain && !showResults && !isHome && isLiked && !detail;
+  /** What the phone's Buscar and Biblioteca tabs draw instead of the main screens. */
+  const mobileLibraryList = MOBILE && mobileTab === "navLibrary" && libraryList && !detail;
+  const mobileSearchIdle = MOBILE && mobileTab === "navSearch" && !showResults && !detail;
 
   /**
    * Is the playlist on screen the one that is sounding? It is what turns the big
@@ -2591,38 +2639,42 @@ export default function App() {
       {effect.glow === "on" && <CursorGlow />}
 
       <AuthGate t={t} onReport={() => setFeedbackOpen(true)} onSignedOut={resetView}>
-        <TopBar
-          t={t}
-          active={active}
-          libraryOpen={libraryOpen}
-          onNavigate={(key) => {
-            setActive(key);
-            // "Inicio" es un destino, no un resaltado. Antes esto sólo cambiaba
-            // `active` y el contenido principal decide mirando `activeItem`, así
-            // que marcaba la pestaña y dejaba la playlist abierta en pantalla.
-            //
-            // No toca `activeItem` ni la cola a propósito: el inicio es una
-            // pantalla para mirar, no una lista que define qué sigue. Cambiar la
-            // playlist desde acá tiraría la cola de lo que se estaba escuchando
-            // sin que nadie lo pidiera.
-            setLyricsOpen(false);
-            leaveResults();
-          }}
-          onToggleLibrary={() => setLibraryOpen((v) => !v)}
-          query={draft}
-          onQueryChange={onQueryChange}
-          onSubmitSearch={onSubmitSearch}
-          onPickSuggestion={onPickSuggestion}
-          suggestions={suggestions}
-          suggestionCount={suggestionCount}
-          searching={searching}
-          searchError={searchError}
-          onOpenSettings={() => setSettingsOpen(true)}
-          updateVersion={updateVersion}
-        />
+        {/* The phone has no top bar and no rail: its navigation is the tab bar. */}
+        {MOBILE && <MobileTabBar t={t} active={mobileTab} onSelect={onSelectTab} />}
+        {!MOBILE && (
+          <TopBar
+            t={t}
+            active={active}
+            libraryOpen={libraryOpen}
+            onNavigate={(key) => {
+              setActive(key);
+              // "Inicio" es un destino, no un resaltado. Antes esto sólo cambiaba
+              // `active` y el contenido principal decide mirando `activeItem`, así
+              // que marcaba la pestaña y dejaba la playlist abierta en pantalla.
+              //
+              // No toca `activeItem` ni la cola a propósito: el inicio es una
+              // pantalla para mirar, no una lista que define qué sigue. Cambiar la
+              // playlist desde acá tiraría la cola de lo que se estaba escuchando
+              // sin que nadie lo pidiera.
+              setLyricsOpen(false);
+              leaveResults();
+            }}
+            onToggleLibrary={() => setLibraryOpen((v) => !v)}
+            query={draft}
+            onQueryChange={onQueryChange}
+            onSubmitSearch={onSubmitSearch}
+            onPickSuggestion={onPickSuggestion}
+            suggestions={suggestions}
+            suggestionCount={suggestionCount}
+            searching={searching}
+            searchError={searchError}
+            onOpenSettings={() => setSettingsOpen(true)}
+            updateVersion={updateVersion}
+          />
+        )}
 
         <AnimatePresence>
-          {libraryOpen && (
+          {libraryOpen && !MOBILE && (
             <LibrarySidebar
               t={t}
               account={account.data ?? null}
@@ -2645,7 +2697,8 @@ export default function App() {
         </AnimatePresence>
 
         <AnimatePresence>
-          {queueOpen && (
+          {/* On the phone the queue lives in the full player, where the artwork was. */}
+          {queueOpen && !MOBILE && (
             <QueuePanel
               t={t}
               playing={status?.trackId ? loadedTrack : null}
@@ -2733,9 +2786,15 @@ export default function App() {
           // thumb inside the padding box, so padding on the right is exactly that
           // gap — and without it the last column of cards ended up touching the
           // thumb, which read as one object instead of two.
-          className={`absolute top-[104px] ${barPresent ? "bottom-[144px]" : "bottom-5"} overflow-x-hidden overflow-y-auto pr-3 transition-[left,right,bottom] duration-300 ease-[var(--ease-glass)] ${
-            libraryOpen ? (railOnly ? "left-[112px]" : "left-[280px]") : "left-9"
-          } ${queueOpen ? "right-[280px]" : "right-9"}`}
+          // On the phone: one column, the 12px inset, from below the status bar to
+          // above the mini player and the tab bar (72px each with their gap).
+          className={
+            MOBILE
+              ? `fixed inset-x-3 top-[max(12px,env(safe-area-inset-top))] ${barPresent ? "bottom-[calc(max(12px,env(safe-area-inset-bottom))+144px)]" : "bottom-[calc(max(12px,env(safe-area-inset-bottom))+72px)]"} overflow-x-hidden overflow-y-auto transition-[bottom] duration-300 ease-[var(--ease-glass)]`
+              : `absolute top-[104px] ${barPresent ? "bottom-[144px]" : "bottom-5"} overflow-x-hidden overflow-y-auto pr-3 transition-[left,right,bottom] duration-300 ease-[var(--ease-glass)] ${
+                  libraryOpen ? (railOnly ? "left-[112px]" : "left-[280px]") : "left-9"
+                } ${queueOpen ? "right-[280px]" : "right-9"}`
+          }
         >
           {/*
             The heading belongs to the list, and there are four screens that bring
@@ -2745,7 +2804,58 @@ export default function App() {
             underneath in the panel, and between them a subtitle counting the songs
             of a playlist nobody could see.
           */}
-          {!lyricsOpen &&
+          {/*
+            The phone's Settings: a gear on Home, top right, instead of a tab
+            (DESIGN.md, "The phone").
+          */}
+          {MOBILE && isHome && !showResults && (
+            <button
+              type="button"
+              onClick={() => setSettingsOpen(true)}
+              aria-label={t.navSettings}
+              className="absolute top-1 right-1 z-10 grid size-11 place-items-center rounded-pill text-ink-muted active:scale-[0.94]"
+            >
+              <Settings className="size-[22px]" strokeWidth={2} />
+            </button>
+          )}
+
+          {/* The phone's search field, at the top of its own tab. */}
+          {MOBILE && mobileTab === "navSearch" && (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                onSubmitSearch();
+              }}
+              className="glass-control mb-4 flex h-12 items-center gap-2.5 rounded-pill px-4"
+            >
+              <Search className="size-[18px] shrink-0 text-ink-muted" strokeWidth={2} />
+              <input
+                type="search"
+                enterKeyHint="search"
+                value={draft}
+                onChange={(event) => onQueryChange(event.target.value)}
+                placeholder={t.searchPlaceholder}
+                aria-label={t.searchPlaceholder}
+                className="min-w-0 flex-1 bg-transparent text-[16px] outline-none placeholder:text-ink-faint"
+              />
+            </form>
+          )}
+
+          {/* Back from a playlist to the phone's library list. */}
+          {MOBILE && mobileTab === "navLibrary" && !libraryList && !detail && (
+            <button
+              type="button"
+              onClick={() => setLibraryList(true)}
+              className="-ml-2 mb-2 flex items-center gap-1 rounded-pill py-1.5 pr-3 pl-1 text-[13.5px] font-medium text-ink-muted"
+            >
+              <ChevronLeft className="size-5" strokeWidth={2} />
+              {t.backToLibrary}
+            </button>
+          )}
+
+          {!lyricsInMain &&
+            !mobileLibraryList &&
+            !mobileSearchIdle &&
             !playlistScreen &&
             !likedScreen &&
             !detail &&
@@ -2763,7 +2873,20 @@ export default function App() {
               </motion.header>
             )}
 
-          {lyricsOpen ? (
+          {mobileLibraryList ? (
+            <MobileLibrary
+              t={t}
+              playlists={orderedPlaylists}
+              likedCount={liked.data?.length ?? null}
+              error={Boolean(playlists.error ?? account.error) && !playlists.isLoading}
+              onSelect={(id) => {
+                onSelectFromRail(id);
+                // The DJ card plays instead of opening: the list stays.
+                const card = orderedPlaylists.find((playlist) => playlist.id === id);
+                if (!(card && isDjCard(card))) setLibraryList(false);
+              }}
+            />
+          ) : mobileSearchIdle ? null : lyricsInMain ? (
             /*
               The words replace the list rather than opening over it. DESIGN.md
               allows four floating layers and the queue already has one, and the
@@ -2991,15 +3114,57 @@ export default function App() {
             // es sobre los demás. Abrir uno cierra al otro: dos paneles
             // superpuestos en el mismo rincón son dos que nadie puede leer.
             setJamOpen(false);
+            // On the phone the queue and the lyrics share the artwork's place.
+            if (MOBILE) setLyricsOpen(false);
           }}
           lyricsOpen={lyricsOpen}
-          onToggleLyrics={() => setLyricsOpen((v) => !v)}
+          onToggleLyrics={() => {
+            setLyricsOpen((v) => !v);
+            if (MOBILE) setQueueOpen(false);
+          }}
           onPrevious={onPrevious}
           onNext={onNext}
           shuffle={shuffle}
           onToggleShuffle={onToggleShuffle}
           repeat={repeat}
           onCycleRepeat={onCycleRepeat}
+          mobile={MOBILE}
+          queue={
+            MOBILE && (
+              <QueuePanel
+                t={t}
+                embedded
+                playing={status?.trackId ? loadedTrack : null}
+                upNext={upNext}
+                narration={narration}
+                dj={djVoice}
+                station={queue?.source === "dj"}
+                barPresent={barPresent}
+                onPlay={onPlayFromQueue}
+                onClose={() => setQueueOpen(false)}
+                onAddToQueue={onAddToQueue}
+                onOpenArtist={openArtist}
+                onOpenAlbum={openAlbum}
+                onNewPlaylist={openNaming}
+              />
+            )
+          }
+          lyrics={
+            MOBILE && (
+              <LyricsPanel
+                t={t}
+                lyrics={lyrics.data}
+                loading={lyrics.isLoading}
+                error={lyrics.error ? explain(lyrics.error) : null}
+                positionMs={status?.positionMs ?? 0}
+                playing={status?.playing ?? false}
+                title={loadedTrack?.name ?? ""}
+                artists={loadedTrack ? trackArtists(loadedTrack) : ""}
+                trackId={lyricsTrackId}
+                onClose={closeLyrics}
+              />
+            )
+          }
         />
 
         <AnimatePresence>

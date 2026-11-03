@@ -3,7 +3,11 @@ import { motion } from "motion/react";
 import type { StringKey } from "../lib/i18n";
 import { SPRING } from "../lib/motion";
 import { type Artist, coverImage, formatDuration, type Track, trackRowKeys } from "../lib/spotify";
+import { isMobile } from "../lib/version";
 import { ArtistLine } from "./ArtistLine";
+import { PhoneTrackRow } from "./PhoneTrackRow";
+
+const MOBILE = isMobile();
 
 type NumberedTrackListProps = {
   tracks: Track[];
@@ -65,7 +69,7 @@ export function NumberedTrackList({
   return (
     <div className="overflow-hidden rounded-card border border-white/8 bg-white/4">
       <div
-        className="grid items-center gap-4 border-b border-white/8 px-4 py-2.5"
+        className={`grid items-center gap-4 border-b border-white/8 px-4 py-2.5 ${MOBILE ? "hidden" : ""}`}
         style={{ gridTemplateColumns: grid }}
       >
         <span className="text-right text-[12px] font-semibold tracking-wide uppercase text-ink-faint">
@@ -95,6 +99,22 @@ export function NumberedTrackList({
           const isLoading = track.id === loadingId;
           const isFailed = track.id === failedId;
           const cover = coverImage(track.album?.images);
+
+          if (MOBILE) {
+            return (
+              <PhoneTrackRow
+                key={rowKeys[index]}
+                track={track}
+                index={index}
+                playing={isPlaying}
+                loading={isLoading}
+                failed={isFailed}
+                onPlay={onPlay}
+                onOpenArtist={onOpenArtist}
+                menu={trackMenu?.(track)}
+              />
+            );
+          }
 
           return (
             <motion.div

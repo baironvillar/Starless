@@ -8,7 +8,11 @@ import {
   type Track as SpotifyTrack,
   trackRowKeys,
 } from "../lib/spotify";
+import { isMobile } from "../lib/version";
 import { ArtistLine } from "./ArtistLine";
+import { PhoneTrackRow } from "./PhoneTrackRow";
+
+const MOBILE = isMobile();
 
 type TrackListProps = {
   tracks: SpotifyTrack[];
@@ -92,7 +96,9 @@ export function TrackList({
 
   return (
     <div className="overflow-hidden rounded-card border border-white/8 bg-white/4">
-      <div className={`grid items-center gap-4 border-b border-white/8 px-5 py-2.5 ${columns}`}>
+      <div
+        className={`grid items-center gap-4 border-b border-white/8 px-5 py-2.5 ${columns} ${MOBILE ? "hidden" : ""}`}
+      >
         <span className="text-[12px] font-semibold tracking-wide uppercase text-ink-faint">
           {t.columnTitle}
         </span>
@@ -122,6 +128,22 @@ export function TrackList({
           const isLoading = track.id === loadingId;
           const isFailed = track.id === failedId;
           const cover = coverImage(track.album?.images);
+
+          if (MOBILE) {
+            return (
+              <PhoneTrackRow
+                key={rowKeys[index]}
+                track={track}
+                index={index}
+                playing={isPlaying}
+                loading={isLoading}
+                failed={isFailed}
+                onPlay={onPlay}
+                onOpenArtist={onOpenArtist}
+                menu={trackMenu?.(track)}
+              />
+            );
+          }
 
           return (
             <motion.div
