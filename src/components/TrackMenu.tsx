@@ -1,5 +1,6 @@
 import {
   Check,
+  ChevronLeft,
   ChevronRight,
   Disc3,
   Link2,
@@ -12,10 +13,12 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { copyText } from "../lib/clipboard";
 import type { StringKey } from "../lib/i18n";
-import type { Album, Artist, Track } from "../lib/spotify";
+import { type Album, type Artist, coverImage, type Track } from "../lib/spotify";
 import { isMobile } from "../lib/version";
 import { MenuItem, MenuPanel } from "./MenuPanel";
 import { PlaylistPicker } from "./PlaylistPicker";
+
+const MOBILE = isMobile();
 
 type TrackMenuProps = {
   t: Record<StringKey, string>;
@@ -97,6 +100,7 @@ export function TrackMenu({
 
   const artist = track.artists[0];
   const album = track.album;
+  const cover = coverImage(album?.images);
 
   const cancelClose = () => {
     if (closeTimer.current === null) return;
@@ -150,6 +154,8 @@ export function TrackMenu({
       <button
         ref={anchor}
         type="button"
+        // What a long press on the phone's row presses: one menu, two doors.
+        data-track-menu=""
         onClick={(e) => {
           e.stopPropagation();
           setOpen((value) => !value);
@@ -159,65 +165,108 @@ export function TrackMenu({
         className={`grid shrink-0 place-items-center rounded-pill text-ink-muted transition-all duration-150 hover:bg-white/10 hover:text-ink focus-visible:opacity-100 ${
           open
             ? "bg-white/10 text-ink opacity-100"
-            : isMobile()
+            : MOBILE
               ? // A touch screen has no approach: a hover that never comes would hide the menu for good.
                 "opacity-100"
               : "opacity-0 group-hover:opacity-100"
-        } ${isMobile() ? "size-10" : "size-7"}`}
+        } ${MOBILE ? "size-10" : "size-7"}`}
       >
         <MoreHorizontal className="size-4" strokeWidth={2} />
       </button>
 
-      <MenuPanel open={open} onClose={close} anchor={anchor} label={t.trackMenu} width={236}>
-        {artist && onOpenArtist && (
-          <MenuItem
-            label={t.goToArtist.replace("{name}", artist.name)}
-            icon={<User className="size-4" strokeWidth={2} />}
-            onSelect={() => {
-              close();
-              onOpenArtist(artist);
-            }}
-          />
-        )}
-
-        {album && onOpenAlbum && (
-          <MenuItem
-            label={t.goToAlbum.replace("{name}", album.name)}
-            icon={<Disc3 className="size-4" strokeWidth={2} />}
-            onSelect={() => {
-              close();
-              onOpenAlbum(album);
-            }}
-          />
-        )}
-
-        <MenuItem
-          label={t.addToQueue}
-          icon={<ListPlus className="size-4" strokeWidth={2} />}
-          onSelect={() => {
-            close();
-            onAddToQueue(track);
-          }}
-        />
-
+      <MenuPanel
+        open={open}
+        onClose={close}
+        anchor={anchor}
+        label={t.trackMenu}
+        width={236}
+        header={
+          <div className="flex items-center gap-3">
+            <span className="size-11 shrink-0 overflow-hidden rounded-[8px] bg-white/8">
+              {cover && <img src={cover.url} alt="" className="size-full object-cover" />}
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-[14.5px] font-semibold">{track.name}</p>
+              <p className="truncate text-[12.5px] text-ink-muted">
+                {track.artists.map((a) => a.name).join(", ")}
+              </p>
+            </div>
+          </div>
+        }
+      >
         {/*
+            On the phone "Add to playlist" has no side to open on: the sheet is
+            the whole width. The picker takes the sheet's rows instead, with a
+            way back at its top.
+        */}
+        {MOBILE && pickerOpen ? (
+          <>
+            <MenuItem
+              label={t.back}
+              icon={<ChevronLeft className="size-4" strokeWidth={2} />}
+              onSelect={() => setPickerOpen(false)}
+            />
+            <PlaylistPicker
+              t={t}
+              track={track}
+              onDone={close}
+              onNewPlaylist={(picked) => {
+                close();
+                onNewPlaylist(picked);
+              }}
+            />
+          </>
+        ) : (
+          <>
+            {artist && onOpenArtist && (
+              <MenuItem
+                label={t.goToArtist.replace("{name}", artist.name)}
+                icon={<User className="size-4" strokeWidth={2} />}
+                onSelect={() => {
+                  close();
+                  onOpenArtist(artist);
+                }}
+              />
+            )}
+
+            {album && onOpenAlbum && (
+              <MenuItem
+                label={t.goToAlbum.replace("{name}", album.name)}
+                icon={<Disc3 className="size-4" strokeWidth={2} />}
+                onSelect={() => {
+                  close();
+                  onOpenAlbum(album);
+                }}
+              />
+            )}
+
+            <MenuItem
+              label={t.addToQueue}
+              icon={<ListPlus className="size-4" strokeWidth={2} />}
+              onSelect={() => {
+                close();
+                onAddToQueue(track);
+              }}
+            />
+
+            {/*
             The jam, when there is one to join.
 
             **The song goes into the jam's queue, not into this app's.** That is
             the whole point of the row: the other side hears it.
         */}
-        {onAddToJam && (
-          <MenuItem
-            label={t.addToJam}
-            icon={<Users className="size-4" strokeWidth={2} />}
-            onSelect={() => {
-              close();
-              onAddToJam(track);
-            }}
-          />
-        )}
+            {onAddToJam && (
+              <MenuItem
+                label={t.addToJam}
+                icon={<Users className="size-4" strokeWidth={2} />}
+                onSelect={() => {
+                  close();
+                  onAddToJam(track);
+                }}
+              />
+            )}
 
-        {/*
+            {/*
           The one row that opens another menu.
 
           **The submenu is a second portal and it is measured against this
@@ -233,43 +282,43 @@ export function TrackMenu({
           hover and a row that only answered the mouse would be a row the
           keyboard could not reach.
         */}
-        <MenuItem
-          ref={pickerAnchor}
-          label={t.addToPlaylist}
-          icon={<ListMusic className="size-4" strokeWidth={2} />}
-          trailing={<ChevronRight className="size-4 shrink-0 text-ink-faint" strokeWidth={2} />}
-          onHover={openPicker}
-          onUnhover={closePickerSoon}
-          onSelect={openPicker}
-        />
-
-        {pickerOpen && (
-          <MenuPanel
-            open
-            onClose={() => setPickerOpen(false)}
-            anchor={pickerAnchor}
-            label={t.addToPlaylist}
-            width={264}
-            placement="right"
-            onHover={cancelClose}
-            onUnhover={closePickerSoon}
-          >
-            <PlaylistPicker
-              t={t}
-              track={track}
-              onDone={close}
-              onNewPlaylist={(picked) => {
-                // The whole menu goes, not only the submenu: the dialog is a
-                // surface of its own and a menu left open over it would cover
-                // it — the menu is the higher layer.
-                close();
-                onNewPlaylist(picked);
-              }}
+            <MenuItem
+              ref={pickerAnchor}
+              label={t.addToPlaylist}
+              icon={<ListMusic className="size-4" strokeWidth={2} />}
+              trailing={<ChevronRight className="size-4 shrink-0 text-ink-faint" strokeWidth={2} />}
+              onHover={MOBILE ? undefined : openPicker}
+              onUnhover={MOBILE ? undefined : closePickerSoon}
+              onSelect={openPicker}
             />
-          </MenuPanel>
-        )}
 
-        {/*
+            {pickerOpen && !MOBILE && (
+              <MenuPanel
+                open
+                onClose={() => setPickerOpen(false)}
+                anchor={pickerAnchor}
+                label={t.addToPlaylist}
+                width={264}
+                placement="right"
+                onHover={cancelClose}
+                onUnhover={closePickerSoon}
+              >
+                <PlaylistPicker
+                  t={t}
+                  track={track}
+                  onDone={close}
+                  onNewPlaylist={(picked) => {
+                    // The whole menu goes, not only the submenu: the dialog is a
+                    // surface of its own and a menu left open over it would cover
+                    // it — the menu is the higher layer.
+                    close();
+                    onNewPlaylist(picked);
+                  }}
+                />
+              </MenuPanel>
+            )}
+
+            {/*
           The one item that points outside the app, and it is a link the user
           asked for rather than Starless naming itself after anybody: PRODUCT.md
           forbids the Spotify name in *branding*, and a string this user copied
@@ -277,17 +326,19 @@ export function TrackMenu({
           the same link every client offers, and refusing to be able to share a
           song is a real gap.
         */}
-        <MenuItem
-          label={copied === "failed" ? t.copyFailed : t.copyLink}
-          icon={
-            copied === "done" ? (
-              <Check className="size-4 text-accent-ink" strokeWidth={2.5} />
-            ) : (
-              <Link2 className="size-4" strokeWidth={2} />
-            )
-          }
-          onSelect={() => void onCopy()}
-        />
+            <MenuItem
+              label={copied === "failed" ? t.copyFailed : t.copyLink}
+              icon={
+                copied === "done" ? (
+                  <Check className="size-4 text-accent-ink" strokeWidth={2.5} />
+                ) : (
+                  <Link2 className="size-4" strokeWidth={2} />
+                )
+              }
+              onSelect={() => void onCopy()}
+            />
+          </>
+        )}
       </MenuPanel>
     </>
   );

@@ -1,4 +1,5 @@
 import { motion } from "motion/react";
+import { useRef } from "react";
 import { SPRING } from "../lib/motion";
 import { type Artist, coverImage, type Track } from "../lib/spotify";
 import { ArtistLine } from "./ArtistLine";
@@ -37,11 +38,16 @@ export function PhoneTrackRow({
   menu?: React.ReactNode;
 }) {
   const cover = coverImage(track.album?.images);
+  const hold = useLongPress();
   return (
     <motion.div
       role="button"
       tabIndex={0}
-      onClick={() => onPlay?.(track)}
+      {...hold.handlers}
+      onClick={() => {
+        if (hold.fired()) return;
+        onPlay?.(track);
+      }}
       onKeyDown={(e) => {
         if (e.key !== "Enter" && e.key !== " ") return;
         e.preventDefault();
@@ -51,7 +57,7 @@ export function PhoneTrackRow({
       initial={index < 12 ? { opacity: 0, y: 8 } : false}
       animate={{ opacity: 1, y: 0 }}
       transition={{ ...SPRING, delay: Math.min(index, 12) * 0.03 }}
-      className={`flex items-center gap-3 border-b border-white/8 py-2 pr-1 pl-3 text-left last:border-b-0 active:bg-white/6 ${
+      className={`flex select-none items-center gap-3 border-b border-white/8 py-2 pr-1 pl-3 text-left last:border-b-0 active:bg-white/6 ${
         playing ? "bg-white/6" : ""
       }`}
     >
@@ -80,4 +86,63 @@ export function PhoneTrackRow({
       {menu}
     </motion.div>
   );
+}
+
+/** Long enough not to be a tap that lingered; short enough not to feel like waiting. */
+const HOLD_MS = 450;
+/** A finger that moved this far is scrolling, not holding. */
+const HOLD_SLOP = 10;
+
+/**
+ * Holding the row opens the same menu as its ⋯ (DESIGN.md, "The phone").
+ *
+ * **It presses the row's own ⋯** rather than owning a second menu: the menu,
+ * its state and its sheet live in `TrackMenu`, and a second door to the same
+ * room must not be a second room. The click that the browser still sends when
+ * the finger lifts is swallowed, or the hold would also play the song. The
+ * system's own long press —text selection and the context menu— is turned off
+ * on the row for the same reason.
+ */
+function useLongPress() {
+  const timer = useRef<number | null>(null);
+  const start = useRef<{ x: number; y: number } | null>(null);
+  const done = useRef(false);
+
+  const cancel = () => {
+    if (timer.current !== null) window.clearTimeout(timer.current);
+    timer.current = null;
+    start.current = null;
+  };
+
+  return {
+    fired: () => {
+      const was = done.current;
+      done.current = false;
+      return was;
+    },
+    handlers: {
+      onPointerDown: (event: React.PointerEvent<HTMLElement>) => {
+        if (event.pointerType === "mouse") return;
+        cancel();
+        done.current = false;
+        start.current = { x: event.clientX, y: event.clientY };
+        const row = event.currentTarget;
+        timer.current = window.setTimeout(() => {
+          timer.current = null;
+          const dots = row.querySelector<HTMLElement>("[data-track-menu]");
+          if (!dots) return;
+          done.current = true;
+          dots.click();
+        }, HOLD_MS);
+      },
+      onPointerMove: (event: React.PointerEvent<HTMLElement>) => {
+        const from = start.current;
+        if (from && Math.hypot(event.clientX - from.x, event.clientY - from.y) > HOLD_SLOP)
+          cancel();
+      },
+      onPointerUp: cancel,
+      onPointerCancel: cancel,
+      onContextMenu: (event: React.MouseEvent) => event.preventDefault(),
+    },
+  };
 }

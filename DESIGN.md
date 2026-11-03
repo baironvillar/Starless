@@ -279,7 +279,9 @@ comes hides the menu for good. The button is what can be seen; the long press is
 shortcut of somebody who already knows. The menu is a sheet of glass rising from the
 bottom with the song at its top and options a finger can hit, closed by swiping it down
 or tapping outside —not the desktop popover, whose rows are sized for a pointer and
-whose edge is the screen's.
+whose edge is the screen's. Every menu of the app is that sheet on the phone, and "Add to
+playlist" opens inside it with a way back instead of a submenu beside it: the sheet is the
+whole width, and there is no side left to open on.
 
 **Playlists are a list, with the cover and the whole name.** The two-column shelf cut
 the names ("Canciones qu…"); a row fits more and cuts none. The library's own list/grid
