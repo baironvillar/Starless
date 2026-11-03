@@ -14,7 +14,11 @@ import {
   trackRowKeys,
 } from "../lib/spotify";
 import { useRowWindow } from "../lib/useRowWindow";
+import { isMobile } from "../lib/version";
 import { ArtistLine } from "./ArtistLine";
+import { PhoneTrackRow } from "./PhoneTrackRow";
+
+const MOBILE = isMobile();
 
 /**
  * How tall a row is. `list` carries the cover and puts the artist under the
@@ -116,7 +120,7 @@ export function PlaylistTrackList({
   return (
     <div className="overflow-hidden rounded-card border border-white/8 bg-white/4">
       <div
-        className="grid items-center gap-4 border-b border-white/8 px-4 py-2.5"
+        className={`grid items-center gap-4 border-b border-white/8 px-4 py-2.5 ${MOBILE ? "hidden" : ""}`}
         style={{ gridTemplateColumns: columns }}
       >
         <span className="text-right text-[12px] font-semibold tracking-wide uppercase text-ink-faint">
@@ -152,6 +156,22 @@ export function PlaylistTrackList({
             const cover = coverImage(track.album?.images);
             const album = track.album;
             const addedAt = formatAddedAt(track.added_at, lang);
+
+            if (MOBILE) {
+              return (
+                <PhoneTrackRow
+                  key={rowKeys[index]}
+                  track={track}
+                  index={index}
+                  playing={isPlaying}
+                  loading={isLoading}
+                  failed={isFailed}
+                  onPlay={onPlay}
+                  onOpenArtist={onOpenArtist}
+                  menu={trackMenu?.(track)}
+                />
+              );
+            }
 
             return (
               <motion.div

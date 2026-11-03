@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from "react";
 import { copyText } from "../lib/clipboard";
 import type { StringKey } from "../lib/i18n";
 import type { Album, Artist, Track } from "../lib/spotify";
+import { isMobile } from "../lib/version";
 import { MenuItem, MenuPanel } from "./MenuPanel";
 import { PlaylistPicker } from "./PlaylistPicker";
 
@@ -155,9 +156,14 @@ export function TrackMenu({
         }}
         aria-label={t.trackMenuFor.replace("{name}", track.name)}
         title={t.trackMenu}
-        className={`grid size-7 shrink-0 place-items-center rounded-pill text-ink-muted transition-all duration-150 hover:bg-white/10 hover:text-ink focus-visible:opacity-100 ${
-          open ? "bg-white/10 text-ink opacity-100" : "opacity-0 group-hover:opacity-100"
-        }`}
+        className={`grid shrink-0 place-items-center rounded-pill text-ink-muted transition-all duration-150 hover:bg-white/10 hover:text-ink focus-visible:opacity-100 ${
+          open
+            ? "bg-white/10 text-ink opacity-100"
+            : isMobile()
+              ? // A touch screen has no approach: a hover that never comes would hide the menu for good.
+                "opacity-100"
+              : "opacity-0 group-hover:opacity-100"
+        } ${isMobile() ? "size-10" : "size-7"}`}
       >
         <MoreHorizontal className="size-4" strokeWidth={2} />
       </button>

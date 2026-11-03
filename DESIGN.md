@@ -267,6 +267,12 @@ the desktop bar.
 music app, and the app's own attenuation stays at its maximum: two volumes that multiply
 are a sound that is quiet for no visible reason.
 
+**A song row is the cover, the title over the artist, and the ⋯.** The desktop table
+(number, title, album, date, time) left the title about 40px on a phone: one letter of
+each name. The title and the artist take the whole width; the album and the rest are in
+the ⋯, and the column headers go with the columns. One row (`PhoneTrackRow`) serves the
+playlist, the album and the search lists.
+
 **Every song row shows its ⋯, and holding the row opens the same menu.** The desktop's
 "controls appear on approach" rule has no approach on a touch screen: a hover that never
 comes hides the menu for good. The button is what can be seen; the long press is the
