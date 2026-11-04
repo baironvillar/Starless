@@ -119,6 +119,7 @@ type PlayerBarProps = {
   lyrics?: React.ReactNode;
 };
 
+import { useBack } from "../lib/back";
 import { SPRING } from "../lib/motion";
 
 /** librespot's own scale, not ours. The conversion happens once, here. */
@@ -408,6 +409,7 @@ export function PlayerBar({
   }, [mobile, status]);
 
   const [expanded, setExpanded] = useState(false);
+  useBack(expanded, () => setExpanded(false));
 
   /**
    * The song on the phone is a carousel: it follows the finger sideways, leaves

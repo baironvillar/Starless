@@ -287,6 +287,12 @@ whole width, and there is no side left to open on.
 the names ("Canciones qu…"); a row fits more and cuts none. The library's own list/grid
 choice is still respected; the list is the phone's default.
 
+**The back button closes what is on top, one layer at a time**: the menu sheet, the
+full player, a settings section and then Settings, and then the page —an artist or album,
+the search results, a playlist back to the library list, another tab back to Home. On Home
+the app goes behind the others instead of closing, because closing it stops the music
+(`src/lib/back.ts`).
+
 **Settings are two levels.** The section list fills the screen: one group of rows, each an
 icon, the name and a ›, with "saved automatically" and the build under it. A section
 enters from the right with a back arrow, and the list slides a little to the left and

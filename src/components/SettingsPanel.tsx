@@ -28,6 +28,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { useBack } from "../lib/back";
 import { CHANGELOG, PREVIOUS_NOTE } from "../lib/changelog";
 import type { Lang, StringKey } from "../lib/i18n";
 import { SPRING, SPRING_SHEET } from "../lib/motion";
@@ -322,6 +323,8 @@ function PhoneSettings({
   build: React.ReactNode;
 }) {
   const [open, setOpen] = useState<Section | null>(null);
+  // Back leaves the section for the list, and the list for the app.
+  useBack(true, () => (open ? setOpen(null) : onClose()));
   const header = (title: string, onBack: () => void, label: string) => (
     <div className="flex shrink-0 items-center gap-1 px-2 pt-2 pb-3">
       <button
