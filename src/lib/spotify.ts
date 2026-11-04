@@ -558,11 +558,23 @@ export type NowPlaying = {
   album: string;
   artwork: string | null;
   playing: boolean;
+  /** The phone's only: see `useMediaSession`. Rust ignores what it does not declare. */
+  loading?: boolean;
+  positionMs?: number;
+  durationMs?: number;
 };
 
-/** Tell Windows what is playing; `null` hides the card and frees the media keys. */
+/**
+ * Tell Windows what is playing; `null` hides the card and frees the media keys.
+ *
+ * On the phone the same answer goes to Android (`window.StarlessMedia`): the lock
+ * screen, the notification, the headset buttons and the wake lock that keeps
+ * the next song loading with the screen off all live in Kotlin
+ * (`NowPlayingCenter.kt`), where Android's media session is.
+ */
 export async function mediaSession(now: NowPlaying | null): Promise<void> {
   if (!hasBackend()) return;
+  window.StarlessMedia?.nowPlaying(JSON.stringify(now));
   return invoke<void>("media_session", { now });
 }
 
@@ -576,7 +588,13 @@ export type MediaKey = "play" | "pause" | "next" | "previous";
  */
 export function onMediaKey(handler: (key: MediaKey) => void): Promise<UnlistenFn> | null {
   if (!hasBackend()) return null;
-  return listen<MediaKey>("media://key", (event) => handler(event.payload));
+  // The phone's lock screen and headset buttons arrive from Kotlin, which
+  // calls this function by name: the same keys, the same handler.
+  if (window.StarlessMedia) window.__starlessMediaKey = handler;
+  return listen<MediaKey>("media://key", (event) => handler(event.payload)).then((stop) => () => {
+    if (window.__starlessMediaKey === handler) window.__starlessMediaKey = undefined;
+    stop();
+  });
 }
 
 /*
@@ -1731,3 +1749,12 @@ export const SESSION_ERRORS = new Set([
   "audio_stalled",
   "audio_device_failed",
 ]);
+
+declare global {
+  interface Window {
+    /** `NowPlayingCenter.kt`'s bridge, on Android only: `NowPlaying` as JSON, or "null". */
+    StarlessMedia?: { nowPlaying: (json: string) => void };
+    /** What Kotlin calls when a lock-screen, notification or headset button is pressed. */
+    __starlessMediaKey?: (key: MediaKey) => void;
+  }
+}

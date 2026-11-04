@@ -138,26 +138,39 @@ export function usePlayerKeys(actions: PlayerActions) {
 }
 
 /**
- * Keep Windows' media card in step with the bar.
+ * Keep Windows' media card in step with the bar — and, on the phone, the lock
+ * screen and the notification (`MainActivity`'s bridge, `NowPlayingCenter.kt`).
  *
  * The DJ counts as something playing, like it does for the bar: the voice is
  * on, and the keys are how a person skips it.
+ *
+ * `loading` and the position only matter to the phone. A song that is loading
+ * is a song that will play, so the phone keeps the processor awake through it;
+ * the position goes with each change of state and not with each tick, because
+ * the lock screen moves its own bar from the last one it was given.
  */
 export function useMediaSession(
   track: Track | null,
   dj: { speaker: string | null } | null | undefined,
   playing: boolean,
   djLabel: string,
+  loading = false,
+  positionMs = 0,
+  durationMs = 0,
 ) {
   const title = dj ? (dj.speaker ?? djLabel) : (track?.name ?? null);
   const artist = dj ? "" : track ? trackArtists(track) : "";
   const album = dj ? "" : (track?.album?.name ?? "");
   const artwork = dj ? null : (coverImage(track?.album?.images)?.url ?? null);
   const on = dj ? true : playing;
+  const at = useRef({ positionMs, durationMs });
+  at.current = { positionMs, durationMs };
 
   useEffect(() => {
-    void mediaSession(title === null ? null : { title, artist, album, artwork, playing: on }).catch(
-      () => {},
-    );
-  }, [title, artist, album, artwork, on]);
+    void mediaSession(
+      title === null
+        ? null
+        : { title, artist, album, artwork, playing: on, loading, ...at.current },
+    ).catch(() => {});
+  }, [title, artist, album, artwork, on, loading]);
 }

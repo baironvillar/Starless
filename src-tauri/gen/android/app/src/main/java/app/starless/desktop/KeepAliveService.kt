@@ -2,12 +2,10 @@ package app.starless.desktop
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.IBinder
-import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 
 /**
@@ -19,33 +17,27 @@ import androidx.core.app.ServiceCompat
  * `blocked=APP_BACKGROUND|BATTERY_SAVER`. A foreground service lifts both, and
  * it is the same thing the music needs to keep playing with the screen off.
  * See `docs/android.md`.
+ *
+ * Its notification is the media notification: `NowPlayingCenter` fills it
+ * with the song once there is one.
  */
 class KeepAliveService : Service() {
   override fun onBind(intent: Intent?): IBinder? = null
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    val manager = getSystemService(NotificationManager::class.java)
-    manager.createNotificationChannel(
-      NotificationChannel(CHANNEL, getString(R.string.keepalive_channel), NotificationManager.IMPORTANCE_LOW)
+    getSystemService(NotificationManager::class.java).createNotificationChannel(
+      NotificationChannel(
+        NowPlayingCenter.CHANNEL,
+        getString(R.string.keepalive_channel),
+        NotificationManager.IMPORTANCE_LOW,
+      )
     )
-    val open = PendingIntent.getActivity(
-      this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
-    )
-    val notification = NotificationCompat.Builder(this, CHANNEL)
-      .setSmallIcon(R.mipmap.ic_launcher)
-      .setContentTitle(getString(R.string.app_name))
-      .setContentText(getString(R.string.keepalive_text))
-      .setContentIntent(open)
-      .setOngoing(true)
-      .build()
     ServiceCompat.startForeground(
-      this, NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+      this,
+      NowPlayingCenter.NOTIFICATION_ID,
+      NowPlayingCenter.notification(this),
+      ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK,
     )
     return START_NOT_STICKY
-  }
-
-  private companion object {
-    const val CHANNEL = "playback"
-    const val NOTIFICATION_ID = 1
   }
 }
