@@ -1020,7 +1020,7 @@ function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart })
             of them are on screen behind this panel. Quiet mode is not a fifth
             setting: it is on when the other four are off, and writes all four.
           */}
-          <Group narrow>
+          <Group>
             <Row label={t.quietMode} hint={t.quietModeHint}>
               <Toggle
                 checked={quiet}
@@ -1058,7 +1058,7 @@ function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart })
               />
             </Row>
           </Group>
-          <Group narrow>
+          <Group>
             <Row label={t.bloomLight} hint={t.bloomLightHint}>
               <Select
                 value={effect.bloom}
@@ -1092,7 +1092,7 @@ function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart })
             personalizar nada más. Y estaba en General, que es la sección donde
             vive lo que la app decide —no lo que decide la persona.
         */}
-        <Group narrow>
+        <Group>
           <Row label={t.theme}>
             <ThemeSelect t={t} />
           </Row>
@@ -1109,7 +1109,7 @@ function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart })
           are known to keep a readable label on top of them, and the picker is the
           door for the one that is not.
         */}
-        <Group narrow>
+        <Group>
           <Row label={t.accentColor} hint={t.accentColorHint}>
             {/* The swatches are tight on purpose: seven of them plus the wheel
                 have to fit next to the label in a card that is half a screen
@@ -1176,7 +1176,7 @@ function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart })
             the scale —Sólido, Translúcido— sit under the slider, which is the
             thing they are the ends of.
         */}
-        <Group span narrow>
+        <Group span>
           <Row label={t.menuOpacity} hint={t.menuOpacityHint}>
             <span className="flex items-center gap-3">
               <span className="min-w-[74px] text-right text-[12px] text-ink-faint tabular">
@@ -1322,7 +1322,7 @@ function BackgroundSettings({
           light is another: the second one is about the app itself and it would
           be a strange neighbour to the button that picks a file.
       */}
-      <Group narrow>
+      <Group>
         <Row label={t.backgroundImage} hint={error ?? t.backgroundImageHint}>
           <span className="flex items-center gap-2">
             {background.url && (
@@ -1405,7 +1405,7 @@ function BackgroundSettings({
           </>
         )}
       </Group>
-      <Group narrow>
+      <Group>
         <Row label={t.bloomShape} hint={t.bloomShapeHint}>
           <Select
             value={effect.shape}
@@ -1649,23 +1649,14 @@ function ChangelogGroup({ title, items }: { title: string; items: string[] }) {
  * the card asks the browser whether any of them is still standing.
  *
  * `span` is for the card whose control is wider than half a column: it crosses
- * both columns instead of being squeezed into one. `narrow` makes the card a
- * container, so its rows can ask how much room they have.
+ * both columns instead of being squeezed into one.
  */
-function Group({
-  children,
-  span,
-  narrow,
-}: {
-  children: React.ReactNode;
-  span?: boolean;
-  narrow?: boolean;
-}) {
+function Group({ children, span }: { children: React.ReactNode; span?: boolean }) {
   return (
     <div
       className={`not-has-[.setting-row]:hidden overflow-hidden rounded-card border border-white/8 bg-white/4 ${
         span ? "lg:col-span-2" : ""
-      } ${narrow ? "@container" : ""}`}
+      }`}
     >
       {children}
     </div>
@@ -1696,20 +1687,29 @@ function Row({
   /**
    * The label keeps its width and the control keeps its own.
    *
-   * **The row stacks when the card is narrow.** A card in one column of the
-   * grid is half a screen wide, and a control that does not fit in half a
-   * screen cannot be squeezed into it: the label would be left with a column
-   * of two letters —"Opacidad / de / los / menús"— and the hint would be four
-   * lines tall. So the row asks the card how much room there is, and when
-   * there is little the label goes on top and the control goes under it.
+   * **The control goes below the label only when it does not fit.** A card in
+   * one column of the grid is half a screen wide, and a control that does not
+   * fit in half a screen cannot be squeezed into it: the label would be left
+   * with a column of two letters —"Opacidad / de / los / menús"— and the
+   * control would be cut. So the row wraps, and the label takes the whole
+   * width when it does.
+   *
+   * **Not every row in a narrow card stacks.** A card whose control is small
+   * —a select, a switch— fits next to its label with room to spare, and
+   * forcing it under would leave the card empty: a label in one corner and a
+   * control in the other, with nothing in between.
+   *
+   * **When the control does go under, it goes under the label and not in the
+   * other corner.** The label grows to fill the row it is on, so the control
+   * lands against it —a row of its own, starting where the text starts.
    */
   return (
-    <div className="setting-row flex flex-wrap items-center gap-x-6 gap-y-3 border-b border-white/8 px-5 py-4 last:border-b-0 @max-lg:flex-col @max-lg:items-start @max-lg:gap-2.5">
+    <div className="setting-row flex flex-wrap items-center gap-x-6 gap-y-3 border-b border-white/8 px-5 py-4 last:border-b-0">
       <div className="min-w-[100px] flex-1">
         <p className="text-[13.5px] font-semibold">{label}</p>
         {hint && <p className="mt-1 text-[12.5px] leading-relaxed text-ink-muted">{hint}</p>}
       </div>
-      <div className="ml-auto w-fit shrink-0">{children}</div>
+      <div className="w-fit shrink-0">{children}</div>
     </div>
   );
 }
