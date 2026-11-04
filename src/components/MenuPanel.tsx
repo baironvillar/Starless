@@ -122,15 +122,38 @@ export function MenuPanel({
    * A submenu is measured after it renders, because its height is not known
    * before: it holds as many playlists as the account has, and the last one
    * that hangs off the window is a playlist that cannot be clicked.
+   *
+   * **A menu that opens below the control and hangs off the window is a menu
+   * that cannot be used.** The settings sheet is full of controls near its
+   * bottom edge, so the list opens *above* the trigger there, and the same rule
+   * applies to the track menu at the end of a long list.
    */
   useLayoutEffect(() => {
-    if (!open || !at || placement !== "right") return;
+    if (!open || !at) return;
     const node = menu.current;
     if (!node) return;
-    const limit = window.innerHeight - node.offsetHeight - 12;
+    const height = node.offsetHeight;
+    const limit = window.innerHeight - height - 12;
     if (limit < 12) return;
-    setAt((prev) => (prev && prev.top > limit ? { ...prev, top: limit } : prev));
-  }, [at, open, placement]);
+    const box = anchor.current?.getBoundingClientRect();
+    if (!box) return;
+    setAt((prev) => {
+      if (!prev) return prev;
+      let top = prev.top;
+      if (placement === "right") {
+        if (top > limit) top = limit;
+      } else {
+        const below = box.bottom + 8;
+        if (below + height > window.innerHeight - 12) {
+          const above = box.top - height - 8;
+          top = above >= 12 ? above : Math.max(12, limit);
+        }
+      }
+      // The same place is the same object: a new one would run this effect
+      // again, and again, forever.
+      return top === prev.top ? prev : { ...prev, top };
+    });
+  }, [at, open, placement, anchor]);
 
   useEffect(() => {
     if (!open) return;
@@ -321,6 +344,14 @@ type MenuItemProps = {
   /** The one line that is true right now — a check, or a confirmation. */
   trailing?: ReactNode;
   /**
+   * The row is the chosen one.
+   *
+   * **A listbox says which row is the answer.** A menu does not need it, but a
+   * list of choices does, and the screen reader reads the check out loud before
+   * the label.
+   */
+  selected?: boolean;
+  /**
    * The row is also the anchor of a submenu, so it has to be measurable.
    *
    * A `ref` as a plain prop, which is what React 19 does with function
@@ -348,6 +379,7 @@ export function MenuItem({
   icon,
   onSelect,
   trailing,
+  selected,
   ref,
   onHover,
   onUnhover,
@@ -357,7 +389,7 @@ export function MenuItem({
       ref={ref}
       type="button"
       role="option"
-      aria-selected={false}
+      aria-selected={selected ?? false}
       onClick={onSelect}
       onMouseEnter={onHover}
       onMouseLeave={onUnhover}
