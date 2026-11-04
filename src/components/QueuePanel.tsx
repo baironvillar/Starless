@@ -1,8 +1,8 @@
 import { Play, X } from "lucide-react";
 import { motion } from "motion/react";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { StringKey } from "../lib/i18n";
-import { SPRING, SPRING_SHEET } from "../lib/motion";
+import { SPRING_SHEET } from "../lib/motion";
 import {
   type Album,
   type Artist,
@@ -16,6 +16,9 @@ import {
 import { useRowWindow } from "../lib/useRowWindow";
 import { DjArtwork } from "./DjArtwork";
 import { TrackMenu } from "./TrackMenu";
+
+/** A piece's place in the cascade the panel arrives in (`.cascade` in index.css). */
+const at = (index: number) => ({ "--i": index }) as React.CSSProperties;
 
 type QueuePanelProps = {
   t: Record<StringKey, string>;
@@ -144,6 +147,40 @@ export function QueuePanel({
   const nextRef = useRef<HTMLUListElement>(null);
   const { first, last, pitch } = useRowWindow(nextRef, upNext.length);
 
+  /**
+   * The panel is shown before its pieces are.
+   *
+   * **The flip waits a frame.** The pieces start hidden and are revealed a
+   * frame later, so the browser paints the hidden state before it is undone:
+   * a transition needs two states, and a piece that was never painted hidden
+   * simply appears.
+   */
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    let second = 0;
+    const firstFrame = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => setShown(true));
+    });
+    return () => {
+      cancelAnimationFrame(firstFrame);
+      cancelAnimationFrame(second);
+    };
+  }, []);
+
+  /**
+   * The places in the cascade, in the order the pieces arrive.
+   *
+   * **The order is the order on screen.** The header, then the DJ's line if
+   * there is one, then what is sounding, then what follows, and then each row
+   * of it. The wave stops growing at the twelfth piece, so a long queue does
+   * not keep its last rows waiting.
+   */
+  const withNarration = !dj && Boolean(narration);
+  const nowLabel = withNarration ? 2 : 1;
+  const nowRow = withNarration ? 3 : 2;
+  const nextLabel = withNarration ? 4 : 3;
+  const firstRow = withNarration ? 5 : 4;
+
   return (
     <motion.aside
       initial={{ opacity: 0, x: 18 }}
@@ -152,6 +189,9 @@ export function QueuePanel({
       transition={SPRING_SHEET}
       role="dialog"
       aria-label={t.queue}
+      // The panel arrives as one shape and its pieces cascade in
+      // (`.cascade` in index.css), the way the library's do.
+      data-shown={shown}
       // On the phone the queue takes the artwork's place in the full player
       // (DESIGN.md, "The phone"): the same list, without the side panel's glass
       // and position, inside a surface that already has them.
@@ -161,7 +201,10 @@ export function QueuePanel({
           : `glass-sheet pointer-events-auto absolute top-[104px] right-5 ${barPresent ? "bottom-[144px]" : "bottom-5"} z-30 flex w-[240px] flex-col overflow-hidden rounded-card transition-[bottom] duration-300 ease-[var(--ease-glass)]`
       }
     >
-      <header className="flex shrink-0 items-center justify-between gap-2 px-4 pt-4 pb-3">
+      <header
+        className="cascade flex shrink-0 items-center justify-between gap-2 px-4 pt-4 pb-3"
+        style={at(0)}
+      >
         <h2 className="truncate text-[15px] font-semibold tracking-tight">{t.queue}</h2>
         {/*
             Only the close.
@@ -197,13 +240,13 @@ export function QueuePanel({
         */}
         {!dj && narration && <Narration narration={narration} />}
 
-        <Section label={t.queueNowPlaying}>
+        <Section label={t.queueNowPlaying} labelPiece={nowLabel}>
           {dj ? (
-            <NowPlayingDj dj={dj} t={t} />
+            <NowPlayingDj dj={dj} t={t} piece={nowRow} />
           ) : playing ? (
-            <NowPlaying track={playing} />
+            <NowPlaying track={playing} piece={nowRow} />
           ) : (
-            <Empty t={t} />
+            <Empty t={t} piece={nowRow} />
           )}
         </Section>
 
@@ -216,7 +259,7 @@ export function QueuePanel({
             so what comes is not decided yet.
         */}
         {!station && (
-          <Section label={t.queueNextUp} listRef={nextRef}>
+          <Section label={t.queueNextUp} listRef={nextRef} labelPiece={nextLabel}>
             {upNext.length > 0 ? (
               <>
                 {first > 0 && <li style={{ height: first * pitch }} aria-hidden />}
@@ -226,6 +269,7 @@ export function QueuePanel({
                     t={t}
                     track={track}
                     position={first + offset + 1}
+                    piece={firstRow + first + offset}
                     onPlay={onPlay}
                     row={first + offset}
                     onAddToQueue={onAddToQueue}
@@ -239,7 +283,7 @@ export function QueuePanel({
                 )}
               </>
             ) : (
-              <Empty t={t} />
+              <Empty t={t} piece={firstRow} />
             )}
           </Section>
         )}
@@ -252,14 +296,20 @@ function Section({
   label,
   children,
   listRef,
+  labelPiece,
 }: {
   label: string;
   children: React.ReactNode;
   listRef?: React.Ref<HTMLUListElement>;
+  /** The label's place in the cascade the panel arrives in. */
+  labelPiece: number;
 }) {
   return (
     <section>
-      <h3 className="px-2 pb-1.5 text-[12px] font-semibold tracking-wide uppercase text-ink-faint">
+      <h3
+        className="cascade px-2 pb-1.5 text-[12px] font-semibold tracking-wide uppercase text-ink-faint"
+        style={at(labelPiece)}
+      >
         {label}
       </h3>
       <ul ref={listRef} className="flex flex-col gap-0.5">
@@ -280,19 +330,14 @@ function Section({
  */
 function Narration({ narration }: { narration: DjNarration }) {
   return (
-    <motion.section
-      initial={{ opacity: 0, y: -6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={SPRING}
-      aria-label={narration.speaker}
-    >
+    <section className="cascade" style={at(1)} aria-label={narration.speaker}>
       <h3 className="px-2 pb-1.5 text-[12px] font-semibold tracking-wide uppercase text-ink-faint">
         {narration.speaker}
       </h3>
       <blockquote className="rounded-[14px] bg-white/6 px-3 py-2.5 text-[12.5px] leading-relaxed text-ink-muted">
         {narration.line}
       </blockquote>
-    </motion.section>
+    </section>
   );
 }
 
@@ -307,12 +352,14 @@ function Narration({ narration }: { narration: DjNarration }) {
 function NowPlayingDj({
   dj,
   t,
+  piece,
 }: {
   dj: { speaker: string | null; line: string | null };
   t: Record<StringKey, string>;
+  piece: number;
 }) {
   return (
-    <li>
+    <li className="cascade" style={at(piece)}>
       <div className="flex items-center gap-3 rounded-[14px] bg-white/6 px-2 py-2">
         <span className="relative size-11 shrink-0 overflow-hidden rounded-[10px]">
           <DjArtwork />
@@ -330,9 +377,9 @@ function NowPlayingDj({
   );
 }
 
-function NowPlaying({ track }: { track: Track }) {
+function NowPlaying({ track, piece }: { track: Track; piece: number }) {
   return (
-    <li>
+    <li className="cascade" style={at(piece)}>
       <div className="flex items-center gap-3 rounded-[14px] bg-white/6 px-2 py-2">
         <span className="relative size-11 shrink-0 rounded-[10px]">
           <Cover track={track} className="absolute inset-0 size-full rounded-[10px]" />
@@ -353,13 +400,18 @@ function NowPlaying({ track }: { track: Track }) {
   );
 }
 
-/** About as many rows as the panel shows when it opens. */
-const ENTRANCE_ROWS = 14;
-
+/**
+ * A row of the queue.
+ *
+ * **The row arrives with the wave, and not with its own spring.** The panel
+ * cascades its pieces —the header, the labels, the rows— and a row that
+ * animated on its own would be a second rhythm on top of the first one.
+ */
 function QueueRow({
   t,
   track,
   position,
+  piece,
   onPlay,
   onAddToQueue,
   onOpenArtist,
@@ -370,6 +422,8 @@ function QueueRow({
   t: Record<StringKey, string>;
   track: Track;
   position?: number;
+  /** The row's place in the cascade the panel arrives in. */
+  piece: number;
   onPlay: (track: Track, row: number) => void;
   onAddToQueue: (track: Track) => void;
   onOpenArtist?: (artist: Artist) => void;
@@ -378,15 +432,7 @@ function QueueRow({
   row: number;
 }) {
   return (
-    <motion.li
-      data-row
-      // Only the rows the panel opens onto slide in. With a long playlist every
-      // row had its own spring, hundreds at once, and opening the queue dropped
-      // to 25 fps for rows nobody could see yet.
-      initial={(position ?? 0) <= ENTRANCE_ROWS ? { opacity: 0, x: 8 } : false}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ ...SPRING, delay: 0.02 * (position ?? 0) }}
-    >
+    <li data-row className="cascade" style={at(piece)}>
       {/*
           The row is a div with the play button inside, and not a button with
           the play button inside it.
@@ -446,10 +492,14 @@ function QueueRow({
           onNewPlaylist={onNewPlaylist}
         />
       </div>
-    </motion.li>
+    </li>
   );
 }
 
-function Empty({ t }: { t: Record<StringKey, string> }) {
-  return <li className="px-2 py-1.5 text-[12.5px] text-ink-faint">{t.queueEmpty}</li>;
+function Empty({ t, piece }: { t: Record<StringKey, string>; piece: number }) {
+  return (
+    <li className="cascade px-2 py-1.5 text-[12.5px] text-ink-faint" style={at(piece)}>
+      {t.queueEmpty}
+    </li>
+  );
 }
