@@ -1702,11 +1702,23 @@ function Row({
    * **When the control does go under, it goes under the label and not in the
    * other corner.** The label grows to fill the row it is on, so the control
    * lands against it —a row of its own, starting where the text starts.
+   *
+   * **The title does not break; the control moves.** A title that wraps into
+   * two lines beside a control leaves a card where nothing lines up: the text
+   * on the left is three lines tall, the control is one, and the hint under
+   * the title is three more. So the title keeps its line —and the row pushes
+   * the control down when the two do not fit together. A title that is short
+   * —"Tema", "Grano"— still sits beside its control.
+   *
+   * **The label has no width of its own.** It takes what is left, and the
+   * only width it insists on is the width of its own title: that is the one
+   * thing a row cannot do without. So the row breaks when the title and the
+   * control do not fit together, and not before, and not after.
    */
   return (
     <div className="setting-row flex flex-wrap items-center gap-x-6 gap-y-3 border-b border-white/8 px-5 py-4 last:border-b-0">
-      <div className="min-w-[100px] flex-1">
-        <p className="text-[13.5px] font-semibold">{label}</p>
+      <div className="flex-1">
+        <p className="text-[13.5px] font-semibold whitespace-nowrap">{label}</p>
         {hint && <p className="mt-1 text-[12.5px] leading-relaxed text-ink-muted">{hint}</p>}
       </div>
       <div className="w-fit shrink-0">{children}</div>
