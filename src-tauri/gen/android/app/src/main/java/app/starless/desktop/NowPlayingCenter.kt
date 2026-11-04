@@ -262,13 +262,21 @@ object NowPlayingCenter {
       .setContentTitle(n.title)
       .setContentText(n.artist)
       .setLargeIcon(art)
-      .addAction(android.R.drawable.ic_media_previous, "previous", action(context, "previous", 1))
+      .addAction(
+        android.R.drawable.ic_media_previous,
+        context.getString(R.string.media_previous),
+        action(context, "previous", 1),
+      )
       .addAction(
         if (n.playing) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
-        if (n.playing) "pause" else "play",
+        context.getString(if (n.playing) R.string.media_pause else R.string.media_play),
         action(context, if (n.playing) "pause" else "play", 2),
       )
-      .addAction(android.R.drawable.ic_media_next, "next", action(context, "next", 3))
+      .addAction(
+        android.R.drawable.ic_media_next,
+        context.getString(R.string.media_next),
+        action(context, "next", 3),
+      )
       .setStyle(
         androidx.media.app.NotificationCompat.MediaStyle()
           .setMediaSession(token)
