@@ -1,0 +1,1102 @@
+---
+/**
+ * A drawing of the app, not a photograph of it.
+ *
+ * **Why it is drawn.** The captures that used to be here were photographs of a
+ * real account: its playlists, its songs, its name and the artwork of other
+ * people's records. `public/` is published with the site, so a photograph in
+ * it is a disclosure. A drawing is not: the covers are gradients that belong
+ * to nobody and the names are bars, so what the landing shows is the app and
+ * not the person who was looking at it.
+ *
+ * **What is left is the furniture, and the furniture is the product.** The
+ * promise of the landing is a window that does not ask for attention, and
+ * that promise lives in the chrome: the glass, the riel, the hairline table of
+ * tracks, the bar that comes with the music. A photograph of somebody's library
+ * sells a screenshot; this sells the app.
+ *
+ * **The app's own words stay.** "Tu biblioteca", "Cola de reproducción",
+ * "AHORA SUENA", "Orden personalizado" are the app's chrome, in the app's
+ * language, and they are what makes the drawing readable as the app and not
+ * as a wireframe. Only the content is withheld.
+ *
+ * **Everything is drawn at 1440 and scaled by one unit.** `--u` is a hundredth
+ * of the design width and every size is a multiple of it, so the drawing is
+ * the same app at the size of the window that holds it — a window on a landing
+ * page is about half the width of the app it shows.
+ *
+ * **No `backdrop-filter` here.** The four screens are stacked and cross-faded
+ * with an opacity animation, and a blur behind a surface that animates means
+ * re-sampling the blur on every frame of the fade. The glass is drawn with its
+ * translucency and its shadow instead: nothing sits behind these panels that
+ * a blur would reveal.
+ */
+type Props = {
+  variant: "library" | "playlist" | "queue" | "settings";
+};
+const { variant } = Astro.props;
+
+const ICONS: Record<string, string> = {
+  house:
+    '<path d="M3 10a2 2 0 0 1 .7-1.5l7-6a2 2 0 0 1 2.6 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/>',
+  library: '<path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  users:
+    '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  sliders:
+    '<path d="M4 21v-7"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M20 21v-5"/><path d="M20 12V3"/><path d="M2 14h4"/><path d="M10 8h4"/><path d="M18 16h4"/>',
+  more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  minimize: '<path d="M5 12h14"/>',
+  maximize: '<rect x="5" y="5" width="14" height="14" rx="1.5"/>',
+  close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  shuffle:
+    '<path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.8-1.1 2-1.7 3.3-1.7H22"/><path d="m18 2 4 4-4 4"/><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2"/><path d="M22 18h-5.9c-1.3 0-2.6.7-3.3 1.8l-.5.8"/><path d="m18 14 4 4-4 4"/>',
+  prev: '<path d="M19 20 9 12l10-8z"/><path d="M5 19V5"/>',
+  next: '<path d="m5 4 10 8-10 8z"/><path d="M19 5v14"/>',
+  repeat:
+    '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
+  volume:
+    '<path d="M11 4.7 6.6 8H3v8h3.6L11 19.3z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>',
+  queue:
+    '<path d="M10 6h11"/><path d="M10 12h11"/><path d="M10 18h11"/><path d="M4 6h1v4"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3"/>',
+  mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
+  panel: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  sort: '<path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/>',
+  grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/>',
+  list: '<path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/>',
+  play: '<path d="m6 3 14 9-14 9z"/>',
+  pause:
+    '<rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>',
+};
+
+const icon = (name: string, size = 18) =>
+  `<svg style="width:calc(${size} * var(--u));height:calc(${size} * var(--u))" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
+
+const iconFilled = (name: string, size = 18) =>
+  `<svg style="width:calc(${size} * var(--u));height:calc(${size} * var(--u))" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true">${ICONS[name]}</svg>`;
+
+/** The heart of Liked Songs, drawn the way the app draws it. */
+const likedCover = `<svg class="m-liked" viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="ml-plate" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#24242c"/><stop offset="1" stop-color="#0b0b0f"/></linearGradient><radialGradient id="ml-haze" cx="0.5" cy="0.62" r="0.55"><stop offset="0" stop-color="#ff5a36" stop-opacity="0.32"/><stop offset="1" stop-color="#ff5a36" stop-opacity="0"/></radialGradient></defs><rect width="100" height="100" fill="url(#ml-plate)"/><rect width="100" height="100" fill="url(#ml-haze)"/><circle cx="50" cy="50" r="36" fill="none" stroke="#c4c1c8" stroke-opacity="0.3" stroke-width="4"/><path d="M50 69C50 69 30 57 30 43.5C30 36 35.5 31 42 31C45.8 31 48.6 33.2 50 36.4C51.4 33.2 54.2 31 58 31C64.5 31 70 36 70 43.5C70 57 50 69 50 69Z" fill="#ff5a36"/></svg>`;
+
+/** How many of each thing a window shows. */
+const SHELF = 8;
+const TILES = 6;
+const TRACKS = 10;
+const QUEUED = 5;
+
+/** Bars are the width of the word they stand for; these are the widths. */
+const TITLE_BARS = [150, 96, 176, 124, 84];
+---
+
+<div class="m" data-variant={variant}>
+  {
+    variant !== "settings" && (
+      <div class="m-top">
+        <div class="m-top-l">
+          <span class="m-home"><Fragment set:html={icon("house", 18)} /></span>
+          <span class="m-div" />
+          <span class="m-pill">
+            <Fragment set:html={icon("library", 16)} />
+            <span>Tu biblioteca</span>
+          </span>
+        </div>
+        <div class="m-search">
+          <Fragment set:html={icon("search", 16)} />
+          <span>Buscar canciones</span>
+        </div>
+        <div class="m-top-r">
+          <span class="m-icbtn"><Fragment set:html={icon("users", 17)} /></span>
+          <span class="m-icbtn"><Fragment set:html={icon("sliders", 17)} /></span>
+          <span class="m-icbtn"><Fragment set:html={icon("more", 17)} /></span>
+          <span class="m-div" />
+          <span class="m-win"><Fragment set:html={icon("minimize", 14)} /></span>
+          <span class="m-win"><Fragment set:html={icon("maximize", 13)} /></span>
+          <span class="m-win"><Fragment set:html={icon("close", 14)} /></span>
+        </div>
+      </div>
+    )
+  }
+
+  {
+    variant === "library" && (
+      <>
+        <aside class="m-panel">
+          <div class="m-panel-h">
+            <span class="m-panel-t">Tu biblioteca</span>
+            <span class="m-icbtn"><Fragment set:html={icon("panel", 16)} /></span>
+          </div>
+          <div class="m-panel-c">
+            <span class="m-icbtn"><Fragment set:html={icon("plus", 16)} /></span>
+            <span class="m-icbtn"><Fragment set:html={icon("sort", 16)} /></span>
+            <span class="m-icbtn m-on"><Fragment set:html={icon("grid", 16)} /></span>
+          </div>
+          <div class="m-tiles">
+            <div class="m-tile">
+              <span class="m-cover m-cover-liked"><Fragment set:html={likedCover} /></span>
+              <span class="m-cap">Canciones que te gustan</span>
+            </div>
+            {Array.from({ length: TILES }).map((_, i) => (
+              <div class="m-tile">
+                <span class={`m-cover m-cv${(i % 6) + 1}`} />
+                <span
+                  class="m-bar"
+                  style={`width:calc(${78 + (i % 3) * 12} * var(--u))`}
+                />
+              </div>
+            ))}
+          </div>
+        </aside>
+
+        <div class="m-main m-main-panel">
+          <h1 class="m-h1">Inicio</h1>
+          <p class="m-sub">24 playlists</p>
+          <div class="m-shelf">
+            {Array.from({ length: SHELF }).map((_, i) => (
+              <div class="m-card">
+                <span class={`m-cover m-cv${(i % 6) + 1}`} />
+                <span
+                  class="m-bar"
+                  style={`width:calc(${110 + (i % 3) * 22} * var(--u))`}
+                />
+                <span class="m-count">{12 + (i % 4) * 7} canciones</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  {
+    (variant === "playlist" || variant === "queue") && (
+      <>
+        <aside class="m-rail">
+          <span class="m-icbtn"><Fragment set:html={icon("panel", 16)} /></span>
+          <div class="m-rail-l">
+            <span class="m-cover m-cover-liked"><Fragment set:html={likedCover} /></span>
+            {Array.from({ length: 5 }).map((_, i) => (
+              <span class={`m-cover m-cv${(i % 6) + 1}`} />
+            ))}
+          </div>
+        </aside>
+
+        <div class={`m-main m-main-rail${variant === "queue" ? " m-main-queue" : ""}`}>
+          <div class="m-pl-head">
+            <span class="m-cover m-pl-cover m-cv3" />
+            <div class="m-pl-title">
+              <span class="m-bar m-bar-lg" style="width:calc(300 * var(--u))" />
+              <div class="m-pl-meta">
+                <span class="m-ava" />
+                <span class="m-bar m-bar-sm" style="width:calc(110 * var(--u))" />
+                <span class="m-dot" />
+                <span class="m-meta-t">24 canciones · 1 h 12 min</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="m-pl-actions">
+            <span class="m-play"><Fragment set:html={iconFilled("play", 22)} /></span>
+            <span class="m-icbtn"><Fragment set:html={icon("shuffle", 20)} /></span>
+            <span class="m-icbtn"><Fragment set:html={icon("more", 20)} /></span>
+            <span class="m-pl-right">
+              <span class="m-icbtn"><Fragment set:html={icon("search", 16)} /></span>
+              <span class="m-order">Orden personalizado</span>
+              <span class="m-icbtn"><Fragment set:html={icon("list", 16)} /></span>
+            </span>
+          </div>
+
+          <div class="m-table">
+            <div class="m-thead">
+              <span>#</span>
+              <span />
+              <span>TÍTULO</span>
+              <span>ÁLBUM</span>
+              <span>FECHA DE ADICIÓN</span>
+              <span class="m-tright"><Fragment set:html={icon("clock", 14)} /></span>
+            </div>
+            {Array.from({ length: TRACKS }).map((_, i) => (
+              <div class={`m-trow${i === 0 ? " m-trow-now" : ""}`}>
+                <span class="m-tnum">{i + 1}</span>
+                <span class={`m-cover m-cov-sm m-cv${(i % 6) + 1}`} />
+                <span class="m-tmain">
+                  <span
+                    class="m-bar"
+                    style={`width:calc(${120 + (i % 4) * 26} * var(--u))`}
+                  />
+                  <span
+                    class="m-bar m-bar-sm"
+                    style={`width:calc(${70 + (i % 3) * 20} * var(--u))`}
+                  />
+                </span>
+                <span class="m-talbum">
+                  <span class="m-bar m-bar-sm" style="width:calc(96 * var(--u))" />
+                </span>
+                <span class="m-tdate">—</span>
+                <span class="m-tlen">{2 + (i % 5)}:{i % 2 ? "47" : "12"}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  {
+    variant === "queue" && (
+      <aside class="m-queue">
+        <div class="m-q-h">
+          <span class="m-q-t">Cola de reproducción</span>
+          <span class="m-icbtn"><Fragment set:html={icon("users", 16)} /></span>
+          <span class="m-icbtn"><Fragment set:html={icon("close", 16)} /></span>
+        </div>
+        <p class="m-q-eyebrow">AHORA SUENA</p>
+        <div class="m-q-now">
+          <span class={`m-cover m-cov-sm m-cv2`} />
+          <span class="m-tmain">
+            <span class="m-bar" style="width:calc(120 * var(--u))" />
+            <span class="m-bar m-bar-sm" style="width:calc(78 * var(--u))" />
+          </span>
+        </div>
+        <p class="m-q-eyebrow">A CONTINUACIÓN</p>
+        {Array.from({ length: QUEUED }).map((_, i) => (
+          <div class="m-q-row">
+            <span class="m-tnum">{i + 1}</span>
+            <span class={`m-cover m-cov-sm m-cv${(i % 6) + 1}`} />
+            <span class="m-tmain">
+              <span class="m-bar" style={`width:calc(${88 + (i % 3) * 18} * var(--u))`} />
+              <span class="m-bar m-bar-sm" style="width:calc(64 * var(--u))" />
+            </span>
+            <span class="m-tlen">3:{i % 2 ? "24" : "08"}</span>
+          </div>
+        ))}
+      </aside>
+    )
+  }
+
+  {
+    variant === "settings" && (
+      <>
+        {/* What is behind the sheet. The real settings is a sheet over the
+            window, and a sheet over nothing reads as a hole: these two
+            glows are what the app's own light leaves under the glass, and
+            they are the only thing that says "there is an app there". */}
+        <div class="m-behind">
+          <span class="m-b-warm" />
+          <span class="m-b-cool" />
+        </div>
+        <div class="m-sheet">
+          <nav class="m-sheet-nav">
+            <h2 class="m-sheet-h">Ajustes</h2>
+            <p class="m-sheet-sub">Audio, cuenta y diagnóstico.</p>
+            <span class="m-navitem">General</span>
+            <span class="m-navitem">Audio</span>
+            <span class="m-navitem">Cuenta</span>
+            <span class="m-navitem m-navitem-on">Personalización</span>
+            <span class="m-navitem">Diagnóstico</span>
+          </nav>
+          <div class="m-sheet-body">
+            <div class="m-card-row">
+              <div>
+                <p class="m-row-t">Opacidad de los menús</p>
+                <p class="m-row-d">Qué tan sólidos se ven los menús.</p>
+              </div>
+              <div class="m-slider">
+                <span class="m-slider-n">55%</span>
+                <span class="m-slider-t"><span class="m-slider-k" /></span>
+                <span class="m-legend" />
+              </div>
+            </div>
+            <div class="m-card-row">
+              <div>
+                <p class="m-row-t">Color de acento</p>
+                <p class="m-row-d">El color que marca las acciones.</p>
+              </div>
+              <div class="m-swatches">
+                <span class="m-sw" style="background:#d7e24a" />
+                <span class="m-sw" style="background:#3dd6c4" />
+                <span class="m-sw" style="background:#7fc4e0" />
+                <span class="m-sw" style="background:#9db4e8" />
+                <span class="m-sw" style="background:#c9a6e0" />
+                <span class="m-sw m-sw-pick" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  {
+    variant !== "settings" && (
+      <div class="m-player">
+        <div class="m-pl-left">
+          <span class={`m-cover m-cov-pl m-cv1`} />
+          <span class="m-tmain">
+            <span class="m-bar" style="width:calc(150 * var(--u))" />
+            <span class="m-bar m-bar-sm" style="width:calc(96 * var(--u))" />
+          </span>
+        </div>
+        <div class="m-pl-mid">
+          <div class="m-transport">
+            <span class="m-icbtn"><Fragment set:html={icon("shuffle", 17)} /></span>
+            <span class="m-icbtn"><Fragment set:html={icon("prev", 17)} /></span>
+            <span class="m-playbtn"><Fragment set:html={iconFilled("pause", 16)} /></span>
+            <span class="m-icbtn"><Fragment set:html={icon("next", 17)} /></span>
+            <span class="m-icbtn"><Fragment set:html={icon("repeat", 17)} /></span>
+          </div>
+          <div class="m-progress">
+            <span class="m-time">0:34</span>
+            <span class="m-bar-t"><span class="m-bar-k" /></span>
+            <span class="m-time">3:55</span>
+          </div>
+        </div>
+        <div class="m-pl-right">
+          <span class="m-icbtn m-on"><Fragment set:html={icon("queue", 17)} /></span>
+          <span class="m-icbtn"><Fragment set:html={icon("mic", 17)} /></span>
+          <span class="m-icbtn"><Fragment set:html={icon("volume", 17)} /></span>
+          <span class="m-bar-t m-vol"><span class="m-bar-k" /></span>
+        </div>
+      </div>
+    )
+  }
+</div>
+
+<style is:global>
+  /* The unit: a hundredth of the design width, so every size below is a
+     multiple of it and the drawing scales with the window that holds it. */
+  .m {
+    --u: calc(100cqw / 1440);
+    --ground: #0b0b0f;
+    --night: #15151b;
+    --eclipse: #24242c;
+    --ink: #edeae3;
+    --mute: #9a97a0;
+    --faint: #8c8992;
+    --accent: #ff5a36;
+    --on-accent: #0b0b0f;
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    background:
+      radial-gradient(120% 90% at 50% -20%, #1a1a22 0%, rgb(11 11 15 / 0%) 60%),
+      var(--ground);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: calc(13 * var(--u));
+    line-height: 1.25;
+    -webkit-font-smoothing: antialiased;
+  }
+  .m * {
+    box-sizing: border-box;
+    margin: 0;
+  }
+  .m svg {
+    flex: none;
+    display: block;
+  }
+
+  /* The glass: translucency and the lift, without the blur. */
+  .m-top,
+  .m-panel,
+  .m-rail,
+  .m-queue,
+  .m-player {
+    position: absolute;
+    background: rgb(21 21 27 / 0.82);
+    box-shadow: 0 24px 48px -12px rgb(0 0 0 / 0.6);
+    border-radius: calc(20 * var(--u));
+  }
+
+  /* The bar on top: home, library, search, the window's own buttons. */
+  .m-top {
+    top: calc(20 * var(--u));
+    left: calc(20 * var(--u));
+    right: calc(20 * var(--u));
+    height: calc(64 * var(--u));
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    padding: 0 calc(16 * var(--u));
+    z-index: 3;
+  }
+  .m-top-l,
+  .m-top-r {
+    display: flex;
+    align-items: center;
+    gap: calc(10 * var(--u));
+  }
+  .m-top-r {
+    justify-content: flex-end;
+    gap: calc(4 * var(--u));
+  }
+  .m-home {
+    display: grid;
+    place-items: center;
+    width: calc(40 * var(--u));
+    height: calc(40 * var(--u));
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+  .m-div {
+    width: calc(1 * var(--u));
+    height: calc(24 * var(--u));
+    background: rgb(255 255 255 / 0.12);
+  }
+  .m-pill {
+    display: flex;
+    align-items: center;
+    gap: calc(8 * var(--u));
+    height: calc(36 * var(--u));
+    padding: 0 calc(12 * var(--u));
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.07);
+    color: var(--ink);
+    font-size: calc(13.5 * var(--u));
+    font-weight: 500;
+  }
+  .m-search {
+    display: flex;
+    align-items: center;
+    gap: calc(10 * var(--u));
+    width: calc(420 * var(--u));
+    height: calc(40 * var(--u));
+    padding: 0 calc(16 * var(--u));
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.07);
+    color: var(--faint);
+    font-size: calc(13.5 * var(--u));
+  }
+  .m-icbtn {
+    display: grid;
+    place-items: center;
+    width: calc(36 * var(--u));
+    height: calc(36 * var(--u));
+    border-radius: 999px;
+    color: var(--mute);
+  }
+  .m-on {
+    background: rgb(255 255 255 / 0.1);
+    color: var(--ink);
+  }
+  .m-win {
+    display: grid;
+    place-items: center;
+    width: calc(28 * var(--u));
+    height: calc(28 * var(--u));
+    color: var(--mute);
+  }
+
+  /* The library, in its wide shape. */
+  .m-panel {
+    left: calc(20 * var(--u));
+    top: calc(104 * var(--u));
+    bottom: calc(144 * var(--u));
+    width: calc(240 * var(--u));
+    padding: calc(16 * var(--u)) calc(8 * var(--u)) 0;
+    z-index: 2;
+  }
+  .m-panel-h {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 calc(8 * var(--u));
+  }
+  .m-panel-t {
+    font-size: calc(15 * var(--u));
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .m-panel-c {
+    display: flex;
+    align-items: center;
+    gap: calc(2 * var(--u));
+    margin-top: calc(10 * var(--u));
+    padding: 0 calc(4 * var(--u));
+  }
+  .m-panel-c .m-icbtn:first-child {
+    margin-right: auto;
+  }
+  .m-tiles {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: calc(4 * var(--u));
+    margin-top: calc(14 * var(--u));
+  }
+  .m-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: calc(6 * var(--u));
+    padding: calc(4 * var(--u));
+  }
+  .m-cap {
+    font-size: calc(11.5 * var(--u));
+    line-height: calc(14 * var(--u));
+    text-align: center;
+    color: var(--ink);
+  }
+
+  /* The riel: the same library, one click narrower. */
+  .m-rail {
+    left: calc(20 * var(--u));
+    top: calc(104 * var(--u));
+    bottom: calc(144 * var(--u));
+    width: calc(72 * var(--u));
+    padding: calc(12 * var(--u)) 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: calc(14 * var(--u));
+    z-index: 2;
+  }
+  .m-rail-l {
+    display: flex;
+    flex-direction: column;
+    gap: calc(10 * var(--u));
+    align-items: center;
+  }
+  .m-rail-l .m-cover {
+    width: calc(44 * var(--u));
+    height: calc(44 * var(--u));
+  }
+
+  /* Covers: gradients that belong to nobody. */
+  .m-cover {
+    position: relative;
+    display: block;
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: calc(10 * var(--u));
+    background: var(--eclipse);
+    overflow: hidden;
+  }
+  .m-cover-liked {
+    background: none;
+  }
+  .m-liked {
+    width: 100%;
+    height: 100%;
+  }
+  .m-cv1 {
+    background: linear-gradient(140deg, #3a3a48 0%, #1a1a21 58%, #101015 100%);
+  }
+  .m-cv2 {
+    background: linear-gradient(140deg, #2f3a40 0%, #171c20 58%, #0f1316 100%);
+  }
+  .m-cv3 {
+    background: linear-gradient(140deg, #40332e 0%, #1e1815 58%, #12100e 100%);
+  }
+  .m-cv4 {
+    background: linear-gradient(140deg, #2d3348 0%, #171a24 58%, #101218 100%);
+  }
+  .m-cv5 {
+    background: linear-gradient(140deg, #383042 0%, #1b1723 58%, #110f15 100%);
+  }
+  .m-cv6 {
+    background: linear-gradient(140deg, #23333a 0%, #141b1f 58%, #0e1214 100%);
+  }
+
+  /* A name that is not there: a bar where the word would be. */
+  .m-bar {
+    display: block;
+    height: calc(9 * var(--u));
+    border-radius: calc(4 * var(--u));
+    background: rgb(237 234 227 / 0.22);
+  }
+  .m-bar-sm {
+    height: calc(7 * var(--u));
+    background: rgb(237 234 227 / 0.15);
+  }
+  .m-bar-lg {
+    height: calc(42 * var(--u));
+    border-radius: calc(8 * var(--u));
+    background: rgb(237 234 227 / 0.26);
+  }
+
+  /* The shelf in "Inicio". */
+  .m-main {
+    position: absolute;
+    top: calc(104 * var(--u));
+    bottom: calc(144 * var(--u));
+    z-index: 1;
+  }
+  .m-main-panel {
+    left: calc(284 * var(--u));
+    right: calc(20 * var(--u));
+    padding: calc(4 * var(--u)) calc(8 * var(--u)) 0 0;
+  }
+  .m .m-h1 {
+    font-family: var(--font-display);
+    font-size: calc(32 * var(--u));
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    animation: none;
+  }
+  .m-sub {
+    margin-top: calc(4 * var(--u));
+    color: var(--mute);
+    font-size: calc(13 * var(--u));
+  }
+  .m-shelf {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: calc(26 * var(--u)) calc(24 * var(--u));
+    margin-top: calc(26 * var(--u));
+  }
+  .m-card {
+    display: flex;
+    flex-direction: column;
+    gap: calc(8 * var(--u));
+  }
+  .m-count {
+    color: var(--mute);
+    font-size: calc(12.5 * var(--u));
+  }
+
+  /* A playlist, open. */
+  .m-main-rail {
+    left: calc(116 * var(--u));
+    right: calc(20 * var(--u));
+  }
+  .m-main-queue {
+    right: calc(340 * var(--u));
+  }
+  .m-pl-head {
+    display: flex;
+    align-items: flex-end;
+    gap: calc(40 * var(--u));
+    padding: calc(20 * var(--u)) calc(8 * var(--u)) 0 0;
+  }
+  .m-pl-cover {
+    width: calc(232 * var(--u));
+    height: calc(232 * var(--u));
+    aspect-ratio: auto;
+    border-radius: calc(14 * var(--u));
+    flex: none;
+  }
+  .m-pl-title {
+    padding-bottom: calc(10 * var(--u));
+  }
+  .m-pl-meta {
+    display: flex;
+    align-items: center;
+    gap: calc(10 * var(--u));
+    margin-top: calc(14 * var(--u));
+  }
+  .m-ava {
+    width: calc(24 * var(--u));
+    height: calc(24 * var(--u));
+    border-radius: 999px;
+    background: rgb(255 90 54 / 0.2);
+    flex: none;
+  }
+  .m-dot {
+    width: calc(3 * var(--u));
+    height: calc(3 * var(--u));
+    border-radius: 999px;
+    background: var(--faint);
+  }
+  .m-meta-t {
+    color: var(--mute);
+    font-size: calc(13 * var(--u));
+  }
+  .m-pl-actions {
+    display: flex;
+    align-items: center;
+    gap: calc(14 * var(--u));
+    margin-top: calc(30 * var(--u));
+    padding: 0 calc(8 * var(--u));
+  }
+  .m-play {
+    display: grid;
+    place-items: center;
+    width: calc(56 * var(--u));
+    height: calc(56 * var(--u));
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--on-accent);
+    padding-left: calc(3 * var(--u));
+  }
+  .m-pl-right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: calc(12 * var(--u));
+    color: var(--mute);
+  }
+  .m-order {
+    font-size: calc(13 * var(--u));
+  }
+
+  /* The table of tracks. */
+  .m-table {
+    margin-top: calc(26 * var(--u));
+    padding: 0 calc(8 * var(--u));
+  }
+  .m-thead,
+  .m-trow {
+    display: grid;
+    grid-template-columns: calc(24 * var(--u)) calc(44 * var(--u)) minmax(0, 1fr) 20% 14%
+      calc(48 * var(--u));
+    align-items: center;
+    column-gap: calc(12 * var(--u));
+  }
+  .m-thead {
+    height: calc(40 * var(--u));
+    color: var(--faint);
+    font-size: calc(11.5 * var(--u));
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border-bottom: calc(1 * var(--u)) solid rgb(255 255 255 / 0.08);
+  }
+  .m-trow {
+    height: calc(56 * var(--u));
+    border-bottom: calc(1 * var(--u)) solid rgb(255 255 255 / 0.06);
+  }
+  .m-trow-now {
+    background: rgb(255 255 255 / 0.04);
+  }
+  .m-tnum {
+    color: var(--mute);
+    font-size: calc(12 * var(--u));
+    text-align: right;
+  }
+  .m-cov-sm {
+    width: calc(32 * var(--u));
+    height: calc(32 * var(--u));
+    aspect-ratio: auto;
+    border-radius: calc(6 * var(--u));
+  }
+  .m-tmain {
+    display: flex;
+    flex-direction: column;
+    gap: calc(6 * var(--u));
+    min-width: 0;
+  }
+  .m-talbum {
+    min-width: 0;
+  }
+  .m-tdate {
+    color: var(--faint);
+    font-size: calc(12 * var(--u));
+  }
+  .m-tlen {
+    color: var(--mute);
+    font-size: calc(12 * var(--u));
+    text-align: right;
+  }
+  .m-tright {
+    justify-self: end;
+    color: var(--faint);
+  }
+
+  /* The queue, over what is playing. */
+  .m-queue {
+    right: calc(20 * var(--u));
+    top: calc(104 * var(--u));
+    bottom: calc(144 * var(--u));
+    width: calc(300 * var(--u));
+    padding: calc(20 * var(--u)) calc(16 * var(--u));
+    z-index: 2;
+    overflow: hidden;
+  }
+  .m-q-h {
+    display: flex;
+    align-items: center;
+    gap: calc(8 * var(--u));
+  }
+  .m-q-t {
+    font-size: calc(15 * var(--u));
+    font-weight: 600;
+    margin-right: auto;
+  }
+  .m-q-eyebrow {
+    margin-top: calc(20 * var(--u));
+    color: var(--faint);
+    font-size: calc(11 * var(--u));
+    font-weight: 600;
+    letter-spacing: 0.08em;
+  }
+  .m-q-now {
+    display: flex;
+    align-items: center;
+    gap: calc(12 * var(--u));
+    margin-top: calc(12 * var(--u));
+    padding: calc(8 * var(--u));
+    border-radius: calc(12 * var(--u));
+    background: rgb(255 255 255 / 0.06);
+  }
+  .m-q-row {
+    display: grid;
+    grid-template-columns: calc(20 * var(--u)) calc(36 * var(--u)) minmax(0, 1fr) calc(40 * var(--u));
+    align-items: center;
+    column-gap: calc(12 * var(--u));
+    height: calc(52 * var(--u));
+  }
+
+  /* The bar that comes with the music. */
+  .m-player {
+    left: calc(20 * var(--u));
+    right: calc(20 * var(--u));
+    bottom: calc(20 * var(--u));
+    height: calc(104 * var(--u));
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: calc(20 * var(--u));
+    padding: 0 calc(20 * var(--u));
+    z-index: 3;
+  }
+  .m-pl-left {
+    display: flex;
+    align-items: center;
+    gap: calc(12 * var(--u));
+    min-width: 0;
+  }
+  .m-cov-pl {
+    width: calc(56 * var(--u));
+    height: calc(56 * var(--u));
+    aspect-ratio: auto;
+    flex: none;
+  }
+  .m-pl-mid {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: calc(10 * var(--u));
+  }
+  .m-transport {
+    display: flex;
+    align-items: center;
+    gap: calc(8 * var(--u));
+  }
+  .m-playbtn {
+    display: grid;
+    place-items: center;
+    width: calc(44 * var(--u));
+    height: calc(44 * var(--u));
+    border-radius: 999px;
+    background: var(--ink);
+    color: var(--ground);
+  }
+  .m-progress {
+    display: flex;
+    align-items: center;
+    gap: calc(10 * var(--u));
+    width: calc(360 * var(--u));
+  }
+  .m-time {
+    color: var(--mute);
+    font-size: calc(12 * var(--u));
+    width: calc(36 * var(--u));
+  }
+  .m-time:last-child {
+    text-align: right;
+  }
+  .m-bar-t {
+    position: relative;
+    flex: 1;
+    height: calc(4 * var(--u));
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.14);
+  }
+  .m-bar-k {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 22%;
+    border-radius: 999px;
+    background: var(--ink);
+  }
+  .m-bar-k::after {
+    content: "";
+    position: absolute;
+    right: calc(-5 * var(--u));
+    top: 50%;
+    translate: 0 -50%;
+    width: calc(10 * var(--u));
+    height: calc(10 * var(--u));
+    border-radius: 999px;
+    background: var(--ink);
+  }
+  .m-pl-right {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: calc(8 * var(--u));
+  }
+  .m-vol {
+    width: calc(90 * var(--u));
+    flex: none;
+  }
+
+  /* What is under the settings sheet: two glows and nothing else. */
+  .m-behind {
+    position: absolute;
+    inset: 0;
+  }
+  .m-behind span {
+    position: absolute;
+    display: block;
+  }
+  .m-b-warm {
+    left: 2%;
+    bottom: 16%;
+    width: 34%;
+    height: 42%;
+    background: radial-gradient(closest-side, rgb(255 90 54 / 0.5), rgb(255 90 54 / 0));
+  }
+  .m-b-cool {
+    left: 14%;
+    bottom: 0;
+    width: 30%;
+    height: 38%;
+    background: radial-gradient(closest-side, rgb(122 142 255 / 0.32), rgb(122 142 255 / 0));
+  }
+
+  /* The settings sheet. It is not opaque: the app is behind it, and that is
+     what makes it a sheet and not a hole. */
+  .m-sheet {
+    position: absolute;
+    inset: calc(16 * var(--u));
+    display: grid;
+    grid-template-columns: calc(236 * var(--u)) minmax(0, 1fr);
+    border-radius: calc(20 * var(--u));
+    background: rgb(21 21 27 / 0.88);
+    box-shadow: 0 24px 48px -12px rgb(0 0 0 / 0.6);
+    overflow: hidden;
+    z-index: 4;
+  }
+  .m-sheet-nav {
+    display: flex;
+    flex-direction: column;
+    gap: calc(4 * var(--u));
+    padding: calc(24 * var(--u)) calc(16 * var(--u));
+    border-right: calc(1 * var(--u)) solid rgb(255 255 255 / 0.08);
+  }
+  /* The heading is a heading of the drawing, not of the page: the page's own
+     `.ring h2` is bigger than a title of the app and would swallow the sheet,
+     so the rule is scoped under the drawing to outrank it. */
+  .m .m-sheet-h {
+    font-family: var(--font-display);
+    font-size: calc(19 * var(--u));
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 0;
+    animation: none;
+  }
+  .m-sheet-sub {
+    margin: calc(2 * var(--u)) 0 calc(14 * var(--u));
+    color: var(--mute);
+    font-size: calc(12 * var(--u));
+  }
+  .m-navitem {
+    padding: calc(10 * var(--u)) calc(14 * var(--u));
+    border-radius: 999px;
+    color: var(--body, var(--ink));
+    font-size: calc(13.5 * var(--u));
+    font-weight: 500;
+  }
+  .m-navitem-on {
+    background: rgb(255 255 255 / 0.1);
+    color: var(--ink);
+  }
+  .m-sheet-body {
+    padding: calc(40 * var(--u));
+  }
+  .m-card-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: calc(40 * var(--u));
+    max-width: calc(620 * var(--u));
+    padding: calc(20 * var(--u)) calc(22 * var(--u));
+    margin-bottom: calc(20 * var(--u));
+    border-radius: calc(16 * var(--u));
+    border: calc(1 * var(--u)) solid rgb(255 255 255 / 0.1);
+    background: rgb(255 255 255 / 0.03);
+  }
+  .m-row-t {
+    font-size: calc(13.5 * var(--u));
+    font-weight: 600;
+  }
+  .m-row-d {
+    margin-top: calc(4 * var(--u));
+    color: var(--mute);
+    font-size: calc(12 * var(--u));
+  }
+  .m-slider {
+    display: flex;
+    align-items: center;
+    gap: calc(12 * var(--u));
+  }
+  .m-slider-n {
+    color: var(--mute);
+    font-size: calc(12 * var(--u));
+  }
+  .m-slider-t {
+    position: relative;
+    width: calc(220 * var(--u));
+    height: calc(4 * var(--u));
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.16);
+  }
+  .m-slider-k {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 55%;
+    border-radius: 999px;
+    background: var(--ink);
+  }
+  .m-slider-k::after {
+    content: "";
+    position: absolute;
+    right: calc(-6 * var(--u));
+    top: 50%;
+    translate: 0 -50%;
+    width: calc(12 * var(--u));
+    height: calc(12 * var(--u));
+    border-radius: 999px;
+    background: var(--accent);
+  }
+  .m-legend {
+    width: calc(36 * var(--u));
+    height: calc(26 * var(--u));
+    border-radius: calc(8 * var(--u));
+    border: calc(1 * var(--u)) solid rgb(255 255 255 / 0.16);
+    background: repeating-linear-gradient(
+      45deg,
+      rgb(255 255 255 / 0.12) 0 4px,
+      rgb(0 0 0 / 0) 4px 8px
+    );
+  }
+  .m-swatches {
+    display: flex;
+    align-items: center;
+    gap: calc(10 * var(--u));
+  }
+  .m-sw {
+    width: calc(28 * var(--u));
+    height: calc(28 * var(--u));
+    border-radius: 999px;
+  }
+  .m-sw-pick {
+    background: conic-gradient(
+      #ff5a36,
+      #f5b83d,
+      #3dd6c4,
+      #7fc4e0,
+      #9db4e8,
+      #c9a6e0,
+      #ff5a36
+    );
+    box-shadow: inset 0 0 0 calc(3 * var(--u)) rgb(21 21 27 / 0.9);
+  }
+</style>
