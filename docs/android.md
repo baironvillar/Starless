@@ -372,13 +372,18 @@ Lo que dice el código de `cpal 0.16.0` (`src/host/aaudio/`):
 
 Lo que no se sabe y hay que medir:
 
-- **El cambio de ruta.** En Android, conectar o desconectar auriculares
-  Bluetooth puede desconectar el stream de AAudio. `cpal` lo reporta por el
-  callback de error; `rodio` lo loguea y el stream queda muerto. El watchdog de
-  `playback.rs:378` ve que la posición no avanza y abre un player nuevo, pero
-  `voice.rs:321` publica la salida **una sola vez** (`OUTPUT.set` sobre el
-  `OnceLock` de `voice.rs:51`): el sink nuevo no reemplaza el mixer que usa la voz del DJ. Es
-  así también en Windows; en Android se vuelve el caso común.
+- **El cambio de ruta. Medido:** en un Galaxy S22 bastó con apagar la
+  pantalla para que AAudio cerrara el stream ("The requested device is no
+  longer available"). El sink se queda esperando adentro de `write` a un
+  dispositivo que ya no está, toda carga posterior espera para siempre, y el
+  watchdog lo vio recién a los 25 s —con la pantalla encendida; bloqueada,
+  quizás nunca—. Ahora el callback de error de `voice.rs` levanta
+  `OUTPUT_LOST`, y el watchdog lo lee en la vuelta siguiente (2 s) y abre un
+  player nuevo en la posición donde iba la canción. La salida se
+  **reemplaza** al reabrirse (`OUTPUT` es un `Mutex<Option<_>>`): antes se
+  publicaba una sola vez y la voz del DJ se quedaba con el mixer del stream
+  muerto. Así también en Windows, donde un auricular que se desconecta es el
+  mismo caso.
 - **El segundo plano.** Android suspende un proceso en segundo plano salvo que
   tenga un servicio en primer plano de tipo `mediaPlayback`, con su
   notificación. Sin eso, la música se corta a los pocos minutos de bloquear la

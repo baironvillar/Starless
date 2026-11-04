@@ -9,6 +9,7 @@
  *   bun run logo          writes public/starless*.svg (and site/public), and every app icon
  *   bun run logo:icons    just the app icons
  *   bun run logo:invert   the development mark (light plate), into icons-dev/
+ *   bun run logo:android  the Android launcher icon, as adaptive layers, into gen/android
  *
  * Why this file exists instead of a checked-in PNG: an icon nobody can regenerate
  * is an icon nobody can change. The approved artwork lives in `brand-kit/`; this
@@ -554,6 +555,52 @@ function renderIcon(size: number, dev: boolean): Uint8Array[] {
   return canvas.rows();
 }
 
+/**
+ * Android's icon, in the two layers an adaptive icon is made of.
+ *
+ * **Android cuts the shape, not the icon.** Every launcher masks the icon with
+ * its own outline —a circle, a squircle, a teardrop— so the rounded plate of
+ * `renderIcon` would end up as a plate inside a mask, a frame within a frame.
+ * The background is the plate's inside, to the edges: the Night ground, the
+ * blurred grey light and the sheen. The foreground is the glass mark alone,
+ * inside the 66dp circle of the 108dp canvas that no mask ever cuts.
+ */
+function renderAndroidBackground(size: number): Uint8Array[] {
+  const canvas = new Canvas(size);
+  const units: Place = { scale: size / 1024, offset: 0 };
+  const square = roundRect(0, 0, 1024, 1024, 0);
+  canvas.fill(square, solid("#101015"), units);
+  blurred(canvas, 90 * units.scale, (haze) => {
+    haze.fill(disc(300, 320, 260), solid("#A8A5AD", 0.55), units);
+    haze.fill(disc(760, 760, 220), solid("#DAD7DD", 0.32), units);
+    haze.fill(disc(740, 260, 170), solid("#55535C", 0.7), units);
+  });
+  canvas.fill(square, solid("#FFFFFF", 0.06), units);
+  const sheen: Stop[] = [
+    [0, "#FFFFFF", 0.16],
+    [0.5, "#FFFFFF", 0],
+  ];
+  canvas.fill(roundRect(0, 0, 1024, 512, 0), gradient([0, 0, 1024, 512], sheen, "y"), units);
+  return canvas.rows();
+}
+
+function renderAndroidForeground(size: number): Uint8Array[] {
+  const canvas = new Canvas(size);
+  // The ring is 96 units across; 64 of the 108dp keeps it inside the safe circle.
+  const scale = (size * (64 / 108)) / 100;
+  paintGlass(canvas, { scale, offset: (size - 100 * scale) / 2 });
+  return canvas.rows();
+}
+
+/** The densities Android asks for, and the size of a 108dp layer at each. */
+const ANDROID_DENSITIES: [string, number][] = [
+  ["mdpi", 1],
+  ["hdpi", 1.5],
+  ["xhdpi", 2],
+  ["xxhdpi", 3],
+  ["xxxhdpi", 4],
+];
+
 // ---------------------------------------------------------------------------
 // PNG
 // ---------------------------------------------------------------------------
@@ -816,6 +863,40 @@ const PNG_JOBS: [string, number][] = [
 ];
 
 const only = process.argv[2];
+
+if (only === "--android") {
+  const res = join(ROOT, "src-tauri", "gen", "android", "app", "src", "main", "res");
+  const adaptive = `<?xml version="1.0" encoding="utf-8"?>
+<!-- Written by scripts/logo.ts (bun run logo:android). -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@mipmap/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+</adaptive-icon>
+`;
+  mkdirSync(join(res, "mipmap-anydpi-v26"), { recursive: true });
+  writeFileSync(join(res, "mipmap-anydpi-v26", "ic_launcher.xml"), adaptive, "utf8");
+  writeFileSync(join(res, "mipmap-anydpi-v26", "ic_launcher_round.xml"), adaptive, "utf8");
+  for (const [density, factor] of ANDROID_DENSITIES) {
+    const dir = join(res, `mipmap-${density}`);
+    mkdirSync(dir, { recursive: true });
+    const layer = Math.round(108 * factor);
+    writeFileSync(
+      join(dir, "ic_launcher_background.png"),
+      encodePng(renderAndroidBackground(layer), layer),
+    );
+    writeFileSync(
+      join(dir, "ic_launcher_foreground.png"),
+      encodePng(renderAndroidForeground(layer), layer),
+    );
+    // What a launcher without adaptive icons shows: the whole plate, 48dp.
+    const legacy = Math.round(48 * factor);
+    const plate = encodePng(renderIcon(legacy, false), legacy);
+    writeFileSync(join(dir, "ic_launcher.png"), plate);
+    writeFileSync(join(dir, "ic_launcher_round.png"), plate);
+  }
+  console.log(`Android: ${ANDROID_DENSITIES.length} densidades en ${res}`);
+  process.exit(0);
+}
 // Write next door rather than on top. Overwriting `icons/` would be the worst
 // version of this idea: a stray run would leave the next release carrying the
 // development mark, and nothing about that is visible until someone installs it.

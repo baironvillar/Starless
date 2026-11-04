@@ -21,7 +21,7 @@
 //! puntero a función, y lo que se le pasa puede ser un sink propio.
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use cpal::traits::{DeviceTrait, HostTrait};
@@ -48,7 +48,36 @@ struct Output {
     mixer: rodio::mixer::Mixer,
 }
 
-static OUTPUT: OnceLock<Output> = OnceLock::new();
+/// **Se reemplaza, no se fija una vez.** Un stream que se muere —Android lo
+/// cierra cuando cambia la ruta del audio— se vuelve a abrir con otro mixer, y
+/// una voz que se quedara con el primero hablaría en un stream que nadie oye.
+static OUTPUT: Mutex<Option<Output>> = Mutex::new(None);
+
+fn output_mixer() -> Option<rodio::mixer::Mixer> {
+    match OUTPUT.lock() {
+        Ok(guard) => guard.as_ref().map(|o| o.mixer.clone()),
+        Err(poisoned) => poisoned.into_inner().as_ref().map(|o| o.mixer.clone()),
+    }
+}
+
+/// El dispositivo de salida se fue de abajo de un stream abierto.
+///
+/// **El sink no se entera solo.** `write` espera a que el dispositivo tome el
+/// audio de la cola, y un dispositivo que ya no está no lo toma nunca: el hilo
+/// del player se queda adentro de `write`, toda carga posterior espera para
+/// siempre, y el watchdog lo ve veinticinco segundos después —si el teléfono
+/// está despierto para correrlo—. Android cierra el stream cuando cambia la
+/// ruta del audio (en un Galaxy S22 bastó con apagar la pantalla: "The
+/// requested device is no longer available"), así que esto es lo primero que
+/// lee el watchdog. Lo baja el sink nuevo al abrirse.
+pub static OUTPUT_LOST: AtomicBool = AtomicBool::new(false);
+
+fn on_stream_error(error: cpal::StreamError) {
+    log::error!("el stream de audio falló: {error}");
+    if matches!(error, cpal::StreamError::DeviceNotAvailable) {
+        OUTPUT_LOST.store(true, Ordering::SeqCst);
+    }
+}
 
 /// Esperar a que exista la salida de audio.
 ///
@@ -57,7 +86,7 @@ static OUTPUT: OnceLock<Output> = OnceLock::new();
 pub fn wait_for_mixer(timeout: Duration) -> bool {
     let deadline = std::time::Instant::now() + timeout;
     while std::time::Instant::now() < deadline {
-        if OUTPUT.get().is_some() {
+        if output_mixer().is_some() {
             return true;
         }
         std::thread::sleep(Duration::from_millis(50));
@@ -295,6 +324,7 @@ fn open(device: Option<String>, format: AudioFormat) -> StarlessSink {
         .with_device(cpal_device.clone())
         .with_config(&config.config())
         .with_sample_format(sample_format)
+        .with_error_callback(on_stream_error as fn(cpal::StreamError))
         .open_stream()
     {
         Ok(stream) => stream,
@@ -303,7 +333,10 @@ fn open(device: Option<String>, format: AudioFormat) -> StarlessSink {
             // es lo que hace rodio cuando no le dicen otra cosa.
             log::warn!("el stream no se pudo abrir con la configuración elegida: {e}");
             match rodio::OutputStreamBuilder::from_device(cpal_device) {
-                Ok(builder) => match builder.open_stream_or_fallback() {
+                Ok(builder) => match builder
+                    .with_error_callback(on_stream_error as fn(cpal::StreamError))
+                    .open_stream_or_fallback()
+                {
                     Ok(stream) => stream,
                     Err(e) => device_failed(&e.to_string()),
                 },
@@ -318,9 +351,11 @@ fn open(device: Option<String>, format: AudioFormat) -> StarlessSink {
     // sobre el mismo mixer.
     let mixer = stream.mixer().clone();
     let decks = crate::crossfade::Decks::open(mixer.clone());
-    if OUTPUT.set(Output { mixer }).is_err() {
-        log::warn!("la salida de audio ya estaba publicada; se queda la primera");
+    match OUTPUT.lock() {
+        Ok(mut guard) => *guard = Some(Output { mixer }),
+        Err(poisoned) => *poisoned.into_inner() = Some(Output { mixer }),
     }
+    OUTPUT_LOST.store(false, Ordering::SeqCst);
 
     StarlessSink {
         decks,
@@ -525,7 +560,7 @@ fn varint(out: &mut Vec<u8>, mut value: u64) {
 /// música— y con el volumen del usuario: mutear la calla.
 pub fn speak(audio: &[u8], stop: Arc<AtomicBool>) -> Result<Voice, String> {
     let (samples, rate, channels) = decode(audio)?;
-    let Some(output) = OUTPUT.get() else {
+    let Some(mixer) = output_mixer() else {
         log::error!("la voz del DJ no se pudo poner: no hay mixer de audio");
         return Err("no_audio_device".to_string());
     };
@@ -551,7 +586,7 @@ pub fn speak(audio: &[u8], stop: Arc<AtomicBool>) -> Result<Voice, String> {
         samples.len()
     );
 
-    output.mixer.add(VoiceSource {
+    mixer.add(VoiceSource {
         samples: samples.into_iter(),
         channels,
         rate,

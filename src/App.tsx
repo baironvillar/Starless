@@ -24,6 +24,7 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { TopBar } from "./components/TopBar";
 import { TrackList } from "./components/TrackList";
 import { UpdateAlert } from "./components/UpdateAlert";
+import { useBackRoot } from "./lib/back";
 import { type Lang, type StringKey, strings } from "./lib/i18n";
 import { SPRING } from "./lib/motion";
 import {
@@ -2330,6 +2331,21 @@ export default function App() {
     },
     [leaveResults],
   );
+
+  /**
+   * The phone's back button, once nothing is open on top of the page: the
+   * artist or album, the search's results, the playlist back to the library
+   * list, another tab back to Home. Home is where the app starts, and there
+   * the button sends the app behind the others (`lib/back.ts`).
+   */
+  useBackRoot(() => {
+    if (detail) setDetail(null);
+    else if (mobileTab === "navSearch" && showResults) leaveResults();
+    else if (mobileTab === "navLibrary" && !libraryList) setLibraryList(true);
+    else if (mobileTab !== "navHome") onSelectTab("navHome");
+    else return false;
+    return true;
+  });
 
   const onCycleRepeat = useCallback(() => {
     setRepeat((mode) => (mode === "off" ? "all" : mode === "all" ? "one" : "off"));
