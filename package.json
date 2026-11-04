@@ -18,6 +18,7 @@
     "logo": "bun run scripts/logo.ts",
     "logo:icons": "bun run scripts/logo.ts --icons",
     "logo:invert": "bun run scripts/logo.ts --invert",
+    "logo:android": "bun run scripts/logo.ts --android",
     "typecheck": "tsc --noEmit && tsc --noEmit -p relay",
     "relay:test": "bun test relay",
     "test": "bun test",

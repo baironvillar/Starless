@@ -412,7 +412,7 @@ pub fn watch(app: AppHandle) {
             {
                 forced_done = true;
                 log::warn!("[audio_stalled] STARLESS_STALL_TEST: simulando un player trabado");
-                recover_from_stall(&app, "prueba manual (STARLESS_STALL_TEST)");
+                recover_from_stall(&app, "prueba manual (STARLESS_STALL_TEST)", 0);
                 continue;
             }
 
@@ -426,12 +426,27 @@ pub fn watch(app: AppHandle) {
 
             let status = state.status();
 
+            // The device went away under the stream (`voice::OUTPUT_LOST`): no
+            // need to wait for the position to freeze, the stream said so. The
+            // song goes on from where it was — it did not stall, it was cut.
+            // While paused the flag waits: nothing writes to the dead stream
+            // until something plays, and recovering now would start the song.
+            if (status.playing || status.loading)
+                && crate::voice::OUTPUT_LOST.swap(false, Ordering::SeqCst)
+            {
+                let reason = "el dispositivo de audio se desconectó";
+                recover_from_stall(&app, reason, status.position_ms);
+                last_position = None;
+                last_change = now;
+                continue;
+            }
+
             if status.playing {
                 match last_position {
                     // The position did not move since the last look.
                     Some(previous) if previous == status.position_ms => {
                         if now.duration_since(last_change) > STALL_AFTER {
-                            recover_from_stall(&app, "la posición no avanza");
+                            recover_from_stall(&app, "la posición no avanza", 0);
                             last_change = now;
                         }
                     }
@@ -449,7 +464,7 @@ pub fn watch(app: AppHandle) {
                     .pending_ms()
                     .is_some_and(|ms| ms > LOAD_TIMEOUT.as_millis() as u128)
             {
-                recover_from_stall(&app, "la carga no terminó");
+                recover_from_stall(&app, "la carga no terminó", 0);
             }
 
             last_position = None;
@@ -487,7 +502,7 @@ fn forced_stall_requested() -> bool {
 ///    device, and the only thing that makes it quiet is having nothing left
 ///    to fetch. A session that is gone leaves it with silence.
 /// 3. A new player is built on the new session, and the track goes back on.
-fn recover_from_stall(app: &AppHandle, reason: &str) {
+fn recover_from_stall(app: &AppHandle, reason: &str, resume_ms: u32) {
     let Some(state) = app.try_state::<PlaybackState>() else {
         return;
     };
@@ -533,14 +548,14 @@ fn recover_from_stall(app: &AppHandle, reason: &str) {
 
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        rebuild_after_stall(&app);
+        rebuild_after_stall(&app, resume_ms);
     });
 }
 
 /// Put the player back together after it stopped answering.
 ///
 /// Blocking: it waits for the handshake. It runs on its own thread.
-fn rebuild_after_stall(app: &AppHandle) {
+fn rebuild_after_stall(app: &AppHandle, resume_ms: u32) {
     let Some(state) = app.try_state::<PlaybackState>() else {
         return;
     };
@@ -579,11 +594,12 @@ fn rebuild_after_stall(app: &AppHandle) {
         return;
     }
 
-    // The track that was playing goes back on, from the beginning: it stopped
-    // in the middle and there is no position to come back to.
+    // The track that was playing goes back on: from the beginning after a
+    // stall, which stopped in the middle with no position to trust, and from
+    // where it was when the device was cut (`resume_ms`).
     let status = state.status();
     if let Some(track_id) = status.track_id
-        && let Err(error) = play(&state, &track_id, 0, status.real_duration_ms)
+        && let Err(error) = play(&state, &track_id, resume_ms, status.real_duration_ms)
     {
         log::error!("[audio_stalled] no se pudo volver a cargar la pista: {error}");
         state.mutate(|s| s.error = Some("audio_device_failed".into()));

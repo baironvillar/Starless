@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion, useDragControls } from "motion/react";
 import {
   type ReactNode,
   type Ref,
@@ -9,7 +9,9 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { SPRING } from "../lib/motion";
+import { useBack } from "../lib/back";
+import { SPRING, SPRING_SHEET } from "../lib/motion";
+import { isMobile } from "../lib/version";
 
 type MenuPanelProps = {
   open: boolean;
@@ -30,7 +32,12 @@ type MenuPanelProps = {
   onHover?: () => void;
   /** The pointer left the panel. */
   onUnhover?: () => void;
+  /** What the menu is about, at the top of the phone's sheet. The desktop popover has the row beside it. */
+  header?: ReactNode;
 };
+
+/** On the phone a menu is a sheet rising from the bottom, not a popover (DESIGN.md, "The phone"). */
+const SHEET = isMobile();
 
 /**
  * One menu, floating over the app, for every menu in it.
@@ -71,6 +78,7 @@ export function MenuPanel({
   placement = "below",
   onHover,
   onUnhover,
+  header,
 }: MenuPanelProps) {
   const menu = useRef<HTMLDivElement>(null);
   const [at, setAt] = useState<{ top: number; left: number } | null>(null);
@@ -87,7 +95,7 @@ export function MenuPanel({
    * there is no room, for the same reason.
    */
   useEffect(() => {
-    if (!open) {
+    if (!open || SHEET) {
       setAt(null);
       return;
     }
@@ -188,6 +196,19 @@ export function MenuPanel({
     };
   }, [open, anchor]);
 
+  if (SHEET && placement === "below") {
+    return createPortal(
+      <AnimatePresence>
+        {open && (
+          <Sheet label={label} header={header} onClose={() => closeRef.current()}>
+            {children}
+          </Sheet>
+        )}
+      </AnimatePresence>,
+      document.body,
+    );
+  }
+
   return createPortal(
     <AnimatePresence>
       {open && at && (
@@ -232,6 +253,87 @@ export function MenuPanel({
       )}
     </AnimatePresence>,
     document.body,
+  );
+}
+
+/**
+ * The phone's menu: a sheet of glass rising from the bottom, the thing it is
+ * about at its top, and rows a finger can hit.
+ *
+ * **Two ways out, as the popover has**: a tap on the shade outside it, and
+ * dragging it down. The drag starts on the top strip only —the handle and the
+ * header— because the playlist picker inside it scrolls, and a sheet that
+ * moved with that list would close every time somebody scrolled up.
+ *
+ * It keeps `data-menu-panel` and the stopped click for the same reasons the
+ * popover does: the outside-press check reads the mark, and the sheet is still
+ * a React child of the row that opened it.
+ */
+function Sheet({
+  label,
+  header,
+  onClose,
+  children,
+}: {
+  label: string;
+  header?: ReactNode;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const drag = useDragControls();
+  useBack(true, onClose);
+  /**
+   * A sheet opened by holding a row appears under the finger that is still
+   * down, and the click the lift may send would land on the shade and close
+   * it at once. The shade answers only once that finger has had time to lift.
+   */
+  const [openedAt] = useState(() => performance.now());
+  return (
+    <>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.2 }}
+        onClick={(event) => {
+          event.stopPropagation();
+          if (performance.now() - openedAt > 400) onClose();
+        }}
+        // The shade closes the sheet itself, with the guard above; the
+        // window's outside-press check would close it without one.
+        data-menu-panel=""
+        className="fixed inset-0 z-50 bg-black/45"
+        aria-hidden
+      />
+      <motion.div
+        initial={{ y: "110%" }}
+        animate={{ y: 0 }}
+        exit={{ y: "110%" }}
+        transition={SPRING_SHEET}
+        drag="y"
+        dragControls={drag}
+        dragListener={false}
+        dragConstraints={{ top: 0, bottom: 0 }}
+        dragElastic={{ top: 0, bottom: 0.7 }}
+        onDragEnd={(_, info) => {
+          if (info.offset.y > 80 || info.velocity.y > 500) onClose();
+        }}
+        role="listbox"
+        aria-label={label}
+        data-menu-panel=""
+        onClick={(event) => event.stopPropagation()}
+        className="glass-overlay fixed inset-x-3 bottom-[max(12px,env(safe-area-inset-bottom))] z-50 flex max-h-[80vh] flex-col overflow-hidden rounded-card pb-2"
+      >
+        <div onPointerDown={(event) => drag.start(event)} className="shrink-0 touch-none">
+          <span
+            className="mx-auto mt-2.5 mb-1 block h-1 w-10 rounded-pill bg-white/20"
+            aria-hidden
+          />
+          {header && <div className="border-b border-white/8 px-4 pt-2 pb-3">{header}</div>}
+        </div>
+        <div className="min-h-0 overflow-y-auto pt-1">{children}</div>
+      </motion.div>
+    </>
   );
 }
 
@@ -291,10 +393,18 @@ export function MenuItem({
       onClick={onSelect}
       onMouseEnter={onHover}
       onMouseLeave={onUnhover}
-      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] transition-colors duration-150 hover:bg-white/6"
+      className={`flex w-full items-center text-left transition-colors duration-150 hover:bg-white/6 ${
+        SHEET
+          ? "gap-3.5 px-4 py-3.5 text-[15px] active:bg-white/8"
+          : "gap-2.5 px-3 py-2 text-[13px]"
+      }`}
     >
       {icon && (
-        <span className="grid size-4 shrink-0 place-items-center text-ink-muted">{icon}</span>
+        <span
+          className={`grid shrink-0 place-items-center text-ink-muted ${SHEET ? "size-5 [&>svg]:size-[18px]" : "size-4"}`}
+        >
+          {icon}
+        </span>
       )}
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {trailing}

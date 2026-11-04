@@ -162,6 +162,7 @@ export function SmoothSlider({
 
   return (
     <span
+      data-slider
       className={`relative flex h-4 shrink-0 items-center transition-opacity duration-200 ${
         disabled ? "opacity-45" : ""
       } ${className}`}
