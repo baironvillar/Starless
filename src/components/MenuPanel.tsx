@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { useBack } from "../lib/back";
 import { SPRING, SPRING_SHEET } from "../lib/motion";
 import { isMobile } from "../lib/version";
 
@@ -257,6 +258,7 @@ function Sheet({
   children: ReactNode;
 }) {
   const drag = useDragControls();
+  useBack(true, onClose);
   /**
    * A sheet opened by holding a row appears under the finger that is still
    * down, and the click the lift may send would land on the shade and close
