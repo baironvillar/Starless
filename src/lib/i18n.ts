@@ -287,6 +287,9 @@ export const strings = {
       "Cuánto se ve tu fondo a través de las barras, la biblioteca, la cola y los accesos. Los menús acompañan desde el 55 %, para que se puedan leer sobre las canciones.",
     surfaceOpacityClear: "Transparente",
     surfaceOpacitySolid: "Sólido",
+    peekHold: "Mantén pulsado para ver",
+    compare: "Comparar",
+    compareDone: "Listo",
     resetCustomisation: "Restablecer la personalización",
     resetCustomisationHint:
       "Devuelve el tema, el color, la opacidad, el fondo y los efectos a como vienen.",
@@ -764,6 +767,9 @@ export const strings = {
       "How much of your background shows through the bars, the library, the queue and the shortcuts. Menus join in from 55%, so they stay readable over your songs.",
     surfaceOpacityClear: "Transparent",
     surfaceOpacitySolid: "Solid",
+    peekHold: "Hold to preview",
+    compare: "Compare",
+    compareDone: "Done",
     resetCustomisation: "Reset customisation",
     resetCustomisationHint:
       "Takes the theme, the colour, the opacity, the background and the effects back to what ships.",

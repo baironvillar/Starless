@@ -1053,7 +1053,7 @@ export type Background = { url: string | null; dim: number; blur: number };
 
 /** Mirrors `settings::BACKGROUND_DIM_MAX` and the defaults beside it. */
 export const BACKGROUND_DIM_MAX = 90;
-const BACKGROUND_DEFAULT: Background = { url: null, dim: 50, blur: 20 };
+export const BACKGROUND_DEFAULT: Background = { url: null, dim: 50, blur: 20 };
 
 /** The same limit `background.rs` keeps, checked here first so a huge pick never crosses. */
 const BACKGROUND_MAX_BYTES = 25 * 1024 * 1024;

@@ -191,6 +191,27 @@ Motion is what separates "designed" from "assembled", and it is one of the three
 rather than one surface among equals: the main content area is cut from it, not
 invented beside it.
 
+**Customisation is judged by looking at the app, so the panel steps aside.** It covers
+nearly the whole window, which turned every choice into a guess. Dragging a slider fades
+the panel out and leaves that one control on its own small glass, on the same pixels,
+with the window changing about 15 times a second; it comes back 80ms after the release.
+A hold-to-preview button does the same for what cannot be dragged. It is a hold and not a
+toggle, because a toggle leaves the panel hidden with nothing that says how to bring it
+back. Only the panel's opacity fades, never its blur.
+
+**A switch is compared, not just previewed.** The hand holding the preview button cannot
+also flip the switch, so each row of a discrete control offers an eye: the panel leaves
+and that control stays on a small glass, to flip as many times as it takes. Done, Escape
+or a click elsewhere ends it. The ordinary switch stays one click.
+
+**An option that was changed offers its way back.** A round arrow appears on its row only
+while the value differs from what ships, so the arrows also say what has been changed.
+The picture has none: it already has its own Remove button.
+
+**The arrow and the eye sit beside the title, out of the flow.** A row has to be the same
+size whether or not it has been changed. Beside the control they took its width, which
+collapsed the hint into a column and pushed a select onto its own line.
+
 What that means concretely:
 
 - **One bordered surface, hairline-separated rows.** A list is a `rounded-card` with
