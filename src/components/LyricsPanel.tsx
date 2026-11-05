@@ -1,9 +1,10 @@
 import { ArrowLeftRight } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { StringKey } from "../lib/i18n";
 import { SPRING } from "../lib/motion";
 import { formatDuration, type Lyrics, seekPlayback } from "../lib/spotify";
+import { isMobile } from "../lib/version";
 
 type LyricsPanelProps = {
   t: Record<StringKey, string>;
@@ -30,6 +31,12 @@ const isBreak = (text: string) => text.trim() === "" || text.trim() === "♪";
 
 /** How long the song may play before its first line for the intro to earn dots. */
 const INTRO_DOTS_MS = 4000;
+
+/** The desktop anchors the heading and the cover and scrolls only the words. */
+const ANCHORED = !isMobile();
+
+/** How long without a pointer, key or wheel before the heading steps back. */
+const IDLE_MS = 3000;
 
 /**
  * Three dots for a stretch with no words. They breathe only while that stretch
@@ -184,6 +191,7 @@ export function LyricsPanel({
   onClose,
 }: LyricsPanelProps) {
   const activeRef = useRef<HTMLButtonElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
 
   /**
    * One key per line, counted by how many times the line already appeared.
@@ -234,12 +242,54 @@ export function LyricsPanel({
     return index;
   })();
 
+  /**
+   * Bring the line being sung to the middle of the words' own box.
+   *
+   * **Not `scrollIntoView` on the desktop.** It scrolls *every* scrollable
+   * ancestor, and an `overflow: hidden` box is still scrollable from script: the
+   * app's root is one, so following the song pushed the whole window up — top bar,
+   * player and all — and left a band of empty ground under the player. Scrolling
+   * the one box that owns the words moves the words and nothing else.
+   */
   useEffect(() => {
     if (activeIndex < 0) return;
-    // `nearest` and not `center`: a line the user has already scrolled to should
-    // not be yanked away because the playhead moved a second.
-    activeRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const line = activeRef.current;
+    const list = listRef.current;
+    if (!line) return;
+    if (!list) {
+      line.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    list.scrollTo({
+      top: line.offsetTop - list.clientHeight / 2 + line.offsetHeight / 2,
+      behavior: "smooth",
+    });
   }, [activeIndex]);
+
+  /**
+   * The heading steps back while the song is playing and nobody touches the
+   * app, so the words are all there is. Any pointer, key or wheel brings it
+   * back at once; a paused song keeps it, because pausing is reaching for it.
+   */
+  const [idle, setIdle] = useState(false);
+  useEffect(() => {
+    if (!ANCHORED || !playing) {
+      setIdle(false);
+      return;
+    }
+    let timer = window.setTimeout(() => setIdle(true), IDLE_MS);
+    const wake = () => {
+      setIdle(false);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setIdle(true), IDLE_MS);
+    };
+    const events = ["pointermove", "pointerdown", "keydown", "wheel"] as const;
+    for (const name of events) window.addEventListener(name, wake, { passive: true });
+    return () => {
+      window.clearTimeout(timer);
+      for (const name of events) window.removeEventListener(name, wake);
+    };
+  }, [playing]);
 
   /**
    * How long the line being sung lasts, and how far into it the song already is.
@@ -267,10 +317,19 @@ export function LyricsPanel({
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={SPRING}
-      className="pb-4"
+      className={ANCHORED ? "flex h-full flex-col" : "pb-4"}
       aria-label={title || t.lyricsTitle}
     >
-      <div className="mb-7 flex items-start justify-between gap-6">
+      {/*
+        On the desktop the panel is exactly as tall as the main surface and only
+        the words scroll, inside their own box: the heading and the cover stay
+        anchored where they are instead of riding up with the lines.
+      */}
+      <div
+        className={`mb-7 flex shrink-0 items-start justify-between gap-6 transition-opacity duration-700 ${
+          idle ? "opacity-0" : ""
+        }`}
+      >
         <div className="min-w-0">
           <p className="text-[11.5px] font-semibold tracking-[0.12em] uppercase text-ink-faint">
             {t.lyricsTitle}
@@ -307,13 +366,17 @@ export function LyricsPanel({
 
       {/*
         The cover and the words side by side, on whichever side the person put
-        it. The cover is sticky so it stays beside the line being sung while the
-        words scroll under the main surface's own scroll, and it is keyed by the
-        picture so a new song fades in rather than swapping under the eye.
+        it. The cover stays put beside the words while they scroll in their own
+        box, and it is keyed by the picture so a new song fades in rather than
+        swapping under the eye.
       */}
-      <div className={`flex items-start gap-10 ${coverSide === "right" ? "flex-row-reverse" : ""}`}>
+      <div
+        className={`flex items-start gap-10 ${ANCHORED ? "min-h-0 flex-1" : ""} ${
+          coverSide === "right" ? "flex-row-reverse" : ""
+        }`}
+      >
         {coverUrl && (
-          <div className="sticky top-0 w-[min(30vw,320px)] shrink-0">
+          <div className="w-[min(30vw,320px)] shrink-0">
             <motion.img
               key={coverUrl}
               src={coverUrl}
@@ -325,7 +388,25 @@ export function LyricsPanel({
             />
           </div>
         )}
-        <div className="min-w-0 flex-1">
+        <div
+          ref={ANCHORED ? listRef : undefined}
+          // The edges fade so a line leaves under the heading instead of being
+          // cut by it. `relative` makes this box the lines' `offsetParent`, which
+          // is what the follow-the-song scroll measures against.
+          className={
+            ANCHORED
+              ? "relative max-h-full min-w-0 flex-1 self-stretch overflow-x-hidden overflow-y-auto pr-3 pb-4"
+              : "min-w-0 flex-1"
+          }
+          style={
+            ANCHORED
+              ? {
+                  maskImage:
+                    "linear-gradient(to bottom, transparent, #000 32px, #000 calc(100% - 48px), transparent)",
+                }
+              : undefined
+          }
+        >
           {loading ? (
             <p className="text-[13px] text-ink-faint">{t.loading}</p>
           ) : error ? (
