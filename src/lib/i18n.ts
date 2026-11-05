@@ -284,7 +284,7 @@ export const strings = {
     settingsNoResults: "Nada coincide con esa búsqueda.",
     surfaceOpacity: "Opacidad de las superficies",
     surfaceOpacityHint:
-      "Cuánto se ve tu fondo a través de las barras, la biblioteca, la cola y los accesos. Los menús acompañan desde el 55 %, para que se puedan leer sobre las canciones.",
+      "Cuánto se ve tu fondo a través de las barras, la biblioteca, la cola, los accesos y los menús. Ajustes y los diálogos no bajan del 55 %, para que se puedan leer sobre las canciones.",
     surfaceOpacityClear: "Transparente",
     surfaceOpacitySolid: "Sólido",
     peekHold: "Mantén pulsado para ver",
@@ -773,7 +773,7 @@ export const strings = {
     settingsNoResults: "Nothing matches that search.",
     surfaceOpacity: "Surface opacity",
     surfaceOpacityHint:
-      "How much of your background shows through the bars, the library, the queue and the shortcuts. Menus join in from 55%, so they stay readable over your songs.",
+      "How much of your background shows through the bars, the library, the queue, the shortcuts and the menus. Settings and dialogs stay at 55% or more, so they stay readable over your songs.",
     surfaceOpacityClear: "Transparent",
     surfaceOpacitySolid: "Solid",
     peekHold: "Hold to preview",
