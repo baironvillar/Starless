@@ -1014,6 +1014,13 @@ en ningún proto ni en ninguna issue:
   —los accesos, las listas de canciones— nunca llega al fondo de la persona. Por
   eso, por encima del 6%, `data-surface-frost` en la raíz le saca la máscara a
   `<main>`. Sin ese atributo, la lista se ve nítida con las barras esmeriladas.
+  **Sin máscara el contenido quedaba cortado en recto** bajo la barra de arriba y
+  sobre el reproductor: el fundido ahora lo pinta `EdgeFade`, dos franjas del suelo
+  dibujado otra vez, hermanas de `<main>` y no padres. **Por la misma razón, nada
+  que contenga una superficie puede entrar con un fundido de opacidad**: un padre
+  por debajo de 1 también es un *backdrop root*, y al volver a Inicio los accesos se
+  veían sin esmerilar hasta que el fundido terminaba. El contenedor sube con `y` y
+  la superficie se desvanece sola, con `arrive`.
   **Lo que flota encima de contenido se queda en `glass`**: la barra de pestañas y
   el minirreproductor del teléfono, la tarjeta de inicio de sesión, los diálogos.
   Pasar uno de esos a `surface` pone las filas que pasan por debajo en los mismos

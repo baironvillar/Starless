@@ -570,6 +570,42 @@
 }
 
 /*
+ * The fade that replaces the mask while the surfaces frost (`EdgeFade` in App.tsx):
+ * a strip of the ground at each edge, opaque at the window's side and clear at the
+ * content's. Without frost the mask is still there, and the strips stay out.
+ */
+.edge-fade {
+  display: none;
+}
+
+:root[data-surface-frost] .edge-fade {
+  display: block;
+}
+
+.edge-fade-top {
+  mask-image: linear-gradient(to bottom, #000, transparent);
+}
+
+.edge-fade-bottom {
+  mask-image: linear-gradient(to top, #000, transparent);
+}
+
+/*
+ * How something frosted arrives. Its own opacity, never a parent's: an ancestor
+ * below opacity 1 is a backdrop root, so a section fading in took the blur away
+ * from every tile in it until the fade ended, and the tiles snapped to frosted.
+ */
+@keyframes arrive {
+  from {
+    opacity: 0;
+  }
+}
+
+@utility arrive {
+  animation: arrive 320ms var(--ease-glass) both;
+}
+
+/*
  * Text that stands on the person's picture, with no surface under it.
  *
  * The grey tokens were measured against Night, and a subtitle under a cover or the

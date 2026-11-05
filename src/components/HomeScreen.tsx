@@ -153,9 +153,15 @@ export function HomeScreen({
         </div>
       )}
 
+      {/*
+        The rise only, and each tile fades in by itself (`arrive`). This section
+        used to fade too, and a parent below opacity 1 is a backdrop root: going
+        Home showed the tiles with the picture sharp through them, and they
+        snapped to frosted when the fade ended.
+      */}
       <motion.section
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
+        initial={{ y: 10 }}
+        animate={{ y: 0 }}
         transition={SPRING}
         aria-label={t.quickAccess}
       >
@@ -517,7 +523,7 @@ function QuickTile({
       onClick={onOpen}
       onPointerEnter={onPrefetch}
       onFocus={onPrefetch}
-      className="flex h-16 items-center gap-3.5 overflow-hidden rounded-[14px] surface-tile pr-4 text-left transition-colors duration-200"
+      className="arrive flex h-16 items-center gap-3.5 overflow-hidden rounded-[14px] surface-tile pr-4 text-left transition-colors duration-200"
     >
       <span className="relative size-16 shrink-0 overflow-hidden">{children}</span>
       <span className="min-w-0">

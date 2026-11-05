@@ -67,7 +67,7 @@ export function NumberedTrackList({
   const grid = `40px ${columns}${trackMenu ? " 40px" : ""}`;
 
   return (
-    <div className="surface-card overflow-hidden rounded-card border border-white/8">
+    <div className="surface-card arrive overflow-hidden rounded-card border border-white/8">
       <div
         className={`grid items-center gap-4 border-b border-white/8 px-4 py-2.5 ${MOBILE ? "hidden" : ""}`}
         style={{ gridTemplateColumns: grid }}

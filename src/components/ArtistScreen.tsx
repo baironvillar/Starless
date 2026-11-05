@@ -56,12 +56,9 @@ export function ArtistScreen({
   const image = coverImage(tracks[0]?.album?.images);
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={SPRING}
-      className="pb-4"
-    >
+    // The rise only: a fading parent takes the blur from the song list inside it
+    // (see `arrive` in index.css), and the list fades in by itself.
+    <motion.div initial={{ y: 10 }} animate={{ y: 0 }} transition={SPRING} className="pb-4">
       <button
         type="button"
         onClick={onBack}
