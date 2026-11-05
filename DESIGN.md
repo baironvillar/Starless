@@ -80,17 +80,19 @@ WCAG AA wants 4.5:1 for body text. `--color-ink-faint` `#8C8992` gives 5.7:1 on 
 
 Settings → General → Theme: dark (the default, and what everything above is written around), light, or the system's. The light theme is the same design with the brand's two ends swapped: **Bone for the ground and Night for the ink**. It is one block in `index.css` under `:root[data-theme="light"]`, plus a handful of channels (`--glass-rgb`, `--line-rgb`, `--bloom-a/b`, `--lift-alpha`, `--glass-lift`, `--glass-saturate`) that the dark theme sets on `:root`.
 
-| Token | Light value | On ground `#E4E1DA` | On glass `#F4F2ED` |
+| Token | Light value | On ground `#D6D1C6` | On glass `#F4F2ED` |
 |---|---|---|---|
-| `--color-ground` | `#E4E1DA` | — | — |
+| `--color-ground` | `#D6D1C6` | — | 1.36:1 |
 | `--color-night` | `#F4F2ED` | — | — |
-| `--color-eclipse` | `#CFCBC2` | — | — |
-| `--color-ink` | `#15151B` | 13.9:1 | 16.3:1 |
-| `--color-ink-muted` | `#4F4C55` | 6.4:1 | 7.5:1 |
-| `--color-ink-faint` | `#5F5C66` | 5.0:1 | 5.9:1 |
-| `--color-live-ink` | `#A3311A` | 5.3:1 | 6.2:1 |
-| `--color-warn-ink` | `#855600` | 4.8:1 | 5.6:1 |
-| `--color-accent-ink` | the accent mixed 55% with black | 4.8 to 7.2:1 for the six presets | higher |
+| `--color-eclipse` | `#C4BFB4` | — | — |
+| `--color-ink` | `#15151B` | 11.9:1 | 16.3:1 |
+| `--color-ink-muted` | `#4F4C55` | 5.5:1 | 7.5:1 |
+| `--color-ink-faint` | `#55525C` | 5.0:1 | 6.8:1 |
+| `--color-live-ink` | `#9A2E18` | 5.0:1 | 6.8:1 |
+| `--color-warn-ink` | `#764C00` | 4.9:1 | 6.7:1 |
+| `--color-accent-ink` | the accent mixed 55% with black | 4.9 to 7.9:1 for the six presets | higher |
+
+**The ground is a step below the panels, like paper under cards.** It was `#E4E1DA`, 1.17:1 from the panels' `#F4F2ED`, and the rail, the queue and the content melted into one white sheet. Three things separate them now, and they work together: the ground is darker and warmer (1.36:1); the surfaces get the sheets' lift toward solid (`--surface-bg` uses `--glass-lift`, so the default 32% draws at 59%) so a panel is lighter than what it sits on; and a light surface carries a soft shadow and a top highlight at every opacity (`--surface-lift`, `--surface-edge`). The dark theme waits for 55% before it draws a lift because an outer shadow under a translucent dark fill reads as dirt; on light it reads as depth. The bloom is a warm paper light (`233 228 218`), not white: white bloom painted the middle of the window white, exactly where the panels needed something darker to stand on.
 
 **`--color-white` is Night in the light theme, on purpose.** About two hundred veils and hairlines are written `bg-white/6` or `border-white/8`, which on black means "a little lighter". On Bone the same intent is "a little darker", so redefining white turns every one of them in one line. The cost is a rule: **a thing that must be white in both themes — a toggle's knob — is written `#fff`, never `white`.**
 
@@ -98,7 +100,7 @@ Settings → General → Theme: dark (the default, and what everything above is 
 
 **A light glass lets colour through.** At 55% over a pink cover, the settings sheet turned pink: a dark tint swallows what is behind it and a light one does not. The light theme keeps the person's alpha as a position on the slider and lifts it toward solid (`--glass-lift`: 55% draws at 73%, 100% stays 100%), and the blur saturates at 130% instead of 180%.
 
-The bloom and the pointer light become white on Bone. Grain is inverted, because white noise on Bone is invisible. The picture's veil is the ground colour, so it darkens in dark and lightens in light — the control says "Atenuar", not "Oscurecer".
+The pointer light becomes white on Bone. Grain is inverted, because white noise on Bone is invisible. The picture's veil is the ground colour, so it darkens in dark and lightens in light — the control says "Atenuar", not "Oscurecer".
 
 The choice is saved in Rust like every other setting, and also cached in localStorage, because the first frame is painted before any `invoke` answers. `system` listens to Windows while it is the choice.
 
