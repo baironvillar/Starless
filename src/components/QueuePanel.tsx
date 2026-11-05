@@ -2,7 +2,7 @@ import { Play, X } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import type { StringKey } from "../lib/i18n";
-import { SPRING_SHEET } from "../lib/motion";
+import { SHEET_EXIT, SPRING_SHEET } from "../lib/motion";
 import {
   type Album,
   type Artist,
@@ -19,6 +19,22 @@ import { TrackMenu } from "./TrackMenu";
 
 /** A piece's place in the cascade the panel arrives in (`.cascade` in index.css). */
 const at = (index: number) => ({ "--i": index }) as React.CSSProperties;
+
+/**
+ * How far the panel travels to leave the frame.
+ *
+ * **The sheet leaves the window; it does not fade in it.** The queue is glass
+ * over the content — the covers behind it are blurred through it, by design.
+ * A panel that fades out while it is still on top of the content shows two
+ * images on the same pixels: its own rows at half opacity over the sharp
+ * content behind. That is the fusing, and the library does not have it
+ * because the rail has a column of its own and nothing is ever behind it.
+ *
+ * So the glass keeps its opacity all the way and travels instead: 240 px of
+ * panel plus the 20 px of `right-5` that hold it off the edge, which puts its
+ * left edge exactly on the edge of the window.
+ */
+const OUT_OF_FRAME = 260;
 
 type QueuePanelProps = {
   t: Record<StringKey, string>;
@@ -183,9 +199,20 @@ export function QueuePanel({
 
   return (
     <motion.aside
-      initial={{ opacity: 0, x: 18 }}
-      animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: 18 }}
+      /*
+       * **The sheet slides; it never fades.** See `OUT_OF_FRAME`: a glass
+       * panel that fades while it is on top of the content puts two images on
+       * the same pixels, and the closing frame shows it. Sliding keeps the
+       * glass opaque all the way, so what is behind it is revealed by the
+       * panel moving away and not by the panel turning into air.
+       *
+       * Embedded —the queue inside the phone's player— has no glass and no
+       * position of its own: it takes the artwork's place inside a surface
+       * that already has them, so it fades.
+       */
+      initial={embedded ? { opacity: 0 } : { x: OUT_OF_FRAME }}
+      animate={embedded ? { opacity: 1 } : { x: 0 }}
+      exit={embedded ? { opacity: 0 } : { x: OUT_OF_FRAME, transition: SHEET_EXIT }}
       transition={SPRING_SHEET}
       role="dialog"
       aria-label={t.queue}
