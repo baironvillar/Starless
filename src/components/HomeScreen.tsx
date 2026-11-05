@@ -286,7 +286,7 @@ export function HomeScreen({
               <div
                 role="tablist"
                 aria-label={t.mostPlayed}
-                className="flex gap-1 rounded-pill bg-white/6 p-1"
+                className="surface-chip flex gap-1 rounded-pill p-1"
               >
                 {(["songs", "artists"] as const).map((key) => (
                   <button
