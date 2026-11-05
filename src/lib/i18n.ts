@@ -447,7 +447,7 @@ export const strings = {
     crashKicker: "La sesión anterior falló",
     crashTitle: "Starless no se cerró bien",
     crashBody:
-      "La app terminó sin cerrarse. Puede ser un fallo puntual o algo de la máquina. Si quieres, mandamos el registro para encontrarlo.",
+      "La app falló y se cerró sola. Si quieres, mandamos el registro para encontrar qué pasó.",
     crashShowDetail: "Ver qué se enviaría",
     crashHideDetail: "Ocultar el detalle",
     crashScrubbed: "Sin datos personales",
@@ -904,7 +904,7 @@ export const strings = {
     crashKicker: "The last session failed",
     crashTitle: "Starless did not close cleanly",
     crashBody:
-      "The app ended without shutting down. It could be a one-off bug or something about the machine. If you want, we can send the log so it can be found.",
+      "The app failed and shut itself down. If you want, we can send the log to find out what happened.",
     crashShowDetail: "See what would be sent",
     crashHideDetail: "Hide the detail",
     crashScrubbed: "No personal data",
