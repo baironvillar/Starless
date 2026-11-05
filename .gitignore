@@ -74,3 +74,7 @@ latest.json
 *.njsproj
 *.sln
 *.sw?
+
+# Python's cache. The measurement scripts in `scripts/` leave it behind when
+# they are imported, and it says nothing about the project.
+__pycache__/

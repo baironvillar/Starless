@@ -44,6 +44,7 @@ import {
   applyEffects,
   applyMenuOpacity,
   applyTheme,
+  contextTracks,
   createPlaylist as createPlaylistCall,
   DEFAULT_TRACK_LIST_PREFS,
   type DjNarration,
@@ -54,13 +55,17 @@ import {
   explain,
   historyKey,
   isDjCard,
+  isRateLimited,
   type JamSession,
   jamAddToQueue,
+  jamCurrent,
   jamJoin,
   jamLeave,
   jamQueue,
+  jamSetQueue,
   jamStart,
   jamStatus,
+  jamTrackUid,
   keys,
   type LibrarySort,
   type LibraryView,
@@ -71,6 +76,7 @@ import {
   MIN_LISTENED_MS,
   menuOpacity,
   onDjVoice,
+  onJamCommand,
   onPlaybackStatus,
   PLAYLIST_STALE_MS,
   type PlaybackStatus,
@@ -84,10 +90,12 @@ import {
   recordPlay,
   SESSION_ERRORS,
   theme as savedTheme,
+  seekPlayback,
   setEffect,
   setErrorLanguage,
   setLibrarySort,
   setLibraryView,
+  setPublishQueue,
   setTrackOrder,
   setTrackView,
   sortPlaylists,
@@ -186,8 +194,34 @@ const RECENT_FOR_RADIO = 5;
  * que alguien se unió es preguntar. Tres segundos es lo que tarda el otro
  * lado en contarse en el jam, y es un viaje por la red que no puede ir cada
  * frame.
+ *
+ * **Cinco, y no tres.** El servicio corta la tanda con un `429` cuando se le
+ * pregunta de más —medido el 31 de octubre de 2026— y con el panel del jam
+ * abierto son dos pedidos por vuelta: la sesión y la cola. Tres segundos son
+ * cuarenta pedidos por minuto; cinco son veinticuatro, que es lo que el
+ * servicio aguanta sin quejarse.
  */
-const JAM_POLL_MS = 3000;
+const JAM_POLL_MS = 5000;
+
+/**
+ * Dónde se guarda el código del jam.
+ *
+ * **El código es lo que identifica la sesión**, y es lo que se comparte con
+ * la otra persona. Guardarlo es lo que hace que el jam sobreviva a un
+ * reinicio de la app: la sesión es del servicio, pero la pertenencia a ella
+ * es de la cuenta, y una app que arranca de cero ya no la ve.
+ */
+const JAM_TOKEN = "starless.jam.token";
+
+/**
+ * Cuánto espera la app cuando el servicio dice que no.
+ *
+ * **El techo de la espera, no la espera.** La espera empieza en
+ * [`JAM_POLL_MS`] y se duplica en cada fallo, hasta este tope: más que esto
+ * y el panel del jam queda viejo a propósito, que es mejor que golpear un
+ * servicio que ya dijo "ahora no".
+ */
+const JAM_POLL_MAX_MS = 60000;
 
 /**
  * How long the pointer has to rest on a tile before its songs are asked for.
@@ -432,6 +466,99 @@ export default function App() {
   const jamPlaying = useRef<string | null>(null);
 
   /**
+   * The id the service gave each song, by URI.
+   *
+   * **The service does not recognize a song by its URI.** It recognizes it by the
+   * `uid` it assigned inside a context, and a song published without that id does
+   * not enter the shared queue —the service resolves it to whatever is playing
+   * instead. The ids come from the service: from the command the other side sends,
+   * and from the shared queue it wrote.
+   *
+   * **It is state and not a ref because the queue has to be published again when
+   * one shows up.** A song that learns its id after it was already queued would
+   * stay out of the shared queue: the published queue is still the one without
+   * ids, and the service does not recognize the song.
+   */
+  const [jamUids, setJamUids] = useState<Record<string, string>>({});
+
+  /**
+   * El jam que hay en la cuenta, si lo hay.
+   *
+   * **El panel lo pregunta y no lo da por hecho.** La puerta que responde si
+   * hay jam es la que no crea ninguno —la otra crea una sesión si no había
+   * ninguna—, así que preguntar es seguro: un jam que ya estaba, aparece, y
+   * una cuenta sin jam sigue sin jam.
+   *
+   * **Pregunta una vez por vez.** El servicio corta la tanda con un `429`
+   * cuando se le pregunta de más, y dos preguntas juntas —la del arranque y la
+   * del panel— son dos. Por eso la última pregunta se recuerda: si fue hace
+   * un rato, no se vuelve a hacer.
+   *
+   * **Un `429` no es un error del jam.** Es el servicio diciendo "no ahora", y
+   * la próxima pregunta lo va a preguntar de nuevo.
+   */
+  const jamAsked = useRef(0);
+  const askJam = useCallback(async () => {
+    if (Date.now() - jamAsked.current < JAM_POLL_MS) return;
+    jamAsked.current = Date.now();
+    try {
+      const found = await jamCurrent();
+      if (found) {
+        setJam(found);
+        return;
+      }
+      /**
+       * **Un jam que ya no aparece se vuelve a entrar con su código.**
+       *
+       * La sesión del jam es del servicio, pero la pertenencia a ella es de
+       * esta cuenta: cuando la app se reinicia, la cuenta sigue en la sesión
+       * pero la app ya no la ve, y el jam se pierde a mitad de una prueba.
+       *
+       * El código es lo que la identifica —es lo que se comparte—, así que
+       * se guarda y se vuelve a entrar con él. Sin esto, cada reinicio
+       * deshacía el jam.
+       */
+      const guardado = window.localStorage.getItem(JAM_TOKEN);
+      if (!guardado) return;
+      try {
+        setJam(await jamJoin(guardado));
+      } catch (e) {
+        // **Un código que ya no sirve no se guarda para siempre.** El jam se
+        // terminó o el código caducó, y volver a intentarlo en cada arranque
+        // es preguntarle al servicio lo mismo una y otra vez.
+        window.localStorage.removeItem(JAM_TOKEN);
+        if (!isRateLimited(e)) setJamError(explain(e));
+      }
+    } catch (e) {
+      // **Un jam que no se puede leer no es un jam.** El panel sigue ofreciendo
+      // empezar uno, que es lo que hay que ofrecer.
+      if (!isRateLimited(e)) setJamError(explain(e));
+    }
+  }, []);
+
+  useEffect(() => {
+    void askJam();
+  }, [askJam]);
+
+  /**
+   * El código del jam queda anotado mientras el jam está.
+   *
+   * **Es lo que permite volver a entrar después de un reinicio.** La sesión
+   * es del servicio; esta cuenta sigue en ella, pero una app que arranca de
+   * cero ya no la ve —y sin el código no hay por dónde volver.
+   */
+  useEffect(() => {
+    const codigo = jam?.join_session_token;
+    if (!codigo) return;
+    window.localStorage.setItem(JAM_TOKEN, codigo);
+  }, [jam?.join_session_token]);
+
+  useEffect(() => {
+    if (!jamOpen) return;
+    void askJam();
+  }, [jamOpen, askJam]);
+
+  /**
    * Open a jam.
    *
    * **The button is what decides that there is a jam.** The service opens one
@@ -481,6 +608,9 @@ export default function App() {
       setJam(null);
       setJamSongs([]);
       jamHead.current = null;
+      // **El código se borra con la salida.** Si se quedara, el siguiente
+      // arranque volvería a entrar a un jam al que la persona dejó.
+      window.localStorage.removeItem(JAM_TOKEN);
     } catch (e) {
       setJamError(explain(e));
     } finally {
@@ -489,11 +619,18 @@ export default function App() {
   }, [jam]);
 
   /**
-   * Put a song in the jam's shared queue.
+   * The Jam as it was on the last render.
    *
-   * **The queue is filled with a command, not with a list write.** The command
-   * goes to the session, the session knows whose device it is, and the song
-   * lands in the queue that both sides read.
+   * **The same reason as the status, and for the same reason.** The queue that
+   * goes into the Jam is published with a timer, and a subscription that is
+   * torn down and set up again on every poll would cancel the timer before it
+   * ever fires.
+   */
+  const jamRef = useRef<JamSession | null>(null);
+  jamRef.current = jam;
+
+  /**
+   * Put a song in the Jam's shared queue, from the panel's button.
    */
   const addToJam = useCallback(
     async (track: Track) => {
@@ -512,16 +649,20 @@ export default function App() {
   );
 
   /**
-   * Whether the screens should offer to put a song in the jam.
+   * Put a song into the Jam's shared queue, without touching the panel.
    *
-   * **The row only exists while there is a jam to put the song in.** A menu
-   * row that is always there and does nothing is worse than no row: it reads
-   * as broken.
+   * **The panel's state belongs to the panel.** It says "adding…" and shows the
+   * failure when the person pressed the button; a song that goes in because the
+   * person played it has no button to press, and a panel that blinks for it
+   * would be lying about what the person asked for.
    */
-  const onAddToJam = useMemo(
-    () => (jam ? (track: Track) => void addToJam(track) : undefined),
-    [jam, addToJam],
-  );
+  const publishToJam = useCallback((track: Track) => {
+    const sesion = jamRef.current;
+    if (!sesion) return;
+    void jamAddToQueue(sesion.session_id, track.id).catch((e) => {
+      console.error("Starless: no se pudo mandar la canción al jam", explain(e));
+    });
+  }, []);
 
   /**
    * How the shelf is ordered and drawn, read once at startup for the same reason the
@@ -911,6 +1052,31 @@ export default function App() {
     },
     [moveTo],
   );
+
+  /**
+   * Un jam nuevo arranca con la cola nueva.
+   *
+   * **La cola local era de antes del jam.** Las canciones que se habían
+   * summed y la lista que se había puesto eran de esta app; a partir de que
+   * hay un jam, la cola es la del jam —la de los dos— y lo que estaba en la
+   * cola local se va. Lo que sigue sonando sigue sonando: esto no toca el
+   * player.
+   *
+   * **Se hace una vez por jam.** El id de la sesión es la marca: mientras sea
+   * el mismo, la cola no se vuelve a tocar —ni cuando la app pregunta cada
+   * pocos segundos si el jam sigue vivo—.
+   */
+  const jamStarted = useRef<string | null>(null);
+  useEffect(() => {
+    const id = jam?.session_id ?? null;
+    if (!id) {
+      jamStarted.current = null;
+      return;
+    }
+    if (jamStarted.current === id) return;
+    jamStarted.current = id;
+    setQueueOverride(null);
+  }, [jam?.session_id, setQueueOverride]);
   /**
    * The DJ, while it is being asked for and while it could not be read.
    *
@@ -998,6 +1164,16 @@ export default function App() {
   // changes when the user presses something is a timer that never earns its keep.
   const [status, setStatus] = useState<PlaybackStatus | null>(null);
   /**
+   * The status as it was on the last render.
+   *
+   * **The listener of the Jam reads it, and the listener does not re-subscribe
+   * for it.** A command that arrives while the state moves —a song ending, a
+   * volume change— would be lost if the subscription were torn down and set up
+   * again on every change of the status.
+   */
+  const statusRef = useRef<PlaybackStatus | null>(null);
+  statusRef.current = status;
+  /**
    * The last track the user asked for.
    *
    * The backend only knows a track id, and the player bar needs a title, an artist
@@ -1072,6 +1248,24 @@ export default function App() {
       unlisten.then((off) => off());
     };
   }, []);
+
+  /**
+   * El jam tiene un solo device sonando.
+   *
+   * **Cuando la otra persona elige su teléfono, esta app se hace a un lado.**
+   * Es lo que el jam pidió: el audio es del otro device, y seguir sonando acá
+   * es exactamente la forma de que los dos oigan canciones distintas.
+   *
+   * **El `toggle` es un pause y no un pause y un play.** Se llama sólo cuando
+   * está sonando, así que lo único que puede hacer es cortar.
+   */
+  const jamActive = status?.jamActive ?? true;
+  const sonando = status?.playing ?? false;
+  useEffect(() => {
+    if (jamActive) return;
+    if (!sonando) return;
+    void togglePlayback().catch(() => {});
+  }, [jamActive, sonando]);
   /**
    * El DJ terminó de hablar: la música arranca.
    *
@@ -1127,6 +1321,37 @@ export default function App() {
   const lyrics = useLyrics(lyricsTrackId);
 
   /**
+   * La pista que está sonando, según el player.
+   *
+   * **La barra y las lyrics tienen que hablar de la misma canción.** La barra
+   * muestra el nombre de la pista que la app pidió y las lyrics piden las de
+   * la que el player dice que está sonando: si son distintas, la pantalla
+   * muestra una canción, el panel muestra otra y el audio suena una tercera.
+   *
+   * **Se sincroniza una vez por canción.** El player puede cambiar de pista
+   * solo —el poll de la cola del jam salta a la cabeza sin preguntar—, y la
+   * barra tiene que enterarse; pero la app también pide canciones, y si el
+   * efecto corrigiera mientras la petición está en camino, dejaría la pista
+   * vieja en pantalla y la nueva sonando.
+   *
+   * **La pista se busca en las listas que ya están en memoria.** No hace falta
+   * un viaje por la red: la canción que está sonando casi siempre está en la
+   * cola de la app o en la cola compartida del jam.
+   */
+  const sincronizado = useRef<string | null>(null);
+  useEffect(() => {
+    const id = status?.trackId;
+    if (!id) return;
+    if (sincronizado.current === id) return;
+    sincronizado.current = id;
+    const pista =
+      visibleTracks.find((t) => t.id === id) ??
+      jamSongs.find((t) => t.id === id) ??
+      queue?.tracks.find((t) => t.id === id);
+    if (pista) setLoadedTrack(pista);
+  }, [status?.trackId, visibleTracks, jamSongs, queue?.tracks]);
+
+  /**
    * Closing the lyrics returns to whatever was on screen.
    *
    * Opening them swaps the main surface; going back to a hardcoded home would be
@@ -1136,7 +1361,7 @@ export default function App() {
   const closeLyrics = useCallback(() => setLyricsOpen(false), []);
 
   const onPlay = useCallback(
-    (track: Track, at?: number) => {
+    (track: Track, at?: number, alJam = true) => {
       // A deliberate choice clears the advance guard. Without this, replaying the
       // same track by hand would still carry the previous "already handled this
       // ending" mark, and the next finish would be silently ignored.
@@ -1157,13 +1382,26 @@ export default function App() {
       // estaba por hablar no habla, y la que hable después es otra.
       intent.current += 1;
       setLoadedTrack(track);
+      /**
+       * **La canción que pone la persona también es del otro lado.**
+       *
+       * En un jam, lo que una persona pone lo ven las dos. La cola compartida
+       * la llena el comando `add_to_queue`, y la canción tiene que ir con el
+       * identificador que le dio el servicio: sin él, el comando entra pero el
+       * servicio lo aplica a la pista que está sonando, y al otro lado le
+       * entra la canción de siempre.
+       *
+       * **Las que llegan del otro lado no se mandan de vuelta.** El comando
+       * cruzaría de ida y vuelta sin parar.
+       */
+      if (alJam) publishToJam(track);
       playTrack(track).catch((e) => {
         // A refusal that only reaches the console is a refusal the user never sees.
         // The bar shows whatever `status.error` says; this is the console copy.
         console.error("Starless: no se pudo reproducir", explain(e));
       });
     },
-    [moveTo, visibleTracks],
+    [moveTo, visibleTracks, publishToJam],
   );
 
   /**
@@ -1313,21 +1551,53 @@ export default function App() {
     const sessionId = jam?.session_id;
     if (!sessionId) return;
     let alive = true;
+    let timer: number | undefined;
+
+    // **La espera crece cuando el servicio dice que no.**
+    //
+    // The jam has no pubsub here, so the app asks —every few seconds— and the
+    // service cuts the batch with a `429` when it is asked too much. A fixed
+    // interval keeps hammering a service that is already saying "not now", and
+    // the panel stays broken long after the service would have answered. So
+    // the wait doubles on every failure and goes back to normal on the first
+    // success.
+    let espera = JAM_POLL_MS;
+
+    // **La sesión se pregunta una vez cada seis vueltas.**
+    //
+    // Los participantes no cambian cada cinco segundos: cambian cuando alguien
+    // entra o se va. Y cada pregunta es un pedido que el servicio cuenta, y la
+    // cuenta es lo que lo hace decir "ahora no" —medido el 31 de octubre de
+    // 2026: con la sesión y la cola en cada vuelta, el servicio cortó la
+    // tanda y hasta el botón de terminar el jam empezó a fallar. La cola es
+    // lo que se mueve; la sesión puede esperar.
+    let vuelta = 0;
 
     const tick = async () => {
+      vuelta += 1;
       try {
-        const [session, queue] = await Promise.all([jamStatus(), jamQueue(sessionId)]);
+        const [session, queue] = await Promise.all([
+          // **La sesión se pregunta una vez cada seis vueltas.** Los
+          // participantes no cambian cada cinco segundos —cambian cuando
+          // alguien entra o se va—, y cada pregunta es un pedido que el
+          // servicio cuenta.
+          vuelta % 6 === 1 ? jamStatus() : Promise.resolve(null),
+          jamQueue(sessionId),
+        ]);
         if (!alive) return;
 
-        if (session.session_id !== sessionId) {
+        // **La sesión cambió: el jam que había ya no está.** El panel lo dice
+        // en vez de adoptar el nuevo, que sería un jam que nadie abrió.
+        if (session && session.session_id !== sessionId) {
           setJam(null);
           setJamSongs([]);
           jamHead.current = null;
           return;
         }
 
-        setJam(session);
+        if (session) setJam(session);
         setJamSongs(queue);
+        espera = JAM_POLL_MS;
 
         // **The head of the shared queue is what the other side put in it.**
         // The first poll only writes it down: the queue starts with a seed
@@ -1344,6 +1614,18 @@ export default function App() {
           const before = jamHead.current;
           jamHead.current = head.id;
           if (before !== null && before !== head.id && head.id !== jamPlaying.current) {
+            /**
+             * **La barra tiene que mostrar la canción que va a sonar.**
+             *
+             * El player es el que manda: si la barra queda con la canción
+             * anterior, la pantalla muestra un nombre y el audio suena otro, y
+             * las lyrics —que salen del estado del player— muestran un
+             * tercero. Medido el 1 de noviembre de 2026: la barra decía "Joven
+             * promesa" con la duración de otra canción, y las lyrics eran de la
+             * que de verdad estaba sonando.
+             */
+            setLoadedTrack(head);
+            asked.current = head.id;
             playTrack(head).catch((e) => {
               console.error("Starless: no se pudo seguir la cola del jam", explain(e));
             });
@@ -1353,14 +1635,16 @@ export default function App() {
         // A jam that cannot be read right now is not a jam that is over: the
         // next poll asks again.
         console.warn("Starless: no se pudo leer el jam", explain(e));
+        espera = Math.min(espera * 2, JAM_POLL_MAX_MS);
+      } finally {
+        if (alive) timer = window.setTimeout(() => void tick(), espera);
       }
     };
 
-    const timer = setInterval(() => void tick(), JAM_POLL_MS);
     void tick();
     return () => {
       alive = false;
-      clearInterval(timer);
+      if (timer !== undefined) window.clearTimeout(timer);
     };
   }, [jam?.session_id]);
 
@@ -1384,6 +1668,101 @@ export default function App() {
     [queueAt, visibleTracks, queueOverride],
   );
 
+  /**
+   * La cola compartida del jam, sin la cabeza.
+   *
+   * **La cabeza es la canción que está sonando.** La cola del jam es la cola
+   * del anfitrión —la que publica su estado de player—, y arranca por la
+   * canción que suena. El panel ya tiene una fila para eso, arriba, en "ahora
+   * suena": repetirla abajo sería ver la misma canción dos veces.
+   *
+   * **La cabeza sólo se saca si es la que suena de verdad.** Si el otro lado
+   * está sonando otra cosa, la cabeza es una canción más y se queda.
+   */
+  const jamNext = useMemo(() => {
+    if (!jamSongs.length) return [];
+    const head = jamSongs[0];
+    const current = status?.trackId ?? loadedTrack?.id ?? null;
+    return head && head.id === current ? jamSongs.slice(1) : jamSongs;
+  }, [jamSongs, status?.trackId, loadedTrack?.id]);
+
+  /**
+   * La cola de la app, para el estado del player.
+   *
+   * **La cola compartida del jam es esta cola.** El servicio arma la cola del
+   * jam con lo que publica el player del anfitrión, así que lo que se publica
+   * como "lo que sigue" es lo que los dos van a escuchar. Sin esto, lo que se
+   * publica es el contexto de autoplay —la estación que armó el servicio— y
+   * una canción que se suma a la cola no le llega nunca al otro lado.
+   *
+   * **Van las URIs y los ids, no las pistas.** El nombre y la portada no
+   * viajan en el estado del player: el otro lado los pide con el id. Y el
+   * `uid` —el identificador que le dio el servicio— es lo que hace que la
+   * canción entre en la cola compartida: sin él, el servicio no la reconoce.
+   */
+  const publishTracks = useMemo(
+    () =>
+      upNext.slice(0, 50).map((track) => {
+        const uri = `spotify:track:${track.id}`;
+        return { uri, uid: jamUids[uri] ?? "" };
+      }),
+    [upNext, jamUids],
+  );
+
+  useEffect(() => {
+    void setPublishQueue(publishTracks);
+  }, [publishTracks]);
+
+  /**
+   * Los identificadores que faltan en la cola, de a uno.
+   *
+   * **Sin identificador una canción no entra en la cola compartida**, y el
+   * servicio sólo lo da en el contexto de la pista: hay que pedirlo. La cola
+   * de la app tiene canciones que el servicio todavía no nombró —las que están
+   * en la biblioteca de la persona—.
+   *
+   * **De a uno, con una pausa entre pedidos.** Son viajes al servicio, y el
+   * servicio corta al que pregunta de más.
+   */
+  useEffect(() => {
+    if (!jamRef.current) return;
+    const falta = publishTracks.find((track) => !track.uid);
+    if (!falta) return;
+    const id = window.setTimeout(() => {
+      void jamTrackUid(falta.uri.replace("spotify:track:", ""))
+        .then((uid) => {
+          if (!uid) return;
+          setJamUids((prev) => ({ ...prev, [falta.uri]: uid }));
+        })
+        .catch(() => {});
+    }, 500);
+    return () => window.clearTimeout(id);
+  }, [publishTracks]);
+
+  /**
+   * La cola de este device también se publica en la cola del jam.
+   *
+   * **La lista del jam la llena el comando, no el estado del player.** Medido el
+   * 1 de noviembre de 2026: el estado de Starless tenía 56 pistas y la lista
+   * compartida —la que los dos ven— seguía con 51 y con otras canciones. La
+   * lista la llena el comando `set_queue`, que es el que manda el cliente de
+   * escritorio.
+   *
+   * **Se manda con calma.** La puerta del jam cuenta los pedidos como cuenta
+   * los de la sesión, y una cola que cambia con cada avance llenaría el
+   * servicio de pedidos.
+   */
+  useEffect(() => {
+    const sesion = jamRef.current;
+    if (!sesion) return;
+    if (!publishTracks.length) return;
+    const id = window.setTimeout(() => {
+      void jamSetQueue(sesion.session_id, publishTracks).catch((e) => {
+        console.error("Starless: no se pudo publicar la cola en el jam", explain(e));
+      });
+    }, 1500);
+    return () => window.clearTimeout(id);
+  }, [publishTracks]);
   /**
    * How many songs of the station's page are still ahead.
    *
@@ -1415,18 +1794,31 @@ export default function App() {
   const advancedRef = useRef<string | null>(null);
 
   const playDirect = useCallback(
-    (track: Track, at?: number) => {
+    (track: Track, at?: number, alJam = false) => {
       asked.current = track.id;
       moveTo(at ?? visibleTracks.findIndex((item) => item.id === track.id));
       // Un pedido nuevo: lo que estaba en camino deja de mandar.
       intent.current += 1;
       setLoadedTrack(track);
+      /**
+       * **La canción que pone la persona también es del otro lado.**
+       *
+       * En un jam, lo que una persona pone lo ven las dos. La cola compartida
+       * la llena el comando `add_to_queue`, y la canción tiene que ir con el
+       * identificador que le dio el servicio: sin él, el comando entra pero el
+       * servicio lo aplica a la pista que está sonando, y al otro lado le
+       * entra la canción de siempre.
+       *
+       * **Sólo cuando la puso la persona.** Las que llegan del otro lado no se
+       * mandan de vuelta, o el comando cruzaría de ida y vuelta sin parar.
+       */
+      if (alJam) publishToJam(track);
       playTrack(track).catch((e) => {
         advancedRef.current = null;
         console.error("Starless: no se pudo reproducir", explain(e));
       });
     },
-    [moveTo, visibleTracks],
+    [moveTo, visibleTracks, publishToJam],
   );
 
   /**
@@ -2027,7 +2419,7 @@ export default function App() {
    * guess, and the only thing it could guess is the last song.
    */
   const playFrom = useCallback(
-    (tracks: Track[], track: Track, context: RadioContext | null = null) => {
+    (tracks: Track[], track: Track, context: RadioContext | null = null, alJam = true) => {
       setQueueOverride(tracks, context);
       // **El lugar se busca en la lista nueva.** La cola que se acaba de poner
       // es la que va a mandar, y el índice de la canción en ella es lo que
@@ -2035,6 +2427,7 @@ export default function App() {
       onPlay(
         track,
         tracks.findIndex((item) => item.id === track.id),
+        alJam,
       );
     },
     [onPlay, setQueueOverride],
@@ -2586,7 +2979,7 @@ export default function App() {
    * same song twice meant to hear it twice, and quietly dropping the second is
    * the app disagreeing with a decision that was made on purpose.
    */
-  const onAddToQueue = useCallback(
+  const addToLocalQueue = useCallback(
     (track: Track) => {
       // La cola del DJ sigue siendo la cola del DJ: agregar una canción no
       // borra las frases que la trajeron, ni la convierte en una lista.
@@ -2601,6 +2994,246 @@ export default function App() {
     },
     [queue, visibleTracks, moveTo],
   );
+
+  /**
+   * Agregar una canción a la cola que está a la vista.
+   *
+   * **La canción va a la cola de la app, siempre.** Con un jam abierto, esa
+   * cola se publica como estado del player, y la cola compartida del jam es
+   * justamente lo que se publica: lo que suma esta app, lo ve el otro lado.
+   *
+   * **Y además se manda el comando del jam.** El comando es lo que llega al
+   * player del anfitrión cuando el anfitrión es otro dispositivo: la cola
+   * publicada es la de Starless, y sin el comando la otra persona no se
+   * entera. Con Starless de anfitrión, el comando no cambia nada —el player
+   * de librespot no tiene cola— y la canción llega igual por la publicación.
+   *
+   * **Por eso el botón se llama "agregar a la cola" y no "agregar al jam".**
+   * El jam no es una cola aparte: es la cola, con dos personas.
+   */
+  const onAddToQueue = useCallback(
+    (track: Track) => {
+      addToLocalQueue(track);
+      if (!jam) return;
+      void addToJam(track);
+    },
+    [jam, addToJam, addToLocalQueue],
+  );
+
+  /**
+   * Los comandos del otro lado del jam.
+   *
+   * **No son clics: es el celu apretando "siguiente".** El comando sale del
+   * teléfono, pasa por el servicio y llega al backend, que lo traduce y lo baja
+   * acá. Por eso los nombres son los del player y no los de los botones.
+   *
+   * **La cola es de acá y no del backend.** La lista que el usuario ve es la
+   * que el jam comparte, así que el comando se aplica sobre ella: lo que
+   * salta es la canción que sigue en la cola, no una de Starless.
+   */
+  useEffect(() => {
+    const unlisten = onJamCommand((command) => {
+      /**
+       * El `uid` de la canción del comando se anota.
+       *
+       * **Es el identificador que le dio el servicio**, y es lo único que hace
+       * que esa canción entre en la cola compartida: publicada sin él, el
+       * servicio no la reconoce y la resuelve por la que está sonando. La cola
+       * se vuelve a publicar cuando aparece uno nuevo.
+       */
+      /**
+       * Los ids que el servicio le dio a las canciones del comando.
+       *
+       * **El id es lo que hace que una canción entre en la cola compartida.**
+       * El servicio no reconoce una canción por su URI: la reconoce por el id
+       * que él le dio, y sin ese id la publica a ciegas.
+       */
+      setJamUids((prev) => {
+        const next = { ...prev };
+        let cambio = false;
+        if (command.track_uid && command.track_id) {
+          const uri = `spotify:track:${command.track_id}`;
+          if (next[uri] !== command.track_uid) {
+            next[uri] = command.track_uid;
+            cambio = true;
+          }
+        }
+        for (const song of command.queue ?? []) {
+          const uri = `spotify:track:${song.track.id}`;
+          if (next[uri] !== song.uid) {
+            next[uri] = song.uid;
+            cambio = true;
+          }
+        }
+        return cambio ? next : prev;
+      });
+
+      if (command.endpoint === "transfer") {
+        /**
+         * La música del jam cambió de device.
+         *
+         * **La cola que viene con el traspaso es la cola del jam.** Cada
+         * canción trae el identificador que le dio el servicio, y sin él la
+         * cola compartida no puede apuntar a ninguna de ellas.
+         */
+        if (command.queue?.length) {
+          setQueueOverride(command.queue.map((song) => song.track));
+        }
+        /**
+         * **La música es de esta app: se sigue con ella.**
+         *
+         * El traspaso trae la canción que suena y en qué milisegundo va, y es
+         * lo que el jam está reproduciendo: lo que esta app tiene que
+         * reproducir para que los dos oigan lo mismo.
+         */
+        if (command.for_me) {
+          if (command.track && command.track.id !== statusRef.current?.trackId) {
+            setLoadedTrack(command.track);
+            asked.current = command.track.id;
+            playTrack(command.track).catch((e) => {
+              console.error("Starless: no se pudo tomar la música del jam", explain(e));
+            });
+          }
+          if (command.position_ms != null) {
+            void seekPlayback(command.position_ms).catch(() => {});
+          }
+          return;
+        }
+        /**
+         * **La música es del otro device: esta app se hace a un lado.**
+         *
+         * Dos devices con música propia en el mismo jam son dos jams
+         * distintos, y cada uno oye una canción diferente.
+         */
+        if (statusRef.current?.playing) void togglePlayback().catch(() => {});
+        return;
+      }
+      if (command.endpoint === "skip_next") {
+        /**
+         * El teléfono saltó a una canción concreta.
+         *
+         * **La que dice el comando es la que suena.** Sin esto, el frontend
+         * avanzaría en la cola de esta app —que es otra lista— y el teléfono
+         * y Starless seguirían caminos distintos.
+         */
+        if (command.track) {
+          playDirect(command.track);
+          return;
+        }
+        advance();
+        return;
+      }
+      if (command.endpoint === "skip_prev") {
+        const at = queueAtRef.current - 1;
+        const track = visibleTracks[at];
+        if (track) playDirect(track, at);
+        return;
+      }
+      if (command.endpoint === "pause") {
+        if (statusRef.current?.playing) void togglePlayback().catch(() => {});
+        return;
+      }
+      if (command.endpoint === "resume") {
+        // **Seguir es levantar lo que ya está sonando**, no poner otra cosa.
+        if (!statusRef.current?.playing) void togglePlayback().catch(() => {});
+        return;
+      }
+      if (command.endpoint === "play") {
+        /**
+         * El teléfono puso una canción: esa suena acá.
+         *
+         * **Y queda en la cola.** El jam es una cola compartida: lo que el
+         * otro lado pone es de los dos, y la cola que se publica es la que
+         * el otro lado ve.
+         */
+        if (command.track) {
+          addToLocalQueue(command.track);
+          playDirect(command.track);
+          return;
+        }
+        // **Sin canción es "seguí".** Es otro comando, y el frontend los trata
+        // distinto: uno pone una pista, el otro levanta la que ya está
+        // sonando.
+        if (!statusRef.current?.playing) void togglePlayback().catch(() => {});
+        return;
+      }
+      if (command.endpoint === "play_context" && command.context_uri) {
+        /**
+         * La otra persona puso una lista: una playlist, un álbum, un artista.
+         *
+         * **Suenan sus canciones, y en el orden que pidió.** Si la puso al
+         * azar, el comando lo dice, y la lista se baraja: una lista barajada
+         * que suena en el orden en que está guardada contradice al botón de
+         * aleatorio que la otra persona tiene encendido en su pantalla.
+         *
+         * **Y no se manda de vuelta.** La lista vino del otro lado; mandarla
+         * al jam sería un viaje de ida y vuelta sin parar.
+         */
+        const uri = command.context_uri;
+        void contextTracks(uri)
+          .then((pistas) => {
+            if (!pistas.length) return;
+            if (command.shuffled) {
+              playShuffled(pistas, pistas[Math.floor(Math.random() * pistas.length)], null);
+              return;
+            }
+            playFrom(pistas, pistas[0], null, false);
+          })
+          .catch((e) => {
+            console.error("Starless: no se pudo poner la lista del otro lado", explain(e));
+          });
+        return;
+      }
+      if (command.endpoint === "seek_to" && command.position_ms != null) {
+        void seekPlayback(command.position_ms).catch(() => {});
+        return;
+      }
+      if (command.endpoint === "set_queue" && command.queue?.length) {
+        /**
+         * La cola del otro lado **no es la cola de esta app**.
+         *
+         * **La cola de la persona sigue siendo la suya.** Abrir un jam no
+         * borra lo que tenía puesto, y lo que el otro lado pone se suma a
+         * ella: reemplazarla por la cola del otro —que es una lista de cientos
+         * de canciones— es la forma de que la persona pierda su cola por
+         * entrar a un jam.
+         *
+         * **Lo que sí se usa de ella son los identificadores.** El comando
+         * `set_queue` trae la cola completa del otro lado con el
+         * identificador que el servicio le dio a cada canción, y ese
+         * identificador es lo que permite apuntar a una pista en la cola
+         * compartida. El backend los anota; acá no hay que hacer nada con la
+         * lista.
+         *
+         * **Y no se manda de vuelta.** Esta cola llegó porque el otro lado la
+         * mandó; devolverla sería un viaje de ida y vuelta sin parar.
+         */
+        return;
+      }
+      if (command.endpoint === "add_to_queue" && command.track) {
+        /**
+         * La canción que manda el otro lado va a la cola **de la app**.
+         *
+         * **Y no se vuelve a mandar al jam.** Esta canción llegó porque el otro
+         * lado la mandó; si la app la mandara de vuelta, la otra persona la
+         * vería aparecer dos veces y el comando cruzaría de ida y vuelta sin
+         * parar.
+         */
+        addToLocalQueue(command.track);
+      }
+    });
+    return () => {
+      unlisten.then((off) => off());
+    };
+  }, [
+    advance,
+    playDirect,
+    addToLocalQueue,
+    setQueueOverride,
+    visibleTracks,
+    playFrom,
+    playShuffled,
+  ]);
 
   /**
    * La playlist entera a la cola, y no lo que el filtro dejó a la vista.
@@ -2839,12 +3472,15 @@ export default function App() {
               t={t}
               playing={status?.trackId ? loadedTrack : null}
               upNext={upNext}
+              jamSongs={jamNext}
               narration={narration}
               dj={djVoice}
               station={queue?.source === "dj"}
               barPresent={barPresent}
               onPlay={onPlayFromQueue}
               onClose={() => setQueueOpen(false)}
+              onOpenJam={() => setJamOpen(true)}
+              jamOpen={jam !== null}
               onAddToQueue={onAddToQueue}
               onOpenArtist={openArtist}
               onOpenAlbum={openAlbum}
@@ -2872,7 +3508,7 @@ export default function App() {
             <JamPanel
               t={t}
               session={jam}
-              queue={jamSongs}
+              active={status?.jamActive ?? true}
               busy={jamBusy}
               error={jamError}
               besideQueue={queueOpen}
@@ -3042,7 +3678,6 @@ export default function App() {
                 onOpenArtist={openArtist}
                 onAddToQueue={onAddToQueue}
                 onNewPlaylist={openNaming}
-                onAddToJam={onAddToJam}
               />
             ) : (
               <p className="rounded-card border border-white/8 bg-white/4 px-5 py-6 text-center text-[13px] text-ink-faint">
@@ -3137,7 +3772,6 @@ export default function App() {
               onOpenAlbum={openAlbum}
               onAddToQueue={onAddToQueue}
               onNewPlaylist={openNaming}
-              onAddToJam={onAddToJam}
               onAddListToQueue={onAddListToQueue}
               prefs={trackPrefs}
               onPrefsChange={changeTrackPrefs}
@@ -3176,7 +3810,6 @@ export default function App() {
               onOpenAlbum={openAlbum}
               onAddToQueue={onAddToQueue}
               onNewPlaylist={openNaming}
-              onAddToJam={onAddToJam}
               // Los tres puntos de la playlist: la lista entera va a la cola, y
               // los detalles son un diálogo aparte.
               onAddListToQueue={onAddListToQueue}
@@ -3261,12 +3894,15 @@ export default function App() {
                 embedded
                 playing={status?.trackId ? loadedTrack : null}
                 upNext={upNext}
+                jamSongs={jamNext}
                 narration={narration}
                 dj={djVoice}
                 station={queue?.source === "dj"}
                 barPresent={barPresent}
                 onPlay={onPlayFromQueue}
                 onClose={() => setQueueOpen(false)}
+                onOpenJam={() => setJamOpen(true)}
+                jamOpen={jam !== null}
                 onAddToQueue={onAddToQueue}
                 onOpenArtist={openArtist}
                 onOpenAlbum={openAlbum}

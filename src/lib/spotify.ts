@@ -232,6 +232,14 @@ export type PlaybackStatus = {
   /** 0..=65535, librespot's own scale. */
   volume: number;
   /**
+   * Whether this app is the device the jam says is playing.
+   *
+   * **A jam has one device playing.** The other side picks it —"here" or
+   * "Starless"— and the app that is not it has to step aside, or the two ends
+   * of the jam hear different songs.
+   */
+  jamActive: boolean;
+  /**
    * The track ran to its end. Not the same as `playing: false` — that also means
    * paused, and only one of the two should move the queue forward.
    */
@@ -436,6 +444,18 @@ export async function jamStatus(): Promise<JamSession> {
 }
 
 /**
+ * The jam that is on the account, if there is one.
+ *
+ * **It does not open a jam.** The door that says whether there is one is the
+ * one that creates none, and the panel asks it when it opens: a jam that
+ * somebody else opened has to show up here, and the person who only wanted to
+ * look must not end up with a jam open on their account.
+ */
+export async function jamCurrent(): Promise<JamSession | null> {
+  return invoke<JamSession | null>("jam_current");
+}
+
+/**
  * The shared queue: the songs the service has written down.
  *
  * **The queue is a list, not a playlist**, and it comes from the list
@@ -478,6 +498,68 @@ export async function jamAddToQueue(sessionId: string, trackId: string): Promise
 }
 
 /**
+ * Publish this device's queue into the shared queue of the Jam.
+ *
+ * **The shared queue is filled by the command, not by the player state.** Measured
+ * on November 1st, 2026: the player state of Starless held 56 songs and the Jam's
+ * list —`spotify:list:jam-list:<session_id>`— still held 51, and other songs.
+ * What fills it is the `set_queue` command, which is what the desktop client sends.
+ *
+ * **Each song goes with the id the service gave it.** Without that id the service
+ * cannot point at it, and the song does not enter the queue both sides read.
+ */
+export async function jamSetQueue(
+  sessionId: string,
+  tracks: { uri: string; uid: string }[],
+): Promise<void> {
+  return invoke<void>("jam_set_queue", { sessionId, tracks });
+}
+
+/**
+ * The id the service gave a song.
+ *
+ * **The service does not recognize a song by its URI**: it recognizes it by the
+ * `uid` it assigned inside a context, and there is nowhere else to ask for it.
+ *
+ * It is asked once per song and it is remembered, so the queue of the app —which
+ * holds songs the service has not named yet, the ones in the person's own
+ * library— gets complete.
+ */
+export async function jamTrackUid(trackId: string): Promise<string | null> {
+  return invoke<string | null>("jam_track_uid", { trackId });
+}
+
+/**
+ * The songs of a context: a playlist, an album, an artist.
+ *
+ * **The same door for the three.** Only the URI changes, and the service
+ * understands it by its shape.
+ *
+ * It is what puts a list on this side when the other side of the Jam plays
+ * one: the `play` command carries the context, and without this the list was
+ * lost on the way.
+ */
+export async function contextTracks(uri: string): Promise<Track[]> {
+  return invoke<Track[]>("context_tracks", { uri });
+}
+
+/**
+ * The queue that is coming, so the service knows what this player will play.
+ *
+ * **The shared queue of a Jam is this queue.** The Jam's queue is not a list the
+ * Jam writes: it is what the host's player publishes. So whatever this app
+ * plays next is what the other person sees in the Jam.
+ *
+ * **Each song goes with the id the service gave it.** The service does not
+ * recognize a song by its URI: it recognizes it by the `uid` it assigned inside
+ * a context. A song published without that id does not enter the shared queue —
+ * the service resolves it to whatever is playing instead.
+ */
+export async function setPublishQueue(tracks: { uri: string; uid: string }[]): Promise<void> {
+  return invoke<void>("set_publish_queue", { tracks });
+}
+
+/**
  * Subscribe to playback events.
  *
  * Called from an effect, not from a hook body: the listener outlives any single
@@ -498,6 +580,83 @@ export function onPlaybackStatus(handler: (status: PlaybackStatus) => void): Pro
  */
 export function onDjVoice(handler: (event: DjVoiceEvent) => void): Promise<UnlistenFn> {
   return listen<DjVoiceEvent>("dj://voice", (event) => handler(event.payload));
+}
+
+/**
+ * A command that came from the other side of the jam.
+ *
+ * **It is not a click: it is the phone pressing "next".** The command travels
+ * from the phone through the service to the device that is playing, and the
+ * backend translates it before it comes down here. That is why the names are
+ * the ones of the player and not the ones of the buttons.
+ */
+export type JamCommand = {
+  /**
+   * What to do: `skip_next`, `skip_prev`, `pause`, `play`, `seek_to` or
+   * `add_to_queue`.
+   */
+  endpoint: string;
+  /** The song, with its data, when the command carried one. */
+  track: Track | null;
+  /** The id of the song, even when its data could not be resolved. */
+  track_id: string | null;
+  /**
+   * The id the service gave the song inside the context.
+   *
+   * **This is what puts the song in the shared queue.** The service does not
+   * recognize a song by its URI, so a song that goes into the shared queue
+   * without this id is a song the service cannot point at.
+   */
+  track_uid: string | null;
+  /**
+   * The whole queue, when the command is a `set_queue`.
+   *
+   * **This is the queue the other side is showing.** Each song comes with the
+   * id the service gave it, and without that id the service cannot point at
+   * any of them: the shared queue stays empty.
+   */
+  queue: { track: Track; uid: string }[];
+  /** Where to jump, in milliseconds, when the command is a `seek_to`. */
+  position_ms: number | null;
+  /**
+   * The device the music belongs to, when the command is a `transfer`.
+   *
+   * **A transfer is the music changing hands.** The other person chooses which
+   * device listens, and the service says so with this command.
+   */
+  from_device: string | null;
+  /**
+   * Whether the music of the transfer belongs to this app.
+   *
+   * **This is what decides who plays.** If the music is ours, we go on playing
+   * it; if it is the other side's, this app steps aside: two devices playing
+   * the same jam is how the two ends end up hearing different songs.
+   */
+  for_me: boolean;
+  /** Whether the music of the transfer was paused. */
+  paused: boolean;
+  /**
+   * The URI of the context to play, when it is a list and not a song.
+   *
+   * **A playlist, an album, an artist.** The `play` command of the other side
+   * carries the context, and without this the list was dropped on the way: only
+   * a song was understood.
+   */
+  context_uri: string | null;
+  /**
+   * Whether the context goes shuffled.
+   *
+   * **The shuffle is the other side's decision.** When they put a playlist on
+   * shuffle, the command says so, and the list has to sound that way.
+   */
+  shuffled: boolean;
+};
+
+/**
+ * Subscribe to the commands the other side of the jam sends.
+ */
+export function onJamCommand(handler: (command: JamCommand) => void): Promise<UnlistenFn> {
+  return listen<JamCommand>("jam://command", (event) => handler(event.payload));
 }
 
 /**
@@ -1761,4 +1920,16 @@ declare global {
     /** What Kotlin calls when a lock-screen, notification or headset button is pressed. */
     __starlessMediaKey?: (key: MediaKey) => void;
   }
+}
+
+/**
+ * If the service said "not now".
+ *
+ * **A `429` is not a broken jam.** It is the service cutting the batch because
+ * it was asked too much, and the next question asks again. Treating it as a
+ * failure would put an error in the panel for something that is only a moment.
+ */
+export function isRateLimited(error: unknown): boolean {
+  const raw = typeof error === "string" ? error : String(error);
+  return raw.includes("rate_limited");
 }

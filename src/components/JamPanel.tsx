@@ -1,30 +1,25 @@
 import { Check, Copy, Users, X } from "lucide-react";
 import { motion } from "motion/react";
 import { useState } from "react";
+import QRCode from "react-qr-code";
 import { copyText } from "../lib/clipboard";
 import type { StringKey } from "../lib/i18n";
 import { SPRING, SPRING_SHEET } from "../lib/motion";
-import { type JamMember, type JamSession, type Track, trackRowKeys } from "../lib/spotify";
-
-/**
- * Cuántas canciones de la cola compartida se ven.
- *
- * **La cola del jam la llena el servicio**, y con la lista de arranque son
- * cientos. Panel con cientos de filas no es un panel.
- */
-const JAM_QUEUE_ROWS = 8;
+import type { JamMember, JamSession } from "../lib/spotify";
 
 type JamPanelProps = {
   t: Record<StringKey, string>;
   /** The open session, or `null` when there is none. */
   session: JamSession | null;
   /**
-   * The shared queue: the songs the jam has written down.
+   * Whether this app is the device the Jam says is playing.
    *
-   * **It is the jam's queue, not this app's.** The other side can put songs in
-   * it, and that is how one person hears what the other one queued.
+   * **A Jam has one device playing.** The other side picks it —"here" or
+   * "Starless"— and the app that is not it steps aside. Without this the panel
+   * says nothing while the app goes quiet, and quiet with no explanation reads
+   * as a broken player.
    */
-  queue: Track[];
+  active: boolean;
   /** A request is on its way: the buttons wait. */
   busy: boolean;
   /** What went wrong, in the words of the app. */
@@ -60,7 +55,7 @@ type JamPanelProps = {
 export function JamPanel({
   t,
   session,
-  queue,
+  active,
   busy,
   error,
   besideQueue,
@@ -89,7 +84,11 @@ export function JamPanel({
       transition={SPRING_SHEET}
       role="dialog"
       aria-label={t.jamActivity}
-      className={`glass-sheet pointer-events-auto absolute top-[104px] ${besideQueue ? "right-[260px]" : "right-5"} z-30 flex w-[300px] flex-col overflow-hidden rounded-card`}
+      // **El hueco son los veinte píxeles de siempre.** Al lado de la cola, el
+      // panel arrancaba justo donde termina ella —240 de ancho más 20 de
+      // margen— y los dos vidrios quedaban pegados. La app separa cada
+      // superficie con veinte, y este no era el único que se olvidaba.
+      className={`glass-sheet pointer-events-auto absolute top-[104px] ${besideQueue ? "right-[280px]" : "right-5"} z-30 flex w-[300px] flex-col overflow-hidden rounded-card`}
     >
       <header className="flex shrink-0 items-center justify-between gap-2 px-4 pt-4 pb-3">
         <h2 className="truncate text-[15px] font-semibold tracking-tight">{t.jamActivity}</h2>
@@ -111,7 +110,7 @@ export function JamPanel({
           <OpenJam
             t={t}
             session={session}
-            queue={queue}
+            active={active}
             busy={busy}
             copied={copied}
             onCopy={onCopy}
@@ -188,15 +187,25 @@ export function JamPanel({
 }
 
 /**
- * The jam that is open: the code, and who is in it.
+ * The jam that is open: the invitation, and who is in it.
  *
- * **The code is the whole invitation.** There is no page to open and no link to
- * follow: the guest's door takes the code, so the code is what gets shared.
+ * **The invitation is a QR.** En el cliente oficial el jam no se entra con un
+ * código escrito: el que invita muestra un QR y el otro lo escanea con la
+ * cámara del teléfono, que abre la app. El código escrito no es una puerta que
+ * el celular tenga: es lo que dice la sesión.
+ *
+ * **El QR lleva la URI que da el servicio** —`spotify:socialsession:<token>`—,
+ * que es la forma que la propia app de Spotify sabe abrir. El código queda
+ * debajo, porque un segundo Starless —que no tiene cámara— lo puede escribir.
+ *
+ * **The queue is not here.** It is in the queue panel, which is where a queue
+ * belongs: this panel answers *who else is listening*, and the other one answers
+ * *what comes next*. Two questions, two panels.
  */
 function OpenJam({
   t,
   session,
-  queue,
+  active,
   busy,
   copied,
   onCopy,
@@ -204,25 +213,53 @@ function OpenJam({
 }: {
   t: Record<StringKey, string>;
   session: JamSession;
-  queue: Track[];
+  active: boolean;
   busy: boolean;
   copied: boolean;
   onCopy: () => void;
   onLeave: () => void;
 }) {
   const code = session.join_session_token ?? "";
+  // **La URI es la invitación.** Es lo que el servicio da con la sesión, y es
+  // lo que la app del teléfono sabe abrir cuando la cámara la lee.
+  const uri = session.join_session_uri ?? (code ? `spotify:socialsession:${code}` : "");
   // **The host closes the jam and the guest leaves it.** Two words for two
   // doors: the guest's door takes them out of the session and the jam goes
   // on, and the host's takes the jam down for everybody.
   const isOwner = session.is_session_owner;
-  // The shared queue can hold the same song twice, so the rows are counted:
-  // a key that repeats leaves the old row mounted, painting the old list.
-  const rowKeys = trackRowKeys(queue);
 
   return (
     <>
-      <section className="rounded-[16px] bg-white/6 p-3.5">
-        <h3 className="pb-1 text-[12px] font-semibold tracking-wide uppercase text-ink-faint">
+      {uri ? (
+        <section className="rounded-[16px] bg-white/6 p-3.5">
+          <h3 className="pb-2 text-[12px] font-semibold tracking-wide uppercase text-ink-faint">
+            {t.jamInvite}
+          </h3>
+          {/*
+              The QR, on a white ground.
+
+              **El código es de correr y el lector lo tiene que leer.** Un QR
+              sobre el vidrio oscuro de la app no lo lee ninguna cámara: la
+              cámara necesita contraste, y el fondo tiene que ser claro.
+          */}
+          <div className="mx-auto w-fit rounded-[14px] bg-white p-2.5">
+            <QRCode
+              value={uri}
+              size={148}
+              bgColor="#ffffff"
+              fgColor="#101014"
+              level="M"
+              aria-label={t.jamInvite}
+            />
+          </div>
+          <p className="pt-2 text-center text-[11.5px] leading-relaxed text-ink-faint">
+            {t.jamInviteHint}
+          </p>
+        </section>
+      ) : null}
+
+      <section>
+        <h3 className="pb-1.5 text-[12px] font-semibold tracking-wide uppercase text-ink-faint">
           {t.jamCode}
         </h3>
         <div className="flex items-center gap-2">
@@ -261,33 +298,16 @@ function OpenJam({
             ))}
           </ul>
         )}
-      </section>
+        {/*
+            The music is on the other device, and this app is not playing.
 
-      {/*
-          The shared queue: the songs the jam has written down.
-
-          **The first one is the one that is playing.** The queue of a jam is
-          the host's queue, and the host's queue starts at the song that is
-          sounding. This is what makes a jam a jam: the other side's song
-          shows up here, and this app follows it.
-      */}
-      <section>
-        <h3 className="pb-1.5 text-[12px] font-semibold tracking-wide uppercase text-ink-faint">
-          {t.jamQueue}
-        </h3>
-        <p className="pb-1.5 text-[11.5px] leading-relaxed text-ink-faint">{t.jamQueueHint}</p>
-        {queue.length === 0 ? (
-          <p className="px-0.5 text-[12.5px] text-ink-faint">{t.jamQueueEmpty}</p>
-        ) : (
-          <ul className="flex flex-col gap-0.5">
-            {queue.slice(0, JAM_QUEUE_ROWS).map((track, index) => (
-              <li key={rowKeys[index]} className="flex items-center gap-2 rounded-[12px] px-1 py-1">
-                <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-muted">
-                  {track.name}
-                </span>
-              </li>
-            ))}
-          </ul>
+            **A silent app with no explanation reads as a broken player.** The
+            other side chose to listen on their phone, and the Jam says so; the
+            panel says it too, in the same breath as the list of who is in the
+            Jam.
+        */}
+        {!active && (
+          <p className="px-0.5 pt-2 text-[12.5px] text-ink-faint">{t.jamPlayingElsewhere}</p>
         )}
       </section>
 
