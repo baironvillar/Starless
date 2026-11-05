@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { copyText } from "../lib/clipboard";
+import { type MenuPoint, useMenuAt } from "../lib/contextMenu";
 import type { StringKey } from "../lib/i18n";
 import { type Album, type Artist, coverImage, type Track } from "../lib/spotify";
 import { isMobile } from "../lib/version";
@@ -94,9 +95,16 @@ export function TrackMenu({
   const [open, setOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [copied, setCopied] = useState<"idle" | "done" | "failed">("idle");
+  // Where a right-click opened it; null when the dots did.
+  const [point, setPoint] = useState<MenuPoint | null>(null);
   const anchor = useRef<HTMLButtonElement>(null);
   const pickerAnchor = useRef<HTMLButtonElement>(null);
   const closeTimer = useRef<number | null>(null);
+
+  useMenuAt(anchor, (at) => {
+    setPoint(at);
+    setOpen(true);
+  });
 
   const artist = track.artists[0];
   const album = track.album;
@@ -158,6 +166,7 @@ export function TrackMenu({
         data-track-menu=""
         onClick={(e) => {
           e.stopPropagation();
+          setPoint(null);
           setOpen((value) => !value);
         }}
         aria-label={t.trackMenuFor.replace("{name}", track.name)}
@@ -178,6 +187,7 @@ export function TrackMenu({
         open={open}
         onClose={close}
         anchor={anchor}
+        point={point}
         label={t.trackMenu}
         width={236}
         header={

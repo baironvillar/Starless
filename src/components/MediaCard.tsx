@@ -68,6 +68,8 @@ type MediaCardProps = {
   eyebrow?: string;
   /** Width when the card sits on a scrolling shelf instead of a grid. */
   className?: string;
+  /** The playlist a right-click on the card opens the menu of (lib/contextMenu.ts). */
+  menuId?: string;
 };
 
 /**
@@ -98,6 +100,7 @@ export function MediaCard({
   eyebrow,
   playLabel,
   className = "",
+  menuId,
 }: MediaCardProps) {
   const interactive = Boolean(onPlay || onOpen);
   const radius = round ? "rounded-full" : "rounded-[10px]";
@@ -110,6 +113,7 @@ export function MediaCard({
       whileHover={interactive ? { y: -4 } : undefined}
       onPointerEnter={onPrefetch}
       onFocusCapture={onPrefetch}
+      data-playlist-id={menuId}
       className={`group/card relative ${className}`}
     >
       {/*

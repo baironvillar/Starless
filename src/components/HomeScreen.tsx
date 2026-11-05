@@ -195,6 +195,7 @@ export function HomeScreen({
             return (
               <QuickTile
                 key={playlist.id}
+                menuId={playlist.id}
                 title={playlist.name}
                 onOpen={() => onOpenPlaylist(playlist)}
                 onPrefetch={onPrefetch ? () => onPrefetch(playlist) : undefined}
@@ -251,6 +252,7 @@ export function HomeScreen({
                 return (
                   <MediaCard
                     key={playlist.id}
+                    menuId={playlist.id}
                     title={playlist.name}
                     subtitle={subtitle}
                     imageUrl={cardImage(playlist.images)}
@@ -461,6 +463,7 @@ export function HomeScreen({
             {shownPlaylists.map((playlist) => (
               <MediaCard
                 key={playlist.id}
+                menuId={playlist.id}
                 title={playlist.name}
                 subtitle={playlistCount(playlist)}
                 imageUrl={cardImage(playlist.images)}
@@ -488,6 +491,7 @@ export function HomeScreen({
               .map((playlist) => (
                 <MediaCard
                   key={playlist.id}
+                  menuId={playlist.id}
                   title={playlist.name}
                   subtitle={playlistCount(playlist)}
                   imageUrl={cardImage(playlist.images)}
@@ -510,16 +514,20 @@ function QuickTile({
   onOpen,
   onPrefetch,
   children,
+  menuId,
 }: {
   title: string;
   subtitle?: string | null;
   onOpen: () => void;
   onPrefetch?: () => void;
   children: React.ReactNode;
+  /** The playlist a right-click on the tile opens the menu of (lib/contextMenu.ts). */
+  menuId?: string;
 }) {
   return (
     <button
       type="button"
+      data-playlist-id={menuId}
       onClick={onOpen}
       onPointerEnter={onPrefetch}
       onFocus={onPrefetch}

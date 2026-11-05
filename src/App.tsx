@@ -18,6 +18,7 @@ import { MobileLibrary } from "./components/MobileLibrary";
 import { type MobileTab, MobileTabBar } from "./components/MobileTabBar";
 import { NewPlaylistDialog } from "./components/NewPlaylistDialog";
 import { PlayerBar, type RepeatMode } from "./components/PlayerBar";
+import { PlaylistContextMenu } from "./components/PlaylistMenu";
 import { PlaylistScreen } from "./components/PlaylistScreen";
 import { QueuePanel } from "./components/QueuePanel";
 import { SearchScreen } from "./components/SearchScreen";
@@ -3441,6 +3442,9 @@ export default function App() {
         broken in the only place the user could tell.
       */}
       <NewPlaylistDialog t={t} open={naming} onClose={closeNaming} onCreate={createPlaylist} />
+
+      {/* What a right-click on a playlist in the rail or on Home opens (lib/contextMenu.ts). */}
+      <PlaylistContextMenu t={t} playlists={playlists.data ?? []} onAddToQueue={onAddListToQueue} />
 
       {/* Outside the gate on purpose. A report about a crash is worth reading
           before signing in again, and `AuthGate` returns early while it decides

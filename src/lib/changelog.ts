@@ -60,6 +60,7 @@ export const CHANGELOG: ChangelogEntry[] = [
             "El orden y la vista de las listas se recuerdan. El orden —personalizado, título, agregado recientemente, artista o álbum—, su dirección y la vista —Lista o Compacta— se guardan en %LOCALAPPDATA%\\Starless y sobreviven al cierre de sesión y al reinicio. Antes se perdían al cambiar de lista, y la app siempre arrancaba en el orden por defecto.",
             "Los reportes ya no llevan un token dentro de la app. Para mandar un reporte de crash o un feedback, Starless ahora habla con un relay propio en vez de usar la API de GitHub con una clave escrita en el binario: esa clave salía de la máquina de cada copia instalada. Ahora la copia no lleva ninguna. El relay abre el issue y devuelve el enlace, avisa cuando el mismo crash ya había sido reportado y suma el tuyo, y dice cuándo se pasó el límite de la hora.",
             "El feedback dice de qué se trata. El formulario de Ajustes → Diagnóstico pregunta ahora si lo que se está contando es un problema, una idea u otra cosa, y el tema viaja con el reporte.",
+            "El clic derecho abre el menú de lo que tocas. Sobre una canción abre su menú justo donde está el mouse; sobre una playlist —en la barra lateral, en Inicio o en su encabezado— abre el de la playlist. En el resto de la app ya no aparece el menú del navegador, que ofrecía recargar la página; en los campos de texto se mantiene el de copiar y pegar.",
           ],
         },
         {
@@ -101,6 +102,7 @@ export const CHANGELOG: ChangelogEntry[] = [
             "The order and the view of the lists are remembered. The order —custom, title, recently added, artist or album—, its direction and the view —List or Compact— are saved in %LOCALAPPDATA%\\Starless and survive a sign-out and a restart. They used to be lost when you moved to another list, and the app always started on the default order.",
             "The reports no longer carry a token inside the app. To send a crash report or a piece of feedback, Starless now talks to a relay of its own instead of using the GitHub API with a key written into the binary: that key left the machine of every installed copy. Now the copy carries none. The relay opens the issue and hands back the link, says when the same crash was already reported and adds yours to it, and says when the hourly limit was reached.",
             "The feedback says what it is about. The form in Settings → Diagnostics now asks whether what you are telling us is a problem, an idea or something else, and the topic travels with the report.",
+            "Right-click opens the menu of what you click. On a song it opens its menu right at the mouse; on a playlist —in the sidebar, on Home or on its heading— it opens the playlist's. Elsewhere the browser's menu, which offered to reload the page, no longer appears; text fields keep copy and paste.",
           ],
         },
         {

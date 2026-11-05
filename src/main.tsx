@@ -4,7 +4,9 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
+import { routeContextMenu } from "./lib/contextMenu";
 import { applyCachedSurfaceOpacity, applyCachedTheme, useEffectsSettings } from "./lib/spotify";
+import { isMobile } from "./lib/version";
 
 /**
  * Failures that are a moment, not a verdict.
@@ -72,6 +74,8 @@ function Root() {
 // backend's answer arrives a few frames too late to be the first one.
 applyCachedTheme();
 applyCachedSurfaceOpacity();
+// The phone's long press has its own path (PhoneTrackRow); right-click is the desktop's.
+if (!isMobile()) routeContextMenu();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

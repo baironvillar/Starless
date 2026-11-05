@@ -337,7 +337,13 @@ export function LibrarySidebar({
                       />
                     </div>
                     {playlists.map((playlist, index) => (
-                      <div key={playlist.id} style={at(4 + index)} className="cascade">
+                      <div
+                        key={playlist.id}
+                        style={at(4 + index)}
+                        className="cascade"
+                        // A right-click opens its menu (lib/contextMenu.ts). Not the DJ's: no songs to queue.
+                        data-playlist-id={isDjCard(playlist) ? undefined : playlist.id}
+                      >
                         <PlaylistTile
                           title={playlist.name}
                           imageUrl={coverImage(playlist.images)?.url ?? null}
@@ -447,7 +453,12 @@ export function LibrarySidebar({
                 playlist, so asking for them early would ask for nothing. */
                     const warm = isDjCard(playlist) ? undefined : () => onPrefetch?.(playlist.id);
                     return (
-                      <div key={playlist.id} style={at(4 + index)} className="cascade w-full">
+                      <div
+                        key={playlist.id}
+                        style={at(4 + index)}
+                        className="cascade w-full"
+                        data-playlist-id={isDjCard(playlist) ? undefined : playlist.id}
+                      >
                         <button
                           type="button"
                           onClick={() => onSelect(playlist.id)}
