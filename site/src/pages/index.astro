@@ -1,6 +1,7 @@
 ---
 import { Font } from "astro:assets";
 import Screen from "../components/Screen.astro";
+import { t } from "../i18n";
 
 // Link previews need absolute URLs: a chat app fetches the image from its own servers.
 const home = new URL(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/`, Astro.site).href;
@@ -132,8 +133,8 @@ const home = new URL(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/`, Astro.si
      dissolve and come back instead of snapping: out fast, in a little slower.
      It is a filter and not opacity because the scroll timelines already own
      the opacity of half these elements, and an animation beats a declaration. */
-  [data-es], .line { transition: filter 280ms var(--ease-out); }
-  .swapping :is([data-es], .line) { filter: blur(4px) opacity(0); transition-duration: 180ms; }
+  [data-i18n], .line { transition: filter 280ms var(--ease-out); }
+  .swapping :is([data-i18n], .line) { filter: blur(4px) opacity(0); transition-duration: 180ms; }
   .pitch { position: relative; z-index: 2; align-self: center; padding: 0 var(--gutter) 120px; max-width: 34rem; }
   /* The mark on its glass plate, like the app icon: the hero is the logo. */
   .plate { width: clamp(112px, 11vw, 168px); aspect-ratio: 1; border-radius: 22.5%; display: grid; place-items: center; margin-bottom: 30px; }
@@ -416,49 +417,49 @@ const home = new URL(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/`, Astro.si
 </head>
 <body>
 <main>
-  <section class="hero" id="inicio" data-track="Starless" data-track-es="Starless">
+  <section class="hero" id="inicio" data-track={t("track.starless")} data-i18n-track="track.starless">
     <canvas id="ferro" aria-hidden="true"></canvas>
     <header class="top">
       <span class="brand"><img src={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/starless.svg`} alt="" width="28" height="28" /><span class="sl-wordmark">starless</span><span class="beta">Beta</span></span>
-      <nav aria-label="Sections" data-es-label="Secciones"><a href="#que-hace" data-es="Qué hace">What it does</a><a href="#antes" data-es="Antes de instalar">Before you install</a><a href="https://github.com/baironvillar/Starless">GitHub</a><button class="lang" type="button" aria-label="Ver en español" data-es-label="View in English"><span lang="en">EN</span><span lang="es">ES</span></button></nav>
+      <nav aria-label={t("page.sections")} data-i18n-label="page.sections"><a href="#que-hace" data-i18n="page.what-it-does" set:html={t("page.what-it-does")}></a><a href="#antes" data-i18n="page.before-you-install" set:html={t("page.before-you-install")}></a><a href="https://github.com/baironvillar/Starless">GitHub</a><button class="lang" type="button" aria-label={t("page.ver-en-espanol")} data-i18n-label="page.ver-en-espanol"><span lang="en">EN</span><span lang="es">ES</span></button></nav>
     </header>
     <div class="stage" aria-hidden="true"></div>
     <div class="pitch">
       <div class="plate sl-glass"><img src={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/starless-glass.svg`} alt="" width="128" height="128" /></div>
       <h1 class="sl-wordmark">starless</h1>
-      <p data-es="Un cliente de escritorio liviano y no oficial para tu cuenta Premium. Suena directo y no le cuenta a nadie lo que escuchas.">A light, unofficial desktop client for your Premium account. It plays straight to your speakers and tells no one what you listen to.</p>
+      <p data-i18n="page.a-light-unofficial-desktop-client-for" set:html={t("page.a-light-unofficial-desktop-client-for")}></p>
       <a class="key" href="https://github.com/baironvillar/Starless/releases/download/v0.5.5/Starless_0.5.5_x64.msi" data-msi>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0l-5-5m5 5l5-5M5 20h14"/></svg>
-        <span data-es="Descargar para Windows">Download for Windows</span>
+        <span data-i18n="page.download-for-windows" set:html={t("page.download-for-windows")}></span>
         <span class="size nums" data-size>8.1 MB</span>
       </a>
-      <p class="fine nums" data-es="En beta · Windows 10 y 11 · Requiere Premium">In beta · Windows 10 and 11 · Requires Premium</p>
+      <p class="fine nums" data-i18n="page.in-beta-windows-10-and-11" set:html={t("page.in-beta-windows-10-and-11")}></p>
     </div>
   </section>
 
-  <section class="ring" id="promesas" data-track="What it promises" data-track-es="Lo que promete">
+  <section class="ring" id="promesas" data-track={t("track.what-it-promises")} data-i18n-track="track.what-it-promises">
     <div class="wrap">
-      <h2 data-es="Solo se mueve la música.">Only the music moves.</h2>
+      <h2 data-i18n="page.only-the-music-moves" set:html={t("page.only-the-music-moves")}></h2>
       <div class="promises">
-        <div class="promise"><h3 data-es="La ventana llega primero">The window comes first</h3><p data-es="Abre antes de que termine de conectar, y el audio nunca pasa por ella: va de la red directo al driver de sonido.">It opens before it has finished connecting, and the audio never goes through it: it travels from the network straight to the sound driver.</p></div>
-        <div class="promise"><h3 data-es="Hecha para moverse">Made to move</h3><p data-es="Las pantallas, la barra que llega con la música y la cola se diseñaron juntas, no se agregaron después.">The screens, the bar that arrives with the music and the queue were designed together, not bolted on later.</p></div>
-        <div class="promise"><h3 data-es="Cero telemetría">Zero telemetry</h3><p data-es="Starless no le reporta nada a nadie, ni a su autor. Solo sale algo de tu equipo si tú envías un reporte, y antes ves qué se envía.">Starless reports nothing to anyone, not even to its author. Something only leaves your computer if you send a report, and you see what it carries first.</p></div>
+        <div class="promise"><h3 data-i18n="page.the-window-comes-first" set:html={t("page.the-window-comes-first")}></h3><p data-i18n="page.it-opens-before-it-has-finished" set:html={t("page.it-opens-before-it-has-finished")}></p></div>
+        <div class="promise"><h3 data-i18n="page.made-to-move" set:html={t("page.made-to-move")}></h3><p data-i18n="page.the-screens-the-bar-that-arrives" set:html={t("page.the-screens-the-bar-that-arrives")}></p></div>
+        <div class="promise"><h3 data-i18n="page.zero-telemetry" set:html={t("page.zero-telemetry")}></h3><p data-i18n="page.starless-reports-nothing-to-anyone-not" set:html={t("page.starless-reports-nothing-to-anyone-not")}></p></div>
       </div>
     </div>
   </section>
 
-  <section class="ring tall" id="app" data-track="How it looks" data-track-es="Así se ve">
+  <section class="ring tall" id="app" data-track={t("track.how-it-looks")} data-i18n-track="track.how-it-looks">
     <div class="wrap">
       <div class="pin">
-        <h2 data-es="Una ventana que no pide atención.">A window that doesn't ask for attention.</h2>
+        <h2 data-i18n="page.a-window-that-doesn-t-ask" set:html={t("page.a-window-that-doesn-t-ask")}></h2>
         <div class="shots">
           <ol class="steps">
-            <li><h3 data-es="Tu biblioteca">Your library</h3><p data-es="Tus playlists y tus discos, apenas abres.">Your playlists and albums, the moment you open it.</p></li>
-            <li><h3 data-es="Una playlist">A playlist</h3><p data-es="Portada, nombre y descripción, editables ahí mismo.">Cover, name and description, editable right there.</p></li>
-            <li><h3 data-es="La cola">The queue</h3><p data-es="Lo que suena y lo que viene, encima de lo que estás viendo.">What's playing and what's next, over whatever you're looking at.</p></li>
-            <li><h3 data-es="A tu gusto">Your way</h3><p data-es="El color de acento y qué tan sólidos se ven los menús.">The accent colour, and how solid the menus look.</p></li>
+            <li><h3 data-i18n="page.your-library" set:html={t("page.your-library")}></h3><p data-i18n="page.your-playlists-and-albums-the-moment" set:html={t("page.your-playlists-and-albums-the-moment")}></p></li>
+            <li><h3 data-i18n="page.a-playlist" set:html={t("page.a-playlist")}></h3><p data-i18n="page.cover-name-and-description-editable-right" set:html={t("page.cover-name-and-description-editable-right")}></p></li>
+            <li><h3 data-i18n="page.the-queue" set:html={t("page.the-queue")}></h3><p data-i18n="page.what-s-playing-and-what-s" set:html={t("page.what-s-playing-and-what-s")}></p></li>
+            <li><h3 data-i18n="page.your-way" set:html={t("page.your-way")}></h3><p data-i18n="page.the-accent-colour-and-how-solid" set:html={t("page.the-accent-colour-and-how-solid")}></p></li>
           </ol>
-          <figure class="window" aria-label="Starless screens" data-es-label="Pantallas de Starless">
+          <figure class="window" aria-label={t("page.starless-screens")} data-i18n-label="page.starless-screens">
             <div class="shot"><Screen variant="library" /></div>
             <div class="shot"><Screen variant="playlist" /></div>
             <div class="shot"><Screen variant="queue" /></div>
@@ -469,52 +470,52 @@ const home = new URL(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/`, Astro.si
     </div>
   </section>
 
-  <section class="ring tall" id="dj" data-track="The DJ" data-track-es="El DJ">
+  <section class="ring tall" id="dj" data-track={t("track.the-dj")} data-i18n-track="track.the-dj">
     <div class="wrap">
       <div class="pin">
-        <h2 data-es="Un DJ que te habla.">A DJ that talks to you.</h2>
-        <p class="lede" data-es="Elige la música y, antes de cada tramo, te la presenta con su voz. No hay lista de lo que viene: lo siguiente es sorpresa.">It picks the music and, before each stretch, introduces it in its own voice. There's no list of what's coming: what comes next is a surprise.</p>
+        <h2 data-i18n="page.a-dj-that-talks-to-you" set:html={t("page.a-dj-that-talks-to-you")}></h2>
+        <p class="lede" data-i18n="page.it-picks-the-music-and-before" set:html={t("page.it-picks-the-music-and-before")}></p>
         <div class="dj">
           <svg class="dj-mark" viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="38" /></svg>
           <div>
-            <p class="dj-who" data-es="DJ · Hablando">DJ · Speaking</p>
-            <p class="dj-line" id="dj-line" data-es="Buenas noches. Empezamos tranquilos, con algo para bajarle el ritmo al día, y de a poco vamos subiendo. Esta primera se escucha mejor con los ojos cerrados.">Good evening. We'll start slow, with something to bring the day down a notch, and build up bit by bit. This first one sounds best with your eyes closed.</p>
-            <p class="dj-next" data-es="Y en cuanto termina la frase, suena la canción que eligió.">And the moment the line ends, the song it chose starts playing.</p>
+            <p class="dj-who" data-i18n="page.dj-speaking" set:html={t("page.dj-speaking")}></p>
+            <p class="dj-line" id="dj-line" data-i18n="page.good-evening-we-ll-start-slow" set:html={t("page.good-evening-we-ll-start-slow")}></p>
+            <p class="dj-next" data-i18n="page.and-the-moment-the-line-ends" set:html={t("page.and-the-moment-the-line-ends")}></p>
           </div>
         </div>
-        <p class="caption" data-es="Frase de muestra: cada sesión del DJ dice la suya.">A sample line: every DJ session says its own.</p>
+        <p class="caption" data-i18n="page.a-sample-line-every-dj-session" set:html={t("page.a-sample-line-every-dj-session")}></p>
       </div>
     </div>
   </section>
 
-  <section class="ring" id="que-hace" data-track="What it does" data-track-es="Lo que hace">
+  <section class="ring" id="que-hace" data-track={t("track.what-it-does")} data-i18n-track="track.what-it-does">
     <div class="wrap">
-      <h2 data-es="Lo que hace.">What it does.</h2>
+      <h2 data-i18n="page.what-it-does-2" set:html={t("page.what-it-does-2")}></h2>
       <ol class="tracks">
-        <li><span class="n nums"><span>1</span><i class="eq" aria-hidden="true"><b></b><b></b><b></b></i></span><h3 data-es="El DJ habla">The DJ talks</h3><p data-es="Elige la música y la presenta con su voz, antes de cada tramo.">It picks the music and introduces it in its voice, before each stretch.</p><span class="v nums">0.5.0</span></li>
-        <li><span class="n nums"><span>2</span><i class="eq" aria-hidden="true"><b></b><b></b><b></b></i></span><h3 data-es="La radio sigue">The radio carries on</h3><p data-es="Cuando la lista se acaba, sigue con canciones parecidas.">When the list runs out, it keeps going with similar songs.</p><span class="v nums">0.5.5</span></li>
-        <li><span class="n nums"><span>3</span><i class="eq" aria-hidden="true"><b></b><b></b><b></b></i></span><h3 data-es="Tus playlists, editables">Your playlists, editable</h3><p data-es="Portada, nombre, descripción y privada o pública, sin salir de la app.">Cover, name, description, and private or public, without leaving the app.</p><span class="v nums">0.5.4</span></li>
-        <li><span class="n nums"><span>4</span><i class="eq" aria-hidden="true"><b></b><b></b><b></b></i></span><h3 data-es="Se actualiza sola">It updates itself</h3><p data-es="Avisa cuando hay versión nueva y la instala cuando tú quieras.">It tells you when there's a new version and installs it when you say so.</p><span class="v nums">0.3.0</span></li>
-        <li><span class="n nums"><span>5</span><i class="eq" aria-hidden="true"><b></b><b></b><b></b></i></span><h3 data-es="Transición entre canciones">Crossfade</h3><p data-es="Una baja mientras la otra sube; tú eliges cuántos segundos.">One fades out as the next comes in; you choose how many seconds.</p><span class="v nums soon">1.0</span></li>
-        <li><span class="n nums"><span>6</span><i class="eq" aria-hidden="true"><b></b><b></b><b></b></i></span><h3 data-es="Un jam con amigos">A jam with friends</h3><p data-es="Empieza una sesión compartida, pasa su código y ve quién escucha contigo.">Start a shared session, pass on its code, and see who's listening with you.</p><span class="v nums soon">1.0</span></li>
-        <li><span class="n nums"><span>7</span><i class="eq" aria-hidden="true"><b></b><b></b><b></b></i></span><h3 data-es="Las letras">Lyrics</h3><p data-es="La letra sigue a la canción, al lado de su portada o en pantalla completa.">The words follow the song, beside its cover or full screen.</p><span class="v nums soon">1.0</span></li>
+        <li><span class="n nums"><span>1</span><i class="eq" aria-hidden="true"><b></b><b></b><b></b></i></span><h3 data-i18n="page.the-dj-talks" set:html={t("page.the-dj-talks")}></h3><p data-i18n="page.it-picks-the-music-and-introduces" set:html={t("page.it-picks-the-music-and-introduces")}></p><span class="v nums">0.5.0</span></li>
+        <li><span class="n nums"><span>2</span><i class="eq" aria-hidden="true"><b></b><b></b><b></b></i></span><h3 data-i18n="page.the-radio-carries-on" set:html={t("page.the-radio-carries-on")}></h3><p data-i18n="page.when-the-list-runs-out-it" set:html={t("page.when-the-list-runs-out-it")}></p><span class="v nums">0.5.5</span></li>
+        <li><span class="n nums"><span>3</span><i class="eq" aria-hidden="true"><b></b><b></b><b></b></i></span><h3 data-i18n="page.your-playlists-editable" set:html={t("page.your-playlists-editable")}></h3><p data-i18n="page.cover-name-description-and-private-or" set:html={t("page.cover-name-description-and-private-or")}></p><span class="v nums">0.5.4</span></li>
+        <li><span class="n nums"><span>4</span><i class="eq" aria-hidden="true"><b></b><b></b><b></b></i></span><h3 data-i18n="page.it-updates-itself" set:html={t("page.it-updates-itself")}></h3><p data-i18n="page.it-tells-you-when-there-s" set:html={t("page.it-tells-you-when-there-s")}></p><span class="v nums">0.3.0</span></li>
+        <li><span class="n nums"><span>5</span><i class="eq" aria-hidden="true"><b></b><b></b><b></b></i></span><h3 data-i18n="page.crossfade" set:html={t("page.crossfade")}></h3><p data-i18n="page.one-fades-out-as-the-next" set:html={t("page.one-fades-out-as-the-next")}></p><span class="v nums soon">1.0</span></li>
+        <li><span class="n nums"><span>6</span><i class="eq" aria-hidden="true"><b></b><b></b><b></b></i></span><h3 data-i18n="page.a-jam-with-friends" set:html={t("page.a-jam-with-friends")}></h3><p data-i18n="page.start-a-shared-session-pass-on" set:html={t("page.start-a-shared-session-pass-on")}></p><span class="v nums soon">1.0</span></li>
+        <li><span class="n nums"><span>7</span><i class="eq" aria-hidden="true"><b></b><b></b><b></b></i></span><h3 data-i18n="page.lyrics" set:html={t("page.lyrics")}></h3><p data-i18n="page.the-words-follow-the-song-beside" set:html={t("page.the-words-follow-the-song-beside")}></p><span class="v nums soon">1.0</span></li>
       </ol>
     </div>
   </section>
 
-  <section class="ring" id="mezcla" data-track="The crossfade" data-track-es="La transición">
+  <section class="ring" id="mezcla" data-track={t("track.the-crossfade")} data-i18n-track="track.the-crossfade">
     <div class="wrap">
-      <h2 data-es="Una baja mientras la otra sube.">One fades out as the next comes in.</h2>
-      <p class="lede" data-es="La transición entre canciones llega en la 1.0. Mueve el control y mira cómo se cruzan: de 0 a 12 segundos, como en la app.">Crossfade arrives in 1.0. Move the slider and watch the two songs cross: from 0 to 12 seconds, as in the app.</p>
+      <h2 data-i18n="page.one-fades-out-as-the-next-2" set:html={t("page.one-fades-out-as-the-next-2")}></h2>
+      <p class="lede" data-i18n="page.crossfade-arrives-in-1-0-move" set:html={t("page.crossfade-arrives-in-1-0-move")}></p>
       <div class="mix">
         <div class="mix-wave">
-          <span class="mix-a" data-es="La que termina">The one ending</span>
+          <span class="mix-a" data-i18n="page.the-one-ending" set:html={t("page.the-one-ending")}></span>
           <svg id="mix" viewBox="0 0 1000 200" preserveAspectRatio="none" aria-hidden="true"></svg>
-          <span class="mix-b" data-es="La que empieza">The one starting</span>
+          <span class="mix-b" data-i18n="page.the-one-starting" set:html={t("page.the-one-starting")}></span>
           <i class="playhead" aria-hidden="true"></i>
         </div>
         <div class="mix-ctl">
-          <label for="xfade" data-es="Cruce">Overlap</label>
+          <label for="xfade" data-i18n="page.overlap" set:html={t("page.overlap")}></label>
           <input type="range" id="xfade" min="0" max="12" step="1" value="6" />
           <output for="xfade" id="xfade-out" class="nums">6 s</output>
         </div>
@@ -522,34 +523,34 @@ const home = new URL(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/`, Astro.si
     </div>
   </section>
 
-  <section class="ring" id="sin" data-track="What it doesn't do" data-track-es="Lo que no hace">
+  <section class="ring" id="sin" data-track={t("track.what-it-doesn-t-do")} data-i18n-track="track.what-it-doesn-t-do">
     <div class="wrap">
-      <h2 data-es="Lo que no hace.">What it doesn't do.</h2>
+      <h2 data-i18n="page.what-it-doesn-t-do" set:html={t("page.what-it-doesn-t-do")}></h2>
       <ul class="nots">
-        <li><h3><span data-es="Contar lo que escuchas">Tell anyone what you listen to</span></h3><p data-es="Cero telemetría. No hay nada que apagar, porque nunca se encendió.">Zero telemetry. There's nothing to switch off, because it was never on.</p></li>
-        <li><h3><span data-es="Enviar algo sin que hagas clic">Send anything without your click</span></h3><p data-es="Un reporte de error sale solo si tú lo mandas, y antes ves qué lleva.">An error report only leaves if you send it, and you see what it carries first.</p></li>
-        <li><h3><span data-es="Pedirte un segundo permiso">Ask you for a second permission</span></h3><p data-es="Entras una vez con tu cuenta. No hay otra pantalla de autorización ni otra identidad.">You sign in once with your account. There's no second authorisation screen and no second identity.</p></li>
-        <li><h3><span data-es="Pasar el audio por una página web">Run the audio through a web page</span></h3><p data-es="El sonido va directo al driver de Windows. Por eso arranca rápido y gasta poca memoria.">Sound goes straight to the Windows driver. That's why it starts fast and uses little memory.</p></li>
-        <li><h3><span data-es="Cobrarte">Charge you</span></h3><p data-es="Es gratis y de código abierto, con licencia MIT. Puedes leer cada línea.">It's free and open source, under the MIT licence. You can read every line.</p></li>
+        <li><h3><span data-i18n="page.tell-anyone-what-you-listen-to" set:html={t("page.tell-anyone-what-you-listen-to")}></span></h3><p data-i18n="page.zero-telemetry-there-s-nothing-to" set:html={t("page.zero-telemetry-there-s-nothing-to")}></p></li>
+        <li><h3><span data-i18n="page.send-anything-without-your-click" set:html={t("page.send-anything-without-your-click")}></span></h3><p data-i18n="page.an-error-report-only-leaves-if" set:html={t("page.an-error-report-only-leaves-if")}></p></li>
+        <li><h3><span data-i18n="page.ask-you-for-a-second-permission" set:html={t("page.ask-you-for-a-second-permission")}></span></h3><p data-i18n="page.you-sign-in-once-with-your" set:html={t("page.you-sign-in-once-with-your")}></p></li>
+        <li><h3><span data-i18n="page.run-the-audio-through-a-web" set:html={t("page.run-the-audio-through-a-web")}></span></h3><p data-i18n="page.sound-goes-straight-to-the-windows" set:html={t("page.sound-goes-straight-to-the-windows")}></p></li>
+        <li><h3><span data-i18n="page.charge-you" set:html={t("page.charge-you")}></span></h3><p data-i18n="page.it-s-free-and-open-source" set:html={t("page.it-s-free-and-open-source")}></p></li>
       </ul>
     </div>
   </section>
 
-  <section class="ring" id="antes" data-track="Before you install" data-track-es="Antes de instalar">
+  <section class="ring" id="antes" data-track={t("track.before-you-install")} data-i18n-track="track.before-you-install">
     <div class="wrap">
-      <h2 data-es="Antes de instalar.">Before you install.</h2>
+      <h2 data-i18n="page.before-you-install-2" set:html={t("page.before-you-install-2")}></h2>
       <div class="before">
         <div class="lead">
-          <h3 data-es="Windows te va a avisar">Windows will warn you</h3>
-          <p data-es="El instalador todavía no está firmado, así que verás “Windows protegió tu PC”. Se pasa así:">The installer isn't signed yet, so you'll see “Windows protected your PC”. Here's how to get past it:</p>
-          <ol><li data-es="Toca <b>Más información</b>.">Click <b>More info</b>.</li><li data-es="Toca <b>Ejecutar de todas formas</b>.">Click <b>Run anyway</b>.</li></ol>
+          <h3 data-i18n="page.windows-will-warn-you" set:html={t("page.windows-will-warn-you")}></h3>
+          <p data-i18n="page.the-installer-isn-t-signed-yet" set:html={t("page.the-installer-isn-t-signed-yet")}></p>
+          <ol><li data-i18n="page.click-more-info" set:html={t("page.click-more-info")}></li><li data-i18n="page.click-run-anyway" set:html={t("page.click-run-anyway")}></li></ol>
         </div>
         <div>
-          <div class="fact"><h3 data-es="Necesitas Premium">You need Premium</h3><p data-es="Es una condición de la tecnología que reproduce el audio: las cuentas gratuitas no funcionan.">It's a condition of the technology that plays the audio: free accounts don't work.</p></div>
-          <div class="fact"><h3 data-es="Es no oficial">It's unofficial</h3><p data-es="Un proyecto independiente. Si el servicio cambia algo por dentro, puede dejar de funcionar unos días.">An independent project. If the service changes something under the hood, it can stop working for a few days.</p></div>
-          <div class="fact"><h3 data-es="Tu contraseña no pasa por Starless">Your password never goes through Starless</h3><p data-es="Inicias sesión en tu navegador, en la página oficial del servicio. Starless recibe un permiso para reproducir y nunca ve tu contraseña.">You sign in in your browser, on the service's official page. Starless receives a permission to play and never sees your password.</p></div>
-          <div class="fact"><h3 data-es="Usarla es decisión tuya">Using it is your call</h3><p data-es="El servicio no autoriza clientes no oficiales. Starless solo reproduce lo que tu cuenta ya puede reproducir y no convierte canciones en archivos, pero nadie puede prometerte que el servicio nunca actúe sobre una cuenta.">The service doesn't authorise unofficial clients. Starless only plays what your account can already play and doesn't turn songs into files, but no one can promise you the service will never act on an account.</p></div>
-          <div class="fact"><h3 data-es="Por ahora, solo Windows">Windows only, for now</h3><p data-es="macOS y Linux vienen después de que Windows esté firmado y estable.">macOS and Linux come once Windows is signed and stable.</p></div>
+          <div class="fact"><h3 data-i18n="page.you-need-premium" set:html={t("page.you-need-premium")}></h3><p data-i18n="page.it-s-a-condition-of-the" set:html={t("page.it-s-a-condition-of-the")}></p></div>
+          <div class="fact"><h3 data-i18n="page.it-s-unofficial" set:html={t("page.it-s-unofficial")}></h3><p data-i18n="page.an-independent-project-if-the-service" set:html={t("page.an-independent-project-if-the-service")}></p></div>
+          <div class="fact"><h3 data-i18n="page.your-password-never-goes-through-starless" set:html={t("page.your-password-never-goes-through-starless")}></h3><p data-i18n="page.you-sign-in-in-your-browser" set:html={t("page.you-sign-in-in-your-browser")}></p></div>
+          <div class="fact"><h3 data-i18n="page.using-it-is-your-call" set:html={t("page.using-it-is-your-call")}></h3><p data-i18n="page.the-service-doesn-t-authorise-unofficial" set:html={t("page.the-service-doesn-t-authorise-unofficial")}></p></div>
+          <div class="fact"><h3 data-i18n="page.windows-only-for-now" set:html={t("page.windows-only-for-now")}></h3><p data-i18n="page.macos-and-linux-come-once-windows" set:html={t("page.macos-and-linux-come-once-windows")}></p></div>
         </div>
       </div>
     </div>
@@ -557,18 +558,18 @@ const home = new URL(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/`, Astro.si
 </main>
 
 <footer id="fin">
-  <span data-es="Starless es un proyecto independiente, sin relación con el servicio de música que reproduce.">Starless is an independent project, unaffiliated with the music service it plays.</span>
+  <span data-i18n="page.starless-is-an-independent-project-unaffiliated" set:html={t("page.starless-is-an-independent-project-unaffiliated")}></span>
   <span>MIT · <a href="https://github.com/baironvillar/Starless">GitHub</a></span>
 </footer>
 
-<div class="player sl-glass" role="region" aria-label="Player and download" data-es-label="Reproductor y descarga">
+<div class="player sl-glass" role="region" aria-label={t("page.player-and-download")} data-i18n-label="page.player-and-download">
   <canvas class="dot" id="dot" width="84" height="84" aria-hidden="true"></canvas>
   <div class="now">
     <div class="line"><span id="title-now">Starless</span></div>
-    <small class="nums" data-es="En beta · Para Windows">In beta · For Windows</small>
+    <small class="nums" data-i18n="page.in-beta-for-windows" set:html={t("page.in-beta-for-windows")}></small>
     <div class="bar" aria-hidden="true"><i id="progress"></i></div>
   </div>
-  <a class="key" href="https://github.com/baironvillar/Starless/releases/download/v0.5.5/Starless_0.5.5_x64.msi" data-msi aria-label="Download for Windows" data-es-label="Descargar para Windows"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0l-5-5m5 5l5-5M5 20h14"/></svg><span data-es="Descargar">Download</span></a>
+  <a class="key" href="https://github.com/baironvillar/Starless/releases/download/v0.5.5/Starless_0.5.5_x64.msi" data-msi aria-label={t("page.download-for-windows")} data-i18n-label="page.download-for-windows"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0l-5-5m5 5l5-5M5 20h14"/></svg><span data-i18n="page.download" set:html={t("page.download")}></span></a>
 </div>
 
 <script is:inline id="frag" type="x-shader/x-fragment">
@@ -946,14 +947,16 @@ void main() {
   // The DJ's line, a word at a time across the part of the section that
   // holds still, the way the app shows the phrase while the voice says it.
   const djLine = document.getElementById("dj-line");
-  // Both languages live in the markup: English is the text, Spanish rides in
-  // data-es. The English is kept before anything rewrites it, the DJ's line included.
-  const translated = [...document.querySelectorAll("[data-es]")];
-  for (const n of translated) n.dataset.en = n.innerHTML;
-  const labelled = [...document.querySelectorAll("[data-es-label]")];
-  for (const n of labelled) n.dataset.enLabel = n.getAttribute("aria-label");
+  // Every text carries its key (data-i18n, data-i18n-label, data-i18n-track),
+  // and both languages live in src/i18n. The build wrote the English; the switch
+  // asks i18next for the other one. See docs/landing-i18n.md.
+  const translated = [...document.querySelectorAll("[data-i18n]")];
+  const labelled = [...document.querySelectorAll("[data-i18n-label]")];
   const sections = [...document.querySelectorAll("[data-track]")];
-  for (const s of sections) s.dataset.trackEn = s.dataset.track;
+  // i18next arrives with the module script, which runs after this one: anything
+  // that needs it waits for the event the module sends when it is ready.
+  const whenI18n = (fn) =>
+    window.starlessI18n ? fn() : document.addEventListener("starless:i18n", fn, { once: true });
 
   function splitDj() {
     const words = djLine.textContent.trim().split(/\s+/);
@@ -1075,9 +1078,12 @@ void main() {
   function apply(next) {
     lang = next;
     document.documentElement.lang = next;
-    for (const n of translated) n.innerHTML = next === "es" ? n.dataset.es : n.dataset.en;
-    for (const n of labelled) n.setAttribute("aria-label", next === "es" ? n.dataset.esLabel : n.dataset.enLabel);
-    for (const s of sections) s.dataset.track = next === "es" ? s.dataset.trackEs : s.dataset.trackEn;
+    const t = window.starlessI18n.getFixedT(next);
+    // A text with a number in it (the drawing's "12 songs") carries the number in data-i18n-count.
+    for (const n of translated)
+      n.innerHTML = t(n.dataset.i18n, n.dataset.i18nCount ? { count: Number(n.dataset.i18nCount) } : undefined);
+    for (const n of labelled) n.setAttribute("aria-label", t(n.dataset.i18nLabel));
+    for (const s of sections) s.dataset.track = t(s.dataset.i18nTrack);
     splitDj();
     paint();
     currentSpan.textContent = current.dataset.track;
@@ -1088,17 +1094,26 @@ void main() {
   function setLang(next) {
     want = next;
     try { localStorage.setItem("starless-lang", next); } catch {}
-    if (reduce) return apply(next);
+    if (reduce) return whenI18n(() => apply(next));
     if (timer) return;
     document.documentElement.classList.add("swapping");
     timer = setTimeout(() => {
       timer = 0;
-      apply(want);
-      document.documentElement.classList.remove("swapping");
+      whenI18n(() => {
+        apply(want);
+        document.documentElement.classList.remove("swapping");
+      });
     }, 180);
   }
   document.querySelector(".lang").addEventListener("click", () => setLang(want === "en" ? "es" : "en"));
-  try { if (localStorage.getItem("starless-lang") === "es") { want = "es"; apply("es"); } } catch {}
+  try { if (localStorage.getItem("starless-lang") === "es") { want = "es"; whenI18n(() => apply("es")); } } catch {}
+</script>
+<script>
+  // Bundled by Astro, unlike the inline script above: this is the one place the
+  // browser loads i18next. It hands the instance over and says it is ready.
+  import { i18n } from "../i18n";
+  Object.assign(window, { starlessI18n: i18n });
+  document.dispatchEvent(new Event("starless:i18n"));
 </script>
 </body>
 </html>
