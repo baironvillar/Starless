@@ -371,6 +371,15 @@ pub struct JamSession {
     /// El servicio escribe este en camelCase y todo lo demás en snake_case.
     #[serde(rename = "maxMemberCount", default)]
     pub max_member_count: Option<u32>,
+    /// El device que el jam dice que está sonando.
+    ///
+    /// **Un jam tiene un solo device activo**, y lo cambia quien está del otro
+    /// lado cuando elige escuchar desde su teléfono. El que era activo tiene
+    /// que hacerse a un lado: si sigue publicando que está sonando, le roba el
+    /// device activo de vuelta y la elección de la otra persona no pasa de una
+    /// frase.
+    #[serde(rename = "hostActiveDeviceId", default)]
+    pub host_active_device_id: Option<String>,
 }
 
 /// Alguien que está en el jam.

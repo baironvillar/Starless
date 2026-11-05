@@ -9,6 +9,7 @@
 //! Opening an output device before the user has asked for anything is a rude
 //! thing for an app to do at launch.
 
+use std::collections::HashMap;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
@@ -21,6 +22,7 @@ use librespot_playback::{
     mixer::VolumeGetter,
     player::{Player, PlayerEvent},
 };
+use futures_util::StreamExt;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -41,7 +43,996 @@ const POSITION_INTERVAL_MS: u64 = 500;
 /// webview's thread is free for the pointer that is asking.
 const STATUS_ECHO_MS: u64 = 100;
 
+/// El tema por el que el backend manda los comandos del player.
+const COMMAND_TOPIC: &str = "hm://connect-state/v1/player/command";
+
+/// Una canción de la cola que manda el otro lado.
+#[derive(Serialize, Clone, Debug)]
+pub struct QueueSong {
+    /// La canción, con sus datos.
+    pub track: crate::models::Track,
+    /// El identificador que el servicio le dio a la pista.
+    pub uid: String,
+}
+
+/// Lo que el otro lado mandó, en la forma que el webview la entiende.
+#[derive(Serialize, Clone, Debug)]
+pub struct RemoteCommand {
+    /// Qué hay que hacer: `skip_next`, `skip_prev`, `pause`, `play`,
+    /// `resume`, `seek_to` o `add_to_queue`.
+    pub endpoint: String,
+    /// La canción del comando, con sus datos, si la hubo.
+    pub track: Option<crate::models::Track>,
+    /// La id de la canción del comando, aunque no se hayan podido resolver sus
+    /// datos.
+    pub track_id: Option<String>,
+    /// El identificador que el servicio le dio a la canción.
+    ///
+    /// **Es lo que hace que la canción entre en la cola compartida.** El
+    /// servicio guarda las pistas de la cola con el identificador que él les
+    /// da, y una pista sin él no llega a la cola que el otro lado ve. El
+    /// comando lo trae, porque el comando es del servicio.
+    pub track_uid: Option<String>,
+    /// A qué milisegundo saltar, si el comando es un `seek_to`.
+    pub position_ms: Option<u32>,
+    /// La cola entera, si el comando es un `set_queue`.
+    ///
+    /// **Es la cola que el otro lado está mostrando.** El comando `set_queue`
+    /// trae las canciones que van después, con el identificador que el
+    /// servicio les dio a cada una: sin ese identificador el servicio no puede
+    /// apuntar a ninguna, y la cola compartida se queda vacía.
+    pub queue: Vec<QueueSong>,
+    /// El device del otro lado al que se traspasó la música, si el comando fue
+    /// un `transfer`.
+    ///
+    /// **Es el device que tiene la música.** El `transfer` es el aviso de que
+    /// la música del jam cambió de manos, y el que viaja en el comando es
+    /// justamente el device al que pertenece ahora.
+    pub from_device: Option<String>,
+    /// Si la música del traspaso es de esta app.
+    ///
+    /// **Es lo que decide si se toma o se cede.** Si la música es de esta app,
+    /// la app sigue sonando; si es del otro, la app se hace a un lado: dos
+    /// devices con la misma música en el jam es la forma de que los dos suenen
+    /// cosas distintas.
+    pub for_me: bool,
+    /// Si la música del traspaso venía pausada.
+    pub paused: bool,
+    /// La URI del contexto que hay que poner, cuando no es una canción.
+    ///
+    /// **Es una lista.** Una playlist, un álbum, un artista: el comando `play`
+    /// del otro lado lo dice con la URI del contexto, y sin esto la lista se
+    /// perdía en el camino.
+    pub context_uri: Option<String>,
+    /// Si el contexto va barajado.
+    ///
+    /// **El barajado es una decisión del otro lado.** Cuando pone una playlist
+    /// al azar, el comando lo dice, y la lista tiene que sonar al azar: una
+    /// lista barajada que suena en el orden en que está guardada contradice al
+    /// botón que la otra persona tiene encendido en su pantalla.
+    pub shuffled: bool,
+}
+
+/// Escucha los comandos que manda el otro lado del jam.
+///
+/// **El camino de vuelta.** El comando que manda el celu —saltar, pausar,
+/// agregar una canción— no llega por una puerta HTTP: llega al `dealer`, como
+/// un *request* del backend, y lo tiene que contestar el dispositivo al que va
+/// dirigido. Sin escucharlo, el celu aprieta "siguiente" y no pasa nada.
+///
+/// **Son requests y no mensajes**, y esa es toda la diferencia: un mensaje se
+/// mira y listo; un request además *exige* respuesta, y el que no contesta
+/// deja esperando al otro lado. Por eso va con `handle_for` y no con
+/// `listen_for`.
+///
+/// **El comando no se aplica acá.** La cola es del frontend —es la lista que
+/// el usuario ve—, así que el comando baja como un evento y lo aplica el
+/// webview.
+pub fn watch_commands(app: AppHandle) {
+    std::thread::spawn(move || {
+        let Some(session_state) = app.try_state::<crate::SessionState>() else {
+            return;
+        };
+        let session = match session_state.ready() {
+            Ok(session) => session,
+            Err(_) => return,
+        };
+
+        // **El handler tiene que estar antes de que llegue el comando**: un
+        // request que no tiene a quién contestarle se pierde con un aviso en
+        // el log. Y el `dealer` puede todavía estar levantándose.
+        let mut intentos = 0;
+        let stream = loop {
+            match session.dealer().handle_for(COMMAND_TOPIC) {
+                Ok(stream) => break stream,
+                Err(error) => {
+                    intentos += 1;
+                    if intentos > 40 {
+                        log::error!("playback: no se pudieron escuchar los comandos: {error}");
+                        return;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                }
+            }
+        };
+
+        let para_el_bucle = session.clone();
+        session.spawn(async move {
+            let mut stream = stream;
+            while let Some((request, reply)) = stream.next().await {
+                let mut command = translate(&para_el_bucle, &request.command, &request.sent_by_device_id).await;
+                // **El id de la pista, si el comando no lo trajo.** El comando
+                // `add_to_queue` del otro lado llega sin id: el servicio no lo
+                // resolvió, y sin id la canción no entra en la cola
+                // compartida. Se pregunta el contexto de la pista —el único
+                // lugar donde el servicio da el id— y se anota.
+                if command.track_uid.as_deref().unwrap_or_default().is_empty() {
+                    if let Some(id) = &command.track_id {
+                        let uri = format!("spotify:track:{id}");
+                        if let Some(uid) = crate::spclient::state::uid_de_la_pista(&para_el_bucle, &uri)
+                        {
+                            track_uids().remember(&uri, &uid);
+                            command.track_uid = Some(uid);
+                        }
+                    }
+                }
+                log::info!(
+                    "playback: el otro lado mandó {} (de {}){}",
+                    command.endpoint,
+                    request.sent_by_device_id,
+                    match &command.track {
+                        Some(track) => format!(" · {} {}", track.name, track.id),
+                        None => String::new(),
+                    }
+                );
+                // **El `uid` de la pista, aparte.** Es lo que decide si la
+                // canción entra en la cola compartida, y un comando sin él es
+                // media respuesta: sin el identificador no se sabe si la
+                // canción quedó en la cola o afuera.
+                if let Some(uid) = &command.track_uid {
+                    log::info!(
+                        "playback: la canción del comando tiene el uid {}",
+                        if uid.is_empty() { "(vacío)" } else { uid }
+                    );
+                }
+                // **El id se anota.** El comando es del servicio, así que el `uid`
+                // que trae es del servicio: es el único que puede volver a
+                // publicar esa canción en la cola compartida.
+                if let (Some(id), Some(uid)) = (&command.track_id, &command.track_uid) {
+                    track_uids().remember(&format!("spotify:track:{id}"), uid);
+                }
+                // **Los ids de la cola del otro lado también se anotan.** Es la
+                // lista completa de lo que el otro está mostrando, con el
+                // identificador que el servicio le dio a cada canción: sin
+                // ellos, publicar esa cola es publicar a ciegas.
+                for song in &command.queue {
+                    track_uids().remember(&format!("spotify:track:{}", song.track.id), &song.uid);
+                }
+                let _ = app.emit("jam://command", &command);
+                let _ = reply.send(librespot_core::dealer::manager::Reply::Success);
+            }
+        });
+    });
+}
+
+/// Traduce el comando del `dealer` a lo que el webview entiende.
+async fn translate(
+    session: &Session,
+    command: &librespot_core::dealer::protocol::request::Command,
+    mandado_por: &str,
+) -> RemoteCommand {
+    use librespot_core::dealer::protocol::request::Command;
+
+    let nada = RemoteCommand {
+        endpoint: String::new(),
+        track: None,
+        track_id: None,
+        track_uid: None,
+        position_ms: None,
+        queue: Vec::new(),
+        from_device: None,
+        for_me: false,
+        paused: false,
+        context_uri: None,
+        shuffled: false,
+    };
+
+    match command {
+        Command::SkipNext(saltar) => {
+            // **La pista a la que salta, cuando la trae.** El teléfono dice a
+            // qué canción salta; sin eso, el frontend avanza en su propia
+            // cola —que es otra lista— y las dos no se pican.
+            let mut comando = RemoteCommand {
+                endpoint: "skip_next".to_string(),
+                ..nada
+            };
+            if let Some(track) = &saltar.track {
+                let id = track.uri.rsplit(':').next().unwrap_or_default().to_string();
+                comando.track_id = Some(id.clone());
+                comando.track_uid = Some(track.uid.clone());
+                comando.track = resolve(session, &id).await;
+            }
+            comando
+        }
+        Command::SkipPrev(_) => RemoteCommand {
+            endpoint: "skip_prev".to_string(),
+            ..nada
+        },
+        Command::Pause(_) => RemoteCommand {
+            endpoint: "pause".to_string(),
+            ..nada
+        },
+        Command::Play(play) => {
+            // **La pista que hay que poner es la que dice el comando.**
+            //
+            // El `skip_to` dice a cuál saltar; si no hay, es el contexto, que
+            // puede ser una pista. Sin esto, "play" es "seguí con lo que
+            // estés sonando" y el teléfono aprieta una canción y Starless
+            // sigue con la otra.
+            let salto = play.options.skip_to.as_ref();
+            let uri = salto
+                .and_then(|salto| salto.track_uri.clone())
+                .or_else(|| play.context.uri.clone());
+
+            // **El barajado viene con el comando.** Cuando la otra persona
+            // pone una playlist al azar, el comando lo dice en las opciones del
+            // player: sin esto, la lista sonaría en el orden en que está
+            // guardada, que no es lo que pidió.
+            let shuffled = play
+                .options
+                .player_options_override
+                .as_ref()
+                .and_then(|opciones| opciones.shuffling_context)
+                .unwrap_or(false);
+
+            let mut comando = RemoteCommand {
+                endpoint: "play".to_string(),
+                ..nada
+            };
+
+            match uri {
+                Some(uri) if uri.starts_with("spotify:track:") => {
+                    let id = uri.rsplit(':').next().unwrap_or_default().to_string();
+                    comando.track_id = Some(id.clone());
+                    comando.track_uid = salto.and_then(|salto| salto.track_uid.clone());
+                    comando.track = resolve(session, &id).await;
+                }
+                Some(uri) => {
+                    // **Una lista es una lista, no una canción.** Cuando la
+                    // otra persona pone una playlist —un álbum, un artista—
+                    // lo que tiene que sonar es la lista, con sus canciones
+                    // en la cola. Antes el comando se descartaba: el otro
+                    // lado ponía una lista y acá no pasaba nada.
+                    comando.endpoint = "play_context".to_string();
+                    comando.context_uri = Some(uri);
+                    comando.shuffled = shuffled;
+                }
+                None => {}
+            }
+            comando
+        }
+        Command::SetQueue(cola) => {
+            // **La cola entera del otro lado.** El comando `set_queue` es lo
+            // que hace que las dos colas sean la misma: el invitado manda las
+            // canciones que van después, cada una con el identificador que el
+            // servicio le dio. Sin ese identificador el servicio no puede
+            // apuntar a ninguna pista, y la cola compartida se queda vacía.
+            //
+            // Los nombres y las portadas no vienen en el comando: se piden
+            // después, en una tanda, porque el comando puede traer cientos de
+            // canciones y pedir una por una es un viaje por la red cada vez.
+            let canciones: Vec<(String, String)> = cola
+                .next_tracks
+                .iter()
+                .map(|pista| (pista.uri.rsplit(':').next().unwrap_or_default().to_string(), pista.uid.clone()))
+                .filter(|(id, _)| !id.is_empty())
+                .take(MAX_QUEUE_SONGS)
+                .collect();
+
+            let mut comando = RemoteCommand {
+                endpoint: "set_queue".to_string(),
+                ..nada
+            };
+            if !canciones.is_empty() {
+                let filas: Vec<(String, Option<i64>)> = canciones
+                    .iter()
+                    .map(|(id, _)| (id.clone(), None))
+                    .collect();
+                if let Ok(pistas) = crate::spclient::hydrate(session, filas) {
+                    comando.queue = pistas
+                        .into_iter()
+                        .zip(canciones.iter())
+                        .map(|(track, (_, uid))| QueueSong {
+                            track,
+                            uid: uid.clone(),
+                        })
+                        .collect();
+                }
+            }
+            comando
+        }
+        Command::Resume(_) => RemoteCommand {
+            // **Seguir es seguir, no poner una canción.** Es otro comando, y
+            // el frontend los trata distinto: uno pone una pista, el otro
+            // levanta la que ya está sonando.
+            endpoint: "resume".to_string(),
+            ..nada
+        },
+        Command::SeekTo(seek) => RemoteCommand {
+            endpoint: "seek_to".to_string(),
+            position_ms: Some(seek.position),
+            ..nada
+        },
+        Command::AddToQueue(agregar) => {
+            // **La pista viene como `ContextTrack`**: la URI y el uid. El id
+            // sale de la URI, y los datos de la canción se piden al servicio:
+            // sin ellos el frontend no puede ponerla en la cola.
+            let id = agregar
+                .track
+                .uri
+                .rsplit(':')
+                .next()
+                .unwrap_or_default()
+                .to_string();
+            let track = resolve(session, &id).await;
+            RemoteCommand {
+                endpoint: "add_to_queue".to_string(),
+                track,
+                track_id: Some(id),
+                // **El `uid` viaja con el comando.** Es el identificador que el
+                // servicio le dio a la pista, y es lo que hace que la pista
+                // entre en la cola compartida en vez de quedarse afuera.
+                track_uid: Some(agregar.track.uid.clone()),
+                ..nada
+            }
+        }
+        // **El `transfer` llega como desconocido.** El deserializador de
+        // librespot exige campos que el servicio no manda, así que el comando
+        // cae en `Unknown` con el JSON crudo adentro. Es el comando que mueve
+        // la música entre devices: sin él, la otra persona elige en qué device
+        // escuchar y acá no pasa nada.
+        Command::Unknown(value) => {
+            match translate_transfer(session, &value, mandado_por).await {
+                Some(comando) => comando,
+                None => RemoteCommand {
+                    endpoint: format!(
+                        "desconocido: {}",
+                        campo(&value, &["endpoint"]).and_then(|v| v.as_str()).unwrap_or("???")
+                    ),
+                    ..nada
+                },
+            }
+        }
+        other => RemoteCommand {
+            endpoint: format!("desconocido: {other}"),
+            ..nada
+        },
+    }
+}
+
+/// Lo que dice un `transfer`: el estado de la música en el momento del traspaso.
+///
+/// **El traspaso es el comando que mueve la música entre devices.** Cuando la
+/// otra persona del jam elige en qué device escuchar, el servicio manda este
+/// comando con el estado entero: la canción que suena, la cola y la posición.
+///
+/// **El estado viene en protobuf y en base64.** Es lo que manda el `dealer`, y
+/// el cliente de escritorio lo lee con el mismo formato: el `data` no es un
+/// objeto con campos, es un `TransferState` empaquetado.
+#[derive(Default)]
+struct EstadoDelTraspaso {
+    /// La canción que suena: su id y el identificador que le dio el servicio.
+    pista: Option<(String, String)>,
+    /// La cola que viene con el traspaso: el id y el identificador de cada una.
+    cola: Vec<(String, String)>,
+    /// En qué milisegundo va la canción.
+    posicion_ms: Option<u32>,
+    /// Si la música venía pausada.
+    pausada: bool,
+}
+
+/// Traduce el `transfer`: el comando que mueve la música entre devices.
+///
+/// **El `transfer` es el único comando que no se sabe leer.** El deserializador
+/// de librespot exige un `options` y un `logging_params` que el servicio no
+/// manda, así que el comando llega como `Unknown` con el JSON crudo adentro.
+/// Acá se lee a mano.
+///
+/// **Lo que trae es el estado de la música**: la canción que suena con el
+/// identificador que le dio el servicio, la cola completa y la posición. Es la
+/// misma información que manda el `set_queue`, pero del device al que se le
+/// traspasó la música.
+///
+/// **El `data` puede venir en dos formatos.** El `dealer` lo manda en protobuf
+/// y en base64, y hay versiones que lo mandan como JSON. Se leen los dos: un
+/// formato que no se entiende es un traspaso que no se aplica.
+async fn translate_transfer(
+    session: &Session,
+    value: &serde_json::Value,
+    mandado_por: &str,
+) -> Option<RemoteCommand> {
+    if campo(value, &["endpoint"]).and_then(|v| v.as_str()) != Some("transfer") {
+        return None;
+    }
+
+    let from_device = campo(value, &["from_device_identifier", "fromDeviceIdentifier"])
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+
+    let estado = campo(value, &["data"]).and_then(estado_del_traspaso);
+
+    // **Sin estado no hay traspaso que aplicar.** Un `transfer` vacío no dice
+    // qué canción suena: aplicarlo a ciegas sería poner una canción que
+    // nadie pidió.
+    let Some(estado) = estado else {
+        log::warn!("jam: llegó un transfer sin estado; no se aplica");
+        return None;
+    };
+
+    // **El device que tiene la música.** El campo del comando dice de quién es
+    // la música que se está traspasando, y compararlo con el id de esta app
+    // es lo que dice si la app sigue sonando o se hace a un lado.
+    let for_me = jam_soy_el_activo();
+
+    log::info!(
+        "jam: el transfer viene de {from_device} (mandado por {}) · {} · el jam dice que suena {} · {} canciones en la cola · {}ms · pausada: {}",
+        mandado_por,
+        if for_me {
+            "esta app es la que suena"
+        } else {
+            "la música es del otro lado"
+        },
+        jam_active_device().unwrap_or_else(|| "(ninguno)".to_string()),
+        estado.cola.len(),
+        estado.posicion_ms.unwrap_or_default(),
+        estado.pausada,
+    );
+
+    let mut comando = RemoteCommand {
+        endpoint: "transfer".to_string(),
+        track: None,
+        track_id: None,
+        track_uid: None,
+        position_ms: estado.posicion_ms,
+        queue: Vec::new(),
+        from_device: Some(from_device),
+        for_me,
+        paused: estado.pausada,
+        context_uri: None,
+        shuffled: false,
+    };
+
+    // **La canción que suena.** El identificador que trae es del servicio, y es
+    // lo que hace que esa canción entre en la cola compartida.
+    if let Some((id, uid)) = estado.pista {
+        comando.track_id = Some(id.clone());
+        comando.track_uid = Some(uid.clone());
+        comando.track = resolve(session, &id).await;
+    }
+
+    // **La cola que viene con el traspaso.** Son las canciones que el otro lado
+    // tiene en pantalla, cada una con su identificador: sin él, la cola
+    // compartida se queda vacía.
+    let canciones: Vec<(String, String)> = estado.cola.into_iter().take(MAX_QUEUE_SONGS).collect();
+    if !canciones.is_empty() {
+        let filas: Vec<(String, Option<i64>)> =
+            canciones.iter().map(|(id, _)| (id.clone(), None)).collect();
+        if let Ok(pistas) = crate::spclient::hydrate(session, filas) {
+            comando.queue = pistas
+                .into_iter()
+                .zip(canciones.iter())
+                .map(|(track, (_, uid))| QueueSong {
+                    track,
+                    uid: uid.clone(),
+                })
+                .collect();
+        }
+    }
+
+    Some(comando)
+}
+
+/// El estado del traspaso, del `data` que vino.
+///
+/// **El `data` es un `TransferState` en protobuf, y el protobuf viaja en
+/// base64.** El cliente de escritorio lo lee con el mismo formato, así que se
+/// lee con el mismo formato.
+fn estado_del_traspaso(data: &serde_json::Value) -> Option<EstadoDelTraspaso> {
+    match data {
+        serde_json::Value::String(base64) => {
+            use base64::Engine;
+            use base64::prelude::BASE64_STANDARD;
+            use protobuf::Message;
+
+            let bytes = BASE64_STANDARD.decode(base64).ok()?;
+            let estado = librespot_protocol::transfer_state::TransferState::parse_from_bytes(&bytes)
+                .ok()?;
+            Some(estado_del_proto(&estado))
+        }
+        // **También puede venir como JSON.** El mismo estado, en el otro
+        // formato que usa el servicio para hablarle a un device.
+        serde_json::Value::Object(_) => Some(estado_del_json(data)),
+        _ => None,
+    }
+}
+
+/// El estado del traspaso, leído del protobuf.
+fn estado_del_proto(estado: &librespot_protocol::transfer_state::TransferState) -> EstadoDelTraspaso {
+    let mut salida = EstadoDelTraspaso::default();
+
+    if let Some(playback) = estado.playback.as_ref() {
+        salida.pausada = playback.is_paused.unwrap_or(false);
+        if let Some(pista) = playback.current_track.as_ref()
+            && let Some(id) = id_de_uri(pista.uri.as_deref())
+        {
+            salida.pista = Some((id, pista.uid.clone().unwrap_or_default()));
+        }
+        // **La posición es la de hace un rato.** El traspaso dice en qué
+        // milisegundo va la canción y en qué instante se midió; la diferencia
+        // entre los dos es lo que pasó mientras el comando viajaba. Se corrige
+        // sólo si el desfase es de los cortos: un reloj que no es el del
+        // servicio daría una diferencia enorme y mejor ignorarla.
+        let posicion = playback.position_as_of_timestamp.unwrap_or(0).max(0) as u64;
+        let desfase = match playback.timestamp {
+            Some(instante) => (ahora_en_milisegundos().saturating_sub(instante.max(0) as u64))
+                .min(60_000),
+            None => 0,
+        };
+        if posicion > 0 {
+            salida.posicion_ms = Some((posicion + desfase) as u32);
+        }
+    }
+
+    if let Some(queue) = estado.queue.as_ref() {
+        for pista in queue.tracks.iter() {
+            if let Some(id) = id_de_uri(pista.uri.as_deref()) {
+                salida.cola.push((id, pista.uid.clone().unwrap_or_default()));
+            }
+        }
+    }
+
+    salida
+}
+
+/// El estado del traspaso, leído del JSON.
+fn estado_del_json(data: &serde_json::Value) -> EstadoDelTraspaso {
+    let mut salida = EstadoDelTraspaso::default();
+
+    if let Some(playback) = data.get("playback") {
+        salida.pausada = campo(playback, &["isPaused", "is_paused"])
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if let Some(pista) = campo(playback, &["currentTrack", "current_track"])
+            && let Some(id) = id_de_uri(campo(pista, &["uri"]).and_then(|v| v.as_str()))
+        {
+            let uid = campo(pista, &["uid"])
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            salida.pista = Some((id, uid));
+        }
+        let posicion = campo(playback, &["positionAsOfTimestamp", "position_as_of_timestamp"])
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0)
+            .max(0) as u32;
+        if posicion > 0 {
+            salida.posicion_ms = Some(posicion);
+        }
+    }
+
+    if let Some(pistas) = data
+        .get("queue")
+        .and_then(|q| q.get("tracks"))
+        .and_then(|v| v.as_array())
+    {
+        for pista in pistas {
+            if let Some(id) = id_de_uri(campo(pista, &["uri"]).and_then(|v| v.as_str())) {
+                let uid = campo(pista, &["uid"])
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                salida.cola.push((id, uid));
+            }
+        }
+    }
+
+    salida
+}
+
+/// El primer campo que existe, de entre los nombres que puede tener.
+///
+/// **El protobuf en JSON escribe los nombres de dos maneras**, y el servicio no
+/// siempre usa la misma: se buscan las dos antes de decir que no está.
+fn campo<'a>(valor: &'a serde_json::Value, nombres: &[&str]) -> Option<&'a serde_json::Value> {
+    nombres.iter().find_map(|nombre| valor.get(*nombre))
+}
+
+/// El id de una pista, si su URI lo trae.
+fn id_de_uri(uri: Option<&str>) -> Option<String> {
+    let id = uri?.rsplit(':').next().unwrap_or_default();
+    if id.is_empty() { None } else { Some(id.to_string()) }
+}
+
+/// El reloj de la máquina, en milisegundos.
+fn ahora_en_milisegundos() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or_default()
+}
+
+/// Los datos de una canción, para que el frontend pueda ponerla en la cola.
+async fn resolve(session: &Session, id: &str) -> Option<crate::models::Track> {
+    let uri = SpotifyUri::from_uri(&format!("spotify:track:{id}")).ok()?;
+    let meta = MetaTrack::get(session, &uri).await.ok()?;
+    Some(crate::spclient::convert(&meta, session))
+}
+
 const MAX_VOLUME: u16 = 65535;
+
+/// Cada cuánto se le dice a Spotify qué está sonando.
+///
+/// **La posición también es parte del estado.** Quien escucha del otro lado
+/// necesita saber en qué segundo va la canción para no quedar desfasado, y
+/// cinco segundos es la diferencia entre "va conmigo" y "va un rato atrasado".
+const PUBLISH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Cuántas canciones de la cola del otro lado se resuelven.
+///
+/// **La cola compartida llega entera y son cientos.** Los datos de cada una se
+/// piden en una tanda, así que el costo no crece canción por canción, pero
+/// tampoco tiene sentido traer quinientas: la cola que se ve es la de las
+/// primeras.
+const MAX_QUEUE_SONGS: usize = 100;
+
+/// La cola de la app: lo que va a sonar después de la de ahora.
+///
+/// **Esta cola es la cola compartida del jam.** El servicio arma la cola del
+/// jam con lo que publica el player del anfitrión, así que lo que se publica
+/// como "lo que sigue" es lo que los dos van a escuchar. Antes se publicaba el
+/// contexto de autoplay —la estación que armó el servicio—, que no es la cola
+/// que eligió el usuario: una canción que se suma a la cola no le llegaba al
+/// otro lado.
+///
+/// **Son URIs y uids, no pistas.** Lo que viaja es el id de la canción y el
+/// identificador que le dio el servicio; el nombre y la portada no hacen falta,
+/// porque el otro lado los pide con el id.
+///
+/// **La escribe el frontend.** La cola vive en la app, no en el backend: el
+/// backend no sabe qué eligió la persona ni qué se agregó después.
+#[derive(Default)]
+pub struct PublishQueue(Mutex<Vec<(String, String)>>);
+
+impl PublishQueue {
+    /// Guarda la cola que va a sonar después de la de ahora.
+    ///
+    /// **Se reemplaza entera, no se le agrega.** La cola que se publica es la
+    /// cola que hay: si la app quitó una canción, esa canción tiene que dejar
+    /// de estar en lo que el otro lado ve.
+    pub fn set(&self, tracks: Vec<(String, String)>) {
+        let mut cola = match self.0.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        *cola = tracks;
+    }
+}
+
+/// El device que el jam dice que está sonando.
+///
+/// **Un jam tiene un solo device activo.** Cuando otra persona elige escuchar
+/// desde su teléfono, el servicio cambia el device activo, y el que era
+/// activo tiene que hacerse a un lado: si sigue publicando que está sonando,
+/// le roba el device activo de vuelta y la elección de la otra persona no pasa
+/// de una frase.
+static JAM_ACTIVE_DEVICE: Mutex<Option<String>> = Mutex::new(None);
+
+/// Si esta app es la que el jam dice que está sonando.
+///
+/// **Es la respuesta a la pregunta que hace el otro lado del jam**: "en qué
+/// device escucho". Un jam tiene un solo device sonando, y el que no es ése
+/// tiene que hacerse a un lado: dos devices con música propia en el mismo jam
+/// son dos jams distintos, y cada uno oye una canción diferente.
+static JAM_SOY_EL_ACTIVO: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(true);
+
+/// Si esta app es la que el jam dice que está sonando.
+pub fn jam_soy_el_activo() -> bool {
+    JAM_SOY_EL_ACTIVO.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// El device activo del jam, si el jam dijo cuál es.
+pub fn jam_active_device() -> Option<String> {
+    match JAM_ACTIVE_DEVICE.lock() {
+        Ok(guard) => guard.clone(),
+        Err(poisoned) => poisoned.into_inner().clone(),
+    }
+}
+
+/// Anota el device activo del jam.
+///
+/// **El id de esta app se resuelve acá y queda anotado.** La comparación
+/// necesita el id de la sesión, y el estado del jam se lee en un hilo que no
+/// la tiene a mano; además el estado del player —que es lo que el webview
+/// mira— no tiene por qué llevar la sesión.
+///
+/// **El invitado no se aparta por esto.** El campo del jam dice cuál es el
+/// device del *anfitrión*, y para el invitado ese dato no habla de su propio
+/// device: no dice quién está sonando. El invitado decide con el `transfer`,
+/// que es el comando que mueve la música.
+pub fn remember_jam_device(device: Option<String>, mi_device_id: &str, soy_anfitrion: bool) {
+    let mut guard = match JAM_ACTIVE_DEVICE.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    if *guard != device {
+        log::info!(
+            "jam: el device que suena ahora es {}",
+            device.clone().unwrap_or_else(|| "(ninguno)".to_string())
+        );
+    }
+    // **Un jam sin device activo no es un jam sin música: es un jam con la
+    // música del otro lado.** El campo vacío es lo que contesta el servicio
+    // cuando el anfitrión no es el que está sonando.
+    let mio = if !soy_anfitrion {
+        true
+    } else {
+        match &*guard {
+            None => true,
+            Some(device) if device.is_empty() => false,
+            Some(device) => device == &crate::spclient::state::DEVICE_NAME || device == mi_device_id,
+        }
+    };
+    JAM_SOY_EL_ACTIVO.store(mio, std::sync::atomic::Ordering::Relaxed);
+    *guard = device;
+}
+
+/// Si esta app es el device que el jam dice que está sonando.
+///
+/// **Sin jam, siempre.** El jam es el que reparte el device activo, y lo que
+/// contesta es el nombre del device —`Starless`— o su id.
+pub fn es_el_device_activo(_session: &Session) -> bool {
+    jam_soy_el_activo()
+}
+
+/// Los identificadores que el servicio le dio a las pistas.
+///
+/// **El `uid` es la identidad de una pista dentro de un contexto.** El servicio
+/// no reconoce una pista por su URI: la reconoce por el id que él le dio cuando
+/// la metió en un contexto. Sin ese id, una pista no entra en la cola compartida
+/// —medido el 31 de octubre de 2026: mandando sólo la URI, el servicio resolvió
+/// la pista que estaba sonando y la lista compartida no cambió—.
+///
+/// **Los ids se anotan de tres lugares**, y los tres son el servicio talking:
+/// el comando que manda el otro lado, la cola compartida que el servicio tiene
+/// escrita y el contexto de autoplay que el servicio armó.
+///
+/// **Es uno solo para toda la app, y no un estado de Tauri.** Lo anotan lecturas
+/// que no tienen la manija de la app —la biblioteca, que es un contexto—, y
+/// esas lecturas no la reciben: un estado por app obligaría a pasarla por medio
+/// de todo el módulo `spclient`.
+pub struct TrackUids(Mutex<HashMap<String, String>>);
+
+static TRACK_UIDS: std::sync::LazyLock<TrackUids> =
+    std::sync::LazyLock::new(|| TrackUids(Mutex::new(HashMap::new())));
+
+/// Los ids que se conocen, para toda la app.
+pub fn track_uids() -> &'static TrackUids {
+    &TRACK_UIDS
+}
+
+impl TrackUids {
+    /// Anota el identificador de una pista.
+    ///
+    /// **Un id vacío no se anota.** El servicio deja el `uid` vacío cuando la
+    /// pista no es parte de ningún contexto —la que está sonando, por ejemplo—,
+    /// y anotar ese vacío taparía el id bueno con uno que no sirve.
+    pub fn remember(&self, uri: &str, uid: &str) {
+        if uri.is_empty() || uid.is_empty() {
+            return;
+        }
+        let mut ids = match self.0.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        ids.insert(uri.to_owned(), uid.to_owned());
+    }
+
+    /// El identificador de una pista, si se lo conocemos.
+    pub fn get(&self, uri: &str) -> Option<String> {
+        let ids = match self.0.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        ids.get(uri).cloned()
+    }
+}
+
+/// El hilo que le dice a Spotify qué está sonando.
+///
+/// **Por qué existe.** La cola compartida del jam no es una lista que escribe
+/// el jam: es el contexto que publica el player del anfitrión. Medido el 31
+/// de octubre de 2026: antes de publicar, la cola del jam tenía las ciento
+/// cincuenta canciones del teléfono y ni una de Starless; después de publicar,
+/// tenía las cincuenta y una de Starless y ni una del teléfono.
+///
+/// **Es un hilo y no un comando**: publicar es una ida al servicio, y una ida
+/// al servicio en el camino de un click es un click que tarda.
+///
+/// **El `dealer` se abre acá.** Starless no lo usaba para nada —el `player` de
+/// librespot 0.8 es local— y sin él no hay `connection id`, y sin `connection
+/// id` el servicio rechaza el estado con un `400`.
+pub fn publish_state(app: AppHandle) {
+    std::thread::spawn(move || {
+        // **La sesión puede tardar: el usuario puede no haber entrado todavía.**
+        // El hilo espera, en vez de rendirse: el que publica tiene que estar
+        // cuando empieza la música, no cuando arrancó la app.
+        let session = loop {
+            let Some(session_state) = app.try_state::<crate::SessionState>() else {
+                std::thread::sleep(PUBLISH_INTERVAL);
+                continue;
+            };
+            match session_state.ready() {
+                Ok(session) => break session,
+                Err(error) => {
+                    log::debug!("playback: todavía no hay sesión para publicar: {error}");
+                    std::thread::sleep(PUBLISH_INTERVAL);
+                }
+            }
+        };
+
+        if let Err(error) = crate::spclient::state::watch_connection_id(&session) {
+            log::error!("playback: no se pudo escuchar el pusher: {error}");
+            return;
+        }
+
+        // **El id llega un segundo después de abrir el websocket.** Sin él, el
+        // `PUT` contesta `400` y el jam se queda sin anfitrión.
+        for _ in 0..50 {
+            if !session.connection_id().is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+        if session.connection_id().is_empty() {
+            log::warn!(
+                "playback: el servicio no asignó un connection id; el estado del player no se publica"
+            );
+            return;
+        }
+
+        let mut ultima: Option<String> = None;
+        let mut snapshot = crate::spclient::state::empty_snapshot();
+
+        loop {
+            std::thread::sleep(PUBLISH_INTERVAL);
+
+            let Some(state) = app.try_state::<PlaybackState>() else {
+                return;
+            };
+            // **Una medición está midiendo: la app no publica encima.**
+            if state.publish_paused.load(Ordering::Relaxed) {
+                continue;
+            }
+            let status = state.status();
+
+            match status.track_id.clone() {
+                // **La canción cambió: el contexto se rehace.** Es una ida al
+                // servicio, y por eso no se hace en cada vuelta.
+                Some(track_id) => {
+                    if ultima.as_deref() != Some(track_id.as_str()) {
+                        let uri = format!("spotify:track:{track_id}");
+                        match crate::spclient::state::snapshot_for(
+                            &session,
+                            &uri,
+                            status.real_duration_ms as u64,
+                        ) {
+                            Some(nueva) => {
+                                ultima = Some(track_id);
+                                snapshot = nueva;
+                            }
+                            None => continue,
+                        }
+                    }
+
+                    snapshot.position_ms = status.position_ms as u64;
+                    snapshot.duration_ms = status.real_duration_ms as u64;
+                    snapshot.playing = status.playing;
+                }
+                // **No hay nada sonando: el estado se vacía.** Publicar la
+                // última canción como si siguiera sonando es una mentira que
+                // el otro lado cree.
+                //
+                // **Y se publica igual.** Un device que no publica no existe:
+                // el servicio no lo manda en el cluster y los comandos del otro
+                // lado no llegan a ninguna parte. Medido el 1 de noviembre de
+                // 2026: con la app sin nada sonando, la otra persona puso una
+                // canción y acá no llegó ni el comando —el device no estaba en
+                // el cluster— y la canción sólo apareció en la cola.
+                None => {
+                    if ultima.is_some() {
+                        ultima = None;
+                        snapshot = crate::spclient::state::empty_snapshot();
+                    }
+                }
+            }
+
+            // **Los ids del contexto se anotan antes de cambiarlo.** El contexto
+            // de autoplay viene con el `uid` de cada pista, y es el único lugar
+            // donde aparecen sin que nadie los mande: una pista que el usuario
+            // elige no está en ese contexto, pero la que el servicio armó sí, y
+            // publicarla sin id no la deja entrar en la cola compartida.
+            for track in &snapshot.next {
+                track_uids().remember(&track.uri, &track.uid);
+            }
+
+            // **Lo que sigue es la cola de la app.** El contexto de autoplay
+            // queda de respaldo: es la estación que armó el servicio, y no es
+            // lo que la persona eligió.
+            let cola = publish_queue(&app);
+            if !cola.is_empty() {
+                snapshot.next = cola;
+            }
+
+            // **Los ids que el servicio le puso se anotan.** La respuesta del
+            // `PUT` es el `Cluster` del servicio, y ahí está el `uid` de cada
+            // pista publicada: el servicio es el que lo da, y es lo único que
+            // hace que la pista entre en la cola compartida y que el comando
+            // por ella apunte a la pista correcta.
+            match crate::spclient::state::publish(&session, &snapshot) {
+                Ok(ids) => {
+                    if let Some(uids) = app.try_state::<TrackUids>() {
+                        for (uri, uid) in ids {
+                            uids.remember(&uri, &uid);
+                        }
+                    }
+                }
+                Err(error) => {
+                    log::error!("playback: el estado del player no se publicó: {error}");
+                }
+            }        }
+    });
+}
+
+/// La cola que va a sonar después de la de ahora, tal como la ve la app.
+///
+/// **Es la cola del usuario, no la del servicio.** El contexto de autoplay es
+/// la estación que armó Spotify; la cola es lo que la persona eligió y lo que
+/// se agregó después. Publicar una y no la otra hacía que la cola compartida
+/// del jam mostrara la estación, y que una canción sumada a la cola no le
+/// llegara nunca al otro lado.
+///
+/// **Si la app no tiene cola, se publica el contexto.** Una app recién abierta
+/// no tiene nada que publicar, y publicar la estación es mejor que publicar
+/// una lista vacía.
+pub fn publish_queue(app: &AppHandle) -> Vec<crate::spclient::state::Track> {
+    let pending = app
+        .try_state::<PublishQueue>()
+        .and_then(|state| state.0.lock().ok().map(|cola| cola.clone()))
+        .unwrap_or_default();
+    pending
+        .into_iter()
+        .map(|(uri, uid)| {
+            // **El id que falta se busca.** La app manda la cola con lo que
+            // sabe, y lo que sabe es la URI; el identificador lo tiene el
+            // servicio, y ya lo vimos en el comando del otro lado o en la cola
+            // compartida que él escribe. Publicar sin él es publicar a ciegas:
+            // el servicio no reconoce la pista y la cola compartida no la
+            // muestra.
+            let uid = if uid.is_empty() {
+                track_uids().get(&uri).unwrap_or_default()
+            } else {
+                uid
+            };
+            crate::spclient::state::Track {
+                uri,
+                uid,
+                gid: Vec::new(),
+            }
+        })
+        .collect()
+}
 
 /// How long the player can stay quiet before the app stops believing it.
 ///
@@ -94,6 +1085,13 @@ pub struct PlaybackStatus {
     pub real_duration_ms: u32,
     /// 0..=65535, matching librespot's own scale. The UI maps it to 0..=100.
     pub volume: u16,
+    /// Whether this app is the device the jam says is playing.
+    ///
+    /// **A jam has one device playing.** The other side chooses it —"here" or
+    /// "Starless"— and the app that is not it has to step aside: two devices
+    /// playing their own music in the same jam are two jams, and each one hears
+    /// a different song.
+    pub jam_active: bool,
     /// The track ran to its end and nothing replaced it.
     ///
     /// Distinct from `playing == false`, which also means paused. The UI has to
@@ -183,6 +1181,29 @@ pub struct PlaybackState {
     /// that plays: the song somebody asked for is not the song that happened
     /// to fail.
     requested: Mutex<Option<(String, u32)>>,
+    /// Whether the publishing of the state is on hold.
+    ///
+    /// **Es lo que usa la sonda del jam.** La app publica su estado cada cinco
+    /// segundos, y si lo hiciera durante la medición pisaría lo que la sonda
+    /// acaba de publicar: la pregunta que se está midiendo se quedaría sin
+    /// respuesta.
+    publish_paused: AtomicBool,
+}
+
+impl PlaybackState {
+    /// Deja de publicar el estado del player.
+    ///
+    /// **Es para las mediciones, y no para la app.** La sonda publica lo suyo
+    /// y lee lo que el servicio guarda; si la app publicara encima, la lectura
+    /// sería de otra cosa.
+    pub fn pause_publish(&self) {
+        self.publish_paused.store(true, Ordering::Relaxed);
+    }
+
+    /// Vuelve a publicar el estado del player.
+    pub fn resume_publish(&self) {
+        self.publish_paused.store(false, Ordering::Relaxed);
+    }
 }
 
 impl PlaybackState {
@@ -252,6 +1273,11 @@ impl PlaybackState {
         // lectura y no al cargar la canción: cambiar el crossfade con una
         // canción sonando tiene que verse en la barra enseguida.
         status.duration_ms = crate::crossfade::effective_duration_ms(status.real_duration_ms);
+        // **Si esta app es la que el jam dice que está sonando.** Un jam tiene
+        // un solo device activo, y el webview tiene que saber cuál es: sin
+        // este dato sigue sonando su propia música mientras la otra persona
+        // escucha otra, y los dos oyen cosas distintas.
+        status.jam_active = jam_soy_el_activo();
         status
     }
 }
@@ -1436,5 +2462,97 @@ mod tests {
         let _ = requested_track(&state, ("fallida".to_string(), 2));
         let second = requested_track(&state, ("fallida".to_string(), 2));
         assert_eq!(second, ("fallida".to_string(), 2));
+    }
+
+    /// El `transfer` trae la música del jam: la canción, la cola y la posición.
+    ///
+    /// **El `data` es un protobuf en base64.** Es lo que manda el `dealer`, y
+    /// si no se lee en ese formato el traspaso no dice nada: el jam queda con
+    /// dos devices con música propia y cada uno oye una canción distinta.
+    #[test]
+    fn el_traspaso_trae_la_cancion_y_la_cola() {
+        use base64::Engine;
+        use base64::prelude::BASE64_STANDARD;
+        use protobuf::Message;
+
+        let mut estado = librespot_protocol::transfer_state::TransferState::new();
+
+        let mut playback = librespot_protocol::playback::Playback::new();
+        playback.current_track = protobuf::MessageField::some(
+            librespot_protocol::context_track::ContextTrack {
+                uri: Some("spotify:track:4Au4OwxRB7JWxaZU3lhqXf".to_string()),
+                uid: Some("1028c776c1faf023".to_string()),
+                ..Default::default()
+            },
+        );
+        playback.is_paused = Some(false);
+        playback.position_as_of_timestamp = Some(30_000);
+        estado.playback = protobuf::MessageField::some(playback);
+
+        let mut cola = librespot_protocol::queue::Queue::new();
+        cola.tracks
+            .push(librespot_protocol::context_track::ContextTrack {
+                uri: Some("spotify:track:1MwijGwyDLBQOTJfigEMHJ".to_string()),
+                uid: Some("e48cdaa7c0654734".to_string()),
+                ..Default::default()
+            });
+        estado.queue = protobuf::MessageField::some(cola);
+
+        let base64 = BASE64_STANDARD.encode(estado.write_to_bytes().expect("the state is written"));
+        let datos = serde_json::json!(base64);
+
+        let leido = estado_del_traspaso(&datos).expect("the transfer is read");
+        assert_eq!(
+            leido.pista,
+            Some((
+                "4Au4OwxRB7JWxaZU3lhqXf".to_string(),
+                "1028c776c1faf023".to_string()
+            ))
+        );
+        assert_eq!(
+            leido.cola,
+            vec![(
+                "1MwijGwyDLBQOTJfigEMHJ".to_string(),
+                "e48cdaa7c0654734".to_string()
+            )]
+        );
+        assert_eq!(leido.posicion_ms, Some(30_000));
+        assert!(!leido.pausada);
+    }
+
+    /// El mismo traspaso, pero en JSON: el servicio habla en los dos
+    /// formatos y el que no se lee es un traspaso que no se aplica.
+    #[test]
+    fn el_traspaso_tambien_viene_en_json() {
+        let datos = serde_json::json!({
+            "playback": {
+                "isPaused": true,
+                "positionAsOfTimestamp": 1200,
+                "currentTrack": {
+                    "uri": "spotify:track:4Au4OwxRB7JWxaZU3lhqXf",
+                    "uid": "1028c776c1faf023"
+                }
+            },
+            "queue": {
+                "tracks": [
+                    {
+                        "uri": "spotify:track:1MwijGwyDLBQOTJfigEMHJ",
+                        "uid": "e48cdaa7c0654734"
+                    }
+                ]
+            }
+        });
+
+        let leido = estado_del_traspaso(&datos).expect("the transfer is read");
+        assert_eq!(
+            leido.pista,
+            Some((
+                "4Au4OwxRB7JWxaZU3lhqXf".to_string(),
+                "1028c776c1faf023".to_string()
+            ))
+        );
+        assert_eq!(leido.cola.len(), 1);
+        assert_eq!(leido.posicion_ms, Some(1200));
+        assert!(leido.pausada);
     }
 }

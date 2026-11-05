@@ -1018,6 +1018,25 @@ spclient_command!(account, spclient::account, Account);
 spclient_command!(my_playlists, spclient::playlists, Vec<Playlist>);
 spclient_command!(liked_tracks, spclient::liked_tracks, Vec<Track>);
 spclient_command!(playlist_tracks, spclient::playlist_tracks, Vec<Track>, playlist_id: String);
+
+/// Las pistas de un context: una playlist, un álbum o un artista.
+///
+/// **La puerta es la misma para las tres.** Lo único que cambia es la URI, y
+/// el servicio la entiende por su forma.
+///
+/// **Se usa cuando el otro lado del jam pone una lista.** El comando `play`
+/// de un teléfono trae el contexto, y sin esto la lista se pierde: sólo se
+/// entendía el contexto de una canción.
+#[tauri::command]
+async fn context_tracks(app: AppHandle, uri: String) -> Result<Vec<Track>, String> {
+    let session = ready_session(&app).await?;
+    tauri::async_runtime::spawn_blocking(move || spclient::context_tracks(&session, uri))
+        .await
+        .map_err(|e| {
+            eprintln!("Starless [command_failed]: {e}");
+            "command_failed".to_string()
+        })?
+}
 spclient_command!(search_tracks, spclient::search_tracks, Vec<Track>, query: String);
 spclient_command!(lyrics, spclient::lyrics, Lyrics, track_id: String);
 
@@ -1061,9 +1080,10 @@ async fn jam_join(app: AppHandle, token: String) -> Result<JamSession, String> {
 
 /// Leer la sesión, sin abrir ninguna.
 ///
-/// **Es la misma puerta que abre la sesión, pero sin activarla.** El jam no
-/// tiene pubsub en librespot —el `dealer` no lo tiene—, así que la única
-/// forma de saber quién se unió es preguntar cada tanto.
+/// **Es la misma puerta que abre la sesión, pero sin activarla.** El jam **sí**
+/// tiene pubsub —es el `dealer`, el mismo websocket por el que llega el
+/// `connection id`—, pero el panel todavía no lo escucha: preguntar cada tanto
+/// es lo que hay. Ver `docs/jam.md`.
 ///
 /// **La puerta crea la sesión si no hay ninguna**, y por eso el panel la usa
 /// solo mientras tiene una sesión en la mano: si la respuesta trae otra
@@ -1080,6 +1100,23 @@ async fn jam_status(app: AppHandle) -> Result<JamSession, String> {
         })?
 }
 
+/// El jam que hay en la cuenta, si hay uno.
+///
+/// **No abre ninguno.** La puerta que contesta si hay jam es la que no crea
+/// uno —`current?alt=protobuf`—, y la de los datos es la que sí crea. El panel
+/// la usa al abrirse, así que el jam aparece solo cuando ya estaba.
+#[tauri::command]
+async fn jam_current(app: AppHandle) -> Result<Option<JamSession>, String> {
+    let session = ready_session(&app).await?;
+
+    tauri::async_runtime::spawn_blocking(move || spclient::jam_current(&session))
+        .await
+        .map_err(|e| {
+            eprintln!("Starless [command_failed]: {e}");
+            "command_failed".to_string()
+        })?
+}
+
 /// La cola compartida del jam: las canciones que el servicio tiene escrita.
 ///
 /// **La cola es una lista**, y se lee por el servicio de listas —que habla
@@ -1088,12 +1125,24 @@ async fn jam_status(app: AppHandle) -> Result<JamSession, String> {
 async fn jam_queue(app: AppHandle, session_id: String) -> Result<Vec<Track>, String> {
     let session = ready_session(&app).await?;
 
-    tauri::async_runtime::spawn_blocking(move || spclient::jam_queue(&session, &session_id))
-        .await
-        .map_err(|e| {
-            eprintln!("Starless [command_failed]: {e}");
-            "command_failed".to_string()
-        })?
+    let cola = tauri::async_runtime::spawn_blocking(move || {
+        spclient::jam_queue_with_uids(&session, &session_id)
+    })
+    .await
+    .map_err(|e| {
+        eprintln!("Starless [command_failed]: {e}");
+        "command_failed".to_string()
+    })??;
+
+    // **Los ids de la cola compartida se anotan.** La lista que escribió el
+    // servicio trae el `uid` de cada pista —el id del item—, y ese
+    // identificador es lo que permite volver a publicar esa pista en la cola
+    // compartida y mandar el comando por ella.
+    for (track, uid) in &cola {
+        playback::track_uids().remember(&format!("spotify:track:{}", track.id), uid);
+    }
+
+    Ok(cola.into_iter().map(|(track, _)| track).collect())
 }
 
 /// Salir del jam.
@@ -1113,7 +1162,24 @@ async fn jam_leave(app: AppHandle, session_id: String, is_owner: bool) -> Result
     let session = ready_session(&app).await?;
 
     tauri::async_runtime::spawn_blocking(move || {
-        spclient::jam_leave(&session, &session_id)?;
+        // **Un `429` es el servicio diciendo "ahora no".** Terminar un jam es la
+        // única acción que no se puede dejar para después: si la persona la
+        // aprieta y el servicio está ocupado, se reintenta un par de veces en
+        // lugar de devolverle un error por algo que se resuelve solo.
+        let mut intento = 0;
+        loop {
+            match spclient::jam_leave(&session, &session_id) {
+                Ok(()) => break,
+                Err(error) if error == "rate_limited" && intento < 3 => {
+                    intento += 1;
+                    log::warn!(
+                        "spclient: el servicio pidió más calma para terminar el jam; intento {intento}"
+                    );
+                    std::thread::sleep(std::time::Duration::from_secs(2 * intento));
+                }
+                Err(error) => return Err(error),
+            }
+        }
 
         if is_owner {
             // Si la sesión ya no está, `jam_end` lo cuenta como un aviso.
@@ -1148,14 +1214,145 @@ async fn jam_add_to_queue(
 ) -> Result<(), String> {
     let session = ready_session(&app).await?;
 
+    // **El comando va con el `uid` cuando lo hay.** El comando del player lleva
+    // la pista como un `ContextTrack { uri, uid, gid, metadata }`, y mandando
+    // sólo la URI el servicio resuelve otra pista: la que está sonando. El id
+    // lo tiene el servicio, y ya lo vimos en el comando del otro lado o en la
+    // cola compartida que él escribe. Cuando no se lo conoce, se pregunta: el
+    // contexto de la pista es el único lugar donde el servicio lo da.
+    let uri = format!("spotify:track:{track_id}");
+    let uid = match playback::track_uids().get(&uri) {
+        Some(uid) => Some(uid),
+        None => {
+            let session = session.clone();
+            let uri = uri.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                spclient::state::uid_de_la_pista(&session, &uri)
+            })
+            .await
+            .ok()
+            .flatten()
+        }
+    };
+    if let Some(uid) = &uid {
+        playback::track_uids().remember(&uri, uid);
+        log::info!("jam: la canción {track_id} va con su uid");
+    }
+
     tauri::async_runtime::spawn_blocking(move || {
-        spclient::jam_add_to_queue(&session, &session_id, &track_id)
+        spclient::jam_add_to_queue_with_uid(&session, &session_id, &track_id, uid.as_deref())
     })
     .await
     .map_err(|e| {
         eprintln!("Starless [command_failed]: {e}");
         "command_failed".to_string()
     })?
+}
+
+/// El identificador que el servicio le dio a una pista.
+///
+/// **El servicio no reconoce una pista por su URI.** La reconoce por el id que
+/// él le dio cuando la metió en un contexto, y ese id es lo que hace que la
+/// canción entre en la cola compartida.
+///
+/// **Se pregunta una vez por pista y queda anotado.** La cola de la app tiene
+/// canciones que el servicio todavía no nombró —las que están en la biblioteca
+/// de la persona—, y sin su identificador no entran en la lista que los dos
+/// ven.
+#[tauri::command]
+async fn jam_track_uid(app: AppHandle, track_id: String) -> Result<Option<String>, String> {
+    let session = ready_session(&app).await?;
+    let uri = format!("spotify:track:{track_id}");
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let uid = spclient::state::uid_de_la_pista(&session, &uri);
+        if let Some(uid) = &uid {
+            playback::track_uids().remember(&uri, uid);
+        }
+        Ok(uid)
+    })
+    .await
+    .map_err(|e| {
+        eprintln!("Starless [command_failed]: {e}");
+        "command_failed".to_string()
+    })?
+}
+
+/// Publicar la cola de este device en la cola compartida del jam.
+///
+/// **La lista del jam la llena el comando, no el estado del player.** Medido el
+/// 1 de noviembre de 2026: el estado de Starless tenía 56 pistas y la lista
+/// compartida seguía con 51 y con otras canciones. El comando `set_queue` es lo
+/// que la llena, y es lo que manda el cliente de escritorio.
+///
+/// **La cola es la de la app.** Lo que la persona eligió y lo que se agregó
+/// después; el contexto de autoplay es la estación que armó el servicio y no es
+/// lo que la persona puso.
+#[tauri::command]
+async fn jam_set_queue(
+    app: AppHandle,
+    session_id: String,
+    tracks: Vec<PublishTrack>,
+) -> Result<(), String> {
+    let session = ready_session(&app).await?;
+
+    let pistas: Vec<(String, String)> = tracks
+        .into_iter()
+        .map(|track| (track.uri, track.uid))
+        .filter(|(uri, _)| uri.starts_with("spotify:track:"))
+        .collect();
+    if pistas.is_empty() {
+        return Ok(());
+    }
+
+    tauri::async_runtime::spawn_blocking(move || {
+        spclient::jam_set_queue(&session, &session_id, &pistas)
+    })
+    .await
+    .map_err(|e| {
+        eprintln!("Starless [command_failed]: {e}");
+        "command_failed".to_string()
+    })?
+}
+
+/// Una pista de la cola que la app va a publicar.
+///
+/// **El `uid` es lo que decide si la pista llega a la cola compartida.** El
+/// servicio guarda las pistas de la cola con el identificador que él les da,
+/// y una pista sin él no entra en la lista que el otro lado ve.
+#[derive(serde::Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct PublishTrack {
+    uri: String,
+    #[serde(default)]
+    uid: String,
+}
+
+/// La cola de la app, para el estado del player.
+///
+/// **La cola compartida del jam es esta cola.** El servicio arma la cola del
+/// jam con lo que publica el player del anfitrión: lo que se publica como "lo
+/// que sigue" es lo que los dos van a escuchar. Antes se publicaba el contexto
+/// de autoplay —la estación que armó el servicio—, y una canción que se
+/// sumaba a la cola no le llegaba nunca al otro lado.
+///
+/// **La escribe el frontend porque la cola vive ahí.** El backend no sabe qué
+/// eligió la persona ni qué se agregó después; lo único que hace es guardarlo
+/// para el hilo que publica.
+#[tauri::command]
+fn set_publish_queue(app: AppHandle, tracks: Vec<PublishTrack>) {
+    // **Los ids que trae la cola se anotan.** La app puede saber el `uid` de
+    // una canción —si la mandó el otro lado o si estaba en la cola compartida—,
+    // y ese identificador sirve para todo lo que viene después: publicarlo y
+    // mandar el comando por esa canción.
+    if let Some(uids) = Some(playback::track_uids()) {
+        for track in &tracks {
+            uids.remember(&track.uri, &track.uid);
+        }
+    }
+
+    app.state::<playback::PublishQueue>()
+        .set(tracks.into_iter().map(|track| (track.uri, track.uid)).collect());
 }
 
 // El DJ: las canciones que Spotify le fabricó a la cuenta, y lo que dice al
@@ -2017,6 +2214,7 @@ pub fn run() {
         })
         .manage(SessionState::default())
         .manage(PlaybackState::default())
+        .manage(playback::PublishQueue::default())
         .manage(DjState::default())
         .manage(RadioState::default())
         .setup(|app| {
@@ -2092,6 +2290,19 @@ pub fn run() {
             {
                 let _ = window.hide();
             }
+
+            // **Lo que Starless está sonando, dicho al servicio.**
+            //
+            // Sin esto el jam no tiene anfitrión: la cola compartida es el
+            // contexto que publica el player del anfitrión, y Starless no
+            // publicaba ninguno. Ver `playback::publish_state`.
+            playback::publish_state(handle.clone());
+
+            // **Los comandos que manda el otro lado del jam.**
+            //
+            // Llegan por el `dealer`, como requests del backend, y los contesta
+            // el dispositivo al que van dirigidos. Ver `playback::watch_commands`.
+            playback::watch_commands(handle.clone());
 
             // **La conexión, cortada a propósito.**
             //
@@ -2178,6 +2389,25 @@ pub fn run() {
             if spclient::jam_requested() {
                 spclient::run_jam_probe(handle.clone());
             }
+            // El jam con los dos lados: el anfitrión es esta sesión y el
+            // invitado es una segunda cuenta en otro caché. Es la única forma de
+            // medir el jam sin mergear nada.
+            #[cfg(debug_assertions)]
+            if spclient::jam_pair_requested() {
+                spclient::run_jam_pair_probe(handle.clone());
+            }
+            // El jam mirando: el anfitrión solo, y del otro lado el cliente
+            // oficial o un teléfono. El código sale en el log.
+            #[cfg(debug_assertions)]
+            if spclient::jam_watch_requested() {
+                spclient::run_jam_watch_probe(handle.clone());
+            }
+            // El estado del player: lo que el servicio necesita para saber qué
+            // está sonando, y lo que hace que el jam tenga un anfitrión.
+            #[cfg(debug_assertions)]
+            if spclient::jam_state_requested() {
+                spclient::run_jam_state_probe(handle.clone());
+            }
             if selftest::requested() {
                 selftest::run(handle);
             }
@@ -2194,6 +2424,7 @@ pub fn run() {
             update_playlist_details,
             liked_tracks,
             playlist_tracks,
+            context_tracks,
             search_tracks,
             lyrics,
             dj_mix,
@@ -2202,9 +2433,13 @@ pub fn run() {
             jam_start,
             jam_join,
             jam_status,
+            jam_current,
             jam_queue,
             jam_leave,
             jam_add_to_queue,
+            jam_set_queue,
+            jam_track_uid,
+            set_publish_queue,
             radio_start,
             radio_more,
             player_status,

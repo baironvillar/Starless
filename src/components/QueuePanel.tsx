@@ -1,4 +1,4 @@
-import { Play, X } from "lucide-react";
+import { Play, Users, X } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import type { StringKey } from "../lib/i18n";
@@ -89,6 +89,29 @@ type QueuePanelProps = {
   onPlay: (track: Track, row: number) => void;
   onClose: () => void;
   /**
+   * Open the jam, next to this panel.
+   *
+   * **Spotify starts a Jam from the queue**, and the queue stays open: the two
+   * panels are about different things —what is playing here, and who else is
+   * listening— and neither one has to make room for the other.
+   */
+  onOpenJam: () => void;
+  /**
+   * Whether a jam is open.
+   *
+   * **Con un jam abierto la cola es la del jam**, y la canción se guarda para los
+   * dos. Sin jam, la canción va a la cola de la app.
+   */
+  jamOpen?: boolean;
+  /**
+   * The jam's queue, when a jam is open.
+   *
+   * **It is the queue the panel shows.** El jam comparte la cola: lo que suma
+   * el otro lado aparece acá, y lo que se suma acá llega allá. La cabeza es la
+   * canción que está sonando, así que no se repite bajo "a continuación".
+   */
+  jamSongs?: Track[];
+  /**
    * Add a song to the queue that is on screen.
    *
    * **The row's own "add to queue".** It is the app's queue, the one the panel
@@ -147,6 +170,7 @@ export function QueuePanel({
   t,
   playing,
   upNext,
+  jamSongs,
   narration,
   dj,
   station,
@@ -154,14 +178,25 @@ export function QueuePanel({
   embedded = false,
   onPlay,
   onClose,
+  onOpenJam,
+  jamOpen,
   onAddToQueue,
   onOpenArtist,
   onOpenAlbum,
   onNewPlaylist,
 }: QueuePanelProps) {
-  const rowKeys = trackRowKeys(upNext);
+  /**
+   * The list the panel draws.
+   *
+   * **With a jam open it is the jam's queue.** El jam es una cola compartida:
+   * lo que suma el otro lado aparece acá, y lo que se suma acá llega allá.
+   * Sin jam —o con una cola compartida que todavía no llegó— es la cola de la
+   * app: un panel vacío en vez de la lista es un panel que no dice nada.
+   */
+  const list = jamOpen && jamSongs && jamSongs.length > 0 ? jamSongs : upNext;
+  const rowKeys = trackRowKeys(list);
   const nextRef = useRef<HTMLUListElement>(null);
-  const { first, last, pitch } = useRowWindow(nextRef, upNext.length);
+  const { first, last, pitch } = useRowWindow(nextRef, list.length);
 
   /**
    * The panel is shown before its pieces are.
@@ -234,27 +269,42 @@ export function QueuePanel({
       >
         <h2 className="truncate text-[15px] font-semibold tracking-tight">{t.queue}</h2>
         {/*
-            Only the close.
+            The jam's door and the close.
 
-            **The jam used to open from here**, next to this panel, and its icon
-            is gone while the jam is on standby: an icon that opens a shared
-            session that does not work yet is a door to a room that is not built.
+            **Spotify starts a Jam from the queue**, and the queue stays open: the
+            two panels are about different things —what is playing here, and who
+            else is listening— and neither one has to make room for the other.
 
             Embedded, the full player's own queue button is the close.
         */}
-        {!embedded && (
-          <motion.button
-            type="button"
-            onClick={onClose}
-            whileTap={{ scale: 0.9 }}
-            transition={SPRING_SHEET}
-            aria-label={t.close}
-            title={t.close}
-            className="grid size-8 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink"
-          >
-            <X className="size-[17px]" strokeWidth={2} />
-          </motion.button>
-        )}
+        <div className="flex shrink-0 items-center gap-1">
+          {!embedded && (
+            <motion.button
+              type="button"
+              onClick={onOpenJam}
+              whileTap={{ scale: 0.9 }}
+              transition={SPRING_SHEET}
+              aria-label={t.jam}
+              title={t.jam}
+              className="grid size-8 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink"
+            >
+              <Users className="size-[17px]" strokeWidth={2} />
+            </motion.button>
+          )}
+          {!embedded && (
+            <motion.button
+              type="button"
+              onClick={onClose}
+              whileTap={{ scale: 0.9 }}
+              transition={SPRING_SHEET}
+              aria-label={t.close}
+              title={t.close}
+              className="grid size-8 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink"
+            >
+              <X className="size-[17px]" strokeWidth={2} />
+            </motion.button>
+          )}
+        </div>
       </header>
 
       {/* `pr-3` is the gap between the covers and the thumb; see the same note in
@@ -287,10 +337,10 @@ export function QueuePanel({
         */}
         {!station && (
           <Section label={t.queueNextUp} listRef={nextRef} labelPiece={nextLabel}>
-            {upNext.length > 0 ? (
+            {list.length > 0 ? (
               <>
                 {first > 0 && <li style={{ height: first * pitch }} aria-hidden />}
-                {upNext.slice(first, last).map((track, offset) => (
+                {list.slice(first, last).map((track, offset) => (
                   <QueueRow
                     key={rowKeys[first + offset]}
                     t={t}
@@ -305,8 +355,8 @@ export function QueuePanel({
                     onNewPlaylist={onNewPlaylist}
                   />
                 ))}
-                {last < upNext.length && (
-                  <li style={{ height: (upNext.length - last) * pitch }} aria-hidden />
+                {last < list.length && (
+                  <li style={{ height: (list.length - last) * pitch }} aria-hidden />
                 )}
               </>
             ) : (
