@@ -4,7 +4,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
-import { applyCachedTheme, useEffectsSettings } from "./lib/spotify";
+import { applyCachedSurfaceOpacity, applyCachedTheme, useEffectsSettings } from "./lib/spotify";
 
 /**
  * Failures that are a moment, not a verdict.
@@ -71,6 +71,7 @@ function Root() {
 // Before the first paint: the theme decides the colour of every pixel, and the
 // backend's answer arrives a few frames too late to be the first one.
 applyCachedTheme();
+applyCachedSurfaceOpacity();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

@@ -125,13 +125,35 @@ A glass surface is three stacked things, never one. Omitting the middle layer is
 3. lift       0 24px 48px -12px rgba(0,0,0,0.6)
 ```
 
-The base is not optional decoration. It is what makes text legible over a bright cover. **Any surface carrying text needs an opaque-enough base — alpha 0.5 or above. Never place text directly on unblurred artwork.**
+The base is not optional decoration. It is what makes text legible over a bright cover. **Any glass surface carrying text needs an opaque-enough base — alpha 0.5 or above. Never place text directly on unblurred artwork**, with the one exception below.
+
+### The surfaces
+
+The top bar, the rail, the player bar, the queue and the shortcuts on Home are one material, and Settings → Customisation → Appearance → Surface opacity is one slider for all of them, from 6% to 100%.
+
+| Slider | Base | Frost | Edge | Lift |
+|---|---|---|---|---|
+| 6%, the bottom | `--line-rgb` at 6% | none | none | none |
+| 20% | between the two | blur 12px, saturate 136% | full | none |
+| 32%, the default | between the two | blur 22px, saturate 160% | full | none |
+| 55% | between the two | blur 24px, saturate 160% | full | none |
+| 100% | the glass colour, solid | blur 24px, saturate 160% | full | full |
+
+**The slider changes the material, not only the amount.** The base adds almost the same light at every value, so on its own it only dims the picture, and it has to cross the picture's brightness on the way from lighter to darker: over a picture at 105 the rail read +9 at 6%, -2 at 20%, and vanishes near 15%. That cannot be tuned away, because the picture is the person's. So the surface stops relying on brightness: frost separates it by texture, the edge separates it on flat ground, and the lift waits for 55%, because an outer shadow is not drawn under its own box and below that it reads as a dirty halo.
+
+**The content's fade gives way to the frost.** The shortcuts, the song lists and Home's cards live inside `<main>`, whose fade is a mask, and a mask makes a backdrop root: a blur under it never reaches the picture. So above 6%, which is when there is frost, `<main>` has no mask and a row is cut flat at the edge of the scroller. At 6% nothing blurs and the fade stays.
+
+**The menus, the jam and the settings sheet follow the same number from 55% up**, and they keep their blur: they float over content, and under 55% the text behind them collides with their own.
+
+**The bottom of the slider is the exception to the rule above, and it is the person's call.** It puts text on a 6% veil over their own picture, and a bright picture costs contrast; moving the slider up is the way out. It holds only because nothing scrolls behind these surfaces on a desktop. Anything that floats over content stays on glass: the phone's bars, the menus, the jam, the settings sheet.
 
 **There is no specular border.** A 1px `rgba(255,255,255,0.12)` ring with a matching `inset 0 1px 0` highlight used to be layer three, and it was a signal saying the same thing the radius and the lift already say. Measured against the bloom — which is all that sits behind the bars — it was a hairline you had to look at to see. **A floating surface reads as floating because of its radius and its shadow, not because it is outlined.** Adding an outline to a floating surface is how a design gets described as "boxes on a dark background".
 
 The border and the inset highlight go together: drop one and keep the other and what is left is a bright line along the top edge and nothing on the other three sides, which reads as a rendering fault.
 
-The one surface that keeps a hairline is the track list — `border-white/8` on a `bg-white/4` card — and it is deliberately not glass. It is content, not chrome: a list of songs needs a structure to hang on, and after the chrome lost its outlines that card is what still separates a list from the ground. Chrome edges were decoration; that one is information.
+**The surfaces are the exception, because a picture is not the bloom.** That measurement was made over the bloom, where the edge had nothing to add. Over a person's picture it is the only thing that keeps a surface on screen where its tint matches what is behind it. So it is one even ring of `--line-rgb` at 10%, all four sides and no top highlight, starting at nothing at the bottom of the slider. `glass` stays without one.
+
+The track list takes the same material (`surface-card`) and keeps its `border-white/8`. It is content, not chrome: a list of songs needs a structure to hang on, at 6% too, where the surfaces' edge is still nothing. Chrome edges were decoration; that one is information.
 
 Nesting glass inside glass is forbidden. Each level multiplies the blur cost and compounds the contrast loss. If a control sits on the player bar, it is a plain tinted control, not a second glass layer.
 
@@ -300,7 +322,3 @@ fades —the two share one glass, and a translucent page over another is two pag
 once. The rows and cards are the panel's own —it is still the reference— with one change:
 a switch stays beside its text, and every wider control (a select, a slider, buttons) goes
 under it at the whole width.
-
-## Open
-
-- Whether glass is the only layer treatment, or solid surfaces are offered as a performance fallback in settings.

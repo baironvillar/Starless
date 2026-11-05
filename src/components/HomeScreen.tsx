@@ -113,7 +113,7 @@ export function HomeScreen({
 
   if (loading && playlists.length === 0) {
     return (
-      <p className="rounded-card border border-white/8 bg-white/4 px-5 py-6 text-center text-[13px] text-ink-faint">
+      <p className="surface-card rounded-card border border-white/8 px-5 py-6 text-center text-[13px] text-ink-faint">
         {t.loading}
       </p>
     );
@@ -147,7 +147,7 @@ export function HomeScreen({
   return (
     <div className="flex flex-col gap-11 pb-4">
       {error && playlists.length === 0 && (
-        <div className="rounded-card border border-white/8 bg-white/4 px-5 py-4">
+        <div className="surface-card rounded-card border border-white/8 px-5 py-4">
           <p className="text-[13px] font-semibold">{t.libraryUnavailableTitle}</p>
           <p className="mt-1 text-[12.5px] leading-relaxed text-ink-muted">{error}</p>
         </div>
@@ -304,7 +304,7 @@ export function HomeScreen({
                 ))}
               </div>
             </div>
-            <ol className="overflow-hidden rounded-card border border-white/8 bg-white/4">
+            <ol className="surface-card overflow-hidden rounded-card border border-white/8">
               {tab === "songs"
                 ? stats.top_tracks.map(({ play, plays }, index) => (
                     <li key={play.track_id} className={index > 0 ? "border-t border-white/8" : ""}>
@@ -375,7 +375,7 @@ export function HomeScreen({
 
           <section
             aria-label={t.yourWeek}
-            className="flex flex-col gap-5 rounded-card border border-white/8 bg-white/4 p-6"
+            className="surface-card flex flex-col gap-5 rounded-card border border-white/8 p-6"
           >
             <h2 className="font-display text-[20px] font-semibold tracking-tight">{t.yourWeek}</h2>
             <div>
@@ -517,7 +517,7 @@ function QuickTile({
       onClick={onOpen}
       onPointerEnter={onPrefetch}
       onFocus={onPrefetch}
-      className="flex h-16 items-center gap-3.5 overflow-hidden rounded-[14px] bg-white/6 pr-4 text-left transition-colors duration-200 hover:bg-white/10"
+      className="flex h-16 items-center gap-3.5 overflow-hidden rounded-[14px] surface-tile pr-4 text-left transition-colors duration-200"
     >
       <span className="relative size-16 shrink-0 overflow-hidden">{children}</span>
       <span className="min-w-0">

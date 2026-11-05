@@ -602,13 +602,13 @@ export function onMediaKey(handler: (key: MediaKey) => void): Promise<UnlistenFn
  * because how far someone is willing to push a translucent surface over their own
  * library is theirs to choose, not the design system's.
  *
- * These three mirror `settings::MENU_OPACITY_*` on purpose. The Rust side clamps
+ * These three mirror `settings::SURFACE_OPACITY_*` on purpose. The Rust side clamps
  * whatever arrives, and a slider that could reach a value the backend silently
  * rewrites is a slider that lies about where it is.
  */
-export const MENU_OPACITY_MIN = 55;
-export const MENU_OPACITY_MAX = 100;
-export const MENU_OPACITY_DEFAULT = 55;
+export const SURFACE_OPACITY_MIN = 6;
+export const SURFACE_OPACITY_MAX = 100;
+export const SURFACE_OPACITY_DEFAULT = 32;
 
 /**
  * `bun run dev` is Vite alone: there is no backend, so `invoke` has nothing to
@@ -620,34 +620,34 @@ export const MENU_OPACITY_DEFAULT = 55;
  * iterate on: the slider never left its loading state, because the read that
  * enables it never resolved.
  */
-const MENU_OPACITY_KEY = "starless:menu-opacity";
+const SURFACE_OPACITY_KEY = "starless:surface-opacity";
 
 function hasBackend(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
 function clampOpacity(value: number): number {
-  return Math.min(MENU_OPACITY_MAX, Math.max(MENU_OPACITY_MIN, Math.round(value)));
+  return Math.min(SURFACE_OPACITY_MAX, Math.max(SURFACE_OPACITY_MIN, Math.round(value)));
 }
 
-export async function menuOpacity(): Promise<number> {
+export async function surfaceOpacity(): Promise<number> {
   if (!hasBackend()) {
     // `Number(null)` is 0 and not NaN, so an absent key has to be checked before
     // the number is: otherwise "never chosen" would come back as the floor.
-    const raw = window.localStorage.getItem(MENU_OPACITY_KEY);
+    const raw = window.localStorage.getItem(SURFACE_OPACITY_KEY);
     const stored = Number(raw);
-    return raw !== null && Number.isFinite(stored) ? clampOpacity(stored) : MENU_OPACITY_DEFAULT;
+    return raw !== null && Number.isFinite(stored) ? clampOpacity(stored) : SURFACE_OPACITY_DEFAULT;
   }
-  return invoke<number>("menu_opacity");
+  return invoke<number>("surface_opacity");
 }
 
-export async function setMenuOpacity(opacity: number): Promise<void> {
+export async function setSurfaceOpacity(opacity: number): Promise<void> {
   const value = clampOpacity(opacity);
   if (!hasBackend()) {
-    window.localStorage.setItem(MENU_OPACITY_KEY, String(value));
+    window.localStorage.setItem(SURFACE_OPACITY_KEY, String(value));
     return;
   }
-  return invoke<void>("set_menu_opacity", { opacity: value });
+  return invoke<void>("set_surface_opacity", { opacity: value });
 }
 
 /**
@@ -828,9 +828,45 @@ export async function setCrossfadeSeconds(seconds: number): Promise<void> {
   return invoke<void>("set_crossfade_seconds", { seconds: value });
 }
 
+/**
+ * The number the surfaces read, and whether they frost at all: `index.css` drops the
+ * content's fade when they do, because the mask would keep the blur from the picture.
+ */
+function writeSurfaceOpacity(value: number): void {
+  const root = document.documentElement;
+  root.style.setProperty("--surface-alpha", String(value / 100));
+  root.toggleAttribute("data-surface-frost", value > SURFACE_OPACITY_MIN);
+}
+
 /** Drive the CSS variable every overlay reads. No-op before the first paint matters. */
-export function applyMenuOpacity(opacity: number): void {
-  document.documentElement.style.setProperty("--menu-alpha", String(clampOpacity(opacity) / 100));
+export function applySurfaceOpacity(opacity: number): void {
+  const value = clampOpacity(opacity);
+  writeSurfaceOpacity(value);
+  try {
+    window.localStorage.setItem(SURFACE_OPACITY_KEY, String(value));
+  } catch {
+    // A blocked storage only costs the first frame.
+  }
+}
+
+/**
+ * The cached opacity, for the frame before the backend answers. Same reason as
+ * the theme: the bars are on screen from the first frame, and whoever chose solid
+ * would otherwise watch them turn solid on every launch.
+ */
+export function applyCachedSurfaceOpacity(): void {
+  let cached: string | null = null;
+  try {
+    cached = window.localStorage.getItem(SURFACE_OPACITY_KEY);
+  } catch {
+    // Same as above.
+  }
+  // Nothing cached is the default, written and not assumed: the default frosts, and
+  // the attribute that clears the content's fade for it exists only if it is set.
+  const value = Number(cached);
+  writeSurfaceOpacity(
+    cached !== null && Number.isFinite(value) ? clampOpacity(value) : SURFACE_OPACITY_DEFAULT,
+  );
 }
 
 /**

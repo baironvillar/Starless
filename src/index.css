@@ -49,18 +49,6 @@
 
   --ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
 
-  /*
-   * How opaque the menus are, as the user's own glass.
-   *
-   * Default 0.55: the glass DESIGN.md is written around, at the bottom of the
-   * slider. The floor is 55% because that is about how far the blur can be pushed
-   * before what sits behind stops being a smear and turns back into readable text.
-   *
-   * The fallback in `var()` matters: the customizer sets this from a saved setting
-   * once the app is up, and the very first frame has to look like the choice
-   * already rather than like the default nobody picked.
-   */
-  --menu-alpha: 0.55;
 }
 
 /*
@@ -70,6 +58,19 @@
  * keeps its own alpha.
  */
 :root {
+  /*
+   * The one opacity the person picks, and everything below is measured from it.
+   * 0.06 is the bottom of the slider: the veil the shortcuts on Home always had.
+   * The default is 0.32, the first value where the frost has reached its full
+   * saturation and the picture still reads through it.
+   */
+  --surface-alpha: 0.32;
+  /*
+   * **The menus follow it, from 55% up.** They open over songs, so under that the
+   * text behind them lands in the same pixels as their own. Same slider, same
+   * number; they just wait for it there.
+   */
+  --menu-alpha: max(0.55, var(--surface-alpha));
   --glass-rgb: 21 21 27;
   --line-rgb: 255 255 255;
   --bloom-a: 237 234 227;
@@ -77,6 +78,7 @@
   --lift-alpha: 0.6;
   --glass-lift: 0;
   --glass-saturate: 180%;
+  --surface-saturate: 0.6;
   color-scheme: dark;
 }
 
@@ -120,6 +122,7 @@
    */
   --glass-lift: 0.4;
   --glass-saturate: 130%;
+  --surface-saturate: 0.3;
   color-scheme: light;
 }
 
@@ -196,45 +199,34 @@
 }
 
 /*
- * The legend for the opacity slider: what a menu looks like at the current
+ * The legend for the opacity slider: what a surface looks like at the current
  * value, drawn inside the settings sheet.
  *
  * It is a legend, not a surface, and it stays out of the glass recipe on purpose
- * — no blur, no stacking, nothing to nest inside a sheet that is already opaque.
- * The stripes are the thing the alpha is measured against; without something
- * behind them, 100% and 55% are the same grey and the control answers nothing
- * while it is being dragged.
+ * — no blur, no stacking, nothing to nest inside a sheet. The stripes are the
+ * thing the alpha is measured against; without something behind them the control
+ * answers nothing while it is being dragged.
  *
- * **The legend has its own alpha, and it is the one that moves.** The menus
- * read `--menu-alpha`, which the panel only changes once the hand stops: every
- * surface that reads it repaints, and the settings sheet is one of them, so a
- * drag that moves it repaints half the window on every pointer event. The
- * legend is a 46x28 box with a gradient — it can answer at pointer speed, and
- * that is the whole reason it is there. `--legend-alpha` is set on the legend
- * itself, so only that box is restyled.
+ * **The legend has its own alpha, and it is the one that moves.** The surfaces
+ * read `--surface-alpha`, which the panel only changes once the hand stops: every
+ * surface that reads it repaints, the settings sheet among them, so a drag that
+ * moves it repaints half the window on every pointer event. The legend is a 46x28
+ * box with a gradient — it can answer at pointer speed, and that is the whole
+ * reason it is there. `--legend-alpha` is set on the legend itself, so only that
+ * box is restyled.
  */
-@utility menu-legend {
+@utility surface-legend {
   width: 46px;
   height: 28px;
   border-radius: 7px;
   border: 1px solid rgb(var(--line-rgb) / 0.14);
+  --legend-color: color-mix(
+    in srgb,
+    rgb(var(--glass-rgb)) calc((var(--legend-alpha) - 0.06) / 0.94 * 100%),
+    rgb(var(--line-rgb) / 0.06)
+  );
   background-image:
-    linear-gradient(
-      rgb(
-        var(--glass-rgb) /
-          calc(
-            var(--glass-lift) + var(--legend-alpha, var(--menu-alpha, 0.55)) *
-              (1 - var(--glass-lift))
-          )
-      ),
-      rgb(
-        var(--glass-rgb) /
-          calc(
-            var(--glass-lift) + var(--legend-alpha, var(--menu-alpha, 0.55)) *
-              (1 - var(--glass-lift))
-          )
-      )
-    ),
+    linear-gradient(var(--legend-color), var(--legend-color)),
     repeating-linear-gradient(
       115deg,
       rgb(var(--line-rgb) / 0.26) 0 2px,
@@ -243,18 +235,16 @@
 }
 
 /*
- * A sheet: the settings panel and the queue. Both cover most of the window, and
- * these follow `--menu-alpha` like every other surface — the floor is the user's,
- * not ours.
+ * A sheet: the settings panel and the jam. They sit over content, and these
+ * follow `--menu-alpha` like every other menu — the floor is the user's, not ours.
  *
  * What the slider trades is measured: these sit over the library's own text, in
  * the same pixels as their own navigation, so at the bottom of the range the blur
  * has to be doing all the work to keep it a smear. That measurement is why the
  * slider stops at 55% rather than at 0 — not a reason to overrule the choice.
  *
- * The three bars keep their own fixed 55%: they are the signature, they read as
- * depth because there is little behind them to collide with, and nothing about
- * them was ever adjustable.
+ * The bars and the queue go lower on the same slider, and without blur: nothing
+ * sits behind them to collide with (`surface`, below).
  */
 @utility glass-sheet {
   background-color: rgb(
@@ -263,6 +253,117 @@
   backdrop-filter: blur(24px) saturate(var(--glass-saturate));
   box-shadow: 0 24px 48px -12px rgb(0 0 0 / var(--lift-alpha));
   contain: paint;
+}
+
+/*
+ * The surfaces: the three bars, the queue and the shortcuts on Home.
+ *
+ * **One material, and one number.** The bars used to be dark glass and the
+ * shortcuts a plain veil: the same picture behind them read sharp in the middle
+ * and smeared at the sides, and the window looked like two designs.
+ *
+ * `--surface-solidity` runs from 0 at the bottom of the slider to 1 at the top,
+ * and the tint runs with it from the veil to the solid glass colour. The two ends
+ * are different colours on purpose: at the bottom a surface is a little lighter
+ * than what is behind it, at the top it is the app's own Night.
+ *
+ * **The tint alone cannot carry the slider.** It adds almost the same light at
+ * every value (15 to 21 out of 255), so moving it mostly dims what is behind, and
+ * a tint that starts lighter than a mid-grey picture and ends darker has to cross
+ * it. Measured over a picture at 105: the rail read +9 at 6%, -2 at 20%, and the
+ * surface is gone altogether near 15%. That crossing cannot be tuned away, because
+ * the picture is the person's, so the surface stops depending on brightness to
+ * exist: frost separates it by texture and the edge separates it on flat ground.
+ * Both start at nothing, so the 6% veil stays exactly what it was.
+ *
+ * **The lift waits for 55%.** An outer shadow is not drawn under its own box, so
+ * under a translucent fill it reads as a dirty halo around a clean window: at 20%
+ * it took the gap beside the rail from 105 to 102. It starts once the fill can
+ * hide that.
+ *
+ * A surface that floats over content (the phone's bars, a menu, the jam, the
+ * settings sheet) stays on real glass: these only start blurring along the slider,
+ * and at the bottom of it the text behind them would collide with their own.
+ */
+:root {
+  --surface-solidity: calc((var(--surface-alpha) - 0.06) / 0.94);
+  --surface-filter: blur(min(24px, calc(var(--surface-solidity) * 80px)))
+    saturate(calc(1 + var(--surface-saturate) * min(1, calc(var(--surface-solidity) * 4))));
+  --surface-edge: inset 0 0 0 1px
+    rgb(var(--line-rgb) / calc(0.1 * min(1, calc(var(--surface-solidity) * 8))));
+  --surface-bg: color-mix(
+    in srgb,
+    rgb(var(--glass-rgb)) calc(var(--surface-solidity) * 100%),
+    rgb(var(--line-rgb) / 0.06)
+  );
+  --surface-hover: color-mix(in srgb, var(--surface-bg), rgb(var(--line-rgb)) 6%);
+  --surface-lift: 0 24px 48px -12px
+    rgb(0 0 0 / calc(var(--lift-alpha) * max(0, calc((var(--surface-alpha) - 0.55) / 0.45))));
+  /*
+   * With only a veil between the text and the person's picture, the grey of a
+   * secondary line is what goes first: over a mid-grey picture "Ahora suena" and
+   * the search's placeholder all but vanished. So they start near the ink at the
+   * bottom of the slider and arrive at their own grey at the top.
+   */
+  --surface-ink-muted: color-mix(
+    in oklab,
+    var(--color-ink-muted) calc(var(--surface-solidity) * 100%),
+    color-mix(in oklab, var(--color-ink) 84%, transparent)
+  );
+  --surface-ink-faint: color-mix(
+    in oklab,
+    var(--color-ink-faint) calc(var(--surface-solidity) * 100%),
+    color-mix(in oklab, var(--color-ink) 76%, transparent)
+  );
+}
+
+:is(.surface, .surface-tile, .surface-card) {
+  --color-ink-muted: var(--surface-ink-muted);
+  --color-ink-faint: var(--surface-ink-faint);
+}
+
+@utility surface {
+  background-color: var(--surface-bg);
+  backdrop-filter: var(--surface-filter);
+  box-shadow: var(--surface-edge), var(--surface-lift);
+  contain: paint;
+}
+
+/*
+ * The same material on a shortcut. No lift: a shadow on a tile in a grid is a smudge.
+ */
+@utility surface-tile {
+  background-color: var(--surface-bg);
+  backdrop-filter: var(--surface-filter);
+  box-shadow: var(--surface-edge);
+  &:hover {
+    background-color: var(--surface-hover);
+  }
+}
+
+/*
+ * The same material on a card in the content: the song lists and Home's cards.
+ *
+ * No edge from here: these keep their `border-white/8`, the hairline a list hangs
+ * on. It has to be there at 6% too, where the edge is still nothing.
+ */
+@utility surface-card {
+  background-color: var(--surface-bg);
+  backdrop-filter: var(--surface-filter);
+}
+
+/*
+ * **The content's fade and the frost cannot both exist.** The fade is a mask on
+ * `<main>`, and a mask makes its element a backdrop root: a `backdrop-filter` inside
+ * samples only what is inside `<main>`, never the picture behind. So above the bottom
+ * of the slider, which is when there is frost at all, the mask goes. What that costs
+ * is the fade itself: a row is cut flat at the edge of the scroller.
+ *
+ * `!important` because the mask is an inline style, and it is built in `App` from the
+ * scroll position, which has no reason to learn about a slider.
+ */
+:root[data-surface-frost] .content-fade {
+  mask-image: none !important;
 }
 
 /*

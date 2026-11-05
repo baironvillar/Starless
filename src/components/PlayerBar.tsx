@@ -783,7 +783,7 @@ export function PlayerBar({
       onAnimationComplete={() => {
         if (!presentRef.current) setGone(true);
       }}
-      className={`glass absolute inset-x-5 bottom-5 z-20 grid h-[104px] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-x-5 rounded-card px-5 ${
+      className={`surface absolute inset-x-5 bottom-5 z-20 grid h-[104px] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-x-5 rounded-card px-5 ${
         present ? "pointer-events-auto" : "pointer-events-none"
       } ${gone ? "invisible" : ""}`}
     >
