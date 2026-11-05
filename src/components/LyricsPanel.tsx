@@ -319,9 +319,11 @@ export function LyricsPanel({
   }, [activeIndex, lyrics]);
 
   return (
+    // The rise only: a fading parent takes the blur from the frosted cards inside
+    // it (see `arrive` in index.css).
     <motion.section
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
+      initial={{ y: 12 }}
+      animate={{ y: 0 }}
       transition={SPRING}
       className={`${ANCHORED ? "flex h-full flex-col" : "pb-4"} ${cinema && idle ? "cursor-none" : ""}`}
       aria-label={title || t.lyricsTitle}
@@ -471,11 +473,11 @@ export function LyricsPanel({
           {loading ? (
             <p className="text-[13px] text-ink-faint">{t.loading}</p>
           ) : error ? (
-            <p className="surface-card rounded-card border border-white/8 px-5 py-6 text-center text-[13px] text-ink-faint">
+            <p className="surface-card arrive rounded-card border border-white/8 px-5 py-6 text-center text-[13px] text-ink-faint">
               {error}
             </p>
           ) : !lyrics || lyrics.lines.length === 0 ? (
-            <p className="surface-card rounded-card border border-white/8 px-5 py-6 text-center text-[13px] text-ink-faint">
+            <p className="surface-card arrive rounded-card border border-white/8 px-5 py-6 text-center text-[13px] text-ink-faint">
               {t.noLyrics}
             </p>
           ) : (
