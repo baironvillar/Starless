@@ -302,19 +302,30 @@ en ningún proto ni en ninguna issue:
   "Actualizar": no es una versión más nueva, es otra build.
 - **GitHub devuelve 422 si le pasás una etiqueta que el repositorio no tiene**, y
   eso perdería el reporte entero. `report.rs` reintenta sin etiqueta por eso.
-- **Dos copias abiertas a la vez se hacen ver como un crash.** El marcador es un
-  archivo, no un proceso: la instalada y la de `cargo run` comparten
-  `%LOCALAPPDATA%\Starless\session.marker`, así que la segunda que arranca mueve el
-  marcador vivo a `last-crash.marker` y declara que la primera murió. Al prólogo
-  aparecer, el aviso ofrece mandar el registro a un issue de GitHub — por un crash
-  que no existió.
+- **Un marcador que sobrevive no es un crash: un crash es lo que dejó escrito su
+  fallo.** `TerminateProcess` no corre ni una línea dentro del proceso que mata,
+  así que el Administrador de tareas, `taskkill`, un apagado o un corte de luz
+  dejan `session.marker` y nada más, y **no hay forma de distinguirlos entre sí**.
+  El aviso salía por el marcador con un reloj encima —más de 60 segundos de
+  sesión era "un crash"—, así que terminar la tarea de una app en uso pedía un
+  reporte de un fallo que no existió, y además dejaba `last-crash.marker` tragándose
+  el crash real siguiente. Ahora `settle_previous_session` exige el marcador **y**
+  el archivo de fallo, que lo escriben el hook de panic y, para lo que el hook no
+  ve —un access violation, un stack overflow—, el filtro de excepciones de Windows
+  (`install_native_crash_filter`). **El precio:** un cuelgue que la persona mata a
+  mano no se reporta, porque por fuera es idéntico a matar una app sana; y
+  `__fastfail` —el `abort` de Rust— no pasa por el filtro.
+- **Dos copias abiertas a la vez se pisan el marcador.** El marcador es un archivo,
+  no un proceso: la instalada y la de `cargo run` comparten
+  `%LOCALAPPDATA%\Starless\session.marker`, así que la segunda que arranca cree que
+  la primera murió.
   Y lo peor no es el aviso: dos sesiones de la misma cuenta se pelean las claves de
   audio, y la que pierde le pasa sus bytes a la otra. En vivo, el 17 de octubre:
   `An existing connection was forcibly closed by the remote host` y de ahí a seis
   pistas quemadas en catorce segundos, todas reportadas como canciones que Spotify
   no entregaba. `tauri-plugin-single-instance` lo cierra, y está registrado
   **primero** en el builder, antes que todo lo que puede fallar en `setup`. Si lo
-  sacás alguna vez, vuelven juntos el aviso de crash falso y la corrupción de audio.
+  sacás alguna vez, vuelve la corrupción de audio.
 - **Una pista que no suena no siempre es una pista que no existe.** librespot no
   reconecta solo: su keep-alive marca la sesión inválida y para, con un
   `TODO: Optionally reconnect` donde iría el reconectar. Después de eso toda pista
