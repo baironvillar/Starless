@@ -198,7 +198,7 @@ Circles and capsules echo the speaker: the pool, the player's round bead, the ca
 - **Hover / Focus:** the ember rises and grows (opacity to 85%, scale 1.05, 320–420ms ease-out) and follows the pointer across the key (`--mx`); a white specular line crosses the face over 800ms (`::after`); the arrow drops 2px; the border warms; the pool's energy surges. Pressing scales to 0.97 over 160ms. Focus is a 2px frost outline offset 3px. Reduced motion: no transitions, no beat.
 
 ### Navigation
-- **Style:** a top line of 14px mute links, 26px apart, with the grey mark, the wordmark and the version (DM Mono) at left. Hover shifts to frost over 200ms. On phones only the last link (GitHub) and the language switch remain.
+- **Style:** a top line of 14px mute links, 26px apart, with the grey mark, the wordmark and a "Beta" capsule (DM Mono, 11px, uppercase, a hairline pill in mute) at left. The version number used to sit there and read as noise next to the name; what a visitor needs to know is that the app is still a beta. Hover shifts to frost over 200ms. On phones only the last link (GitHub) and the language switch remain.
 - **Language:** English is the page; Spanish rides beside each text in `data-es` (and `data-es-label`, `data-track-es`). The switch is "EN / ES" in DM Mono, the language being read in frost. Changing it dissolves the words (`filter: blur(4px) opacity(0)`, 180ms out, 280ms back in) and nothing else: the pool, the glass and the layout stay. It is a filter because the scroll timelines own the opacity of half those elements. The choice is remembered in `localStorage`; reduced motion swaps instantly.
 
 ### Feature rows
@@ -260,4 +260,4 @@ The player bar's art is a drop of the same liquid: an 84px WebGL canvas (shown a
 
 ## Download target
 
-Every download key links to `https://github.com/baironvillar/Starless/releases/latest`, the release GitHub marks Latest (0.5.5 when this was written). The version text on the page must follow it.
+Every download key links to `https://github.com/baironvillar/Starless/releases/latest`, the release GitHub marks Latest (0.5.5 when this was written). The page no longer prints the version: the line under the download key and the player bar say "In beta" instead, so nothing on the page goes stale when a release ships. The size next to the key still follows the release.
