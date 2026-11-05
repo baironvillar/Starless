@@ -405,13 +405,19 @@ pub fn saved_theme() -> &'static str {
 ///
 /// `shape` and `grain` are not movement but the look of the ground: where the
 /// bloom sits, and a fixed film of noise over it. Quiet mode leaves them alone.
-pub const EFFECTS: [(&str, &[&str]); 6] = [
+///
+/// `cover` draws the playing song's cover, blurred, as the ground — only beside
+/// the lyrics, or always — and `coverSide` is which side of the lyrics the
+/// sharp cover sits on. Same look, so the same map.
+pub const EFFECTS: [(&str, &[&str]); 8] = [
     ("glow", &["on", "off"]),
     ("beat", &["strong", "soft", "off"]),
     ("bloom", &["normal", "soft", "off"]),
     ("motion", &["on", "off"]),
     ("shape", &["top", "corners", "center", "side"]),
     ("grain", &["off", "on"]),
+    ("cover", &["off", "lyrics", "always"]),
+    ("coverSide", &["left", "right"]),
 ];
 
 /// Remember one effect. Same gate as `save_library_sort`: an unknown name or

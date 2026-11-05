@@ -83,6 +83,7 @@ import {
   recordPlay,
   SESSION_ERRORS,
   theme as savedTheme,
+  setEffect,
   setErrorLanguage,
   setLibrarySort,
   setLibraryView,
@@ -2390,6 +2391,15 @@ export default function App() {
    * take the full player's artwork, and the screen underneath stays what it was.
    */
   const lyricsInMain = lyricsOpen && !MOBILE;
+  const coverUrl = loadedTrack?.album?.images[0]?.url ?? null;
+  /**
+   * One ground, two pictures: the cover wins while it is asked for and there is
+   * a song to take it from, and the person's photo comes back the moment it is
+   * not. Never both stacked — two blurred images under the glass read as mud.
+   */
+  const coverGround =
+    !MOBILE && (effect.cover === "always" || (effect.cover === "lyrics" && lyricsInMain));
+  const groundUrl = (coverGround && coverUrl) || background.url;
   const playlistView = !lyricsInMain && !showResults && !isHome && !isLiked && !detail;
   const playlistScreen = playlistView && selected !== undefined;
   // Liked Songs is drawn by the same screen, so it shares the big button too.
@@ -2623,24 +2633,35 @@ export default function App() {
         with the pointer: a backdrop that animates on its own under blurred glass
         repaints the blur every frame — see DESIGN.md.
       */}
-      {background.url && (
+      {groundUrl && (
         <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
           {/*
             Scaled past the window so the blur has picture to pull from at the
             edges: blurred at its own size, the border fades to the black under
             it and the photo gets a dark frame nobody chose.
+
+            Keyed by the picture so a new song's cover fades in over the last one
+            once, instead of snapping. It is a single fade per song, not motion
+            under the glass — DESIGN.md's rule is about backdrops that never stop.
           */}
-          <div
-            className="absolute inset-0 bg-cover bg-center"
-            style={{
-              backgroundImage: `url(${background.url})`,
-              filter:
-                background.blur > 0
-                  ? `blur(${(background.blur / 100) * BACKGROUND_BLUR_PX}px)`
-                  : undefined,
-              transform: background.blur > 0 ? "scale(1.08)" : undefined,
-            }}
-          />
+          <AnimatePresence initial={false}>
+            <motion.div
+              key={groundUrl}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.6 }}
+              className="absolute inset-0 bg-cover bg-center"
+              style={{
+                backgroundImage: `url(${groundUrl})`,
+                filter:
+                  background.blur > 0
+                    ? `blur(${(background.blur / 100) * BACKGROUND_BLUR_PX}px)`
+                    : undefined,
+                scale: background.blur > 0 ? 1.08 : 1,
+              }}
+            />
+          </AnimatePresence>
           <div className="absolute inset-0 bg-ground" style={{ opacity: background.dim / 100 }} />
         </div>
       )}
@@ -2919,6 +2940,13 @@ export default function App() {
               title={loadedTrack?.name ?? ""}
               artists={loadedTrack ? trackArtists(loadedTrack) : ""}
               trackId={lyricsTrackId}
+              coverUrl={coverUrl}
+              coverSide={effect.coverSide}
+              onSwapSide={() => {
+                const next = effect.coverSide === "left" ? "right" : "left";
+                applyEffects({ ...effect, coverSide: next });
+                void setEffect("coverSide", next).catch(() => {});
+              }}
               onClose={closeLyrics}
             />
           ) : showResults ? (

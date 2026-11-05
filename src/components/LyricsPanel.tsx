@@ -1,5 +1,6 @@
+import { ArrowLeftRight } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { StringKey } from "../lib/i18n";
 import { SPRING } from "../lib/motion";
 import { formatDuration, type Lyrics, seekPlayback } from "../lib/spotify";
@@ -17,8 +18,37 @@ type LyricsPanelProps = {
   artists: string;
   /** The song's id. Part of every row key, and what re-runs the entrance. */
   trackId: string | null;
+  /** Desktop only: the phone's lyrics sheet has no room beside the words. */
+  coverUrl?: string | null;
+  coverSide?: "left" | "right";
+  onSwapSide?: () => void;
   onClose: () => void;
 };
+
+/** An instrumental break: the provider marks it with a note, or sends no words. */
+const isBreak = (text: string) => text.trim() === "" || text.trim() === "♪";
+
+/** How long the song may play before its first line for the intro to earn dots. */
+const INTRO_DOTS_MS = 4000;
+
+/**
+ * Three dots for a stretch with no words. They breathe only while that stretch
+ * is the one playing; anywhere else they sit still, because a page full of
+ * pulsing rows is a page nobody can read.
+ */
+function BreakDots({ active }: { active: boolean }) {
+  return (
+    <span aria-hidden="true" className="flex h-[30px] items-center gap-1.5">
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          className={`size-2 rounded-full bg-current ${active ? "lyric-dot" : ""}`}
+          style={active ? { animationDelay: `${i * 160}ms` } : undefined}
+        />
+      ))}
+    </span>
+  );
+}
 
 /**
  * How present a line is, by how far it is from the one being sung.
@@ -36,6 +66,74 @@ function presence(index: number, activeIndex: number): string {
   if (activeIndex < 0) return "opacity-70";
   if (index === activeIndex) return "opacity-100";
   return Math.abs(index - activeIndex) <= 2 ? "opacity-60" : "opacity-35";
+}
+
+/**
+ * The longest a line's fill may take. The time to the next line includes any
+ * instrumental after it, and a fill crawling through a twenty-second solo reads
+ * as the words being late, not the song being quiet.
+ */
+const FILL_MAX_MS = 8000;
+/** The last line has no next one to measure against. */
+const FILL_LAST_MS = 4000;
+
+/**
+ * The line being sung, letter by letter: each one lights up and lifts a few
+ * pixels at its turn, then settles back.
+ *
+ * The provider times lines, not words, so a letter's turn is an even share of
+ * the line — `delay = its share − how far in the song already is`. A letter
+ * whose turn has passed gets a delay so negative its animation is already over,
+ * and `both` holds it lit and settled. Every timing is a CSS animation, so the
+ * movement runs on the compositor between the twice-a-second position updates.
+ *
+ * Letters are grouped by word in `nowrap` spans: each letter is an inline-block
+ * (a transform needs a box), and inline-blocks side by side may break anywhere,
+ * so without the word around them a line would wrap in the middle of a word.
+ * The letters are hidden from screen readers and the text is read once, whole.
+ */
+function SungLine({
+  text,
+  duration,
+  elapsed,
+  playing,
+}: {
+  text: string;
+  duration: number;
+  elapsed: number;
+  playing: boolean;
+}) {
+  const letters = text.replace(/\s/g, "").length || 1;
+  let at = 0;
+  return (
+    <span data-paused={playing ? undefined : ""} className="lyric-sung">
+      <span className="sr-only">{text}</span>
+      <span aria-hidden="true">
+        {text.split(/(\s+)/).map((word, w) => {
+          // biome-ignore lint/suspicious/noArrayIndexKey: a line's words never reorder while it is being sung.
+          if (/^\s+$/.test(word) || word === "") return <span key={w}>{word}</span>;
+          return (
+            // biome-ignore lint/suspicious/noArrayIndexKey: as above.
+            <span key={w} className="whitespace-nowrap">
+              {[...word].map((letter, l) => {
+                const delay = (at++ / letters) * duration - elapsed;
+                return (
+                  <span
+                    // biome-ignore lint/suspicious/noArrayIndexKey: as above.
+                    key={l}
+                    className="lyric-letter"
+                    style={{ animationDelay: `${Math.round(delay)}ms` }}
+                  >
+                    {letter}
+                  </span>
+                );
+              })}
+            </span>
+          );
+        })}
+      </span>
+    </span>
+  );
 }
 
 /**
@@ -80,6 +178,9 @@ export function LyricsPanel({
   title,
   artists,
   trackId,
+  coverUrl = null,
+  coverSide = "left",
+  onSwapSide,
   onClose,
 }: LyricsPanelProps) {
   const activeRef = useRef<HTMLButtonElement | null>(null);
@@ -140,6 +241,27 @@ export function LyricsPanel({
     activeRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [activeIndex]);
 
+  /**
+   * How long the line being sung lasts, and how far into it the song already is.
+   *
+   * The provider times lines, not words, so the fill is an estimate: it spreads
+   * the line evenly over the time until the next one starts. It is read once,
+   * when the line changes, and handed to a CSS animation as a duration and a
+   * negative delay — the position only arrives twice a second, and driving the
+   * fill from it would move in half-second jumps. Pausing pauses the animation.
+   */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the line changing is the event; the position is read at that moment.
+  const fill = useMemo(() => {
+    const start = lyrics?.lines[activeIndex]?.start_ms;
+    if (start == null) return null;
+    const next = lyrics?.lines.slice(activeIndex + 1).find((line) => line.start_ms != null);
+    const duration = Math.min(
+      next?.start_ms != null ? next.start_ms - start : FILL_LAST_MS,
+      FILL_MAX_MS,
+    );
+    return { duration, elapsed: Math.max(0, positionMs - start) };
+  }, [activeIndex, lyrics]);
+
   return (
     <motion.section
       initial={{ opacity: 0, y: 12 }}
@@ -161,28 +283,62 @@ export function LyricsPanel({
           {artists && <p className="mt-1 truncate text-[13px] text-ink-muted">{artists}</p>}
         </div>
 
-        <button
-          type="button"
-          onClick={onClose}
-          className="shrink-0 rounded-pill px-3 py-1.5 text-[12.5px] font-semibold text-ink-muted transition-colors duration-200 hover:bg-white/8 hover:text-ink"
-        >
-          {t.closeLyrics}
-        </button>
+        <div className="flex shrink-0 items-center gap-1">
+          {coverUrl && onSwapSide && (
+            <button
+              type="button"
+              onClick={onSwapSide}
+              aria-label={t.coverSideSwap}
+              title={t.coverSideSwap}
+              className="rounded-pill p-2 text-ink-muted transition-colors duration-200 hover:bg-white/8 hover:text-ink"
+            >
+              <ArrowLeftRight className="size-4" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-pill px-3 py-1.5 text-[12.5px] font-semibold text-ink-muted transition-colors duration-200 hover:bg-white/8 hover:text-ink"
+          >
+            {t.closeLyrics}
+          </button>
+        </div>
       </div>
 
-      {loading ? (
-        <p className="text-[13px] text-ink-faint">{t.loading}</p>
-      ) : error ? (
-        <p className="rounded-card border border-white/8 bg-white/4 px-5 py-6 text-center text-[13px] text-ink-faint">
-          {error}
-        </p>
-      ) : !lyrics || lyrics.lines.length === 0 ? (
-        <p className="rounded-card border border-white/8 bg-white/4 px-5 py-6 text-center text-[13px] text-ink-faint">
-          {t.noLyrics}
-        </p>
-      ) : (
-        <>
-          {/*
+      {/*
+        The cover and the words side by side, on whichever side the person put
+        it. The cover is sticky so it stays beside the line being sung while the
+        words scroll under the main surface's own scroll, and it is keyed by the
+        picture so a new song fades in rather than swapping under the eye.
+      */}
+      <div className={`flex items-start gap-10 ${coverSide === "right" ? "flex-row-reverse" : ""}`}>
+        {coverUrl && (
+          <div className="sticky top-0 w-[min(30vw,320px)] shrink-0">
+            <motion.img
+              key={coverUrl}
+              src={coverUrl}
+              alt=""
+              initial={{ opacity: 0, scale: 0.97 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={SPRING}
+              className="aspect-square w-full rounded-card object-cover shadow-[0_24px_60px_rgb(0_0_0/0.45)]"
+            />
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          {loading ? (
+            <p className="text-[13px] text-ink-faint">{t.loading}</p>
+          ) : error ? (
+            <p className="rounded-card border border-white/8 bg-white/4 px-5 py-6 text-center text-[13px] text-ink-faint">
+              {error}
+            </p>
+          ) : !lyrics || lyrics.lines.length === 0 ? (
+            <p className="rounded-card border border-white/8 bg-white/4 px-5 py-6 text-center text-[13px] text-ink-faint">
+              {t.noLyrics}
+            </p>
+          ) : (
+            <>
+              {/*
             The whole list is always rendered and only the highlight moves. A view
             that showed one line at a time would break scrolling, break searching
             with Ctrl+F, and make the words impossible to read ahead of the song —
@@ -196,23 +352,33 @@ export function LyricsPanel({
             sideways. Twelve pixels of alignment is not worth a scrollbar that was
             never asked for.
           */}
-          <div className="flex max-w-[42rem] flex-col gap-1">
-            {lyrics.lines.map((line, index) => {
-              const active = index === activeIndex;
-              // Unsynced lyrics come back with every line at `null`: there is no
-              // minute to jump to, so the whole block is a wall of dead buttons.
-              const seekable = line.start_ms != null;
-              return (
-                <button
-                  key={rowKeys[index]}
-                  type="button"
-                  ref={active ? activeRef : undefined}
-                  disabled={!seekable}
-                  onClick={() => {
-                    if (line.start_ms == null) return;
-                    void seekPlayback(line.start_ms).catch(() => {});
-                  }}
-                  /*
+              <div className="flex max-w-[42rem] flex-col gap-1">
+                {/* The intro before the first line is a break too, with no row of its own. */}
+                {lyrics.synced && (lyrics.lines[0]?.start_ms ?? 0) >= INTRO_DOTS_MS && (
+                  <span
+                    className={`px-3 py-1.5 transition-opacity duration-300 ${
+                      activeIndex < 0 ? "opacity-100" : "opacity-35"
+                    }`}
+                  >
+                    <BreakDots active={activeIndex < 0 && playing} />
+                  </span>
+                )}
+                {lyrics.lines.map((line, index) => {
+                  const active = index === activeIndex;
+                  // Unsynced lyrics come back with every line at `null`: there is no
+                  // minute to jump to, so the whole block is a wall of dead buttons.
+                  const seekable = line.start_ms != null;
+                  return (
+                    <button
+                      key={rowKeys[index]}
+                      type="button"
+                      ref={active ? activeRef : undefined}
+                      disabled={!seekable}
+                      onClick={() => {
+                        if (line.start_ms == null) return;
+                        void seekPlayback(line.start_ms).catch(() => {});
+                      }}
+                      /*
                     The words arrive once per song: a 14ms stagger, capped at 24
                     lines so a long verse is not still arriving after the first
                     chorus. Transform only — the opacity of a line belongs to the
@@ -221,18 +387,18 @@ export function LyricsPanel({
                     inline style: it is per row, and `both` holds the line back
                     until its turn.
                   */
-                  style={{ animationDelay: `${Math.min(index, 24) * 14}ms` }}
-                  aria-label={
-                    seekable ? `${line.text} — ${formatDuration(line.start_ms)}` : undefined
-                  }
-                  title={seekable ? t.jumpToLine : undefined}
-                  className={`lyric-in relative isolate w-fit max-w-full rounded-pill px-3 py-1.5 text-left text-[20px] leading-[1.5] font-medium transition-[opacity,background-color] duration-300 ${
-                    seekable
-                      ? "cursor-pointer hover:bg-white/6 hover:opacity-100"
-                      : "cursor-default"
-                  } ${presence(index, activeIndex)}`}
-                >
-                  {/*
+                      style={{ animationDelay: `${Math.min(index, 24) * 14}ms` }}
+                      aria-label={
+                        seekable ? `${line.text} — ${formatDuration(line.start_ms)}` : undefined
+                      }
+                      title={seekable ? t.jumpToLine : undefined}
+                      className={`lyric-in relative isolate w-fit max-w-full rounded-pill px-3 py-1.5 text-left text-[20px] leading-[1.5] font-medium transition-[opacity,background-color] duration-300 ${
+                        seekable
+                          ? "cursor-pointer hover:bg-white/6 hover:opacity-100"
+                          : "cursor-default"
+                      } ${presence(index, activeIndex)}`}
+                    >
+                      {/*
                     The band that travels with the line being sung. A shared
                     layout id is what makes it travel: React unmounts one and
                     mounts the other, and Motion slides and resizes the survivor
@@ -251,33 +417,41 @@ export function LyricsPanel({
                     on the button as well, or the hover fill is a rectangle on a
                     page where the moving line is a stadium.
                   */}
-                  {active && (
-                    <motion.span
-                      layoutId="lyric-cursor"
-                      transition={SPRING}
-                      className="absolute inset-0 -z-10 rounded-pill bg-white/6"
-                      aria-hidden
-                    />
-                  )}
-                  {line.text}
-                </button>
-              );
-            })}
-          </div>
+                      {active && (
+                        <motion.span
+                          layoutId="lyric-cursor"
+                          transition={SPRING}
+                          className="absolute inset-0 -z-10 rounded-pill bg-white/6"
+                          aria-hidden
+                        />
+                      )}
+                      {isBreak(line.text) ? (
+                        <BreakDots active={active && playing} />
+                      ) : active && fill ? (
+                        <SungLine text={line.text} {...fill} playing={playing} />
+                      ) : (
+                        line.text
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
 
-          {/*
+              {/*
             Unsynced lyrics say so, once, at the bottom. Silently showing a page
             that cannot follow the song is not an error, but it is worth one line
             so nobody waits for a highlight that was never going to come.
           */}
-          {!lyrics.synced && (
-            <p className="mt-5 text-[12.5px] text-ink-faint">{t.lyricsNotSynced}</p>
+              {!lyrics.synced && (
+                <p className="mt-5 text-[12.5px] text-ink-faint">{t.lyricsNotSynced}</p>
+              )}
+              {!playing && lyrics.synced && (
+                <p className="mt-2 text-[12.5px] text-ink-faint">{t.lyricsPaused}</p>
+              )}
+            </>
           )}
-          {!playing && lyrics.synced && (
-            <p className="mt-2 text-[12.5px] text-ink-faint">{t.lyricsPaused}</p>
-          )}
-        </>
-      )}
+        </div>
+      </div>
     </motion.section>
   );
 }
