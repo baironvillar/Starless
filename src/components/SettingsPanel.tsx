@@ -2058,28 +2058,27 @@ function BackgroundSettings({
         {/*
             The cover sits in this card and not with the effects: it is the same
             layer as the picture, drawn with the same dim and blur, so the two
-            sliders below answer for whichever of the two is on screen. Desktop
-            only — the phone has no lyrics in the main surface to sit beside.
+            sliders below answer for whichever of the two is on screen. On the
+            phone "with lyrics" means the full player's lyrics, which is where
+            the phone reads them: the sheet is glass, so the cover shows through.
         */}
-        {!isMobile() && (
-          <Row
-            label={t.coverBackground}
-            hint={t.coverBackgroundHint}
-            compare
-            onReset={resetEffect(effect, changeEffect, "cover")}
-          >
-            <Select
-              value={effect.cover}
-              onChange={(value) => changeEffect("cover", value as Effects["cover"])}
-              options={[
-                { value: "off", label: t.effectOff },
-                { value: "lyrics", label: t.coverBackgroundLyrics },
-                { value: "always", label: t.coverBackgroundAlways },
-              ]}
-            />
-          </Row>
-        )}
-        {(background.url || (!isMobile() && effect.cover !== "off")) && (
+        <Row
+          label={t.coverBackground}
+          hint={t.coverBackgroundHint}
+          compare
+          onReset={resetEffect(effect, changeEffect, "cover")}
+        >
+          <Select
+            value={effect.cover}
+            onChange={(value) => changeEffect("cover", value as Effects["cover"])}
+            options={[
+              { value: "off", label: t.effectOff },
+              { value: "lyrics", label: t.coverBackgroundLyrics },
+              { value: "always", label: t.coverBackgroundAlways },
+            ]}
+          />
+        </Row>
+        {(background.url || effect.cover !== "off") && (
           <>
             <Row
               label={t.backgroundDim}
