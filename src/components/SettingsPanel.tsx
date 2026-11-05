@@ -1757,7 +1757,8 @@ function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart })
             compare
             onReset={resetEffect(effect, changeEffect, "play")}
           >
-            <span className="flex items-center gap-2">
+            {/* A finger needs a bigger target than a pointer: 40px on the phone. */}
+            <span className={`flex items-center ${isMobile() ? "gap-4" : "gap-2"}`}>
               {EFFECTS.play.map((style) => (
                 <button
                   key={style}
@@ -1766,7 +1767,7 @@ function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart })
                   aria-label={t[PLAY_LABELS[style]]}
                   title={t[PLAY_LABELS[style]]}
                   aria-pressed={effect.play === style}
-                  className="relative size-7 shrink-0 transition-transform duration-150 hover:scale-105 active:scale-95"
+                  className={`relative ${isMobile() ? "size-10" : "size-7"} shrink-0 transition-transform duration-150 hover:scale-105 active:scale-95`}
                 >
                   <span
                     data-style={style}
@@ -1781,7 +1782,7 @@ function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart })
                     }
                   >
                     <Play
-                      className="play-glyph size-3 translate-x-px fill-current"
+                      className={`play-glyph ${isMobile() ? "size-4" : "size-3"} translate-x-px fill-current`}
                       strokeWidth={0}
                     />
                   </span>

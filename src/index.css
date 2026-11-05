@@ -405,22 +405,42 @@
   pointer-events: none;
   background: radial-gradient(closest-side, var(--color-accent), transparent);
   filter: blur(7px);
-  opacity: 0.8;
+  opacity: calc(0.8 + var(--lit, 0) * 0.2);
+  transform: translateY(calc(var(--lit, 0) * -2px)) scale(calc(1 + var(--lit, 0) * 0.12));
   transition:
-    opacity 150ms ease-out,
-    transform 150ms ease-out;
+    opacity calc(150ms + var(--lit, 0) * 50ms) ease-out,
+    transform calc(150ms + var(--lit, 0) * 50ms) ease-out;
 }
 
 /*
- * The hover answers in the dress that was chosen, and the play triangle steps
- * forward. Bone lightens, the accent and the cover light a halo of their own
- * colour, the glass raises its light and a specular line crosses its face —
- * the landing's download key. Pause does not step: it is not going anywhere.
+ * The button answers the hand in the dress that was chosen, and the play
+ * triangle steps forward. Bone lightens, the accent and the cover light a halo
+ * of their own colour, the glass raises its light and a specular line crosses
+ * its face — the landing's download key. Pause does not step: it is not going
+ * anywhere.
  *
- * In and out at different speeds (200ms in, 150ms out): the hand going in is
- * deciding, the hand leaving is done. Only a real pointer, and never with the
- * app's motion off or the system's reduced motion: a tap would leave it lit.
+ * One switch, `--lit`, and every answer written once as a function of it. A
+ * mouse turns it on while it hovers; a finger, while it presses — a phone has
+ * no hover, and a hover rule there sticks after the tap and leaves the button
+ * lit. In and out at different speeds (200ms in, 150ms out): the hand going in
+ * is deciding, the hand leaving is done. Never with the app's motion off or
+ * the system's reduced motion.
  */
+@media (prefers-reduced-motion: no-preference) {
+  @media (hover: hover) and (pointer: fine) {
+    :root:not([data-still]) .play-key:hover {
+      --lit: 1;
+    }
+  }
+  @media (hover: none) {
+    :root:not([data-still]) .play-key:active {
+      --lit: 1;
+    }
+  }
+}
+.play-key[data-style="bone"] {
+  background-color: color-mix(in oklab, var(--color-ink) calc(100% - var(--lit, 0) * 40%), #fff);
+}
 .play-key[data-style="accent"]::after,
 .play-key[data-style="cover"]::after {
   content: "";
@@ -430,8 +450,8 @@
   border-radius: inherit;
   pointer-events: none;
   background: radial-gradient(closest-side, var(--tint, var(--color-accent)), transparent);
-  opacity: 0;
-  transition: opacity 150ms ease-out;
+  opacity: calc(var(--lit, 0) * 0.55);
+  transition: opacity calc(150ms + var(--lit, 0) * 50ms) ease-out;
 }
 .play-key[data-style="glass"]::after {
   content: "";
@@ -442,33 +462,13 @@
   pointer-events: none;
   background: linear-gradient(105deg, transparent 38%, rgb(255 255 255 / 0.3) 50%, transparent 62%)
     130% 0 / 260% 100% no-repeat;
-  transition: background-position 0ms;
+  /* The line crosses once on the way in and is put back unseen on the way out. */
+  background-position: calc(130% - var(--lit, 0) * 160%) 0;
+  transition: background-position calc(var(--lit, 0) * 700ms) cubic-bezier(0.23, 1, 0.32, 1);
 }
-.play-key svg {
-  transition: transform 150ms ease-out;
-}
-@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
-  :root:not([data-still]) .play-key:hover .play-glyph {
-    transform: translateX(1.5px);
-    transition-duration: 200ms;
-  }
-  :root:not([data-still]) .play-key[data-style="bone"]:hover {
-    background-color: color-mix(in oklab, var(--color-ink) 60%, #fff);
-    transition-duration: 200ms;
-  }
-  :root:not([data-still]) .play-key:is([data-style="accent"], [data-style="cover"]):hover::after {
-    opacity: 0.55;
-    transition-duration: 200ms;
-  }
-  :root:not([data-still]) .play-key[data-style="glass"]:hover::before {
-    opacity: 1;
-    transform: translateY(-2px) scale(1.12);
-    transition-duration: 200ms;
-  }
-  :root:not([data-still]) .play-key[data-style="glass"]:hover::after {
-    background-position: -30% 0;
-    transition: background-position 700ms cubic-bezier(0.23, 1, 0.32, 1);
-  }
+.play-glyph {
+  transform: translateX(calc(var(--lit, 0) * 1.5px));
+  transition: transform calc(150ms + var(--lit, 0) * 50ms) ease-out;
 }
 }
 
