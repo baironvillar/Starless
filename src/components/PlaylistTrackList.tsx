@@ -51,16 +51,6 @@ type PlaylistTrackListProps = {
 };
 
 /**
- * How the rows arrive, and — the part that matters — where the stagger stops.
- *
- * Copied from `TrackList` rather than reinvented, and for the reason that copy
- * documents: an uncapped delay makes row 198 wait five seconds at `opacity: 0`,
- * which is a list with holes in it and not an entrance.
- */
-const STAGGER_STEP = 0.03;
-const STAGGER_CAP = 12;
-
-/**
  * The songs of a playlist, laid out the way the client everyone already knows
  * lays them out.
  *
@@ -146,7 +136,29 @@ export function PlaylistTrackList({
       {error && !loading && <Note tone="warn">{error}</Note>}
 
       {!loading && !error && (
-        <div ref={rowsRef}>
+        /*
+         * **The table arrives as one shape.**
+         *
+         * The rows used to come in one at a time, each one thirty milliseconds
+         * after the one above it, and the effect was a list of ghosts: half of
+         * the table was there and half of it was not, over a background image,
+         * for the better part of half a second. A table is not a shelf of tiles
+         * — it is one thing, and it should land as one thing.
+         *
+         * **Opacity only, and not a rise.** `useRowWindow` reads this box's
+         * `getBoundingClientRect().top` to know which rows are near the screen,
+         * and a transform moving it would make the window a row off while it
+         * arrives.
+         *
+         * The box mounts when the songs arrive and unmounts when they are gone,
+         * so this plays exactly when there is something to arrive.
+         */
+        <motion.div
+          ref={rowsRef}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={SPRING}
+        >
           {first > 0 && <div style={{ height: first * pitch }} aria-hidden />}
           {tracks.slice(first, last).map((track, offset) => {
             const index = first + offset;
@@ -185,11 +197,6 @@ export function PlaylistTrackList({
                   onPlay(track);
                 }}
                 data-row
-                // Only the rows the list opens onto come in; a row that mounts
-                // because the list was scrolled to it is already there.
-                initial={index < STAGGER_CAP ? { opacity: 0, y: 8 } : false}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ ...SPRING, delay: index * STAGGER_STEP }}
                 className={`group grid cursor-pointer items-center gap-4 border-b border-white/8 px-4 ${
                   compact ? "py-1" : "py-2"
                 } text-left transition-colors duration-200 last:border-b-0 hover:bg-white/6 ${
@@ -315,7 +322,7 @@ export function PlaylistTrackList({
           {last < tracks.length && (
             <div style={{ height: (tracks.length - last) * pitch }} aria-hidden />
           )}
-        </div>
+        </motion.div>
       )}
 
       {/* Two different empties, said once each. "This playlist has no songs" and
