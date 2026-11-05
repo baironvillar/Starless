@@ -15,12 +15,22 @@ import { useId } from "react";
  * has to listen for it. The plate and the ring stay grey on purpose: the
  * accent is the one warm light, as it is in the brand.
  *
- * One drawing for every size it is shown at (36px in the list, the grid tile,
- * 232px at the top of the screen), so the ring stays at the logo's 5% of the
- * width and the heart reads at the smallest of them. `useId` keeps the
- * gradients of two copies on screen from resolving to each other.
+ * One drawing for every size it is shown at, with one exception: **`compact`
+ * drops the ring and lets the heart fill the plate.** At 36px in the rail's
+ * list the heart took less than half the width and the ring the rest, and the
+ * whole read as a target or a button more than a heart. The ring is the logo's
+ * and it earns its place where there is room for it — the grid tile, the Home
+ * card, 232px at the top of the screen. `useId` keeps the gradients of two
+ * copies on screen from resolving to each other.
  */
-export function LikedCover({ className = "" }: { className?: string }) {
+export function LikedCover({
+  className = "",
+  compact = false,
+}: {
+  className?: string;
+  /** For the small sizes (64px and under): no ring, a bigger heart. */
+  compact?: boolean;
+}) {
   const id = useId().replace(/:/g, "");
   const plate = `${id}-plate`;
   const haze = `${id}-haze`;
@@ -71,12 +81,17 @@ export function LikedCover({ className = "" }: { className?: string }) {
       {/* The sheen on the top half of the glass, as on the app icon. */}
       <rect width="100" height="100" fill={`url(#${sheen})`} />
 
-      <circle cx="50" cy="50" r="36" fill="none" stroke={`url(#${ring})`} strokeWidth="4" />
+      {!compact && (
+        <circle cx="50" cy="50" r="36" fill="none" stroke={`url(#${ring})`} strokeWidth="4" />
+      )}
 
-      <path d={HEART} fill="var(--color-accent)" opacity="0.7" filter={`url(#${glow})`} />
-      <path d={HEART} fill="var(--color-accent)" />
-      <path d={HEART} fill={`url(#${shine})`} />
-      <path d={HEART} fill="none" stroke="#FFFFFF" strokeOpacity="0.35" strokeWidth="0.8" />
+      {/* The same heart, scaled about the centre where the ring is gone: 58% of the plate. */}
+      <g transform={compact ? "translate(50 50) scale(1.45) translate(-50 -50)" : undefined}>
+        <path d={HEART} fill="var(--color-accent)" opacity="0.7" filter={`url(#${glow})`} />
+        <path d={HEART} fill="var(--color-accent)" />
+        <path d={HEART} fill={`url(#${shine})`} />
+        <path d={HEART} fill="none" stroke="#FFFFFF" strokeOpacity="0.35" strokeWidth="0.8" />
+      </g>
     </svg>
   );
 }

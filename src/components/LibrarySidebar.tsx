@@ -372,7 +372,7 @@ export function LibrarySidebar({
                     >
                       {mark(activeId === "liked")}
                       <span className="size-9 shrink-0 overflow-hidden rounded-[9px]">
-                        <LikedCover />
+                        <LikedCover compact />
                       </span>
                       {!collapsed && (
                         <span className="min-w-0 flex-1">

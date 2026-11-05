@@ -32,7 +32,7 @@ export function MobileLibrary({ t, playlists, likedCount, error, onSelect }: Mob
       <div className="flex flex-col">
         <Row
           onClick={() => onSelect("liked")}
-          art={<LikedCover />}
+          art={<LikedCover compact />}
           name={t.likedSongs}
           detail={likedCount !== null ? `${likedCount} ${t.songs}` : t.loading}
         />
