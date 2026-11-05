@@ -48,7 +48,7 @@ export const CHANGELOG: ChangelogEntry[] = [
         {
           title: "Nuevo",
           items: [
-            "El botón de reproducir se viste a tu gusto. En Ajustes → Personalización, debajo del color principal: hueso, tu color principal, el color de la portada que suena —que cambia con cada canción— o vidrio esmerilado con tu color brillando debajo.",
+            "El botón de reproducir se viste a tu gusto. En Ajustes → Personalización, debajo del color principal: hueso, tu color principal, el color de la portada que suena —que cambia con cada canción— o vidrio esmerilado con tu color brillando debajo, una luz que se corre hacia donde está el mouse.",
             "La personalización se puede restablecer. Un botón en Ajustes → Personalización devuelve el tema, el color, la opacidad, el fondo y los efectos a como vienen, y pide confirmación porque también quita tu imagen de fondo.",
             "Cada opción de Personalización se restablece por separado. Una flecha aparece en la fila cuando su valor es distinto del que trae la app.",
             "Personalizar se hace mirando la app. Al arrastrar un slider de Personalización, el panel se aparta y la app cambia mientras arrastras. Para el resto, mantén pulsado el botón de ver, o usa el ojo de cada fila para alternar la opción con el panel fuera de la vista.",
@@ -90,7 +90,7 @@ export const CHANGELOG: ChangelogEntry[] = [
         {
           title: "New",
           items: [
-            "The play button has four looks. In Settings → Customisation, under the main colour: bone, your main colour, the playing cover's colour, which changes with every song, or frosted glass with your colour glowing underneath.",
+            "The play button has four looks. In Settings → Customisation, under the main colour: bone, your main colour, the playing cover's colour, which changes with every song, or frosted glass with your colour glowing underneath, a light that leans toward the mouse.",
             "You can reset the customisation. A button in Settings → Customisation takes the theme, the colour, the opacity, the background and the effects back to what ships. It asks first, because it also removes your picture.",
             "Each customisation option can be reset on its own. An arrow appears on its row when its value differs from what ships.",
             "You customise while looking at the app. Dragging a customisation slider moves the panel aside, and the app changes as you drag. For the rest, hold the preview button, or use the eye on each row to flip the option with the panel out of the way.",
