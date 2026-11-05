@@ -1324,6 +1324,13 @@ pub fn lyrics(session: &Session, track_id: &str) -> Result<Lyrics, String> {
         })
     })?;
 
+    // What else the answer carries, for the song that is actually open: the
+    // probe needs a song in another script, and the person picks it by playing it.
+    #[cfg(debug_assertions)]
+    if lyrics_requested() {
+        run_lyrics_probe(session, track_id);
+    }
+
     let parsed = MetaLyrics::try_from(&body).map_err(|e| {
         log::error!("spclient: las letras de {track_id} vinieron con otra forma: {e}");
         "bad_response".to_string()
@@ -2630,7 +2637,7 @@ pub use probe::{
     create_requested, dj_requested, home_requested, jam_requested, pictures_requested,
     private_requested, radio_requested, requested, run_create_probe, run_dj_probe, run_home_probe,
     run_jam_probe, run_picture_probe, run_private_probe, run_probe, run_radio_probe, run_shape_probe,
-    run_voice_probe, shapes_requested, voice_requested,
+    run_voice_probe, shapes_requested, voice_requested, lyrics_requested, run_lyrics_probe,
 };
 
 #[cfg(test)]
