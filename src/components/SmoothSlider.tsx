@@ -62,6 +62,12 @@ type SmoothSliderProps = {
    * passes it.
    */
   pulse?: MotionValue<number>;
+  /**
+   * Drawn as held from the start. For a copy of a slider that is being dragged
+   * somewhere else: no pointer ever lands on it, and without this it would chase
+   * the value on a spring, behind the hand.
+   */
+  heldFromStart?: boolean;
 };
 
 /**
@@ -98,9 +104,10 @@ export function SmoothSlider({
   tone = "accent",
   className = "w-[180px]",
   pulse,
+  heldFromStart = false,
 }: SmoothSliderProps) {
   const [hovered, setHovered] = useState(false);
-  const [held, setHeld] = useState(false);
+  const [held, setHeld] = useState(heldFromStart);
 
   // Hooks cannot be conditional, so a slider without a pulse beats with a zero.
   const silent = useMotionValue(0);

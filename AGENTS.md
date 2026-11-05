@@ -956,12 +956,21 @@ en ningún proto ni en ninguna issue:
   la cola, los popovers—: media ventana se repintaba por evento de puntero, y
   el valor además se guardaba en disco por paso. Un arrastre que repinta
   media ventana en cada evento *se siente* como un control que no te sigue.
-  **Lo que se aplica a la ventana entera se aplica cuando la mano se
-  detiene**: el número, el pulgar y la leyenda contestan a velocidad de
-  puntero —la leyenda es un degradado de 46×28 y puede permitírselo— y los
-  menús cambian una vez, al soltar. La leyenda tiene su propia variable
-  (`--legend-alpha`) por eso: si leyera la de los menús, no podría contestar
-  antes que ellos.
+  **Lo que se aplica a la ventana entera no se aplica por evento de puntero**:
+  el número, el pulgar y la leyenda contestan a velocidad de puntero —la leyenda
+  es un degradado de 46×28 y puede permitírselo— y la ventana unas 15 veces por
+  segundo (`useLiveCommit`), con el disco recién cuando la mano se detiene. La
+  leyenda tiene su propia variable (`--legend-alpha`) por eso: si leyera la de
+  los menús, no podría contestar antes que ellos.
+- **Un slider de Personalización que aparta el panel no puede sacar el control
+  del panel.** Un hijo no puede ser más opaco que su padre, así que el panel no
+  se puede desvanecer dejando el slider encendido, y desmontar el `input` corta
+  el arrastre. `PeekSlider` deja el real debajo, invisible y con el arrastre, y
+  dibuja encima una copia en un portal con la pista en los mismos píxeles. Un
+  slider nuevo cuyo efecto se ve en la ventana va con `PeekSlider`, no con
+  `SmoothSlider` pelado; un interruptor o una lista lleva `compare` en su `Row`.
+  **Y `ComparePill` mueve el control, no lo copia:** algunos guardan su propio
+  estado, como `ThemeSelect`, y dos copias dejarían de coincidir al primer cambio.
 - **Una puerta que se abre no es un corte, y un login en curso no es una
   restauración.** La pantalla de inicio de sesión desaparecía en un fotograma
   cuando llegaba la sesión: la app estaba y la tarjeta no, sin ninguna

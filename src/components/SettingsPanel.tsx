@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  Eye,
   FlaskConical,
   ImagePlus,
   Loader2,
@@ -15,6 +16,7 @@ import {
   Palette,
   Pencil,
   RefreshCw,
+  RotateCcw,
   Search,
   Settings2,
   User,
@@ -25,12 +27,15 @@ import {
   type CSSProperties,
   createContext,
   isValidElement,
+  useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
 } from "react";
+import { createPortal } from "react-dom";
 import { useBack } from "../lib/back";
 import { CHANGELOG, PREVIOUS_NOTE } from "../lib/changelog";
 import type { Lang, StringKey } from "../lib/i18n";
@@ -45,6 +50,7 @@ import {
   applySurfaceOpacity,
   applyTheme,
   audioQuality,
+  BACKGROUND_DEFAULT,
   BACKGROUND_DIM_MAX,
   CROSSFADE_MAX,
   clearBackground,
@@ -135,14 +141,341 @@ type SettingsPanelProps = {
 const ACCENT_PRESETS = ["#ff5a36", "#7c6cff", "#3dd6c4", "#f5b83d", "#c4c1c8", "#ff8fb1"];
 
 /**
- * How long the hand has to be still before the opacity is applied for real.
- *
- * Not a number about taste. The applied value repaints every glass surface in
- * the window, so applying it on every pointer event is what made the drag
- * heavy; this is the pause after the last movement, which is what "let go"
- * means when the release happens outside the control.
+ * How long the hand has to be still before a look is written to disk: the pause
+ * after the last movement, which is what "let go" means when the release happens
+ * outside the control.
  */
 const OPACITY_COMMIT_MS = 150;
+
+/**
+ * How often a look reaches the window while the hand moves, about 15 times a second.
+ *
+ * **It used to wait for the hand to stop, and that made the sliders a guess:** the
+ * panel covered the window, and the window only answered after the fact. Now the
+ * panel steps aside and the change has to be seen while it is made. It is limited
+ * and not per event because the value repaints the surfaces, and a pointer sends far
+ * more events than anybody can see.
+ */
+const LIVE_APPLY_MS = 66;
+
+/**
+ * How long the panel stays away after a slider is let go: just past `LIVE_APPLY_MS`,
+ * so the last value lands before it comes back. It was 300, to look at the result,
+ * and in the hand that read as a panel slow to answer.
+ */
+const PEEK_LINGER_MS = 80;
+
+/**
+ * Asks the panel to step aside. A context because the sliders are several sections
+ * down, and every one of them would otherwise have to be handed it.
+ */
+const PeekContext = createContext<(peeking: boolean) => void>(() => {});
+
+/**
+ * One look, answered on two clocks: the window while the hand moves and the disk
+ * once it stops.
+ *
+ * `pending` says the hand is ahead of the window. A value coming back from the store
+ * in that moment is an older one, and must not be drawn over what the hand asks for.
+ */
+function useLiveCommit<T>(apply: (value: T) => void, save: (value: T) => void) {
+  const latest = useRef({ apply, save });
+  latest.current = { apply, save };
+  const applyTimer = useRef<number | null>(null);
+  const saveTimer = useRef<number | null>(null);
+  const lastApply = useRef(0);
+
+  const commit = useMemo(() => {
+    const cancel = () => {
+      if (applyTimer.current !== null) window.clearTimeout(applyTimer.current);
+      if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
+      applyTimer.current = null;
+      saveTimer.current = null;
+    };
+    return {
+      cancel,
+      pending: () => saveTimer.current !== null,
+      push: (value: T) => {
+        if (applyTimer.current !== null) window.clearTimeout(applyTimer.current);
+        const run = () => {
+          applyTimer.current = null;
+          lastApply.current = performance.now();
+          latest.current.apply(value);
+        };
+        const wait = LIVE_APPLY_MS - (performance.now() - lastApply.current);
+        if (wait <= 0) run();
+        else applyTimer.current = window.setTimeout(run, wait);
+
+        if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
+        saveTimer.current = window.setTimeout(() => {
+          saveTimer.current = null;
+          latest.current.save(value);
+        }, OPACITY_COMMIT_MS);
+      },
+    };
+  }, []);
+
+  // A timeout that outlives the panel writes to a window that is not there anymore.
+  useEffect(() => commit.cancel, [commit]);
+
+  return commit;
+}
+
+/**
+ * A slider whose drag moves the panel out of the way.
+ *
+ * **The real control stays where it is, invisible with the panel, and this draws a
+ * copy.** A child cannot be more opaque than its parent, and taking the control out
+ * of the panel would unmount the input under the hand and end the drag. So the input
+ * keeps the drag, and the copy sits over it with its track on the same pixels, on
+ * its own glass, because it now floats over the app.
+ */
+function PeekSlider({
+  label,
+  valueText,
+  value,
+  min,
+  max,
+  step,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  valueText: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  disabled?: boolean;
+  onChange: (value: number) => void;
+}) {
+  const setPeek = useContext(PeekContext);
+  const box = useRef<HTMLSpanElement>(null);
+  const [rect, setRect] = useState<DOMRect | null>(null);
+  const linger = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!rect) return;
+    const release = () => {
+      // One gesture can end twice (a release, then the window losing focus), and a
+      // second timer nobody remembers would close the panel over the next drag.
+      if (linger.current !== null) return;
+      linger.current = window.setTimeout(() => {
+        linger.current = null;
+        setRect(null);
+        setPeek(false);
+      }, PEEK_LINGER_MS);
+    };
+    // On the window: the release can land anywhere, and the alt-tab has no release.
+    window.addEventListener("pointerup", release);
+    window.addEventListener("pointercancel", release);
+    window.addEventListener("blur", release);
+    return () => {
+      window.removeEventListener("pointerup", release);
+      window.removeEventListener("pointercancel", release);
+      window.removeEventListener("blur", release);
+    };
+  }, [rect, setPeek]);
+
+  useEffect(() => {
+    return () => {
+      if (linger.current !== null) window.clearTimeout(linger.current);
+    };
+  }, []);
+
+  return (
+    <span
+      ref={box}
+      className="inline-flex"
+      onPointerDownCapture={(event) => {
+        if (disabled || event.button !== 0 || !box.current) return;
+        if (linger.current !== null) window.clearTimeout(linger.current);
+        linger.current = null;
+        setRect(box.current.getBoundingClientRect());
+        setPeek(true);
+      }}
+    >
+      <SmoothSlider
+        value={value}
+        min={min}
+        max={max}
+        step={step}
+        disabled={disabled}
+        onChange={onChange}
+        label={label}
+        className="w-[180px]"
+      />
+      {rect &&
+        createPortal(
+          <div
+            inert
+            aria-hidden="true"
+            className="glass pointer-events-none fixed z-50 rounded-[16px] px-4 pt-3 pb-3 text-ink"
+            // 40px is the padding and the line above the track: the track lands on
+            // the pixels of the real one, so nothing moves under the hand.
+            style={{ left: rect.left - 16, top: rect.top - 40, minWidth: rect.width + 32 }}
+          >
+            <div className="mb-2 flex h-5 items-center justify-between gap-4 text-[13px] whitespace-nowrap">
+              <span className="font-semibold">{label}</span>
+              <span className="tabular text-ink-muted">{valueText}</span>
+            </div>
+            <SmoothSlider
+              value={value}
+              min={min}
+              max={max}
+              step={step}
+              onChange={() => {}}
+              label={label}
+              className="w-[180px]"
+              heldFromStart
+            />
+          </div>,
+          document.body,
+        )}
+    </span>
+  );
+}
+
+/** The way back for one effect, or nothing while it is already what ships. */
+function resetEffect<K extends EffectName>(
+  effect: Effects,
+  change: (name: K, value: Effects[K]) => void,
+  name: K,
+): (() => void) | undefined {
+  return effect[name] === EFFECTS_DEFAULT[name]
+    ? undefined
+    : () => change(name, EFFECTS_DEFAULT[name]);
+}
+
+/**
+ * The words of the compare button, and the sign that a row may offer it. Only the
+ * customisation provides it: the rest of the settings change nothing on screen.
+ */
+const CompareContext = createContext<{ compare: string; done: string; reset: string } | null>(null);
+
+/**
+ * One control, on its own, with the panel out of the way: on, off, on, looking at
+ * the app. What holding the preview button cannot do, because the hand that holds
+ * it is the hand that would have to flip the switch.
+ *
+ * **The scrim catches the click that ends this.** It is clear, and it is there so
+ * that click does not land on a song, or on the panel that is still there,
+ * invisible. It does not stop the pointer light, which listens on the window.
+ *
+ * **The control moves here instead of being copied:** the row draws nothing while
+ * this is open. Some controls keep their own state, and two of them would disagree
+ * as soon as one changed.
+ */
+function ComparePill({
+  label,
+  done,
+  at,
+  onClose,
+  children,
+}: {
+  label: string;
+  done: string;
+  at: DOMRect;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const setPeek = useContext(PeekContext);
+  const box = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setPeek(true);
+    box.current?.focus();
+    return () => setPeek(false);
+  }, [setPeek]);
+
+  useEffect(() => {
+    // In the capture phase: Escape also closes the whole panel, from `App`, and this
+    // has to end the comparison and leave the panel where it was.
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      onClose();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+
+  return createPortal(
+    <>
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-hidden="true"
+        onClick={onClose}
+        className="fixed inset-0 z-[49] cursor-default"
+      />
+      <div
+        ref={box}
+        role="dialog"
+        aria-label={label}
+        tabIndex={-1}
+        className="glass fixed z-50 flex max-w-[calc(100vw-32px)] flex-wrap items-center gap-x-4 gap-y-2 rounded-[16px] px-4 py-3 text-ink outline-none"
+        // Where the row was, so the hand barely has to travel; pulled back in when
+        // the row is near the bottom edge.
+        style={{
+          top: Math.max(16, Math.min(at.top - 12, window.innerHeight - 96)),
+          right: Math.max(16, window.innerWidth - at.right - 16),
+        }}
+      >
+        <span className="text-[13px] font-semibold whitespace-nowrap">{label}</span>
+        {children}
+        <button
+          type="button"
+          onClick={onClose}
+          className="h-8 rounded-pill bg-white/10 px-3 text-[13px] font-medium transition-colors duration-200 hover:bg-white/16"
+        >
+          {done}
+        </button>
+      </div>
+    </>,
+    document.body,
+  );
+}
+
+/**
+ * Hold it and the panel is gone; let go and it is back. For what a slider's drag
+ * cannot show: a switch, a list, a colour. A hold and not a toggle, because a toggle
+ * leaves the panel hidden with nothing on screen that says how to bring it back.
+ */
+function PeekButton({ t }: { t: Record<StringKey, string> }) {
+  const setPeek = useContext(PeekContext);
+  const end = () => setPeek(false);
+  return (
+    <button
+      type="button"
+      aria-label={t.peekHold}
+      title={t.peekHold}
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        setPeek(true);
+      }}
+      onPointerUp={end}
+      onPointerCancel={end}
+      onLostPointerCapture={end}
+      onBlur={end}
+      onKeyDown={(event) => {
+        if ((event.key === " " || event.key === "Enter") && !event.repeat) {
+          event.preventDefault();
+          setPeek(true);
+        }
+      }}
+      onKeyUp={(event) => {
+        if (event.key === " " || event.key === "Enter") end();
+      }}
+      onContextMenu={(event) => event.preventDefault()}
+      className="ml-auto flex h-9 shrink-0 touch-none items-center gap-2 rounded-pill px-3 text-[13px] font-medium text-ink-muted transition-colors duration-200 select-none hover:bg-white/10 hover:text-ink"
+    >
+      <Eye className="size-4" strokeWidth={2} />
+      <span className="hidden sm:inline">{t.peekHold}</span>
+    </button>
+  );
+}
 
 const SECTIONS = [
   "sectionGeneral",
@@ -231,6 +564,8 @@ export function SettingsPanel({
   const [found, setFound] = useState(true);
   /** Which part of the customisation is on screen. */
   const [customPart, setCustomPart] = useState<CustomPart>("customAppearance");
+  /** Whether the panel has stepped aside to show the window behind it. */
+  const [peek, setPeek] = useState(false);
   const [version, setVersion] = useState<string>("");
   /**
    * Whether this build is a prerelease.
@@ -300,6 +635,7 @@ export function SettingsPanel({
           {t[part]}
         </button>
       ))}
+      <PeekButton t={t} />
     </div>
   );
 
@@ -342,48 +678,55 @@ export function SettingsPanel({
   );
 
   if (isMobile()) {
-    return <PhoneSettings t={t} onClose={onClose} body={body} build={build} />;
+    return (
+      <PeekContext.Provider value={setPeek}>
+        <PhoneSettings t={t} onClose={onClose} body={body} build={build} peek={peek} />
+      </PeekContext.Provider>
+    );
   }
 
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.97, y: 12 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      transition={SPRING_SHEET}
+      // Opacity and nothing else: the blur fades with it, and `backdrop-filter` is
+      // never animated (DESIGN.md, Performance budget).
+      animate={{ opacity: peek ? 0 : 1, scale: 1, y: 0 }}
+      transition={{ ...SPRING_SHEET, opacity: { duration: 0.16 } }}
       className="glass-sheet absolute inset-4 z-40 flex overflow-hidden rounded-card"
       role="dialog"
       aria-modal="true"
       aria-label={t.settingsTitle}
     >
-      <nav className="flex w-[236px] shrink-0 flex-col gap-1 border-r border-white/8 p-4">
-        <div className="px-2 pt-2 pb-4">
-          <h2 className="text-[19px] font-semibold tracking-tight">{t.settingsTitle}</h2>
-          <p className="mt-0.5 text-[12px] text-ink-muted">{t.settingsSubtitle}</p>
-        </div>
+      <PeekContext.Provider value={setPeek}>
+        <nav className="flex w-[236px] shrink-0 flex-col gap-1 border-r border-white/8 p-4">
+          <div className="px-2 pt-2 pb-4">
+            <h2 className="text-[19px] font-semibold tracking-tight">{t.settingsTitle}</h2>
+            <p className="mt-0.5 text-[12px] text-ink-muted">{t.settingsSubtitle}</p>
+          </div>
 
-        {SECTIONS.map((key) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setSection(key)}
-            aria-current={section === key ? "page" : undefined}
-            className={`rounded-pill px-3.5 py-2.5 text-left text-[13.5px] font-medium transition-colors duration-200 ${
-              section === key
-                ? "bg-white/12 text-ink"
-                : "text-ink-muted hover:bg-white/6 hover:text-ink"
-            }`}
-          >
-            {t[key]}
-          </button>
-        ))}
+          {SECTIONS.map((key) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setSection(key)}
+              aria-current={section === key ? "page" : undefined}
+              className={`rounded-pill px-3.5 py-2.5 text-left text-[13.5px] font-medium transition-colors duration-200 ${
+                section === key
+                  ? "bg-white/12 text-ink"
+                  : "text-ink-muted hover:bg-white/6 hover:text-ink"
+              }`}
+            >
+              {t[key]}
+            </button>
+          ))}
 
-        <div className="mt-auto border-t border-white/8 px-2 pt-3">
-          <p className="text-[12px] text-ink-muted">{t.savedAutomatically}</p>
-          {build}
-        </div>
-      </nav>
+          <div className="mt-auto border-t border-white/8 px-2 pt-3">
+            <p className="text-[12px] text-ink-muted">{t.savedAutomatically}</p>
+            {build}
+          </div>
+        </nav>
 
-      {/*
+        {/*
           The content column: a header that does not move, and the scroll under it.
 
           **The close button was inside the scroll**, so it left with the content:
@@ -395,8 +738,8 @@ export function SettingsPanel({
           now lives in a row of its own, above the scroll, and it stays where it
           is however far down the section goes.
       */}
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        {/*
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          {/*
             The header: the search on the left, the way out on the right.
 
             **The search is here because the options are going to be many.** The
@@ -405,32 +748,32 @@ export function SettingsPanel({
             search is the other half of the answer: the sub-sections keep each
             screen short, and this finds the one option in a hurry.
         */}
-        <div className="flex shrink-0 items-center gap-3 px-8 pt-8">
-          {/* The field is capped: a search that runs the whole width of the
+          <div className="flex shrink-0 items-center gap-3 px-8 pt-8">
+            {/* The field is capped: a search that runs the whole width of the
               panel reads as an address bar, and the thing that says what is
               behind it —the X, in the corner— loses its neighbour. */}
-          <div className="glass-control flex h-9 min-w-0 max-w-[440px] flex-1 items-center gap-2.5 rounded-pill px-4">
-            <Search className="size-4 shrink-0 text-ink-faint" strokeWidth={2} />
-            <input
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={t.settingsSearch}
-              aria-label={t.settingsSearch}
-              className="w-full min-w-0 bg-transparent text-[13px] outline-none placeholder:text-ink-faint [&::-webkit-search-cancel-button]:hidden"
-            />
+            <div className="glass-control flex h-9 min-w-0 max-w-[440px] flex-1 items-center gap-2.5 rounded-pill px-4">
+              <Search className="size-4 shrink-0 text-ink-faint" strokeWidth={2} />
+              <input
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={t.settingsSearch}
+                aria-label={t.settingsSearch}
+                className="w-full min-w-0 bg-transparent text-[13px] outline-none placeholder:text-ink-faint [&::-webkit-search-cancel-button]:hidden"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label={t.close}
+              className="ml-auto grid size-9 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink"
+            >
+              <X className="size-[18px]" strokeWidth={2} />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label={t.close}
-            className="ml-auto grid size-9 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink"
-          >
-            <X className="size-[18px]" strokeWidth={2} />
-          </button>
-        </div>
 
-        {/*
+          {/*
             The parts of the customisation, as tabs under the search.
 
             **Only the section that has parts shows them.** Personalización grew
@@ -438,23 +781,28 @@ export function SettingsPanel({
             scrolling; the other sections are still one screen each, and tabs
             that do not change anything are tabs that lie.
         */}
-        {section === "sectionCustom" && !query && customTabs}
+          {section === "sectionCustom" && !query && customTabs}
 
-        <div className="flex-1 overflow-y-auto px-8 pt-6 pb-8">
-          <SearchContext.Provider value={query}>
-            <div ref={rowsBox}>
-              {section === "sectionGeneral" && (
-                <General t={t} lang={lang} onLangChange={onLangChange} />
-              )}
-              {section === "sectionAudio" && <Audio t={t} />}
-              {section === "sectionAccount" && <Account t={t} account={account} />}
-              {section === "sectionCustom" && <Custom t={t} part={customPart} />}
-              {section === "sectionDiagnostics" && (
-                <Diagnostics t={t} version={version} lang={lang} onOpenFeedback={onOpenFeedback} />
-              )}
-            </div>
+          <div className="flex-1 overflow-y-auto px-8 pt-6 pb-8">
+            <SearchContext.Provider value={query}>
+              <div ref={rowsBox}>
+                {section === "sectionGeneral" && (
+                  <General t={t} lang={lang} onLangChange={onLangChange} />
+                )}
+                {section === "sectionAudio" && <Audio t={t} />}
+                {section === "sectionAccount" && <Account t={t} account={account} />}
+                {section === "sectionCustom" && <Custom t={t} part={customPart} />}
+                {section === "sectionDiagnostics" && (
+                  <Diagnostics
+                    t={t}
+                    version={version}
+                    lang={lang}
+                    onOpenFeedback={onOpenFeedback}
+                  />
+                )}
+              </div>
 
-            {/*
+              {/*
                 The search that found nothing.
 
                 **It says so, instead of leaving a blank page.** A search that
@@ -468,12 +816,13 @@ export function SettingsPanel({
                 do this: the answer is in a sibling, and a `:has()` inside a
                 `:has()` is a selector the browsers refuse to parse.
             */}
-            {query.trim() !== "" && !found && (
-              <p className="px-1 text-[13px] text-ink-faint">{t.settingsNoResults}</p>
-            )}
-          </SearchContext.Provider>
+              {query.trim() !== "" && !found && (
+                <p className="px-1 text-[13px] text-ink-faint">{t.settingsNoResults}</p>
+              )}
+            </SearchContext.Provider>
+          </div>
         </div>
-      </div>
+      </PeekContext.Provider>
     </motion.div>
   );
 }
@@ -504,11 +853,13 @@ function PhoneSettings({
   onClose,
   body,
   build,
+  peek,
 }: {
   t: Record<StringKey, string>;
   onClose: () => void;
   body: (key: Section) => React.ReactNode;
   build: React.ReactNode;
+  peek: boolean;
 }) {
   const [open, setOpen] = useState<Section | null>(null);
   // Back leaves the section for the list, and the list for the app.
@@ -530,8 +881,8 @@ function PhoneSettings({
   return (
     <motion.div
       initial={{ opacity: 0, y: 24 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={SPRING_SHEET}
+      animate={{ opacity: peek ? 0 : 1, y: 0 }}
+      transition={{ ...SPRING_SHEET, opacity: { duration: 0.16 } }}
       className="glass-sheet fixed inset-x-3 top-[max(12px,env(safe-area-inset-top))] bottom-[max(12px,env(safe-area-inset-bottom))] z-40 overflow-hidden rounded-card"
       role="dialog"
       aria-modal="true"
@@ -593,30 +944,19 @@ function PhoneSettings({
  * The read waits for the backend so the control never shows a choice that is
  * not the saved one, and the paint already happened at startup from the cache.
  */
-function ThemeSelect({ t }: { t: Record<StringKey, string> }) {
-  const [value, setValue] = useState<Theme | null>(null);
-  useEffect(() => {
-    let alive = true;
-    void savedTheme()
-      .then((saved) => {
-        if (alive) setValue(saved);
-      })
-      .catch(() => {
-        if (alive) setValue("dark");
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
+function ThemeSelect({
+  t,
+  value,
+  onChange,
+}: {
+  t: Record<StringKey, string>;
+  value: Theme;
+  onChange: (next: Theme) => void;
+}) {
   return (
     <Select
-      value={value ?? "dark"}
-      onChange={(next) => {
-        const choice = next as Theme;
-        setValue(choice);
-        applyTheme(choice);
-        void setTheme(choice).catch(() => {});
-      }}
+      value={value}
+      onChange={(next) => onChange(next as Theme)}
       options={[
         { value: "dark", label: t.themeDark },
         { value: "light", label: t.themeLight },
@@ -1051,12 +1391,34 @@ function Prerelease({ t }: { t: Record<StringKey, string> }) {
 function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart }) {
   const [opacity, setOpacity] = useState<number | null>(null);
   const [accent, setAccent] = useState<string | null>(null);
-  const commitTimer = useRef<number | null>(null);
+  const opacityCommit = useLiveCommit<number>(applySurfaceOpacity, (value) => {
+    void setSurfaceOpacity(value).catch(() => {});
+  });
   const [resetStep, setResetStep] = useState<"idle" | "confirm" | "busy">("idle");
   const [resetError, setResetError] = useState<string | null>(null);
   // The controls under this key keep their own copy of what they show (the theme,
   // the look of the picture), so after a reset they are drawn again and read it back.
   const [resets, setResets] = useState(0);
+  // Here and not in the select: its row has to know whether there is anything to reset.
+  const [themeChoice, setThemeChoice] = useState<Theme>("dark");
+
+  useEffect(() => {
+    let alive = true;
+    void savedTheme()
+      .then((saved) => {
+        if (alive) setThemeChoice(saved);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const changeTheme = (next: Theme) => {
+    setThemeChoice(next);
+    applyTheme(next);
+    void setTheme(next).catch(() => {});
+  };
 
   useEffect(() => {
     let alive = true;
@@ -1079,36 +1441,19 @@ function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart })
     };
   }, []);
 
-  // A timeout that outlives the panel writes to a window that is not there
-  // anymore, and the write it was going to do is one nobody asked for twice.
-  useEffect(() => {
-    return () => {
-      if (commitTimer.current !== null) window.clearTimeout(commitTimer.current);
-    };
-  }, []);
-
   /**
-   * Two answers, on purpose.
+   * Three answers, on purpose.
    *
-   * **The number, the thumb and the legend answer while the hand moves; the
-   * surfaces wait.** The applied value is `--surface-alpha`, and every surface
-   * in the app reads it — the bars, the queue, the settings sheet, the popovers.
-   * Moving it repaints all of them, so a drag that moves it repaints half the
-   * window on every pointer event. That is what made this control feel heavy,
-   * and a faster repaint is not the fix.
-   *
-   * The legend is a 46x28 gradient that can follow the hand, so the choice is
-   * still legible while it is being made — which is the whole reason it is
-   * there. The change lands once the hand stops.
+   * **The number and the thumb answer at pointer speed, the surfaces about 15 times
+   * a second, and the disk once the hand stops.** The applied value is
+   * `--surface-alpha`, and every surface in the app reads it, so applying it on every
+   * pointer event is what made this control feel heavy. It still has to be seen while
+   * it is dragged, and the panel has stepped aside for that, which also takes the
+   * biggest surface out of the repaint.
    */
   const change = (value: number) => {
     setOpacity(value);
-    if (commitTimer.current !== null) window.clearTimeout(commitTimer.current);
-    commitTimer.current = window.setTimeout(() => {
-      commitTimer.current = null;
-      applySurfaceOpacity(value);
-      void setSurfaceOpacity(value).catch(() => {});
-    }, OPACITY_COMMIT_MS);
+    opacityCommit.push(value);
   };
 
   /**
@@ -1117,14 +1462,14 @@ function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart })
    * is cancelled first, or it would land on top of the reset.
    */
   const reset = () => {
-    if (commitTimer.current !== null) window.clearTimeout(commitTimer.current);
-    commitTimer.current = null;
+    opacityCommit.cancel();
     setResetError(null);
     setResetStep("busy");
     void resetCustomisation()
       .then(() => {
         setOpacity(SURFACE_OPACITY_DEFAULT);
         setAccent(null);
+        setThemeChoice("dark");
         setResets((count) => count + 1);
       })
       .catch((e) => setResetError(explain(e)))
@@ -1179,6 +1524,14 @@ function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart })
     })();
   };
 
+  // What the quiet mode switch goes back to when it is turned off.
+  const moving = {
+    glow: EFFECTS_DEFAULT.glow,
+    beat: EFFECTS_DEFAULT.beat,
+    bloom: EFFECTS_DEFAULT.bloom,
+    motion: EFFECTS_DEFAULT.motion,
+  };
+
   /**
    * The three screens of the customisation.
    *
@@ -1203,32 +1556,36 @@ function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart })
             setting: it is on when the other four are off, and writes all four.
           */}
           <Group>
-            <Row label={t.quietMode} hint={t.quietModeHint}>
+            <Row
+              label={t.quietMode}
+              hint={t.quietModeHint}
+              compare
+              onReset={quiet ? () => changeAllEffects(moving) : undefined}
+            >
               <Toggle
                 checked={quiet}
-                onChange={(on) =>
-                  changeAllEffects(
-                    on
-                      ? EFFECTS_QUIET
-                      : {
-                          glow: EFFECTS_DEFAULT.glow,
-                          beat: EFFECTS_DEFAULT.beat,
-                          bloom: EFFECTS_DEFAULT.bloom,
-                          motion: EFFECTS_DEFAULT.motion,
-                        },
-                  )
-                }
+                onChange={(on) => changeAllEffects(on ? EFFECTS_QUIET : moving)}
                 label={t.quietMode}
               />
             </Row>
-            <Row label={t.pointerGlow} hint={t.pointerGlowHint}>
+            <Row
+              label={t.pointerGlow}
+              hint={t.pointerGlowHint}
+              compare
+              onReset={resetEffect(effect, changeEffect, "glow")}
+            >
               <Toggle
                 checked={effect.glow === "on"}
                 onChange={(on) => changeEffect("glow", on ? "on" : "off")}
                 label={t.pointerGlow}
               />
             </Row>
-            <Row label={t.beatPulse} hint={t.beatPulseHint}>
+            <Row
+              label={t.beatPulse}
+              hint={t.beatPulseHint}
+              compare
+              onReset={resetEffect(effect, changeEffect, "beat")}
+            >
               <Select
                 value={effect.beat}
                 onChange={(value) => changeEffect("beat", value as Effects["beat"])}
@@ -1241,7 +1598,12 @@ function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart })
             </Row>
           </Group>
           <Group>
-            <Row label={t.bloomLight} hint={t.bloomLightHint}>
+            <Row
+              label={t.bloomLight}
+              hint={t.bloomLightHint}
+              compare
+              onReset={resetEffect(effect, changeEffect, "bloom")}
+            >
               <Select
                 value={effect.bloom}
                 onChange={(value) => changeEffect("bloom", value as Effects["bloom"])}
@@ -1252,7 +1614,12 @@ function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart })
                 ]}
               />
             </Row>
-            <Row label={t.uiMotion} hint={t.uiMotionHint}>
+            <Row
+              label={t.uiMotion}
+              hint={t.uiMotionHint}
+              compare
+              onReset={resetEffect(effect, changeEffect, "motion")}
+            >
               <Toggle
                 checked={effect.motion === "on"}
                 onChange={(on) => changeEffect("motion", on ? "on" : "off")}
@@ -1275,8 +1642,12 @@ function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart })
             vive lo que la app decide —no lo que decide la persona.
         */}
         <Group>
-          <Row label={t.theme}>
-            <ThemeSelect t={t} />
+          <Row
+            label={t.theme}
+            compare
+            onReset={themeChoice !== "dark" ? () => changeTheme("dark") : undefined}
+          >
+            <ThemeSelect t={t} value={themeChoice} onChange={changeTheme} />
           </Row>
         </Group>
 
@@ -1292,7 +1663,16 @@ function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart })
           door for the one that is not.
         */}
         <Group>
-          <Row label={t.accentColor} hint={t.accentColorHint}>
+          <Row
+            label={t.accentColor}
+            hint={t.accentColorHint}
+            compare
+            onReset={
+              (accent ?? ACCENT_DEFAULT) !== ACCENT_DEFAULT
+                ? () => changeAccent(ACCENT_DEFAULT)
+                : undefined
+            }
+          >
             {/* The swatches are tight on purpose: seven of them plus the wheel
                 have to fit next to the label in a card that is half a screen
                 wide, and a row that wraps leaves the card looking empty. */}
@@ -1359,21 +1739,29 @@ function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart })
             thing they are the ends of.
         */}
         <Group span>
-          <Row label={t.surfaceOpacity} hint={t.surfaceOpacityHint}>
+          <Row
+            label={t.surfaceOpacity}
+            hint={t.surfaceOpacityHint}
+            onReset={
+              opacity !== null && opacity !== SURFACE_OPACITY_DEFAULT
+                ? () => change(SURFACE_OPACITY_DEFAULT)
+                : undefined
+            }
+          >
             <span className="flex items-center gap-3">
               <span className="min-w-[74px] text-right text-[12px] text-ink-faint tabular">
                 {opacity === null ? "…" : `${opacity}%`}
               </span>
               <span className="flex flex-col gap-1.5">
-                <SmoothSlider
+                <PeekSlider
                   value={opacity ?? SURFACE_OPACITY_DEFAULT}
+                  valueText={`${opacity ?? SURFACE_OPACITY_DEFAULT}%`}
                   min={SURFACE_OPACITY_MIN}
                   max={SURFACE_OPACITY_MAX}
                   step={1}
                   disabled={opacity === null}
                   onChange={change}
                   label={t.surfaceOpacity}
-                  className="w-[180px]"
                 />
                 <span className="flex justify-between text-[11.5px] text-ink-faint">
                   <span>{t.surfaceOpacityClear}</span>
@@ -1417,77 +1805,82 @@ function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart })
   const searching = query.trim() !== "";
 
   return (
-    <div className="max-w-[1120px]">
-      <div key={resets} className="not-has-[.setting-row]:hidden">
-        {searching ? (
-          CUSTOM_PARTS.map((part) => (
-            <section key={part} className="not-has-[.setting-row]:hidden mb-8 last:mb-0">
-              <h3 className="mb-2.5 px-1 text-[11.5px] font-semibold tracking-[0.12em] uppercase text-ink-faint">
-                {t[part]}
-              </h3>
-              <div className="grid items-start gap-5 lg:grid-cols-2">{cards(part)}</div>
-            </section>
-          ))
-        ) : (
-          <div className="grid items-start gap-5 lg:grid-cols-2">{cards(part)}</div>
-        )}
-      </div>
-      {/* Under the parts and not in one of them: it answers for all three. */}
-      <div className="mt-5">
-        <Group>
-          <Row
-            label={t.resetCustomisation}
-            hint={
-              resetError ??
-              (resetStep === "idle" ? t.resetCustomisationHint : t.resetCustomisationWarning)
-            }
-          >
-            <span className="flex items-center gap-2">
-              {resetStep === "idle" ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setResetError(null);
-                    setResetStep("confirm");
-                  }}
-                  className="rounded-pill border border-white/14 bg-white/6 px-4 py-2 text-[13px] font-medium transition-colors duration-200 hover:bg-white/10"
-                >
-                  {t.resetCustomisationAction}
-                </button>
-              ) : (
-                <>
+    <CompareContext.Provider
+      value={{ compare: t.compare, done: t.compareDone, reset: t.resetCustomisationAction }}
+    >
+      <div className="max-w-[1120px]">
+        <div key={resets} className="not-has-[.setting-row]:hidden">
+          {searching ? (
+            CUSTOM_PARTS.map((part) => (
+              <section key={part} className="not-has-[.setting-row]:hidden mb-8 last:mb-0">
+                <h3 className="mb-2.5 px-1 text-[11.5px] font-semibold tracking-[0.12em] uppercase text-ink-faint">
+                  {t[part]}
+                </h3>
+                <div className="grid items-start gap-5 lg:grid-cols-2">{cards(part)}</div>
+              </section>
+            ))
+          ) : (
+            <div className="grid items-start gap-5 lg:grid-cols-2">{cards(part)}</div>
+          )}
+        </div>
+        {/* Under the parts and not in one of them: it answers for all three. */}
+        <div className="mt-5">
+          <Group>
+            <Row
+              label={t.resetCustomisation}
+              hint={
+                resetError ??
+                (resetStep === "idle" ? t.resetCustomisationHint : t.resetCustomisationWarning)
+              }
+            >
+              <span className="flex items-center gap-2">
+                {resetStep === "idle" ? (
                   <button
                     type="button"
-                    disabled={resetStep === "busy"}
-                    onClick={() => setResetStep("idle")}
-                    className="h-9 rounded-pill px-3 text-[13px] font-medium text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink disabled:opacity-50"
+                    onClick={() => {
+                      setResetError(null);
+                      setResetStep("confirm");
+                    }}
+                    className="rounded-pill border border-white/14 bg-white/6 px-4 py-2 text-[13px] font-medium transition-colors duration-200 hover:bg-white/10"
                   >
-                    {t.resetCustomisationCancel}
+                    {t.resetCustomisationAction}
                   </button>
-                  <button
-                    type="button"
-                    disabled={resetStep === "busy"}
-                    onClick={reset}
-                    className="flex items-center gap-2 rounded-pill bg-accent px-4 py-2 text-[13px] font-semibold text-on-accent transition-opacity duration-200 disabled:opacity-50"
-                  >
-                    {resetStep === "busy" && <Loader2 className="size-4 animate-spin" />}
-                    {t.resetCustomisationConfirm}
-                  </button>
-                </>
-              )}
-            </span>
-          </Row>
-        </Group>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      disabled={resetStep === "busy"}
+                      onClick={() => setResetStep("idle")}
+                      className="h-9 rounded-pill px-3 text-[13px] font-medium text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink disabled:opacity-50"
+                    >
+                      {t.resetCustomisationCancel}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={resetStep === "busy"}
+                      onClick={reset}
+                      className="flex items-center gap-2 rounded-pill bg-accent px-4 py-2 text-[13px] font-semibold text-on-accent transition-opacity duration-200 disabled:opacity-50"
+                    >
+                      {resetStep === "busy" && <Loader2 className="size-4 animate-spin" />}
+                      {t.resetCustomisationConfirm}
+                    </button>
+                  </>
+                )}
+              </span>
+            </Row>
+          </Group>
+        </div>
       </div>
-    </div>
+    </CompareContext.Provider>
   );
 }
 
 /**
  * The ground behind the glass: the person's own picture, and where the grey
- * light sits over it. Same split as the menu opacity — the sliders' numbers
- * follow the hand, and the window (a blurred photo the size of the screen)
- * changes once the hand stops.
+ * light sits over it. Same split as the surface opacity: the sliders' numbers
+ * follow the hand, the window follows about 15 times a second, and the disk waits
+ * for the hand to stop. The step of 5 leaves 20 values at most in a whole sweep,
+ * which is what keeps a blurred photo the size of the screen affordable here.
  */
 function BackgroundSettings({
   t,
@@ -1504,29 +1897,26 @@ function BackgroundSettings({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const input = useRef<HTMLInputElement>(null);
-  const commitTimer = useRef<number | null>(null);
+  const lookCommit = useLiveCommit<{ dim: number; blur: number }>(
+    (look) => applyBackgroundLook(look.dim, look.blur),
+    (look) => {
+      void saveBackgroundLook(look.dim, look.blur).catch(() => {});
+    },
+  );
 
-  // The saved look can arrive after the panel is already open.
+  // The saved look can arrive after the panel is already open. While the hand is
+  // moving, what the store holds is a step behind it, and drawing that would pull
+  // the number backwards under the hand.
   useEffect(() => {
+    if (lookCommit.pending()) return;
     setDim(background.dim);
     setBlur(background.blur);
-  }, [background.dim, background.blur]);
-
-  useEffect(() => {
-    return () => {
-      if (commitTimer.current !== null) window.clearTimeout(commitTimer.current);
-    };
-  }, []);
+  }, [lookCommit, background.dim, background.blur]);
 
   const changeLook = (nextDim: number, nextBlur: number) => {
     setDim(nextDim);
     setBlur(nextBlur);
-    if (commitTimer.current !== null) window.clearTimeout(commitTimer.current);
-    commitTimer.current = window.setTimeout(() => {
-      commitTimer.current = null;
-      applyBackgroundLook(nextDim, nextBlur);
-      void saveBackgroundLook(nextDim, nextBlur).catch(() => {});
-    }, OPACITY_COMMIT_MS);
+    lookCommit.push({ dim: nextDim, blur: nextBlur });
   };
 
   const pick = (file: File | undefined) => {
@@ -1603,7 +1993,12 @@ function BackgroundSettings({
             only — the phone has no lyrics in the main surface to sit beside.
         */}
         {!isMobile() && (
-          <Row label={t.coverBackground} hint={t.coverBackgroundHint}>
+          <Row
+            label={t.coverBackground}
+            hint={t.coverBackgroundHint}
+            compare
+            onReset={resetEffect(effect, changeEffect, "cover")}
+          >
             <Select
               value={effect.cover}
               onChange={(value) => changeEffect("cover", value as Effects["cover"])}
@@ -1617,35 +2012,51 @@ function BackgroundSettings({
         )}
         {(background.url || (!isMobile() && effect.cover !== "off")) && (
           <>
-            <Row label={t.backgroundDim} hint={t.backgroundDimHint}>
+            <Row
+              label={t.backgroundDim}
+              hint={t.backgroundDimHint}
+              onReset={
+                dim !== BACKGROUND_DEFAULT.dim
+                  ? () => changeLook(BACKGROUND_DEFAULT.dim, blur)
+                  : undefined
+              }
+            >
               <span className="flex items-center gap-3">
                 <span className="min-w-[40px] text-right text-[12px] text-ink-faint tabular">
                   {dim}%
                 </span>
-                <SmoothSlider
+                <PeekSlider
                   value={dim}
+                  valueText={`${dim}%`}
                   min={0}
                   max={BACKGROUND_DIM_MAX}
                   step={5}
                   onChange={(value) => changeLook(value, blur)}
                   label={t.backgroundDim}
-                  className="w-[180px]"
                 />
               </span>
             </Row>
-            <Row label={t.backgroundBlur} hint={t.backgroundBlurHint}>
+            <Row
+              label={t.backgroundBlur}
+              hint={t.backgroundBlurHint}
+              onReset={
+                blur !== BACKGROUND_DEFAULT.blur
+                  ? () => changeLook(dim, BACKGROUND_DEFAULT.blur)
+                  : undefined
+              }
+            >
               <span className="flex items-center gap-3">
                 <span className="min-w-[40px] text-right text-[12px] text-ink-faint tabular">
                   {blur}%
                 </span>
-                <SmoothSlider
+                <PeekSlider
                   value={blur}
+                  valueText={`${blur}%`}
                   min={0}
                   max={100}
                   step={5}
                   onChange={(value) => changeLook(dim, value)}
                   label={t.backgroundBlur}
-                  className="w-[180px]"
                 />
               </span>
             </Row>
@@ -1653,7 +2064,12 @@ function BackgroundSettings({
         )}
       </Group>
       <Group>
-        <Row label={t.bloomShape} hint={t.bloomShapeHint}>
+        <Row
+          label={t.bloomShape}
+          hint={t.bloomShapeHint}
+          compare
+          onReset={resetEffect(effect, changeEffect, "shape")}
+        >
           <Select
             value={effect.shape}
             onChange={(value) => changeEffect("shape", value as Effects["shape"])}
@@ -1665,7 +2081,12 @@ function BackgroundSettings({
             ]}
           />
         </Row>
-        <Row label={t.grain} hint={t.grainHint}>
+        <Row
+          label={t.grain}
+          hint={t.grainHint}
+          compare
+          onReset={resetEffect(effect, changeEffect, "grain")}
+        >
           <Toggle
             checked={effect.grain === "on"}
             onChange={(on) => changeEffect("grain", on ? "on" : "off")}
@@ -1913,13 +2334,95 @@ function Group({ children, span }: { children: React.ReactNode; span?: boolean }
 function Row({
   label,
   hint,
+  compare,
+  onReset,
   children,
 }: {
   label: string;
   hint?: string;
+  /** The control can be flipped with the panel out of the way. Not for sliders: their drag already does it. */
+  compare?: boolean;
+  /** Takes this one option back to what ships. Passed only while it differs from that. */
+  onReset?: () => void;
   children: React.ReactNode;
 }) {
   const query = useSearch();
+  const words = useContext(CompareContext);
+  const [comparing, setComparing] = useState<DOMRect | null>(null);
+  const opener = useRef<HTMLButtonElement>(null);
+  const control = useRef<HTMLDivElement>(null);
+  const closeCompare = useCallback(() => {
+    setComparing(null);
+    opener.current?.focus();
+  }, []);
+
+  /*
+      An icon, and only on the row under the pointer: every row of Effects has one,
+      and a column of them would be louder than the switches they are for. The row of
+      colours also has no room for a word.
+  */
+  const compareButton =
+    compare && words ? (
+      <button
+        ref={opener}
+        data-row-tool=""
+        type="button"
+        aria-label={`${words.compare}: ${label}`}
+        title={words.compare}
+        onClick={() => {
+          if (control.current) setComparing(control.current.getBoundingClientRect());
+        }}
+        className={`grid size-6 shrink-0 place-items-center rounded-pill text-ink-muted transition-[background-color,color,opacity] duration-200 hover:bg-white/10 hover:text-ink focus-visible:opacity-100 ${
+          isMobile() ? "" : "opacity-0 group-hover:opacity-100"
+        }`}
+      >
+        <Eye className="size-3.5" strokeWidth={2} />
+      </button>
+    ) : null;
+  /*
+      Not behind the hover, unlike the eye, and only while there is something to take
+      back: a column of them then doubles as the list of what has been changed. It
+      disappears under the hand that used it, so the focus moves to the control, or a
+      keyboard would land back at the top of the panel.
+  */
+  const resetButton =
+    onReset && words ? (
+      <button
+        data-row-tool=""
+        type="button"
+        aria-label={`${words.reset}: ${label}`}
+        title={words.reset}
+        onClick={() => {
+          onReset();
+          control.current
+            ?.querySelector<HTMLElement>("button:not([data-row-tool]), input")
+            ?.focus();
+        }}
+        className="grid size-6 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink"
+      >
+        <RotateCcw className="size-3.5" strokeWidth={2} />
+      </button>
+    ) : null;
+  /*
+      Beside the title and out of the flow, not beside the control. In the row with the
+      control they took its width: the hint collapsed into a column of two words, a
+      select dropped to its own line, and all of it changed the moment an arrow came or
+      went. A row has to be the same size whether or not it has been changed.
+  */
+  const tools =
+    resetButton || compareButton ? (
+      <span className="absolute top-1/2 left-full ml-1 flex -translate-y-1/2 items-center">
+        {resetButton}
+        {compareButton}
+      </span>
+    ) : null;
+  const shown = comparing ? null : children;
+  const pill =
+    comparing && words ? (
+      <ComparePill label={label} done={words.done} at={comparing} onClose={closeCompare}>
+        {children}
+      </ComparePill>
+    ) : null;
 
   /**
    * The row that is not the answer does not exist.
@@ -1970,21 +2473,34 @@ function Row({
   if (isMobile() && !(isValidElement(children) && children.type === Toggle)) {
     return (
       <div className="border-b border-white/8 px-5 py-4 last:border-b-0">
-        <p className="text-[13.5px] font-semibold">{label}</p>
+        <p className="relative w-fit text-[13.5px] font-semibold">
+          {label}
+          {tools}
+        </p>
         {hint && <p className="mt-1 text-[12.5px] leading-relaxed text-ink-muted">{hint}</p>}
-        <div className="mt-3 [&_[data-slider]]:w-auto [&_[data-slider]]:flex-1 [&_select]:w-full [&>div]:w-full [&>span]:w-full">
-          {children}
+        <div
+          ref={control}
+          className="mt-3 [&_[data-slider]]:w-auto [&_[data-slider]]:flex-1 [&_select]:w-full [&>div]:w-full [&>span]:w-full"
+        >
+          {shown}
         </div>
+        {pill}
       </div>
     );
   }
   return (
-    <div className="setting-row flex flex-wrap items-center gap-x-6 gap-y-3 border-b border-white/8 px-5 py-4 last:border-b-0">
+    <div className="setting-row group flex flex-wrap items-center gap-x-6 gap-y-3 border-b border-white/8 px-5 py-4 last:border-b-0">
       <div className="flex-1">
-        <p className="text-[13.5px] font-semibold whitespace-nowrap">{label}</p>
+        <p className="relative w-fit text-[13.5px] font-semibold whitespace-nowrap">
+          {label}
+          {tools}
+        </p>
         {hint && <p className="mt-1 text-[12.5px] leading-relaxed text-ink-muted">{hint}</p>}
       </div>
-      <div className="w-fit shrink-0">{children}</div>
+      <div ref={control} className="w-fit shrink-0">
+        {shown}
+      </div>
+      {pill}
     </div>
   );
 }
