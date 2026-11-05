@@ -4,6 +4,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
+import { followPointer } from "./lib/followPointer";
 import { applyCachedSurfaceOpacity, applyCachedTheme, useEffectsSettings } from "./lib/spotify";
 
 /**
@@ -72,6 +73,8 @@ function Root() {
 // backend's answer arrives a few frames too late to be the first one.
 applyCachedTheme();
 applyCachedSurfaceOpacity();
+// For the life of the window: the glass play button's light follows the mouse.
+followPointer();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
