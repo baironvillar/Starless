@@ -78,7 +78,7 @@ export function TrackList({
     : `grid-cols-[minmax(0,1fr)_64px${trackMenu ? "_40px" : ""}]`;
 
   return (
-    <div className="surface-card overflow-hidden rounded-card border border-white/8">
+    <div className="surface-card arrive overflow-hidden rounded-card border border-white/8">
       <div
         className={`grid items-center gap-4 border-b border-white/8 px-5 py-2.5 ${columns} ${MOBILE ? "hidden" : ""}`}
       >

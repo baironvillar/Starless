@@ -427,7 +427,11 @@ pub fn saved_theme() -> &'static str {
 /// `cover` draws the playing song's cover, blurred, as the ground — only beside
 /// the lyrics, or always — and `coverSide` is which side of the lyrics the
 /// sharp cover sits on. Same look, so the same map.
-pub const EFFECTS: [(&str, &[&str]); 8] = [
+///
+/// `play` is how the bar's play button is dressed: bone, the accent, the
+/// playing cover's colour, or glass with the accent glowing under it. A look
+/// with a closed list of values, which is exactly what this gate is for.
+pub const EFFECTS: [(&str, &[&str]); 9] = [
     ("glow", &["on", "off"]),
     ("beat", &["strong", "soft", "off"]),
     ("bloom", &["normal", "soft", "off"]),
@@ -436,6 +440,7 @@ pub const EFFECTS: [(&str, &[&str]); 8] = [
     ("grain", &["off", "on"]),
     ("cover", &["off", "lyrics", "always"]),
     ("coverSide", &["left", "right"]),
+    ("play", &["bone", "accent", "cover", "glass"]),
 ];
 
 /// Remember one effect. Same gate as `save_library_sort`: an unknown name or

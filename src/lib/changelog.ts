@@ -48,6 +48,7 @@ export const CHANGELOG: ChangelogEntry[] = [
         {
           title: "Nuevo",
           items: [
+            "El botón de reproducir se viste a tu gusto. En Ajustes → Personalización, debajo del color principal: hueso, tu color principal, el color de la portada que suena —que cambia con cada canción— o vidrio esmerilado con tu color brillando debajo.",
             "La personalización se puede restablecer. Un botón en Ajustes → Personalización devuelve el tema, el color, la opacidad, el fondo y los efectos a como vienen, y pide confirmación porque también quita tu imagen de fondo.",
             "Cada opción de Personalización se restablece por separado. Una flecha aparece en la fila cuando su valor es distinto del que trae la app.",
             "Personalizar se hace mirando la app. Al arrastrar un slider de Personalización, el panel se aparta y la app cambia mientras arrastras. Para el resto, mantén pulsado el botón de ver, o usa el ojo de cada fila para alternar la opción con el panel fuera de la vista.",
@@ -65,6 +66,8 @@ export const CHANGELOG: ChangelogEntry[] = [
         {
           title: "Corregido",
           items: [
+            "El contenido vuelve a desvanecerse en los bordes, y los accesos de Inicio llegan esmerilados. Con las superficies esmeriladas, la lista se cortaba en recto bajo la barra de arriba y sobre el reproductor; ahora se desvanece. Y al volver a Inicio, los accesos ya no se ven sin esmerilar durante un momento.",
+            "Con una imagen de fondo clara, el texto ya se puede leer. Los menús de búsqueda y de canción usan el mismo material que las superficies y siguen su opacidad; los subtítulos, las notas y las letras que van directo sobre la imagen tienen más presencia; y las pestañas de «Lo más escuchado» siguen la opacidad de las superficies.",
             "Terminar la tarea de la app ya no se toma como un crash. Cerrarla desde el Administrador de tareas, apagar el equipo o quedarse sin luz abría al volver un aviso para reportar un fallo que no existió. Ahora el aviso sale solo cuando la app falló de verdad y alcanzó a dejarlo escrito.",
             "La app iba a 30 fps con la música sonando. El ecualizador de la fila que suena animaba el alto para siempre, así que la lista entera se volvía a calcular en cada cuadro mientras sonaba música; las barras de posición y de volumen animaban el ancho y la posición en cada tic. Ahora animan la escala y el desplazamiento, que no recalculan la página. Y cada cambio en la app —el volumen, la posición, un menú— volvía a dibujar todas las filas de la lista y de la cola, mil de ellas en «Canciones que te gustan»: ahora sólo se dibujan las que están cerca de la pantalla. Antes, cualquier cambio en una lista larga congelaba la ventana entre 300 y 700 milisegundos. Medido con la música sonando, ordenando una lista, moviendo el volumen y abriendo la cola: 60 fps.",
             "Las primeras filas de una lista que carga tarde no se dibujaban. «Canciones que te gustan» carga después de que se abre la pantalla, y la lista se quedaba en blanco: la ventana de filas medía el alto de la fila con dos filas ya dibujadas, y sin filas no había nada que medir. Hasta que lo hay, se dibuja el principio de la lista.",
@@ -87,6 +90,7 @@ export const CHANGELOG: ChangelogEntry[] = [
         {
           title: "New",
           items: [
+            "The play button has four looks. In Settings → Customisation, under the main colour: bone, your main colour, the playing cover's colour, which changes with every song, or frosted glass with your colour glowing underneath.",
             "You can reset the customisation. A button in Settings → Customisation takes the theme, the colour, the opacity, the background and the effects back to what ships. It asks first, because it also removes your picture.",
             "Each customisation option can be reset on its own. An arrow appears on its row when its value differs from what ships.",
             "You customise while looking at the app. Dragging a customisation slider moves the panel aside, and the app changes as you drag. For the rest, hold the preview button, or use the eye on each row to flip the option with the panel out of the way.",
@@ -104,6 +108,8 @@ export const CHANGELOG: ChangelogEntry[] = [
         {
           title: "Fixed",
           items: [
+            "The content fades at its edges again, and Home's shortcuts arrive frosted. With frosted surfaces, the list was cut in a straight line under the top bar and above the player; it now fades. And going back Home no longer shows the shortcuts unfrosted for a moment.",
+            "Text is readable over a bright background picture. The search and song menus use the same material as the surfaces and follow their opacity; subtitles, notes and lyrics standing directly on the picture have more presence; and the “Most played” tabs follow the surface opacity.",
             "Ending the app's task no longer counts as a crash. Closing it from Task Manager, shutting the computer down or losing power used to open a prompt, on the way back, to report a failure that never happened. Now the prompt only appears when the app really failed and managed to write it down.",
             "The app ran at 30 fps while music played. The equalizer of the row that was sounding animated its height forever, so the whole list was laid out again on every frame while music played; the position and volume bars animated their width and their position on every tick. They animate scale and offset now, which lay nothing out. And every change in the app —the volume, the position, a menu— redrew every row of the list and of the queue, a thousand of them in Liked Songs: only the rows near the screen are drawn now. Before, any change in a long list froze the window for 300 to 700 milliseconds. Measured with music playing, sorting a list, moving the volume and opening the queue: 60 fps.",
             "The first rows of a list that loads late were never drawn. Liked Songs loads after the screen opens, and the list stayed blank: the row window measured the row height from two rows that were already drawn, and with no rows there was nothing to measure. Until it knows, it draws the top of the list.",

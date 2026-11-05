@@ -15,6 +15,7 @@ import {
   MessageSquarePlus,
   Palette,
   Pencil,
+  Play,
   RefreshCw,
   RotateCcw,
   Search,
@@ -57,6 +58,7 @@ import {
   clearHistory,
   closeToTray,
   crossfadeSeconds,
+  EFFECTS,
   EFFECTS_DEFAULT,
   EFFECTS_QUIET,
   type EffectName,
@@ -337,6 +339,20 @@ function PeekSlider({
 }
 
 /** The way back for one effect, or nothing while it is already what ships. */
+const PLAY_LABELS = {
+  bone: "playButtonBone",
+  accent: "playButtonAccent",
+  cover: "playButtonCover",
+  glass: "playButtonGlass",
+} as const satisfies Record<Effects["play"], StringKey>;
+
+const PLAY_HINTS = {
+  bone: "playButtonBoneHint",
+  accent: "playButtonAccentHint",
+  cover: "playButtonCoverHint",
+  glass: "playButtonGlassHint",
+} as const satisfies Record<Effects["play"], StringKey>;
+
 function resetEffect<K extends EffectName>(
   effect: Effects,
   change: (name: K, value: Effects[K]) => void,
@@ -1725,6 +1741,59 @@ function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart })
                   />
                 )}
               </span>
+            </span>
+          </Row>
+          {/*
+            The play button sits under the accent because two of its four dresses
+            are the accent. Same idea as the swatches: each choice is the button
+            itself, drawn by the bar's own `.play-key`, so the row shows the
+            consequence. The cover's swatch is the one that cannot: no song is
+            known here, so it is a gradient standing for "whatever is playing".
+            The hint names the dress that is on, which is what the swatches can't.
+          */}
+          <Row
+            label={t.playButton}
+            hint={t[PLAY_HINTS[effect.play]]}
+            compare
+            onReset={resetEffect(effect, changeEffect, "play")}
+          >
+            {/* A finger needs a bigger target than a pointer: 40px on the phone. */}
+            <span className={`flex items-center ${isMobile() ? "gap-4" : "gap-2"}`}>
+              {EFFECTS.play.map((style) => (
+                <button
+                  key={style}
+                  type="button"
+                  onClick={() => changeEffect("play", style)}
+                  aria-label={t[PLAY_LABELS[style]]}
+                  title={t[PLAY_LABELS[style]]}
+                  aria-pressed={effect.play === style}
+                  className={`relative ${isMobile() ? "size-10" : "size-7"} shrink-0 transition-transform duration-150 hover:scale-105 active:scale-95`}
+                >
+                  <span
+                    data-style={style}
+                    className="play-key grid size-full place-items-center rounded-pill"
+                    style={
+                      style === "cover"
+                        ? {
+                            background: "linear-gradient(135deg, #ffb020, #c08bff)",
+                            color: "#0b0b0f",
+                          }
+                        : undefined
+                    }
+                  >
+                    <Play
+                      className={`play-glyph ${isMobile() ? "size-4" : "size-3"} translate-x-px fill-current`}
+                      strokeWidth={0}
+                    />
+                  </span>
+                  {effect.play === style && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute -inset-[3px] rounded-pill border-2 border-ink"
+                    />
+                  )}
+                </button>
+              ))}
             </span>
           </Row>
         </Group>

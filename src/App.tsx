@@ -44,12 +44,14 @@ import {
   applyEffects,
   applySurfaceOpacity,
   applyTheme,
+  type Background,
   createPlaylist as createPlaylistCall,
   DEFAULT_TRACK_LIST_PREFS,
   type DjNarration,
   djMix,
   djMore,
   djSpeak,
+  type Effects,
   effects,
   explain,
   historyKey,
@@ -313,6 +315,123 @@ const BLOOM_SHAPES = {
 
 /** The blur slider's 0..100 onto pixels. Past 40 the picture is only its colours. */
 const BACKGROUND_BLUR_PX = 40;
+
+/**
+ * The ground: the person's picture, the bloom, the grain and the light that follows
+ * the pointer, in that order. A component because it is drawn twice — see
+ * `EdgeFade`.
+ */
+function Ground({
+  url,
+  background,
+  effect,
+}: {
+  url: string | null;
+  background: Background;
+  effect: Effects;
+}) {
+  return (
+    <>
+      {url && (
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
+          {/*
+            Scaled past the window so the blur has picture to pull from at the
+            edges: blurred at its own size, the border fades to the black under
+            it and the photo gets a dark frame nobody chose.
+
+            Keyed by the picture so a new song's cover fades in over the last one
+            once, instead of snapping. It is a single fade per song, not motion
+            under the glass — DESIGN.md's rule is about backdrops that never stop.
+          */}
+          <AnimatePresence initial={false}>
+            <motion.div
+              key={url}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.6 }}
+              className="absolute inset-0 bg-cover bg-center"
+              style={{
+                backgroundImage: `url(${url})`,
+                filter:
+                  background.blur > 0
+                    ? `blur(${(background.blur / 100) * BACKGROUND_BLUR_PX}px)`
+                    : undefined,
+                scale: background.blur > 0 ? 1.08 : 1,
+              }}
+            />
+          </AnimatePresence>
+          <div className="absolute inset-0 bg-ground" style={{ opacity: background.dim / 100 }} />
+        </div>
+      )}
+      <div
+        className="pointer-events-none absolute inset-0 transition-opacity duration-300"
+        style={{
+          opacity: BLOOM_OPACITY[effect.bloom],
+          background: BLOOM_SHAPES[effect.shape].join(", "),
+        }}
+      />
+      {effect.grain === "on" && <div aria-hidden="true" className="grain" />}
+      {effect.glow === "on" && <CursorGlow />}
+    </>
+  );
+}
+
+/**
+ * The fade at the content's top and bottom edges, while the surfaces frost.
+ *
+ * **The mask cannot do it then.** A mask on `<main>` makes it a backdrop root, so
+ * every frosted card and tile inside it would blur nothing, and `index.css` takes
+ * the mask away above 6%. That left the list cut in a straight line under the top
+ * bar and above the player, between two panels whose corners are round.
+ *
+ * So the fade is painted over the content instead of cut out of it: a strip at each
+ * edge draws the ground again, window-aligned, under a gradient. Where the strip is
+ * opaque the content is covered by the same ground that is behind it, which reads
+ * exactly like the content fading out. The strips are siblings of `<main>`, so
+ * nothing inside it loses its blur. They sit under the rail, the queue and the bars
+ * (z-20 and up), which cover the rest of each strip's width.
+ *
+ * The inner layer moves opposite to its strip with the same transition, so the
+ * ground copy stays on the window's pixels while the bottom strip follows the bar.
+ */
+function EdgeFade({
+  above,
+  below,
+  barPresent,
+  ...ground
+}: {
+  above: boolean;
+  below: boolean;
+  barPresent: boolean;
+  url: string | null;
+  background: Background;
+  effect: Effects;
+}) {
+  const slide = "transition-[bottom,opacity] duration-300 ease-[var(--ease-glass)]";
+  return (
+    <>
+      <div
+        aria-hidden="true"
+        className={`edge-fade edge-fade-top pointer-events-none absolute inset-x-0 top-[104px] z-[15] h-11 overflow-hidden transition-opacity duration-300 ${above ? "" : "opacity-0"}`}
+      >
+        <div className="absolute inset-x-0 -top-[104px] h-screen">
+          <Ground {...ground} />
+        </div>
+      </div>
+      <div
+        aria-hidden="true"
+        className={`edge-fade edge-fade-bottom pointer-events-none absolute inset-x-0 z-[15] h-11 overflow-hidden ${slide} ${barPresent ? "bottom-[144px]" : "bottom-5"} ${below ? "" : "opacity-0"}`}
+      >
+        <div
+          className={`absolute inset-x-0 h-screen ${slide} ${barPresent ? "-bottom-[144px]" : "-bottom-5"}`}
+        >
+          <Ground {...ground} />
+        </div>
+      </div>
+    </>
+  );
+}
 
 /** The phone's layout (DESIGN.md, "The phone"), decided when the bundle was made. */
 const MOBILE = isMobile();
@@ -2735,47 +2854,7 @@ export default function App() {
         with the pointer: a backdrop that animates on its own under blurred glass
         repaints the blur every frame — see DESIGN.md.
       */}
-      {groundUrl && (
-        <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
-          {/*
-            Scaled past the window so the blur has picture to pull from at the
-            edges: blurred at its own size, the border fades to the black under
-            it and the photo gets a dark frame nobody chose.
-
-            Keyed by the picture so a new song's cover fades in over the last one
-            once, instead of snapping. It is a single fade per song, not motion
-            under the glass — DESIGN.md's rule is about backdrops that never stop.
-          */}
-          <AnimatePresence initial={false}>
-            <motion.div
-              key={groundUrl}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.6 }}
-              className="absolute inset-0 bg-cover bg-center"
-              style={{
-                backgroundImage: `url(${groundUrl})`,
-                filter:
-                  background.blur > 0
-                    ? `blur(${(background.blur / 100) * BACKGROUND_BLUR_PX}px)`
-                    : undefined,
-                scale: background.blur > 0 ? 1.08 : 1,
-              }}
-            />
-          </AnimatePresence>
-          <div className="absolute inset-0 bg-ground" style={{ opacity: background.dim / 100 }} />
-        </div>
-      )}
-      <div
-        className="pointer-events-none absolute inset-0 transition-opacity duration-300"
-        style={{
-          opacity: BLOOM_OPACITY[effect.bloom],
-          background: BLOOM_SHAPES[effect.shape].join(", "),
-        }}
-      />
-      {effect.grain === "on" && <div aria-hidden="true" className="grain" />}
-      {effect.glow === "on" && <CursorGlow />}
+      <Ground url={groundUrl} background={background} effect={effect} />
 
       <AuthGate t={t} onReport={() => setFeedbackOpen(true)} onSignedOut={resetView}>
         {/* The phone has no top bar and no rail: its navigation is the tab bar. */}
@@ -2929,8 +3008,8 @@ export default function App() {
           // above the mini player and the tab bar (72px each with their gap).
           className={
             MOBILE
-              ? `fixed inset-x-3 top-[max(12px,env(safe-area-inset-top))] ${barPresent ? "bottom-[calc(max(12px,env(safe-area-inset-bottom))+144px)]" : "bottom-[calc(max(12px,env(safe-area-inset-bottom))+72px)]"} overflow-x-hidden overflow-y-auto transition-[bottom] duration-300 ease-[var(--ease-glass)]`
-              : `content-fade absolute top-[104px] ${barPresent ? "bottom-[144px]" : "bottom-5"} overflow-x-hidden overflow-y-auto pr-3 transition-[left,right,bottom] duration-300 ease-[var(--ease-glass)] ${
+              ? `on-ground fixed inset-x-3 top-[max(12px,env(safe-area-inset-top))] ${barPresent ? "bottom-[calc(max(12px,env(safe-area-inset-bottom))+144px)]" : "bottom-[calc(max(12px,env(safe-area-inset-bottom))+72px)]"} overflow-x-hidden overflow-y-auto transition-[bottom] duration-300 ease-[var(--ease-glass)]`
+              : `on-ground content-fade absolute top-[104px] ${barPresent ? "bottom-[144px]" : "bottom-5"} overflow-x-hidden overflow-y-auto pr-3 transition-[left,right,bottom] duration-300 ease-[var(--ease-glass)] ${
                   libraryOpen ? (railOnly ? "left-[112px]" : "left-[280px]") : "left-9"
                 } ${queueOpen ? "right-[280px]" : "right-9"}`
           }
@@ -3225,6 +3304,17 @@ export default function App() {
             <p className="mt-5 text-[12px] text-warn-ink">{t.premiumRequired}</p>
           )}
         </main>
+
+        {!MOBILE && (
+          <EdgeFade
+            above={moreAbove}
+            below={moreBelow}
+            barPresent={barPresent}
+            url={groundUrl}
+            background={background}
+            effect={effect}
+          />
+        )}
 
         <PlayerBar
           track={loadedTrack}

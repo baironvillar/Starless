@@ -992,6 +992,20 @@ en ningún proto ni en ninguna issue:
   Lo que se devuelve es **lo de la cuenta** (dónde estabas, qué estaba abierto,
   la cola); lo que se queda es **lo de la persona** (el idioma, el orden de la
   estantería, el vidrio): una preferencia no se la lleva cerrar sesión.
+- **Un menú de escritorio es una superficie, y el texto sobre la imagen no tiene
+  ninguna.** Con vidrio oscuro propio, la búsqueda y los tres puntos se veían como
+  otro objeto en la ventana por más que se ajustara: ahora son `surface-menu`, con el
+  tinte de las superficies y sin piso, y lo que cuestan en contraste sobre una imagen
+  clara está medido en `DESIGN.md`. El menú del teléfono, los diálogos y las hojas
+  siguen en `glass-overlay` y `glass-sheet`. Lo que va directo sobre la imagen —subtítulos,
+  notas, letras— no responde al slider de opacidad porque no hay nada sobre lo que
+  actúe: lo resuelve `.on-ground` en `<main>`, con `data-picture` en la raíz. El halo
+  se hereda, así que **un control relleno nuevo dentro de `<main>` tiene que entrar
+  en la lista que lo apaga**, o el halo se le corre sobre el relleno. **Y el halo es
+  corto a propósito:** `truncate` también recorta la sombra, y uno de 18 px terminaba
+  en una línea recta debajo del título de las letras. Y las opacidades
+  de las letras salen de `--lyric-*`: una opacidad fija en una línea vuelve a
+  desaparecer sobre una imagen clara.
 - **`surface` no es `glass`, y la diferencia es lo que hay detrás.** `surface` es el
   material de las barras, la cola y los accesos, y al 6% no desenfoca nada. Eso
   sólo es seguro porque en el escritorio el contenido se detiene donde ellas
@@ -1000,12 +1014,20 @@ en ningún proto ni en ninguna issue:
   —los accesos, las listas de canciones— nunca llega al fondo de la persona. Por
   eso, por encima del 6%, `data-surface-frost` en la raíz le saca la máscara a
   `<main>`. Sin ese atributo, la lista se ve nítida con las barras esmeriladas.
+  **Sin máscara el contenido quedaba cortado en recto** bajo la barra de arriba y
+  sobre el reproductor: el fundido ahora lo pinta `EdgeFade`, dos franjas del suelo
+  dibujado otra vez, hermanas de `<main>` y no padres. **Por la misma razón, nada
+  que contenga una superficie puede entrar con un fundido de opacidad**: un padre
+  por debajo de 1 también es un *backdrop root*, y al volver a Inicio los accesos se
+  veían sin esmerilar hasta que el fundido terminaba. El contenedor sube con `y` y
+  la superficie se desvanece sola, con `arrive`.
   **Lo que flota encima de contenido se queda en `glass`**: la barra de pestañas y
-  el minirreproductor del teléfono, la tarjeta de inicio de sesión, los menús.
+  el minirreproductor del teléfono, la tarjeta de inicio de sesión, los diálogos.
   Pasar uno de esos a `surface` pone las filas que pasan por debajo en los mismos
   píxeles que su propio texto. Por eso hay **un solo número** (`--surface-alpha`,
-  de 6 a 100) y los menús lo siguen desde 55: `--menu-alpha` es
-  `max(0.55, --surface-alpha)`. El piso de los menús no es una preferencia.
+  de 6 a 100) y las hojas y los diálogos lo siguen desde 55: `--menu-alpha` es
+  `max(0.55, --surface-alpha)`. **Los menús de escritorio no tienen ese piso:**
+  `surface-menu` evita el choque de textos con 24 px de desenfoque fijos, no con opacidad.
 - **Traer la ventana al frente se pide desde Rust, y en Windows el foco tiene
   precio.** Son tres cosas y las tres importan: `tao::set_focus` **no hace
   nada** si la ventana está minimizada (hay que `unminimize()` antes);
