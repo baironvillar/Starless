@@ -1,4 +1,4 @@
-import { ArrowLeftRight } from "lucide-react";
+import { ArrowLeftRight, Maximize2, Minimize2 } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { StringKey } from "../lib/i18n";
@@ -23,6 +23,10 @@ type LyricsPanelProps = {
   coverUrl?: string | null;
   coverSide?: "left" | "right";
   onSwapSide?: () => void;
+  /** Full-window, full-screen view of the same panel. Desktop only. */
+  cinema?: boolean;
+  /** Enters the cinema mode from the heading, or leaves it from its corner. */
+  onCinema?: () => void;
   onClose: () => void;
 };
 
@@ -188,6 +192,8 @@ export function LyricsPanel({
   coverUrl = null,
   coverSide = "left",
   onSwapSide,
+  cinema = false,
+  onCinema,
   onClose,
 }: LyricsPanelProps) {
   const activeRef = useRef<HTMLButtonElement | null>(null);
@@ -317,7 +323,7 @@ export function LyricsPanel({
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={SPRING}
-      className={ANCHORED ? "flex h-full flex-col" : "pb-4"}
+      className={`${ANCHORED ? "flex h-full flex-col" : "pb-4"} ${cinema && idle ? "cursor-none" : ""}`}
       aria-label={title || t.lyricsTitle}
     >
       {/*
@@ -325,10 +331,28 @@ export function LyricsPanel({
         the words scroll, inside their own box: the heading and the cover stay
         anchored where they are instead of riding up with the lines.
       */}
+      {/*
+        The cinema mode has no heading: the title goes under the cover, and the
+        only control is the way out, in the corner, gone with the heading's own
+        idle fade. Esc does the same.
+      */}
+      {cinema && onCinema && (
+        <button
+          type="button"
+          onClick={onCinema}
+          aria-label={t.cinemaExit}
+          title={t.cinemaExit}
+          className={`absolute top-6 right-6 z-10 rounded-pill p-2.5 text-ink-muted transition-[opacity,color,background-color] duration-700 hover:bg-white/8 hover:text-ink ${
+            idle ? "opacity-0" : ""
+          }`}
+        >
+          <Minimize2 className="size-5" />
+        </button>
+      )}
       <div
         className={`mb-7 flex shrink-0 items-start justify-between gap-6 transition-opacity duration-700 ${
           idle ? "opacity-0" : ""
-        }`}
+        } ${cinema ? "hidden" : ""}`}
       >
         <div className="min-w-0">
           <p className="text-[11.5px] font-semibold tracking-[0.12em] uppercase text-ink-faint">
@@ -354,13 +378,27 @@ export function LyricsPanel({
               <ArrowLeftRight className="size-4" />
             </button>
           )}
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-pill px-3 py-1.5 text-[12.5px] font-semibold text-ink-muted transition-colors duration-200 hover:bg-white/8 hover:text-ink"
-          >
-            {t.closeLyrics}
-          </button>
+          {onCinema && (
+            <button
+              type="button"
+              onClick={onCinema}
+              aria-label={t.cinemaEnter}
+              title={t.cinemaEnter}
+              className="rounded-pill p-2 text-ink-muted transition-colors duration-200 hover:bg-white/8 hover:text-ink"
+            >
+              <Maximize2 className="size-4" />
+            </button>
+          )}
+          {/* The desktop closes the words from the player's own lyrics button. */}
+          {!ANCHORED && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-pill px-3 py-1.5 text-[12.5px] font-semibold text-ink-muted transition-colors duration-200 hover:bg-white/8 hover:text-ink"
+            >
+              {t.closeLyrics}
+            </button>
+          )}
         </div>
       </div>
 
@@ -369,14 +407,23 @@ export function LyricsPanel({
         it. The cover stays put beside the words while they scroll in their own
         box, and it is keyed by the picture so a new song fades in rather than
         swapping under the eye.
+
+        Swapping sides glides: both columns carry `layout`, so Motion slides each
+        from its old box to its new one on the house spring instead of the two
+        jumping across in one frame. `position` on the words, because a scaled
+        box of text is a smeared box of text for the length of the slide.
       */}
       <div
-        className={`flex items-start gap-10 ${ANCHORED ? "min-h-0 flex-1" : ""} ${
-          coverSide === "right" ? "flex-row-reverse" : ""
-        }`}
+        className={`flex gap-10 ${ANCHORED ? "min-h-0 flex-1" : ""} ${
+          cinema ? "items-center gap-[6vw]" : "items-start"
+        } ${coverSide === "right" ? "flex-row-reverse" : ""}`}
       >
         {coverUrl && (
-          <div className="w-[min(30vw,320px)] shrink-0">
+          <motion.div
+            layout
+            transition={SPRING}
+            className={`shrink-0 ${cinema ? "w-[min(38vw,62vh)]" : "w-[min(30vw,320px)]"}`}
+          >
             <motion.img
               key={coverUrl}
               src={coverUrl}
@@ -386,16 +433,30 @@ export function LyricsPanel({
               transition={SPRING}
               className="aspect-square w-full rounded-card object-cover shadow-[0_24px_60px_rgb(0_0_0/0.45)]"
             />
-          </div>
+            {cinema && (
+              <div className="mt-6 min-w-0">
+                <p className="truncate text-[clamp(22px,2.2vw,34px)] leading-tight font-semibold tracking-tight">
+                  {title}
+                </p>
+                <p className="mt-1 truncate text-[clamp(14px,1.2vw,18px)] text-ink-muted">
+                  {artists}
+                </p>
+              </div>
+            )}
+          </motion.div>
         )}
-        <div
+        <motion.div
+          layout="position"
+          transition={SPRING}
           ref={ANCHORED ? listRef : undefined}
           // The edges fade so a line leaves under the heading instead of being
           // cut by it. `relative` makes this box the lines' `offsetParent`, which
           // is what the follow-the-song scroll measures against.
           className={
             ANCHORED
-              ? "relative max-h-full min-w-0 flex-1 self-stretch overflow-x-hidden overflow-y-auto pr-3 pb-4"
+              ? `relative min-w-0 flex-1 overflow-x-hidden overflow-y-auto pr-3 pb-4 ${
+                  cinema ? "h-full py-[30vh]" : "max-h-full self-stretch"
+                }`
               : "min-w-0 flex-1"
           }
           style={
@@ -473,7 +534,7 @@ export function LyricsPanel({
                         seekable ? `${line.text} — ${formatDuration(line.start_ms)}` : undefined
                       }
                       title={seekable ? t.jumpToLine : undefined}
-                      className={`lyric-in relative isolate w-fit max-w-full rounded-pill px-3 py-1.5 text-left text-[20px] leading-[1.5] font-medium transition-[opacity,background-color] duration-300 ${
+                      className={`lyric-in relative isolate w-fit max-w-full rounded-pill px-3 py-1.5 text-left ${cinema ? "text-[clamp(26px,2.6vw,40px)] leading-[1.35]" : "text-[20px] leading-[1.5]"} font-medium transition-[opacity,background-color] duration-300 ${
                         seekable
                           ? "cursor-pointer hover:bg-white/6 hover:opacity-100"
                           : "cursor-default"
@@ -531,7 +592,7 @@ export function LyricsPanel({
               )}
             </>
           )}
-        </div>
+        </motion.div>
       </div>
     </motion.section>
   );
