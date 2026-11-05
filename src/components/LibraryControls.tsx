@@ -64,7 +64,7 @@ type LibrarySortMenuProps = {
 /**
  * The order control, and it lives on the library rail because that is the library.
  *
- * The menu is a **portal**, and that is not decoration. It is a `glass-overlay`
+ * The menu is a **portal**, and that is not decoration. It is a `surface-menu`
  * surface, and the rail is already glass: drawn inside it, the menu would be a glass
  * surface nested in a glass surface, which DESIGN.md forbids because every level
  * multiplies the blur and compounds the contrast loss. It would also be clipped —
@@ -131,7 +131,7 @@ export function LibrarySortMenu({ t, sort, onSortChange, className = "" }: Libra
               // SearchMenu lost its `-translate-x-1/2` for the same reason: a
               // composited layer between the backdrop and the thing that samples
               // it is what took the blur out of the packaged build.
-              className="glass-overlay fixed z-50 origin-top-right overflow-hidden rounded-card py-1.5"
+              className="surface-menu fixed z-50 origin-top-right overflow-hidden rounded-card py-1.5"
             >
               {LIBRARY_SORTS.map((option) => {
                 const active = option === sort;

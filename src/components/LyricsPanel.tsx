@@ -74,9 +74,9 @@ function BreakDots({ active }: { active: boolean }) {
  * A page that is all highlight is not a page anybody can read.
  */
 function presence(index: number, activeIndex: number): string {
-  if (activeIndex < 0) return "opacity-70";
+  if (activeIndex < 0) return "opacity-(--lyric-idle)";
   if (index === activeIndex) return "opacity-100";
-  return Math.abs(index - activeIndex) <= 2 ? "opacity-60" : "opacity-35";
+  return Math.abs(index - activeIndex) <= 2 ? "opacity-(--lyric-near)" : "opacity-(--lyric-far)";
 }
 
 /**
@@ -471,11 +471,11 @@ export function LyricsPanel({
           {loading ? (
             <p className="text-[13px] text-ink-faint">{t.loading}</p>
           ) : error ? (
-            <p className="rounded-card border border-white/8 bg-white/4 px-5 py-6 text-center text-[13px] text-ink-faint">
+            <p className="surface-card rounded-card border border-white/8 px-5 py-6 text-center text-[13px] text-ink-faint">
               {error}
             </p>
           ) : !lyrics || lyrics.lines.length === 0 ? (
-            <p className="rounded-card border border-white/8 bg-white/4 px-5 py-6 text-center text-[13px] text-ink-faint">
+            <p className="surface-card rounded-card border border-white/8 px-5 py-6 text-center text-[13px] text-ink-faint">
               {t.noLyrics}
             </p>
           ) : (
@@ -499,7 +499,7 @@ export function LyricsPanel({
                 {lyrics.synced && (lyrics.lines[0]?.start_ms ?? 0) >= INTRO_DOTS_MS && (
                   <span
                     className={`px-3 py-1.5 transition-opacity duration-300 ${
-                      activeIndex < 0 ? "opacity-100" : "opacity-35"
+                      activeIndex < 0 ? "opacity-100" : "opacity-(--lyric-far)"
                     }`}
                   >
                     <BreakDots active={activeIndex < 0 && playing} />

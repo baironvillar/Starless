@@ -42,7 +42,7 @@ const SHEET = isMobile();
 /**
  * One menu, floating over the app, for every menu in it.
  *
- * **A portal, and it is not decoration.** This is a `glass-overlay` surface and
+ * **A portal, and it is not decoration.** This is a `surface-menu` surface and
  * the surfaces it opens over are already glass: drawn inside one, it would be a
  * glass surface nested in a glass surface, which DESIGN.md forbids because every
  * level multiplies the blur and compounds the contrast loss. It would also be
@@ -246,7 +246,7 @@ export function MenuPanel({
           // `SearchMenu` lost its `-translate-x-1/2` for the same reason: a
           // composited layer between the backdrop and the thing that samples it
           // is what took the blur out of the packaged build.
-          className="glass-overlay fixed z-50 origin-top-right overflow-hidden rounded-card py-1.5"
+          className="surface-menu fixed z-50 origin-top-right overflow-hidden rounded-card py-1.5"
         >
           {children}
         </motion.div>

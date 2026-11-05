@@ -1068,6 +1068,8 @@ function setBackgroundState(next: Background): void {
     URL.revokeObjectURL(currentBackground.url);
   }
   currentBackground = next;
+  // The CSS has to know: text standing on a picture needs what `.on-ground` gives it.
+  document.documentElement.toggleAttribute("data-picture", next.url !== null);
   for (const listener of backgroundListeners) listener();
 }
 
