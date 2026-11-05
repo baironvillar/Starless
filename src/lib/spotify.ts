@@ -1007,6 +1007,8 @@ export const EFFECTS = {
   motion: ["on", "off"],
   shape: ["top", "corners", "center", "side"],
   grain: ["off", "on"],
+  cover: ["off", "lyrics", "always"],
+  coverSide: ["left", "right"],
 } as const;
 
 export type EffectName = keyof typeof EFFECTS;
@@ -1021,6 +1023,8 @@ export const EFFECTS_DEFAULT: Effects = {
   motion: "on",
   shape: "top",
   grain: "off",
+  cover: "off",
+  coverSide: "left",
 };
 
 /**

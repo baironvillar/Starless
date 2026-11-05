@@ -1,5 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ChevronLeft, Search, Settings } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -90,6 +91,7 @@ import {
   SESSION_ERRORS,
   theme as savedTheme,
   seekPlayback,
+  setEffect,
   setErrorLanguage,
   setLibrarySort,
   setLibraryView,
@@ -381,6 +383,8 @@ export default function App() {
    */
   const [queueOpen, setQueueOpen] = useState(!MOBILE);
   const [lyricsOpen, setLyricsOpen] = useState(false);
+  /** The lyrics over the whole screen. Only means something while they are open. */
+  const [cinema, setCinema] = useState(false);
   const [activeItem, setActiveItem] = useState("liked");
   /**
    * On the phone, whether the Biblioteca tab shows the list or the playlist
@@ -2818,6 +2822,76 @@ export default function App() {
    * take the full player's artwork, and the screen underneath stays what it was.
    */
   const lyricsInMain = lyricsOpen && !MOBILE;
+  const coverUrl = loadedTrack?.album?.images[0]?.url ?? null;
+  /**
+   * One ground, two pictures: the cover wins while it is asked for and there is
+   * a song to take it from, and the person's photo comes back the moment it is
+   * not. Never both stacked — two blurred images under the glass read as mud.
+   */
+  const coverGround =
+    !MOBILE && (effect.cover === "always" || (effect.cover === "lyrics" && lyricsInMain));
+  const groundUrl = (coverGround && coverUrl) || background.url;
+  const cinemaOn = cinema && lyricsInMain;
+
+  // Closing the lyrics, from anywhere, ends the cinema mode with them.
+  useEffect(() => {
+    if (!lyricsInMain) setCinema(false);
+  }, [lyricsInMain]);
+
+  // The window follows the mode. Asked of Tauri directly: the capability grants
+  // only `set-fullscreen`, and a refusal leaves the mode drawn in a window.
+  useEffect(() => {
+    if (MOBILE) return;
+    try {
+      void getCurrentWindow()
+        .setFullscreen(cinemaOn)
+        .catch(() => {});
+    } catch {
+      // `bun run dev` has no Tauri window to ask.
+    }
+  }, [cinemaOn]);
+
+  // F toggles the mode while the lyrics are open, Esc leaves it. Never while
+  // typing: an "f" in the search field is a letter, not a command.
+  useEffect(() => {
+    if (!lyricsInMain) return;
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, [contenteditable='true']")) return;
+      if (event.key === "Escape") setCinema(false);
+      else if (
+        (event.key === "f" || event.key === "F") &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey
+      ) {
+        setCinema((on) => !on);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lyricsInMain]);
+
+  const desktopLyrics = {
+    t,
+    lyrics: lyrics.data,
+    loading: lyrics.isLoading,
+    error: lyrics.error ? explain(lyrics.error) : null,
+    positionMs: status?.positionMs ?? 0,
+    playing: status?.playing ?? false,
+    title: loadedTrack?.name ?? "",
+    artists: loadedTrack ? trackArtists(loadedTrack) : "",
+    trackId: lyricsTrackId,
+    coverUrl,
+    coverSide: effect.coverSide,
+    onSwapSide: () => {
+      const next = effect.coverSide === "left" ? "right" : "left";
+      applyEffects({ ...effect, coverSide: next });
+      void setEffect("coverSide", next).catch(() => {});
+    },
+    onCinema: () => setCinema((on) => !on),
+    onClose: closeLyrics,
+  };
   const playlistView = !lyricsInMain && !showResults && !isHome && !isLiked && !detail;
   const playlistScreen = playlistView && selected !== undefined;
   // Liked Songs is drawn by the same screen, so it shares the big button too.
@@ -3291,24 +3365,35 @@ export default function App() {
         with the pointer: a backdrop that animates on its own under blurred glass
         repaints the blur every frame — see DESIGN.md.
       */}
-      {background.url && (
+      {groundUrl && (
         <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
           {/*
             Scaled past the window so the blur has picture to pull from at the
             edges: blurred at its own size, the border fades to the black under
             it and the photo gets a dark frame nobody chose.
+
+            Keyed by the picture so a new song's cover fades in over the last one
+            once, instead of snapping. It is a single fade per song, not motion
+            under the glass — DESIGN.md's rule is about backdrops that never stop.
           */}
-          <div
-            className="absolute inset-0 bg-cover bg-center"
-            style={{
-              backgroundImage: `url(${background.url})`,
-              filter:
-                background.blur > 0
-                  ? `blur(${(background.blur / 100) * BACKGROUND_BLUR_PX}px)`
-                  : undefined,
-              transform: background.blur > 0 ? "scale(1.08)" : undefined,
-            }}
-          />
+          <AnimatePresence initial={false}>
+            <motion.div
+              key={groundUrl}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.6 }}
+              className="absolute inset-0 bg-cover bg-center"
+              style={{
+                backgroundImage: `url(${groundUrl})`,
+                filter:
+                  background.blur > 0
+                    ? `blur(${(background.blur / 100) * BACKGROUND_BLUR_PX}px)`
+                    : undefined,
+                scale: background.blur > 0 ? 1.08 : 1,
+              }}
+            />
+          </AnimatePresence>
           <div className="absolute inset-0 bg-ground" style={{ opacity: background.dim / 100 }} />
         </div>
       )}
@@ -3580,18 +3665,7 @@ export default function App() {
               lyrics are only worth reading with the transport right there — which
               it always is, on the player bar.
             */
-            <LyricsPanel
-              t={t}
-              lyrics={lyrics.data}
-              loading={lyrics.isLoading}
-              error={lyrics.error ? explain(lyrics.error) : null}
-              positionMs={status?.positionMs ?? 0}
-              playing={status?.playing ?? false}
-              title={loadedTrack?.name ?? ""}
-              artists={loadedTrack ? trackArtists(loadedTrack) : ""}
-              trackId={lyricsTrackId}
-              onClose={closeLyrics}
-            />
+            <LyricsPanel {...desktopLyrics} />
           ) : showResults ? (
             results ? (
               <SearchScreen
@@ -3864,6 +3938,42 @@ export default function App() {
               onClose={() => setSettingsOpen(false)}
               onLangChange={setLang}
             />
+          )}
+        </AnimatePresence>
+
+        {/*
+          The cinema mode: the same lyrics panel over the whole window, the
+          window itself full screen, and the cover blurred behind it whatever
+          the background setting says — it is the look the mode exists for. It
+          sits over the app rather than rearranging it, so leaving it lands
+          exactly where the person was.
+        */}
+        <AnimatePresence>
+          {cinemaOn && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.4 }}
+              className="fixed inset-0 z-[60] overflow-hidden bg-ground px-[6vw] py-[6vh]"
+            >
+              {coverUrl && (
+                <div aria-hidden="true" className="pointer-events-none absolute inset-0">
+                  <div
+                    className="absolute inset-0 bg-cover bg-center"
+                    style={{
+                      backgroundImage: `url(${coverUrl})`,
+                      filter: `blur(${BACKGROUND_BLUR_PX * 1.5}px)`,
+                      scale: 1.15,
+                    }}
+                  />
+                  <div className="absolute inset-0 bg-ground opacity-55" />
+                </div>
+              )}
+              <div className="relative h-full">
+                <LyricsPanel {...desktopLyrics} cinema />
+              </div>
+            </motion.div>
           )}
         </AnimatePresence>
       </AuthGate>
