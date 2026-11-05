@@ -1968,6 +1968,17 @@ fn set_effect(name: String, value: String) {
     settings::save_effect(&name, &value);
 }
 
+/// Everything under Settings → Customisation back to what ships.
+///
+/// The picture goes first because it is the only part that can fail: if it
+/// stays, nothing has changed, and the panel can say so without half a reset.
+#[tauri::command]
+async fn reset_customisation() -> Result<(), String> {
+    background::clear_background_image().await?;
+    settings::reset_customisation();
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let context = tauri::generate_context!();
@@ -2224,6 +2235,7 @@ pub fn run() {
             set_start_with_windows,
             surface_opacity,
             set_surface_opacity,
+            reset_customisation,
             crossfade_seconds,
             set_crossfade_seconds,
             record_play,
