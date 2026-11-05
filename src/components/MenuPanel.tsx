@@ -34,6 +34,13 @@ type MenuPanelProps = {
   onUnhover?: () => void;
   /** What the menu is about, at the top of the phone's sheet. The desktop popover has the row beside it. */
   header?: ReactNode;
+  /**
+   * A right-click opens the menu where the mouse is, not under the dots: the
+   * hand is on the row, and a menu that appears across the row is a menu the
+   * hand has to travel to. The panel's top-left corner goes on the point and is
+   * still kept inside the window.
+   */
+  point?: { x: number; y: number } | null;
 };
 
 /** On the phone a menu is a sheet rising from the bottom, not a popover (DESIGN.md, "The phone"). */
@@ -79,6 +86,7 @@ export function MenuPanel({
   onHover,
   onUnhover,
   header,
+  point = null,
 }: MenuPanelProps) {
   const menu = useRef<HTMLDivElement>(null);
   const [at, setAt] = useState<{ top: number; left: number } | null>(null);
@@ -99,6 +107,13 @@ export function MenuPanel({
       setAt(null);
       return;
     }
+    if (point) {
+      setAt({
+        top: point.y,
+        left: Math.max(12, Math.min(point.x, window.innerWidth - width - 12)),
+      });
+      return;
+    }
     const box = anchor.current?.getBoundingClientRect();
     if (!box) return;
 
@@ -116,7 +131,7 @@ export function MenuPanel({
       top: box.bottom + 8,
       left: Math.max(12, Math.min(box.right - width, window.innerWidth - width - 12)),
     });
-  }, [open, anchor, width, placement]);
+  }, [open, anchor, width, placement, point]);
 
   /**
    * A submenu is measured after it renders, because its height is not known
@@ -135,7 +150,10 @@ export function MenuPanel({
     const height = node.offsetHeight;
     const limit = window.innerHeight - height - 12;
     if (limit < 12) return;
-    const box = anchor.current?.getBoundingClientRect();
+    // A point has no box: a menu that would hang off the bottom opens upward from it.
+    const box = point
+      ? new DOMRect(point.x, point.y - 8, 0, 0)
+      : anchor.current?.getBoundingClientRect();
     if (!box) return;
     setAt((prev) => {
       if (!prev) return prev;
@@ -153,7 +171,7 @@ export function MenuPanel({
       // again, and again, forever.
       return top === prev.top ? prev : { ...prev, top };
     });
-  }, [at, open, placement, anchor]);
+  }, [at, open, placement, anchor, point]);
 
   useEffect(() => {
     if (!open) return;
