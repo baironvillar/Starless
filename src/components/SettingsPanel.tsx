@@ -1524,7 +1524,26 @@ function BackgroundSettings({
             )}
           </span>
         </Row>
-        {background.url && (
+        {/*
+            The cover sits in this card and not with the effects: it is the same
+            layer as the picture, drawn with the same dim and blur, so the two
+            sliders below answer for whichever of the two is on screen. Desktop
+            only — the phone has no lyrics in the main surface to sit beside.
+        */}
+        {!isMobile() && (
+          <Row label={t.coverBackground} hint={t.coverBackgroundHint}>
+            <Select
+              value={effect.cover}
+              onChange={(value) => changeEffect("cover", value as Effects["cover"])}
+              options={[
+                { value: "off", label: t.effectOff },
+                { value: "lyrics", label: t.coverBackgroundLyrics },
+                { value: "always", label: t.coverBackgroundAlways },
+              ]}
+            />
+          </Row>
+        )}
+        {(background.url || (!isMobile() && effect.cover !== "off")) && (
           <>
             <Row label={t.backgroundDim} hint={t.backgroundDimHint}>
               <span className="flex items-center gap-3">

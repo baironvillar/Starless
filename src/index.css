@@ -306,6 +306,73 @@
 }
 
 /*
+ * The line being sung, letter by letter: dim until its turn, then lit and lifted
+ * four pixels, then settled back — lit stays, the lift does not.
+ *
+ * `translate` and not `transform`, and `opacity`, so the movement stays on the
+ * compositor. The light is an opacity on each letter rather than a colour: the
+ * button around it already owns the line's opacity, and the two multiply.
+ *
+ * Under quiet mode or reduced motion the duration collapses and `both` holds the
+ * last frame: each letter simply turns on at its turn, without moving.
+ *
+ * Tuned for smooth over snappy:
+ * - It starts at 0.6, the opacity the line had one line earlier as a neighbour.
+ *   Starting lower made every line dip darker at the instant it became the one
+ *   being sung, before lighting up — a flicker at each line change.
+ * - 900ms with a 3px lift means five or six letters are in motion at once, so
+ *   the eye reads one wave travelling along the line rather than letters
+ *   popping one after another.
+ * - `ease-in-out` on both halves: the rise and the settle accelerate and slow
+ *   down, with no corner at the top of the lift.
+ */
+@keyframes lyric-letter {
+  0% {
+    opacity: 0.6;
+    translate: 0 0;
+  }
+  40% {
+    opacity: 1;
+    translate: 0 -3px;
+  }
+  100% {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+@utility lyric-letter {
+  display: inline-block;
+  animation: lyric-letter 900ms ease-in-out both;
+}
+
+/* Pausing the song pauses every letter where it is, mid-lift included. */
+.lyric-sung[data-paused] .lyric-letter {
+  animation-play-state: paused;
+}
+
+/*
+ * The dots of an instrumental break, breathing while that break plays. `scale`
+ * and `opacity` only, so an animation that loops for a whole intro stays on the
+ * compositor and never touches layout.
+ */
+@keyframes lyric-dot {
+  0%,
+  100% {
+    opacity: 0.35;
+    scale: 0.8;
+  }
+  50% {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+@utility lyric-dot {
+  animation: lyric-dot 1.2s var(--ease-glass) infinite;
+}
+
+/*
  * Range inputs.
  *
  * The browser's default range looks like a different app wearing our clothes, so
