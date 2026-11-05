@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- NowPlayingCenter: the next song has to load with the screen off. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
@@ -33,6 +35,10 @@
             android:foregroundServiceType="mediaPlayback"
             android:exported="false"
             android:stopWithTask="true" />
+
+        <receiver
+            android:name=".MediaActionReceiver"
+            android:exported="false" />
 
         <provider
           android:name="androidx.core.content.FileProvider"

@@ -393,6 +393,27 @@ Lo que no se sabe y hay que medir:
   ya manda todo lo que la tarjeta necesita (`NowPlaying`), así que el plugin de
   Kotlin es otro `imp` de `media_keys.rs`, no un comando nuevo.
 
+### La pantalla bloqueada, medido
+
+La `MediaSession` resultó **no** ser otro `imp` de `media_keys.rs`: vive en
+Kotlin (`NowPlayingCenter.kt`), y la página le habla directo por un puente
+(`window.StarlessMedia`), con el mismo `NowPlaying` que recibe Windows. Las
+teclas vuelven a la página como `__starlessMediaKey(...)` y entran al mismo
+manejador que `media://key`. Tres cosas medidas en un Galaxy S22:
+
+- **Con la pantalla apagada, la canción siguiente quedaba cargando.** El
+  procesador se suspende cuando nada lo mantiene despierto, y la salida de
+  audio solo lo hace mientras suena: entre "terminó la canción" y "llegó la
+  siguiente" el teléfono se dormía. `NowPlayingCenter` toma un
+  `PARTIAL_WAKE_LOCK` mientras algo suena o carga y lo suelta 30 s después.
+  Con la pantalla apagada, la siguiente empezó 0,9 s después del final.
+- **Con la app en pantalla, las teclas multimedia no llegan a la sesión.**
+  Android se las da a la ventana enfocada, el WebView, que se las traga:
+  el play/pausa de los auriculares no hacía nada con la app abierta.
+  `MainActivity.dispatchKeyEvent` las manda a `NowPlayingCenter` primero.
+- **El ícono chico de la notificación es la marca sin placa**
+  (`ic_launcher_foreground`): la barra de estado dibuja solo la silueta.
+
 ## El frontend
 
 El frontend compila igual; lo que no anda es la forma de usarlo.

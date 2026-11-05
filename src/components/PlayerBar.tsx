@@ -383,7 +383,7 @@ export function PlayerBar({
     toggleShuffle: idle ? null : onToggleShuffle,
     cycleRepeat: idle ? null : onCycleRepeat,
   });
-  useMediaSession(track, dj, playing, t.djSpeaker);
+  useMediaSession(track, dj, playing, t.djSpeaker, loading, position, duration);
 
   /**
    * What is sounding, as a key.
