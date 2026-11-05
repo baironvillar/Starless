@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Capability for the main window, on every platform",
   "windows": ["main"],
-  "permissions": ["core:default", "opener:default"]
+  "permissions": ["core:default", "core:window:allow-set-fullscreen", "opener:default"]
 }
