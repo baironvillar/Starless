@@ -124,22 +124,54 @@
  * in DESIGN.md.
  */
 :root[data-theme="light"] {
-  --color-ground: #e4e1da;
+  /*
+   * The ground sits a step below the panels, like paper under cards: at
+   * `#E4E1DA` against `#F4F2ED` the two were 1.17:1 apart and the rail, the
+   * queue and the content melted into one white sheet. `#D6D1C6` gives 1.36:1.
+   * The faint, live and warn inks darkened with it to stay over 4.5:1 on it.
+   */
+  --color-ground: #d6d1c6;
   --color-night: #f4f2ed;
-  --color-eclipse: #cfcbc2;
+  --color-eclipse: #c4bfb4;
   --color-ink: #15151b;
   --color-ink-muted: #4f4c55;
-  --color-ink-faint: #5f5c66;
+  --color-ink-faint: #55525c;
   --color-white: #15151b;
   --color-accent-ink: color-mix(in oklab, var(--color-accent) 55%, #000);
-  --color-live-ink: #a3311a;
-  --color-warn-ink: #855600;
+  --color-live-ink: #9a2e18;
+  --color-warn-ink: #764c00;
 
   --glass-rgb: 247 245 240;
   --line-rgb: 21 21 27;
-  --bloom-a: 255 255 255;
-  --bloom-b: 255 255 255;
+  /*
+   * The bloom is a warm paper light and not white: white bloom on a light
+   * ground painted the middle of the window white, exactly where the panels
+   * needed something darker to stand on.
+   */
+  --bloom-a: 233 228 218;
+  --bloom-b: 222 216 205;
   --lift-alpha: 0.16;
+  /*
+   * On a light ground a panel is told apart by its shadow as much as by its
+   * tone: a soft contact shadow and a wider one, at every opacity — the dark
+   * theme waits for 55% because an outer shadow under a translucent dark fill
+   * reads as dirt, and on light it reads as depth. A top highlight finishes
+   * the edge.
+   */
+  --surface-lift: 0 1px 2px rgb(21 21 27 / 0.06), 0 10px 28px -10px rgb(21 21 27 / 0.18);
+  --surface-edge: inset 0 0 0 1px rgb(21 21 27 / 0.1), inset 0 1px 0 rgb(255 255 255 / 0.55);
+  /*
+   * And by being lighter than the ground: at the default 32% a light surface was
+   * mostly the ground showing through, the same tone as what it sat on. The
+   * surfaces get the lift the sheets already have — the person's position on
+   * the slider, lifted toward solid — so a panel is paper on the desk.
+   */
+  --surface-bg: color-mix(
+    in srgb,
+    rgb(var(--glass-rgb))
+    calc((var(--glass-lift) + var(--surface-solidity) * (1 - var(--glass-lift))) * 100%),
+    rgb(var(--line-rgb) / 0.06)
+  );
   /*
    * A light glass lets colour through where a dark one swallows it: at 55%
    * over a pink cover the settings sheet turned pink. The alpha the person
