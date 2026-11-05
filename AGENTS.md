@@ -758,6 +758,43 @@ en ningún proto ni en ninguna issue:
   La otra candidate, `/inspiredby-mix/v2/seed_to_playlist/spotify:track:<id>`,
   devuelve una playlist editorial y no la radio: no sirve. La sonda es
   `STARLESS_SP_RADIO=1`.
+- **Las letras no se traducen, y no por falta de ganas: hoy no hay de dónde.**
+  La idea era traducir sólo las canciones en otra escritura (coreano, japonés,
+  chino…) y mostrar la traducción chica, entre paréntesis, debajo de cada línea.
+  Se descartaron los traductores de terceros (Google, DeepL) porque mandarían
+  cada letra a otra empresa sin un clic, y eso rompe la regla 2. Lo que queda,
+  medido el 5 de noviembre de 2026:
+  - **Spotify tiene el campo y lo manda vacío.** `/color-lyrics/v2/track/<id>`
+    trae `language` (`"ko"`), `translationLanguages`, `alternatives` y
+    `capStatus`, y librespot sólo lee las líneas. En cuatro canciones coreanas
+    `translationLanguages` vino `[]` y `alternatives` vacío, con
+    `Accept-Language: es`/`en`, con el query del reproductor web y con siete
+    nombres de parámetro inventados (`translationLanguage`, `translation`,
+    `targetLanguage`, `language`…). Una lista vacía dice "no hay traducción",
+    no "la pediste mal".
+  - **En el cliente oficial es un experimento apagado.** El `xpui.spa` de la
+    1.2.x trae los textos (`web-player.lyrics.translate`,
+    `web-player.lyrics.translation.not_available`) y la bandera `enableLyricsTranslations` con
+    `CONTROL | SYSTEM_LANGUAGE | ALL_LANGUAGES`, por defecto **`CONTROL`**. Su
+    JavaScript no lee nunca `translationLanguages` ni `alternatives`; en el
+    `Spotify.dll` sólo aparece `translation_language` dentro de
+    `playback_settings.ContentSettings`, un ajuste por contenido, sin la
+    petición que trae el texto traducido.
+  - **WebView2 trae la API `Translator` y no trae los modelos.** En Edge 156,
+    `Translator` existe pero `availability()` contesta `unavailable` para todo
+    par —`en→es` incluido— y `create()` tira `NotSupportedError`.
+    `LanguageDetector` sí contesta `downloadable`. Es la puerta local y sin
+    terceros, y está cerrada del lado de Microsoft, no del nuestro.
+  La sonda es `STARLESS_SP_LYRICS=1`: cada vez que se abren unas letras pide la
+  misma canción de varias formas y escribe en el log **la forma** de la
+  respuesta —idioma, campos, cuántas alternativas, cuánto alfabeto latino tiene
+  cada una— y **nunca el texto**, para no copiar letras a un archivo. Con eso se
+  comprueba en un minuto si Spotify abrió la función. El otro camino local, un
+  modelo de traducción propio en Rust (los de Firefox Translations pesan 15–40
+  MB por par), **se dejó de lado a propósito**: es la única salida que no
+  depende de nadie, y también la que más pesa sobre el arranque y la memoria,
+  las dos promesas de la app. La función vuelve cuando Spotify o WebView2
+  abran la suya.
 - **La cola no existe hasta que el usuario la crea.** El panel de cola y la
   estación del DJ son dos preguntas distintas, y el panel las confundía: el "A
   continuación" caía a `visibleTracks` —lo que se ve en pantalla— cuando todavía

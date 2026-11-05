@@ -4843,3 +4843,132 @@ fn find_key(value: &serde_json::Value, key: &str) -> Option<String> {
         _ => None,
     }
 }
+
+// ---------------------------------------------------------------------------
+// Las traducciones de las letras
+// ---------------------------------------------------------------------------
+
+/// `STARLESS_SP_LYRICS=1`: what `/color-lyrics/v2` sends besides the lines.
+///
+/// librespot reads the lines and drops `alternatives`, with a TODO that says
+/// nobody knows what it is for. The official client shows translations and
+/// romanised lyrics for some songs, and this is the question of whether they
+/// travel there — and whether asking in a language changes the answer.
+#[cfg(debug_assertions)]
+pub fn lyrics_requested() -> bool {
+    std::env::var("STARLESS_SP_LYRICS")
+        .map(|value| value != "0" && !value.is_empty())
+        .unwrap_or(false)
+}
+
+/// How much of a line is Latin letters, as a percentage of its letters.
+///
+/// The probe logs the *shape* of an alternative and never its words: a
+/// translation into Spanish is mostly Latin, a romanisation is all Latin, and
+/// the original script is almost none — that is enough to tell them apart
+/// without copying a song's lyrics into a log file.
+#[cfg(debug_assertions)]
+fn latin_share(text: &str) -> u32 {
+    let letters: Vec<char> = text.chars().filter(|c| c.is_alphabetic()).collect();
+    if letters.is_empty() {
+        return 0;
+    }
+    let latin = letters
+        .iter()
+        .filter(|c| c.is_ascii_alphabetic() || ('\u{00C0}'..='\u{024F}').contains(*c))
+        .count();
+    (latin * 100 / letters.len()) as u32
+}
+
+/// The shape of one answer: the song's language, then each alternative's keys,
+/// language, line count and how Latin its first non-empty lines are.
+#[cfg(debug_assertions)]
+fn log_lyrics_shape(label: &str, body: &[u8]) {
+    let Ok(json) = serde_json::from_slice::<serde_json::Value>(body) else {
+        log::info!("[lyrics] {label}: no es JSON ({} bytes)", body.len());
+        return;
+    };
+    let lyrics = &json["lyrics"];
+    let keys = |value: &serde_json::Value| -> Vec<String> {
+        value.as_object().map(|o| o.keys().cloned().collect()).unwrap_or_default()
+    };
+    log::info!(
+        "[lyrics] {label}: language={} lines={} keys={:?}",
+        lyrics["language"],
+        lyrics["lines"].as_array().map_or(0, Vec::len),
+        keys(lyrics),
+    );
+    let alternatives = lyrics["alternatives"].as_array().cloned().unwrap_or_default();
+    log::info!(
+        "[lyrics] {label}: alternatives={} translationLanguages={} capStatus={}",
+        alternatives.len(),
+        lyrics["translationLanguages"],
+        lyrics["capStatus"],
+    );
+    for (i, alt) in alternatives.iter().enumerate() {
+        let lines = alt["lines"].as_array().cloned().unwrap_or_default();
+        let shares: Vec<u32> = lines
+            .iter()
+            .filter_map(|l| l.as_str().or_else(|| l["words"].as_str()))
+            .filter(|t| !t.trim().is_empty())
+            .take(5)
+            .map(latin_share)
+            .collect();
+        let kind = lines.first().map(|l| if l.is_string() { "string" } else { "object" });
+        log::info!(
+            "[lyrics] {label}: alt[{i}] language={} keys={:?} lines={} line_kind={kind:?} latin%={shares:?}",
+            alt["language"],
+            keys(alt),
+            lines.len(),
+        );
+    }
+}
+
+/// Ask for the same song's lyrics several ways and log what each answer
+/// carries. A header or a query parameter that brings `alternatives` to life is
+/// the whole finding; one that changes nothing is a finding too.
+#[cfg(debug_assertions)]
+pub fn run_lyrics_probe(session: &Session, track_id: &str) {
+    // Measured on four Korean songs: `translationLanguages` comes back `[]` and
+    // `alternatives` empty for every variant below — and also with
+    // `Accept-Language: es`/`en`. The list is the answer: an empty one means
+    // Spotify has no translation for that song, not that it was asked wrongly.
+    // The variants stay so that the day the list fills, the same run shows
+    // which one brings the text. See AGENTS.md, the lyrics translation trap.
+    let variants: [(&str, &str, Option<&str>); 8] = [
+        ("plain", "", None),
+        ("q-translationLanguage", "?translationLanguage=es", None),
+        ("q-translation", "?translation=es", None),
+        ("q-targetLanguage", "?targetLanguage=es", None),
+        ("q-language", "?language=es", None),
+        ("q-translationLanguages", "?translationLanguages=es", None),
+        (
+            "q-web-translationLanguage",
+            "?format=json&vocalRemoval=false&market=from_token&translationLanguage=es",
+            None,
+        ),
+        ("q-translate", "?translate=true&translationLanguage=es", None),
+    ];
+    for (label, query, language) in variants {
+        let owned = session.clone();
+        let endpoint = format!("/color-lyrics/v2/track/{track_id}{query}");
+        let language = language.map(str::to_owned);
+        let answer = call(session, async move {
+            let mut headers = reqwest::header::HeaderMap::new();
+            if let Some(language) = language {
+                if let Ok(value) = reqwest::header::HeaderValue::from_str(&language) {
+                    headers.insert(reqwest::header::ACCEPT_LANGUAGE, value);
+                }
+            }
+            owned
+                .spclient()
+                .request_as_json(&reqwest::Method::GET, &endpoint, Some(headers), None)
+                .await
+                .map_err(|e| format!("{e}"))
+        });
+        match answer {
+            Ok(body) => log_lyrics_shape(&format!("{track_id} {label}"), &body),
+            Err(e) => log::info!("[lyrics] {track_id} {label}: falló: {e}"),
+        }
+    }
+}
