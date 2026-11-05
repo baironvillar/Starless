@@ -877,9 +877,12 @@ export default function App() {
    * `sortPlaylists` copies rather than rearranging, so the cached query value is
    * left alone.
    */
+  // The same query Home reads: "recently played" is its `last_played`, refreshed
+  // whenever a play is recorded.
+  const lastPlayed = useHomeStats().data?.last_played;
   const orderedPlaylists = useMemo(
-    () => sortPlaylists(playlists.data ?? [], sortOrder),
-    [playlists.data, sortOrder],
+    () => sortPlaylists(playlists.data ?? [], sortOrder, lastPlayed),
+    [playlists.data, sortOrder, lastPlayed],
   );
 
   /**

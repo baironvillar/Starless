@@ -295,8 +295,9 @@ fn is_hex_color(value: &str) -> bool {
 /// How the library opens: by name, and which way round.
 pub const DEFAULT_LIBRARY_SORT: &str = "name-asc";
 
-/// The four orders the data can answer. Anything else in the file is ignored.
-pub const LIBRARY_SORTS: [&str; 4] = ["name-asc", "name-desc", "creator", "tracks"];
+/// The orders the data can answer; `recent` reads the local history. Anything
+/// else in the file is ignored.
+pub const LIBRARY_SORTS: [&str; 5] = ["name-asc", "name-desc", "creator", "tracks", "recent"];
 
 /// Which way the shelf is drawn. The grid is the one that ships, because the card
 /// is what the artwork is for.
