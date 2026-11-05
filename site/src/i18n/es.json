@@ -124,7 +124,7 @@
     "play-button": "Botón de reproducir",
     "play-button-bone-hint": "Hueso: neutro sobre cualquier fondo.",
     "surface-opacity": "Opacidad de las superficies",
-    "surface-opacity-hint": "Cuánto se ve tu fondo a través de las barras, la biblioteca, la cola y los accesos. Los menús acompañan desde el 55 %, para que se puedan leer sobre las canciones.",
+    "surface-opacity-hint": "Cuánto se ve tu fondo a través de las barras, la biblioteca, la cola, los accesos y los menús. Ajustes y los diálogos no bajan del 55 %, para que se puedan leer sobre las canciones.",
     "transparent": "Transparente",
     "solid": "Sólido",
     "reset-customisation": "Restablecer la personalización",

@@ -124,7 +124,7 @@
     "play-button": "Play button",
     "play-button-bone-hint": "Bone: neutral on any background.",
     "surface-opacity": "Surface opacity",
-    "surface-opacity-hint": "How much of your background shows through the bars, the library, the queue and the shortcuts. Menus join in from 55%, so they stay readable over your songs.",
+    "surface-opacity-hint": "How much of your background shows through the bars, the library, the queue, the shortcuts and the menus. Settings and dialogs stay at 55% or more, so they stay readable over your songs.",
     "transparent": "Transparent",
     "solid": "Solid",
     "reset-customisation": "Reset customisation",
