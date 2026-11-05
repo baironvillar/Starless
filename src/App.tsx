@@ -188,6 +188,18 @@ const RECENT_FOR_RADIO = 5;
 const JAM_POLL_MS = 3000;
 
 /**
+ * How long the pointer has to rest on a tile before its songs are asked for.
+ *
+ * **A fifth of a second is what separates "I am going to open this" from "the
+ * mouse is on its way somewhere else".** The rail is a column of tiles and the
+ * pointer crosses all of them; asking on every `pointerenter` started one full
+ * fetch per tile the mouse passed over, and they compete for the same
+ * connection — so the playlist you actually clicked got slower because of the
+ * ones you only swept past.
+ */
+const PREFETCH_REST_MS = 200;
+
+/**
  * The fade that dissolves the edges of the content area, as a mask.
  *
  * **A mask, and not a gradient painted over the content.** A gradient element
@@ -2264,16 +2276,39 @@ export default function App() {
    * the click refetches all over again — and every extra hover does it once
    * more. For a playlist past fifty songs that is one request per page, per
    * hover; the log showed a single playlist downloaded six times in ten seconds.
+   *
+   * **And the pointer has to rest before anything is asked for.** The rail is a
+   * column of tiles and the mouse crosses all of them; asking on every
+   * `pointerenter` started one full fetch per tile the mouse passed over, and
+   * they compete for the same connection — so the playlist you actually clicked
+   * got slower because of the ones you only swept past. The log says it: three
+   * fetches together took 534, 833 and 1168 ms, each one slower than the last
+   * because the other two were in the way. A fifth of a second of stillness is
+   * what separates "I am going to open this" from "the mouse is on its way
+   * somewhere else", and only the first one is worth a round trip.
    */
+  const prefetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onPrefetchPlaylist = useCallback(
     (playlistId: string) => {
-      void queryClient.prefetchQuery({
-        queryKey: keys.playlistTracks(playlistId),
-        queryFn: () => invoke<Track[]>("playlist_tracks", { playlistId }),
-        staleTime: PLAYLIST_STALE_MS,
-      });
+      if (prefetchTimer.current !== null) clearTimeout(prefetchTimer.current);
+      prefetchTimer.current = setTimeout(() => {
+        prefetchTimer.current = null;
+        void queryClient.prefetchQuery({
+          queryKey: keys.playlistTracks(playlistId),
+          queryFn: () => invoke<Track[]>("playlist_tracks", { playlistId }),
+          staleTime: PLAYLIST_STALE_MS,
+        });
+      }, PREFETCH_REST_MS);
     },
     [queryClient],
+  );
+
+  // The pending prefetch belongs to a screen that may not exist anymore.
+  useEffect(
+    () => () => {
+      if (prefetchTimer.current !== null) clearTimeout(prefetchTimer.current);
+    },
+    [],
   );
 
   /**
