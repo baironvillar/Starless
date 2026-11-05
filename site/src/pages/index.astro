@@ -119,6 +119,8 @@ const home = new URL(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/`, Astro.si
   .brand { display: inline-flex; align-items: center; gap: 10px; }
   .brand img { width: 28px; height: 28px; }
   .brand .sl-wordmark { font-size: 22px; line-height: 1; }
+  /* The version number read as noise next to the name; what a visitor needs to know is that the app is still a beta. */
+  .beta { padding: 3px 8px; border: 1px solid var(--sl-glass-border); border-radius: 999px; font: 500 11px var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--mute); }
   /* The language: both names, the one being read in frost. */
   .lang { display: inline-flex; gap: 6px; padding: 4px 0; border: 0; background: none; color: var(--mute); font: 500 13px var(--font-mono); cursor: pointer; transition: transform 160ms var(--ease-out); }
   .lang span { transition: color 200ms ease; }
@@ -136,7 +138,8 @@ const home = new URL(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/`, Astro.si
   /* The mark on its glass plate, like the app icon: the hero is the logo. */
   .plate { width: clamp(112px, 11vw, 168px); aspect-ratio: 1; border-radius: 22.5%; display: grid; place-items: center; margin-bottom: 30px; }
   .plate img { width: 76%; height: 76%; }
-  .pitch h1 { font-size: clamp(64px, 7.4vw, 112px); line-height: 0.95; padding-bottom: 0.06em; }
+  /* As wide as the word, not as the column: at 112px "starless" ran 10px past the 34rem column, and the silver gradient (background-clip: text) paints only inside the box, so the last "s" was cut off. The padding is the wordmark's -0.03em tracking, which is also taken after the last letter and pulls the box in past its ink. */
+  .pitch h1 { width: max-content; padding-right: 0.04em; font-size: clamp(64px, 7.4vw, 112px); line-height: 0.95; padding-bottom: 0.06em; }
   .pitch p { margin-top: 22px; font-size: clamp(17px, 1.4vw, 20px); line-height: 1.55; color: var(--body); max-width: 26rem; }
   .pitch .key { margin-top: 30px; }
   .pitch .fine { margin-top: 14px; font-size: 13px; color: var(--mute); }
@@ -416,7 +419,7 @@ const home = new URL(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/`, Astro.si
   <section class="hero" id="inicio" data-track="Starless" data-track-es="Starless">
     <canvas id="ferro" aria-hidden="true"></canvas>
     <header class="top">
-      <span class="brand"><img src={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/starless.svg`} alt="" width="28" height="28" /><span class="sl-wordmark">starless</span><span class="nums"><span data-version>0.5.5</span></span></span>
+      <span class="brand"><img src={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/starless.svg`} alt="" width="28" height="28" /><span class="sl-wordmark">starless</span><span class="beta">Beta</span></span>
       <nav aria-label="Sections" data-es-label="Secciones"><a href="#que-hace" data-es="Qué hace">What it does</a><a href="#antes" data-es="Antes de instalar">Before you install</a><a href="https://github.com/baironvillar/Starless">GitHub</a><button class="lang" type="button" aria-label="Ver en español" data-es-label="View in English"><span lang="en">EN</span><span lang="es">ES</span></button></nav>
     </header>
     <div class="stage" aria-hidden="true"></div>
@@ -429,7 +432,7 @@ const home = new URL(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/`, Astro.si
         <span data-es="Descargar para Windows">Download for Windows</span>
         <span class="size nums" data-size>8.1 MB</span>
       </a>
-      <p class="fine nums" data-es="Versión <span data-version>0.5.5</span> · Windows 10 y 11 · Requiere Premium">Version <span data-version>0.5.5</span> · Windows 10 and 11 · Requires Premium</p>
+      <p class="fine nums" data-es="En beta · Windows 10 y 11 · Requiere Premium">In beta · Windows 10 and 11 · Requires Premium</p>
     </div>
   </section>
 
@@ -562,7 +565,7 @@ const home = new URL(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/`, Astro.si
   <canvas class="dot" id="dot" width="84" height="84" aria-hidden="true"></canvas>
   <div class="now">
     <div class="line"><span id="title-now">Starless</span></div>
-    <small class="nums" data-es="Versión <span data-version>0.5.5</span> · Para Windows">Version <span data-version>0.5.5</span> · For Windows</small>
+    <small class="nums" data-es="En beta · Para Windows">In beta · For Windows</small>
     <div class="bar" aria-hidden="true"><i id="progress"></i></div>
   </div>
   <a class="key" href="https://github.com/baironvillar/Starless/releases/download/v0.5.5/Starless_0.5.5_x64.msi" data-msi aria-label="Download for Windows" data-es-label="Descargar para Windows"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0l-5-5m5 5l5-5M5 20h14"/></svg><span data-es="Descargar">Download</span></a>
@@ -1020,10 +1023,9 @@ void main() {
   // answers with a prerelease or a draft, so a develop build can't land here.
   // If the question fails (offline, rate limit) the written link still works.
   // The size is the one written with the page until GitHub says otherwise.
-  let lang = "en", version = null, bytes = 8474624;
+  let lang = "en", bytes = 8474624;
   // MiB, because that is the number Windows shows next to the downloaded file.
   const paint = () => {
-    if (version) for (const v of document.querySelectorAll("[data-version]")) v.textContent = version;
     const mb = new Intl.NumberFormat(lang, { maximumFractionDigits: 1 }).format(bytes / 1048576);
     for (const s of document.querySelectorAll("[data-size]")) s.textContent = `${mb} MB`;
   };
@@ -1033,7 +1035,6 @@ void main() {
       const msi = release.assets.find((a) => a.name.endsWith(".msi"));
       if (!msi) return;
       for (const k of document.querySelectorAll("[data-msi]")) k.href = msi.browser_download_url;
-      version = release.tag_name.replace(/^v/, "");
       bytes = msi.size;
       paint();
     })
