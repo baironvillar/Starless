@@ -2554,9 +2554,12 @@ export default function App() {
    * One ground, two pictures: the cover wins while it is asked for and there is
    * a song to take it from, and the person's photo comes back the moment it is
    * not. Never both stacked — two blurred images under the glass read as mud.
+   *
+   * On the phone the lyrics live in the full player, so "with lyrics" follows
+   * `lyricsOpen` itself: the player's sheet is glass and the cover shows through.
    */
-  const coverGround =
-    !MOBILE && (effect.cover === "always" || (effect.cover === "lyrics" && lyricsInMain));
+  const lyricsShown = MOBILE ? lyricsOpen : lyricsInMain;
+  const coverGround = effect.cover === "always" || (effect.cover === "lyrics" && lyricsShown);
   const groundUrl = (coverGround && coverUrl) || background.url;
   const cinemaOn = cinema && lyricsInMain;
 

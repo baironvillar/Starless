@@ -43,8 +43,8 @@ const ICONS: Record<string, string> = {
   search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
   users:
     '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
-  sliders:
-    '<path d="M4 21v-7"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M20 21v-5"/><path d="M20 12V3"/><path d="M2 14h4"/><path d="M10 8h4"/><path d="M18 16h4"/>',
+  settings:
+    '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
   more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
   minimize: '<path d="M5 12h14"/>',
   maximize: '<rect x="5" y="5" width="14" height="14" rx="1.5"/>',
@@ -67,6 +67,10 @@ const ICONS: Record<string, string> = {
   grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/>',
   list: '<path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/>',
   play: '<path d="m6 3 14 9-14 9z"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  chevron: '<path d="m6 9 6 6 6-6"/>',
+  pencil:
+    '<path d="M21.2 6.8a2.8 2.8 0 0 0-4-4L3.8 16.2a2 2 0 0 0-.5.8l-1.3 4.4a.5.5 0 0 0 .6.6l4.4-1.3a2 2 0 0 0 .8-.5z"/>',
   pause:
     '<rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>',
 };
@@ -88,6 +92,11 @@ const QUEUED = 5;
 
 /** Bars are the width of the word they stand for; these are the widths. */
 const TITLE_BARS = [150, 96, 176, 124, 84];
+
+/** The app's accent presets, in its order (`ACCENT_PRESETS` in SettingsPanel.tsx). */
+const ACCENTS = ["#ff5a36", "#7c6cff", "#3dd6c4", "#f5b83d", "#c4c1c8", "#ff8fb1"];
+
+import { t } from "../i18n";
 ---
 
 <div class="m" data-variant={variant}>
@@ -99,17 +108,16 @@ const TITLE_BARS = [150, 96, 176, 124, 84];
           <span class="m-div" />
           <span class="m-pill">
             <Fragment set:html={icon("library", 16)} />
-            <span data-es="Tu biblioteca">Your library</span>
+            <span data-i18n="screen.your-library" set:html={t("screen.your-library")}></span>
           </span>
         </div>
         <div class="m-search">
           <Fragment set:html={icon("search", 16)} />
-          <span data-es="Buscar canciones">Search songs</span>
+          <span data-i18n="screen.search-songs" set:html={t("screen.search-songs")}></span>
         </div>
         <div class="m-top-r">
-          <span class="m-icbtn"><Fragment set:html={icon("users", 17)} /></span>
-          <span class="m-icbtn"><Fragment set:html={icon("sliders", 17)} /></span>
-          <span class="m-icbtn"><Fragment set:html={icon("more", 17)} /></span>
+          {/* One gear, as in the app: friends, the mixer and the overflow menu used to sit here and are gone. */}
+          <span class="m-icbtn"><Fragment set:html={icon("settings", 17)} /></span>
           <span class="m-div" />
           <span class="m-win"><Fragment set:html={icon("minimize", 14)} /></span>
           <span class="m-win"><Fragment set:html={icon("maximize", 13)} /></span>
@@ -124,7 +132,7 @@ const TITLE_BARS = [150, 96, 176, 124, 84];
       <>
         <aside class="m-panel">
           <div class="m-panel-h">
-            <span class="m-panel-t" data-es="Tu biblioteca">Your library</span>
+            <span class="m-panel-t" data-i18n="screen.your-library" set:html={t("screen.your-library")}></span>
             <span class="m-icbtn"><Fragment set:html={icon("panel", 16)} /></span>
           </div>
           <div class="m-panel-c">
@@ -135,7 +143,7 @@ const TITLE_BARS = [150, 96, 176, 124, 84];
           <div class="m-tiles">
             <div class="m-tile">
               <span class="m-cover m-cover-liked"><Fragment set:html={likedCover} /></span>
-              <span class="m-cap" data-es="Canciones que te gustan">Liked Songs</span>
+              <span class="m-cap" data-i18n="screen.liked-songs" set:html={t("screen.liked-songs")}></span>
             </div>
             {Array.from({ length: TILES }).map((_, i) => (
               <div class="m-tile">
@@ -150,8 +158,8 @@ const TITLE_BARS = [150, 96, 176, 124, 84];
         </aside>
 
         <div class="m-main m-main-panel">
-          <h1 class="m-h1" data-es="Inicio">Home</h1>
-          <p class="m-sub">24 playlists</p>
+          <h1 class="m-h1" data-i18n="screen.home" set:html={t("screen.home")}></h1>
+          <p class="m-sub" data-i18n="screen.playlists-count" data-i18n-count="24" set:html={t("screen.playlists-count", { count: 24 })}></p>
           <div class="m-shelf">
             {Array.from({ length: SHELF }).map((_, i) => (
               <div class="m-card">
@@ -160,7 +168,12 @@ const TITLE_BARS = [150, 96, 176, 124, 84];
                   class="m-bar"
                   style={`width:calc(${110 + (i % 3) * 22} * var(--u))`}
                 />
-                <span class="m-count">{12 + (i % 4) * 7} canciones</span>
+                <span
+                  class="m-count"
+                  data-i18n="screen.songs-count"
+                  data-i18n-count={12 + (i % 4) * 7}
+                  set:html={t("screen.songs-count", { count: 12 + (i % 4) * 7 })}
+                ></span>
               </div>
             ))}
           </div>
@@ -191,7 +204,7 @@ const TITLE_BARS = [150, 96, 176, 124, 84];
                 <span class="m-ava" />
                 <span class="m-bar m-bar-sm" style="width:calc(110 * var(--u))" />
                 <span class="m-dot" />
-                <span class="m-meta-t" data-es="24 canciones · 1 h 12 min">24 songs · 1 h 12 min</span>
+                <span class="m-meta-t" data-i18n="screen.24-songs-1-h-12-min" set:html={t("screen.24-songs-1-h-12-min")}></span>
               </div>
             </div>
           </div>
@@ -202,7 +215,7 @@ const TITLE_BARS = [150, 96, 176, 124, 84];
             <span class="m-icbtn"><Fragment set:html={icon("more", 20)} /></span>
             <span class="m-pl-right">
               <span class="m-icbtn"><Fragment set:html={icon("search", 16)} /></span>
-              <span class="m-order" data-es="Orden personalizado">Custom order</span>
+              <span class="m-order" data-i18n="screen.custom-order" set:html={t("screen.custom-order")}></span>
               <span class="m-icbtn"><Fragment set:html={icon("list", 16)} /></span>
             </span>
           </div>
@@ -211,9 +224,9 @@ const TITLE_BARS = [150, 96, 176, 124, 84];
             <div class="m-thead">
               <span>#</span>
               <span />
-              <span data-es="TÍTULO">TITLE</span>
-              <span data-es="ÁLBUM">ALBUM</span>
-              <span data-es="FECHA DE ADICIÓN">DATE ADDED</span>
+              <span data-i18n="screen.title" set:html={t("screen.title")}></span>
+              <span data-i18n="screen.album" set:html={t("screen.album")}></span>
+              <span data-i18n="screen.date-added" set:html={t("screen.date-added")}></span>
               <span class="m-tright"><Fragment set:html={icon("clock", 14)} /></span>
             </div>
             {Array.from({ length: TRACKS }).map((_, i) => (
@@ -247,11 +260,11 @@ const TITLE_BARS = [150, 96, 176, 124, 84];
     variant === "queue" && (
       <aside class="m-queue">
         <div class="m-q-h">
-          <span class="m-q-t" data-es="Cola de reproducción">Play queue</span>
+          <span class="m-q-t" data-i18n="screen.play-queue" set:html={t("screen.play-queue")}></span>
           <span class="m-icbtn"><Fragment set:html={icon("users", 16)} /></span>
           <span class="m-icbtn"><Fragment set:html={icon("close", 16)} /></span>
         </div>
-        <p class="m-q-eyebrow" data-es="AHORA SUENA">NOW PLAYING</p>
+        <p class="m-q-eyebrow" data-i18n="screen.now-playing" set:html={t("screen.now-playing")}></p>
         <div class="m-q-now">
           <span class={`m-cover m-cov-sm m-cv2`} />
           <span class="m-tmain">
@@ -259,7 +272,7 @@ const TITLE_BARS = [150, 96, 176, 124, 84];
             <span class="m-bar m-bar-sm" style="width:calc(78 * var(--u))" />
           </span>
         </div>
-        <p class="m-q-eyebrow" data-es="A CONTINUACIÓN">NEXT UP</p>
+        <p class="m-q-eyebrow" data-i18n="screen.next-up" set:html={t("screen.next-up")}></p>
         {Array.from({ length: QUEUED }).map((_, i) => (
           <div class="m-q-row">
             <span class="m-tnum">{i + 1}</span>
@@ -288,38 +301,100 @@ const TITLE_BARS = [150, 96, 176, 124, 84];
         </div>
         <div class="m-sheet">
           <nav class="m-sheet-nav">
-            <h2 class="m-sheet-h" data-es="Ajustes">Settings</h2>
-            <p class="m-sheet-sub" data-es="Audio, cuenta y diagnóstico.">Audio, account and diagnostics.</p>
+            <h2 class="m-sheet-h" data-i18n="screen.settings" set:html={t("screen.settings")}></h2>
+            <p class="m-sheet-sub" data-i18n="screen.audio-account-and-diagnostics" set:html={t("screen.audio-account-and-diagnostics")}></p>
             <span class="m-navitem">General</span>
             <span class="m-navitem">Audio</span>
-            <span class="m-navitem" data-es="Cuenta">Account</span>
-            <span class="m-navitem m-navitem-on" data-es="Personalización">Customisation</span>
-            <span class="m-navitem" data-es="Diagnóstico">Diagnostics</span>
+            <span class="m-navitem" data-i18n="screen.account" set:html={t("screen.account")}></span>
+            <span class="m-navitem m-navitem-on" data-i18n="screen.customisation" set:html={t("screen.customisation")}></span>
+            <span class="m-navitem" data-i18n="screen.diagnostics" set:html={t("screen.diagnostics")}></span>
+            <p class="m-saved" data-i18n="screen.saved-automatically" set:html={t("screen.saved-automatically")}></p>
           </nav>
+          {/*
+            Personalización as the app draws it today, in its Appearance part: the
+            same three tabs, the same rows in the same cards, the shipped values
+            (dark theme, the Ember accent, the Bone play button, 32%).
+          */}
           <div class="m-sheet-body">
-            <div class="m-card-row">
-              <div>
-                <p class="m-row-t" data-es="Opacidad de los menús">Menu opacity</p>
-                <p class="m-row-d" data-es="Qué tan sólidos se ven los menús.">How solid the menus look.</p>
+            <div class="m-sheet-top">
+              <span class="m-settings-search">
+                <Fragment set:html={icon("search", 15)} />
+                <span data-i18n="screen.search-settings" set:html={t("screen.search-settings")}></span>
+              </span>
+              <span class="m-icbtn m-sheet-x"><Fragment set:html={icon("close", 17)} /></span>
+            </div>
+            <div class="m-tabs">
+              <span class="m-tab m-tab-on" data-i18n="screen.appearance" set:html={t("screen.appearance")}></span>
+              <span class="m-tab" data-i18n="screen.background" set:html={t("screen.background")}></span>
+              <span class="m-tab" data-i18n="screen.effects" set:html={t("screen.effects")}></span>
+              <span class="m-peek">
+                <Fragment set:html={icon("eye", 15)} />
+                <span data-i18n="screen.hold-to-preview" set:html={t("screen.hold-to-preview")}></span>
+              </span>
+            </div>
+            <div class="m-cards">
+              <div class="m-group">
+                <div class="m-row">
+                  <p class="m-row-t" data-i18n="screen.theme" set:html={t("screen.theme")}></p>
+                  <span class="m-select">
+                    <span data-i18n="screen.theme-dark" set:html={t("screen.theme-dark")}></span>
+                    <Fragment set:html={icon("chevron", 14)} />
+                  </span>
+                </div>
               </div>
-              <div class="m-slider">
-                <span class="m-slider-n">55%</span>
-                <span class="m-slider-t"><span class="m-slider-k" /></span>
-                <span class="m-legend" />
+              <div class="m-group">
+                <div class="m-row">
+                  <div>
+                    <p class="m-row-t" data-i18n="screen.main-colour" set:html={t("screen.main-colour")}></p>
+                    <p class="m-row-d" data-i18n="screen.the-colour-that-marks-actions" set:html={t("screen.the-colour-that-marks-actions")}></p>
+                  </div>
+                  <span class="m-swatches">
+                    {ACCENTS.map((hex, i) => (
+                      <span class={`m-sw${i === 0 ? " m-sw-on" : ""}`} style={`background:${hex}`} />
+                    ))}
+                    <span class="m-sw m-sw-pick"><Fragment set:html={icon("pencil", 12)} /></span>
+                  </span>
+                </div>
+                <div class="m-row">
+                  <div>
+                    <p class="m-row-t" data-i18n="screen.play-button" set:html={t("screen.play-button")}></p>
+                    <p class="m-row-d" data-i18n="screen.play-button-bone-hint" set:html={t("screen.play-button-bone-hint")}></p>
+                  </div>
+                  <span class="m-swatches">
+                    <span class="m-dress m-dress-bone m-sw-on"><Fragment set:html={iconFilled("play", 11)} /></span>
+                    <span class="m-dress m-dress-accent"><Fragment set:html={iconFilled("play", 11)} /></span>
+                    <span class="m-dress m-dress-cover"><Fragment set:html={iconFilled("play", 11)} /></span>
+                    <span class="m-dress m-dress-glass"><Fragment set:html={iconFilled("play", 11)} /></span>
+                  </span>
+                </div>
+              </div>
+              <div class="m-group m-group-span">
+                <div class="m-row">
+                  <div class="m-row-text">
+                    <p class="m-row-t" data-i18n="screen.surface-opacity" set:html={t("screen.surface-opacity")}></p>
+                    <p class="m-row-d" data-i18n="screen.surface-opacity-hint" set:html={t("screen.surface-opacity-hint")}></p>
+                  </div>
+                  <span class="m-slider">
+                    <span class="m-slider-n">32%</span>
+                    <span class="m-slider-col">
+                      <span class="m-slider-t"><span class="m-slider-k" /></span>
+                      <span class="m-slider-ends">
+                        <span data-i18n="screen.transparent" set:html={t("screen.transparent")}></span>
+                        <span data-i18n="screen.solid" set:html={t("screen.solid")}></span>
+                      </span>
+                    </span>
+                    <span class="m-legend" />
+                  </span>
+                </div>
               </div>
             </div>
-            <div class="m-card-row">
-              <div>
-                <p class="m-row-t" data-es="Color de acento">Main colour</p>
-                <p class="m-row-d" data-es="El color que marca las acciones.">The colour that marks actions.</p>
-              </div>
-              <div class="m-swatches">
-                <span class="m-sw" style="background:#d7e24a" />
-                <span class="m-sw" style="background:#3dd6c4" />
-                <span class="m-sw" style="background:#7fc4e0" />
-                <span class="m-sw" style="background:#9db4e8" />
-                <span class="m-sw" style="background:#c9a6e0" />
-                <span class="m-sw m-sw-pick" />
+            <div class="m-group m-group-reset">
+              <div class="m-row">
+                <div>
+                  <p class="m-row-t" data-i18n="screen.reset-customisation" set:html={t("screen.reset-customisation")}></p>
+                  <p class="m-row-d" data-i18n="screen.reset-customisation-hint" set:html={t("screen.reset-customisation-hint")}></p>
+                </div>
+                <span class="m-btn" data-i18n="screen.reset" set:html={t("screen.reset")}></span>
               </div>
             </div>
           </div>
@@ -407,6 +482,13 @@ const TITLE_BARS = [150, 96, 176, 124, 84];
     background: rgb(21 21 27 / 0.82);
     box-shadow: 0 24px 48px -12px rgb(0 0 0 / 0.6);
     border-radius: calc(20 * var(--u));
+  }
+  /* The app clips what does not fit, and so does the drawing: the library's last
+     row of tiles used to hang out under the panel and over the player bar. */
+  .m-panel,
+  .m-rail,
+  .m-queue {
+    overflow: hidden;
   }
 
   /* The bar on top: home, library, search, the window's own buttons. */
@@ -617,11 +699,15 @@ const TITLE_BARS = [150, 96, 176, 124, 84];
   }
 
   /* The shelf in "Inicio". */
+  /* The content stops where the player starts and fades out there, as in the app:
+     the second row of cards ran on under the player and out below it. */
   .m-main {
     position: absolute;
     top: calc(104 * var(--u));
     bottom: calc(144 * var(--u));
     z-index: 1;
+    overflow: hidden;
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 44 * var(--u)), transparent);
   }
   .m-main-panel {
     left: calc(284 * var(--u));
@@ -1006,42 +1092,199 @@ const TITLE_BARS = [150, 96, 176, 124, 84];
     background: rgb(255 255 255 / 0.1);
     color: var(--ink);
   }
-  .m-sheet-body {
-    padding: calc(40 * var(--u));
-  }
-  .m-card-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: calc(40 * var(--u));
-    max-width: calc(620 * var(--u));
-    padding: calc(20 * var(--u)) calc(22 * var(--u));
-    margin-bottom: calc(20 * var(--u));
-    border-radius: calc(16 * var(--u));
-    border: calc(1 * var(--u)) solid rgb(255 255 255 / 0.1);
-    background: rgb(255 255 255 / 0.03);
-  }
-  .m-row-t {
-    font-size: calc(13.5 * var(--u));
-    font-weight: 600;
-  }
-  .m-row-d {
-    margin-top: calc(4 * var(--u));
+  .m-saved {
+    margin-top: auto;
+    padding: calc(12 * var(--u)) calc(8 * var(--u)) 0;
+    border-top: calc(1 * var(--u)) solid rgb(255 255 255 / 0.08);
     color: var(--mute);
     font-size: calc(12 * var(--u));
   }
-  .m-slider {
+  .m-sheet-body {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: calc(32 * var(--u)) calc(32 * var(--u)) 0;
+  }
+  .m-sheet-top {
     display: flex;
     align-items: center;
     gap: calc(12 * var(--u));
   }
-  .m-slider-n {
+  .m-settings-search {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: calc(10 * var(--u));
+    max-width: calc(440 * var(--u));
+    height: calc(36 * var(--u));
+    padding: 0 calc(16 * var(--u));
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.08);
+    color: var(--faint);
+    font-size: calc(13 * var(--u));
+  }
+  .m-sheet-x {
+    margin-left: auto;
+  }
+  .m-tabs {
+    display: flex;
+    align-items: center;
+    gap: calc(6 * var(--u));
+    margin-top: calc(16 * var(--u));
+  }
+  .m-tab {
+    padding: calc(8 * var(--u)) calc(14 * var(--u));
+    border-radius: 999px;
+    color: var(--mute);
+    font-size: calc(13 * var(--u));
+    font-weight: 500;
+  }
+  .m-tab-on {
+    background: rgb(255 255 255 / 0.12);
+    color: var(--ink);
+  }
+  .m-peek {
+    display: flex;
+    align-items: center;
+    gap: calc(8 * var(--u));
+    margin-left: auto;
+    padding: 0 calc(12 * var(--u));
+    color: var(--mute);
+    font-size: calc(13 * var(--u));
+    font-weight: 500;
+  }
+  /* Two columns of cards, the opacity crossing both, as the app lays them out. */
+  .m-cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+    gap: calc(20 * var(--u));
+    margin-top: calc(20 * var(--u));
+  }
+  .m-group {
+    overflow: hidden;
+    border-radius: calc(20 * var(--u));
+    border: calc(1 * var(--u)) solid rgb(255 255 255 / 0.08);
+    background: rgb(255 255 255 / 0.04);
+  }
+  .m-group-span {
+    grid-column: 1 / -1;
+  }
+  .m-group-reset {
+    margin-top: calc(20 * var(--u));
+  }
+  .m-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: calc(24 * var(--u));
+    padding: calc(16 * var(--u)) calc(20 * var(--u));
+  }
+  .m-row + .m-row {
+    border-top: calc(1 * var(--u)) solid rgb(255 255 255 / 0.08);
+  }
+  .m-row-text {
+    max-width: calc(520 * var(--u));
+  }
+  .m-row-t {
+    font-size: calc(13.5 * var(--u));
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .m-row-d {
+    margin-top: calc(3 * var(--u));
     color: var(--mute);
     font-size: calc(12 * var(--u));
+    line-height: 1.45;
+  }
+  .m-select {
+    display: flex;
+    align-items: center;
+    gap: calc(8 * var(--u));
+    height: calc(32 * var(--u));
+    padding: 0 calc(12 * var(--u)) 0 calc(14 * var(--u));
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.08);
+    font-size: calc(13 * var(--u));
+  }
+  .m-swatches {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: calc(4 * var(--u));
+  }
+  .m-sw,
+  .m-dress {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: calc(28 * var(--u));
+    height: calc(28 * var(--u));
+    border-radius: 999px;
+  }
+  .m-sw {
+    border: calc(2 * var(--u)) solid rgb(255 255 255 / 0.14);
+  }
+  .m-sw.m-sw-on {
+    border-color: var(--ink);
+  }
+  .m-dress {
+    margin-right: calc(4 * var(--u));
+  }
+  .m-dress.m-sw-on::after {
+    content: "";
+    position: absolute;
+    inset: calc(-3 * var(--u));
+    border-radius: 999px;
+    border: calc(2 * var(--u)) solid var(--ink);
+  }
+  /* The four dresses of the bar's play button: bone, the accent, the cover, glass with light. */
+  .m-dress-bone {
+    background: var(--ink);
+    color: var(--ground);
+  }
+  .m-dress-accent {
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+  .m-dress-cover {
+    background: linear-gradient(135deg, #ffb020, #c08bff);
+    color: var(--ground);
+  }
+  .m-dress-glass {
+    background: radial-gradient(circle at 50% 120%, rgb(255 90 54 / 0.55), rgb(255 255 255 / 0.1) 70%);
+    box-shadow: inset 0 0 0 calc(1 * var(--u)) rgb(255 255 255 / 0.22);
+    color: var(--ink);
+  }
+  .m-sw-pick {
+    margin-left: calc(4 * var(--u));
+    border: 0;
+    background:
+      linear-gradient(rgb(0 0 0 / 0.45), rgb(0 0 0 / 0.45)),
+      conic-gradient(#ff5a36, #ffb020, #3ddc97, #4cc9f0, #7aa2ff, #c08bff, #ff8fb1, #ff5a36);
+    color: #fff;
+  }
+  .m-slider {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: calc(12 * var(--u));
+  }
+  .m-slider-n {
+    min-width: calc(40 * var(--u));
+    text-align: right;
+    color: var(--faint);
+    font-size: calc(12 * var(--u));
+    font-variant-numeric: tabular-nums;
+  }
+  .m-slider-col {
+    display: flex;
+    flex-direction: column;
+    gap: calc(6 * var(--u));
   }
   .m-slider-t {
     position: relative;
-    width: calc(220 * var(--u));
+    width: calc(240 * var(--u));
     height: calc(4 * var(--u));
     border-radius: 999px;
     background: rgb(255 255 255 / 0.16);
@@ -1051,52 +1294,43 @@ const TITLE_BARS = [150, 96, 176, 124, 84];
     left: 0;
     top: 0;
     bottom: 0;
-    width: 55%;
+    width: 28%;
     border-radius: 999px;
-    background: var(--ink);
+    background: var(--accent);
   }
   .m-slider-k::after {
     content: "";
     position: absolute;
-    right: calc(-6 * var(--u));
+    right: calc(-7 * var(--u));
     top: 50%;
     translate: 0 -50%;
-    width: calc(12 * var(--u));
-    height: calc(12 * var(--u));
+    width: calc(14 * var(--u));
+    height: calc(14 * var(--u));
     border-radius: 999px;
-    background: var(--accent);
+    background: var(--ink);
   }
+  .m-slider-ends {
+    display: flex;
+    justify-content: space-between;
+    color: var(--faint);
+    font-size: calc(11.5 * var(--u));
+  }
+  /* The legend: what a surface looks like at the chosen opacity, over a stripe. */
   .m-legend {
-    width: calc(36 * var(--u));
-    height: calc(26 * var(--u));
+    width: calc(46 * var(--u));
+    height: calc(28 * var(--u));
     border-radius: calc(8 * var(--u));
     border: calc(1 * var(--u)) solid rgb(255 255 255 / 0.16);
-    background: repeating-linear-gradient(
-      45deg,
-      rgb(255 255 255 / 0.12) 0 4px,
-      rgb(0 0 0 / 0) 4px 8px
-    );
+    background:
+      linear-gradient(rgb(53 53 58 / 0.32), rgb(53 53 58 / 0.32)),
+      repeating-linear-gradient(45deg, rgb(255 255 255 / 0.14) 0 4px, rgb(0 0 0 / 0) 4px 8px);
   }
-  .m-swatches {
-    display: flex;
-    align-items: center;
-    gap: calc(10 * var(--u));
-  }
-  .m-sw {
-    width: calc(28 * var(--u));
-    height: calc(28 * var(--u));
+  .m-btn {
+    flex-shrink: 0;
+    padding: calc(8 * var(--u)) calc(16 * var(--u));
     border-radius: 999px;
-  }
-  .m-sw-pick {
-    background: conic-gradient(
-      #ff5a36,
-      #f5b83d,
-      #3dd6c4,
-      #7fc4e0,
-      #9db4e8,
-      #c9a6e0,
-      #ff5a36
-    );
-    box-shadow: inset 0 0 0 calc(3 * var(--u)) rgb(21 21 27 / 0.9);
+    background: rgb(255 255 255 / 0.08);
+    font-size: calc(13 * var(--u));
+    font-weight: 600;
   }
 </style>

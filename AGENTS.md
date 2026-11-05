@@ -77,11 +77,13 @@ src-tauri/src/
   settings.rs             lo que sobrevive a un reinicio
   logging.rs              el log local con rotación
 relay/                    el Worker que recibe los reportes y crea los issues
+site/                     la landing en Astro; su texto vive en site/src/i18n (i18next)
 .agent/                   configuración de agentes (Claude Code y OpenCode)
 docs/updates.md           cómo se publica una versión
 docs/escribir-playlists.md el protocolo para crear una playlist, y cómo se supo
 docs/jam.md               el protocolo de la sesión compartida, y cómo se supo
 docs/android.md           llevar la app a Android: lo que hay que medir antes
+docs/landing-i18n.md      los idiomas de la landing: dónde vive cada texto y cómo se agrega
 ```
 
 **Antes de tocar la creación de playlists, lee `docs/escribir-playlists.md`.** Es

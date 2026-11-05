@@ -5,6 +5,7 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
 import { routeContextMenu } from "./lib/contextMenu";
+import { followPointer } from "./lib/followPointer";
 import { applyCachedSurfaceOpacity, applyCachedTheme, useEffectsSettings } from "./lib/spotify";
 import { isMobile } from "./lib/version";
 
@@ -76,6 +77,8 @@ applyCachedTheme();
 applyCachedSurfaceOpacity();
 // The phone's long press has its own path (PhoneTrackRow); right-click is the desktop's.
 if (!isMobile()) routeContextMenu();
+// For the life of the window: the glass play button's light follows the mouse.
+followPointer();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
