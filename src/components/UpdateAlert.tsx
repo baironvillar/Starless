@@ -66,7 +66,7 @@ export function UpdateAlert({ t }: UpdateAlertProps) {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={SPRING}
-            className="glass pointer-events-auto flex max-w-[460px] items-center gap-3 rounded-pill px-4 py-2.5 text-left"
+            className="glass-overlay pointer-events-auto flex max-w-[460px] items-center gap-3 rounded-pill px-4 py-2.5 text-left"
           >
             <span className="size-2 shrink-0 rounded-pill bg-live" />
             <span className="min-w-0">

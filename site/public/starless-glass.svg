@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="512" height="512" role="img" aria-label="Starless">
+  <title>Starless</title>
+  <defs>
+    <linearGradient id="sl-ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.95"/>
+      <stop offset="0.45" stop-color="#C4C1C8" stop-opacity="0.45"/>
+      <stop offset="0.75" stop-color="#FFFFFF" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#DAD7DD" stop-opacity="0.6"/>
+    </linearGradient>
+    <linearGradient id="sl-tube" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.85"/>
+      <stop offset="0.35" stop-color="#FFFFFF" stop-opacity="0.15"/>
+      <stop offset="0.7" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.45"/>
+    </linearGradient>
+    <linearGradient id="sl-wave" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="1"/>
+      <stop offset="0.5" stop-color="#DAD7DD" stop-opacity="0.8"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.55"/>
+    </linearGradient>
+    <filter id="sl-soft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="1.6"/></filter>
+    <filter id="sl-glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="3"/></filter>
+  </defs>
+  <circle cx="50" cy="50" r="43" fill="none" stroke="url(#sl-ring)" stroke-width="5"/>
+  <circle cx="50" cy="50" r="44.6" fill="none" stroke="#FFFFFF" stroke-width="0.9" stroke-opacity="0.7" stroke-dasharray="67 300" stroke-linecap="round" transform="rotate(180 50 50)"/>
+  <rect x="19.5" y="35" width="5" height="30" rx="2.5" fill="#DAD7DD" fill-opacity="0.85"/>
+  <rect x="27.5" y="24" width="5" height="52" rx="2.5" fill="#C4C1C8" fill-opacity="0.82"/>
+  <rect x="35.5" y="19" width="5" height="62" rx="2.5" fill="#A8A5AD" fill-opacity="0.8"/>
+  <rect x="43.5" y="24" width="5" height="52" rx="2.5" fill="#8C8992" fill-opacity="0.78"/>
+  <rect x="51.5" y="31" width="5" height="38" rx="2.5" fill="#706E77" fill-opacity="0.76"/>
+  <rect x="59.5" y="37" width="5" height="26" rx="2.5" fill="#55535C" fill-opacity="0.74"/>
+  <rect x="67.5" y="42" width="5" height="16" rx="2.5" fill="#3A3941" fill-opacity="0.72"/>
+  <rect x="75.5" y="46" width="5" height="8" rx="2.5" fill="#2E2D35" fill-opacity="0.7"/>
+  <rect x="19.5" y="35" width="5" height="30" rx="2.5" fill="url(#sl-tube)" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="0.5"/>
+  <rect x="27.5" y="24" width="5" height="52" rx="2.5" fill="url(#sl-tube)" stroke="#FFFFFF" stroke-opacity="0.32" stroke-width="0.5"/>
+  <rect x="35.5" y="19" width="5" height="62" rx="2.5" fill="url(#sl-tube)" stroke="#FFFFFF" stroke-opacity="0.28" stroke-width="0.5"/>
+  <rect x="43.5" y="24" width="5" height="52" rx="2.5" fill="url(#sl-tube)" stroke="#FFFFFF" stroke-opacity="0.24" stroke-width="0.5" opacity="0.85"/>
+  <rect x="51.5" y="31" width="5" height="38" rx="2.5" fill="url(#sl-tube)" stroke="#FFFFFF" stroke-opacity="0.2" stroke-width="0.5" opacity="0.7"/>
+  <rect x="59.5" y="37" width="5" height="26" rx="2.5" fill="url(#sl-tube)" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="0.5" opacity="0.55"/>
+  <rect x="67.5" y="42" width="5" height="16" rx="2.5" fill="url(#sl-tube)" stroke="#FFFFFF" stroke-opacity="0.12" stroke-width="0.5" opacity="0.4"/>
+  <rect x="75.5" y="46" width="5" height="8" rx="2.5" fill="url(#sl-tube)" stroke="#FFFFFF" stroke-opacity="0.1" stroke-width="0.5" opacity="0.3"/>
+  <path d="M16 50 C 27 20, 39 20, 50 50 S 73 80, 84 50" fill="none" stroke="#0B0B0F" stroke-opacity="0.85" stroke-width="14" stroke-linecap="round" filter="url(#sl-soft)"/>
+  <path d="M16 50 C 27 20, 39 20, 50 50 S 73 80, 84 50" fill="none" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="8" stroke-linecap="round" filter="url(#sl-glow)"/>
+  <path d="M16 50 C 27 20, 39 20, 50 50 S 73 80, 84 50" fill="none" stroke="url(#sl-wave)" stroke-width="7" stroke-linecap="round"/>
+  <path d="M16 48.4 C 27 18.4, 39 18.4, 50 48.4 S 73 78.4, 84 48.4" fill="none" stroke="#FFFFFF" stroke-opacity="0.9" stroke-width="1.3" stroke-linecap="round"/>
+</svg>

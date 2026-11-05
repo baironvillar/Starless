@@ -1,17 +1,24 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { ChevronLeft, Search, Settings } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { AlbumScreen } from "./components/AlbumScreen";
 import { ArtistScreen } from "./components/ArtistScreen";
 import { AuthGate } from "./components/AuthGate";
 import { CrashPrompt } from "./components/CrashPrompt";
+import { CursorGlow } from "./components/CursorGlow";
 import { FeedbackPanel } from "./components/FeedbackPanel";
 import { HomeScreen } from "./components/HomeScreen";
+import { JamPanel } from "./components/JamPanel";
 import { LibrarySidebar } from "./components/LibrarySidebar";
 import { LyricsPanel } from "./components/LyricsPanel";
+import { MobileLibrary } from "./components/MobileLibrary";
+import { type MobileTab, MobileTabBar } from "./components/MobileTabBar";
 import { NewPlaylistDialog } from "./components/NewPlaylistDialog";
 import { PlayerBar, type RepeatMode } from "./components/PlayerBar";
+import { PlaylistContextMenu } from "./components/PlaylistMenu";
 import { PlaylistScreen } from "./components/PlaylistScreen";
 import { QueuePanel } from "./components/QueuePanel";
 import { SearchScreen } from "./components/SearchScreen";
@@ -19,47 +26,85 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { TopBar } from "./components/TopBar";
 import { TrackList } from "./components/TrackList";
 import { UpdateAlert } from "./components/UpdateAlert";
+import { useBackRoot } from "./lib/back";
 import { type Lang, type StringKey, strings } from "./lib/i18n";
 import { SPRING } from "./lib/motion";
+import {
+  placeOfSong,
+  queueWithAdded,
+  queueWithListAdded,
+  rowPlace,
+  upNextTracks,
+} from "./lib/queue";
 import {
   type Album,
   type Artist,
   accentColor,
   addToPlaylist,
   applyAccentColor,
-  applyMenuOpacity,
+  applyEffects,
+  applySurfaceOpacity,
+  applyTheme,
+  type Background,
   createPlaylist as createPlaylistCall,
+  DEFAULT_TRACK_LIST_PREFS,
   type DjNarration,
   djMix,
   djMore,
   djSpeak,
+  type Effects,
+  effects,
   explain,
+  historyKey,
   isDjCard,
+  type JamSession,
+  jamAddToQueue,
+  jamJoin,
+  jamLeave,
+  jamQueue,
+  jamStart,
+  jamStatus,
   keys,
   type LibrarySort,
   type LibraryView,
   librarySort,
   libraryView,
   listCount,
-  menuOpacity,
+  loadBackground,
+  MIN_LISTENED_MS,
   onDjVoice,
   onPlaybackStatus,
   PLAYLIST_STALE_MS,
   type PlaybackStatus,
+  type PlayContext,
   type Playlist,
   playerStatus,
   playTrack,
   type RadioContext,
   radioMore,
   radioStart,
+  recordPlay,
   SESSION_ERRORS,
+  theme as savedTheme,
+  setEffect,
+  setErrorLanguage,
   setLibrarySort,
   setLibraryView,
+  setTrackOrder,
+  setTrackView,
   sortPlaylists,
+  surfaceOpacity,
   type Track,
+  type TrackListPrefs,
   togglePlayback,
   trackArtists,
+  trackFromPlay,
+  trackListPrefs,
+  trayLabels,
   useAccount,
+  useBackground,
+  useEffectsSettings,
+  useHomeStats,
   useLikedTracks,
   useLyrics,
   usePlaylists,
@@ -67,6 +112,7 @@ import {
 } from "./lib/spotify";
 import { checkForUpdate, newerVersion, subscribeUpdate, updateState } from "./lib/updater";
 import { useSearch } from "./lib/useSearch";
+import { isMobile } from "./lib/version";
 
 /**
  * How many tracks in a row may fail before Starless stops skipping.
@@ -137,6 +183,28 @@ const DJ_TOP_UP = 2;
 const RECENT_FOR_RADIO = 5;
 
 /**
+ * Cada cuánto se pregunta por el jam.
+ *
+ * **El jam no tiene pubsub en librespot**, así que la única forma de saber
+ * que alguien se unió es preguntar. Tres segundos es lo que tarda el otro
+ * lado en contarse en el jam, y es un viaje por la red que no puede ir cada
+ * frame.
+ */
+const JAM_POLL_MS = 3000;
+
+/**
+ * How long the pointer has to rest on a tile before its songs are asked for.
+ *
+ * **A fifth of a second is what separates "I am going to open this" from "the
+ * mouse is on its way somewhere else".** The rail is a column of tiles and the
+ * pointer crosses all of them; asking on every `pointerenter` started one full
+ * fetch per tile the mouse passed over, and they compete for the same
+ * connection — so the playlist you actually clicked got slower because of the
+ * ones you only swept past.
+ */
+const PREFETCH_REST_MS = 200;
+
+/**
  * The fade that dissolves the edges of the content area, as a mask.
  *
  * **A mask, and not a gradient painted over the content.** A gradient element
@@ -204,7 +272,174 @@ function shuffleFrom<T extends { id: string }>(items: T[], currentId?: string | 
   return current ? [current, ...order] : order;
 }
 
+/** Narrow enough that an open library squeezes the content; see `railOnly`. */
+const NARROW_QUERY = "(max-width: 999px)";
+
+function useNarrowWindow(): boolean {
+  const [narrow, setNarrow] = useState(() => matchMedia(NARROW_QUERY).matches);
+  useEffect(() => {
+    const query = matchMedia(NARROW_QUERY);
+    const onChange = () => setNarrow(query.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+  return narrow;
+}
+
+/** "Suave" is half the frost, not a dimmer bloom of its own: same light, less of it. */
+const BLOOM_OPACITY = { normal: 1, soft: 0.5, off: 0 } as const;
+
+/**
+ * Where the bloom sits. Every shape is the same two greys, Bone and silver, so
+ * changing it moves the light and never brings hue back (DESIGN.md). `top` is
+ * the one the app shipped with, byte for byte.
+ */
+const BLOOM_SHAPES = {
+  top: [
+    "radial-gradient(90% 70% at 50% -6%, rgb(var(--bloom-a) / 0.24) 0%, transparent 64%)",
+    "radial-gradient(70% 70% at 104% 108%, rgb(var(--bloom-b) / 0.18) 0%, transparent 60%)",
+    "radial-gradient(60% 60% at -6% 96%, rgb(var(--bloom-a) / 0.10) 0%, transparent 60%)",
+  ],
+  corners: [
+    "radial-gradient(65% 65% at -4% -6%, rgb(var(--bloom-a) / 0.22) 0%, transparent 62%)",
+    "radial-gradient(65% 65% at 104% 106%, rgb(var(--bloom-b) / 0.20) 0%, transparent 62%)",
+  ],
+  center: [
+    "radial-gradient(60% 55% at 50% 46%, rgb(var(--bloom-a) / 0.16) 0%, transparent 70%)",
+    "radial-gradient(110% 90% at 50% 50%, rgb(var(--bloom-b) / 0.07) 0%, transparent 72%)",
+  ],
+  side: [
+    "radial-gradient(55% 95% at -8% 40%, rgb(var(--bloom-a) / 0.24) 0%, transparent 64%)",
+    "radial-gradient(40% 60% at 104% 100%, rgb(var(--bloom-b) / 0.10) 0%, transparent 60%)",
+  ],
+} as const;
+
+/** The blur slider's 0..100 onto pixels. Past 40 the picture is only its colours. */
+const BACKGROUND_BLUR_PX = 40;
+
+/**
+ * The ground: the person's picture, the bloom, the grain and the light that follows
+ * the pointer, in that order. A component because it is drawn twice — see
+ * `EdgeFade`.
+ */
+function Ground({
+  url,
+  background,
+  effect,
+}: {
+  url: string | null;
+  background: Background;
+  effect: Effects;
+}) {
+  return (
+    <>
+      {url && (
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
+          {/*
+            Scaled past the window so the blur has picture to pull from at the
+            edges: blurred at its own size, the border fades to the black under
+            it and the photo gets a dark frame nobody chose.
+
+            Keyed by the picture so a new song's cover fades in over the last one
+            once, instead of snapping. It is a single fade per song, not motion
+            under the glass — DESIGN.md's rule is about backdrops that never stop.
+          */}
+          <AnimatePresence initial={false}>
+            <motion.div
+              key={url}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.6 }}
+              className="absolute inset-0 bg-cover bg-center"
+              style={{
+                backgroundImage: `url(${url})`,
+                filter:
+                  background.blur > 0
+                    ? `blur(${(background.blur / 100) * BACKGROUND_BLUR_PX}px)`
+                    : undefined,
+                scale: background.blur > 0 ? 1.08 : 1,
+              }}
+            />
+          </AnimatePresence>
+          <div className="absolute inset-0 bg-ground" style={{ opacity: background.dim / 100 }} />
+        </div>
+      )}
+      <div
+        className="pointer-events-none absolute inset-0 transition-opacity duration-300"
+        style={{
+          opacity: BLOOM_OPACITY[effect.bloom],
+          background: BLOOM_SHAPES[effect.shape].join(", "),
+        }}
+      />
+      {effect.grain === "on" && <div aria-hidden="true" className="grain" />}
+      {effect.glow === "on" && <CursorGlow />}
+    </>
+  );
+}
+
+/**
+ * The fade at the content's top and bottom edges, while the surfaces frost.
+ *
+ * **The mask cannot do it then.** A mask on `<main>` makes it a backdrop root, so
+ * every frosted card and tile inside it would blur nothing, and `index.css` takes
+ * the mask away above 6%. That left the list cut in a straight line under the top
+ * bar and above the player, between two panels whose corners are round.
+ *
+ * So the fade is painted over the content instead of cut out of it: a strip at each
+ * edge draws the ground again, window-aligned, under a gradient. Where the strip is
+ * opaque the content is covered by the same ground that is behind it, which reads
+ * exactly like the content fading out. The strips are siblings of `<main>`, so
+ * nothing inside it loses its blur. They sit under the rail, the queue and the bars
+ * (z-20 and up), which cover the rest of each strip's width.
+ *
+ * The inner layer moves opposite to its strip with the same transition, so the
+ * ground copy stays on the window's pixels while the bottom strip follows the bar.
+ */
+function EdgeFade({
+  above,
+  below,
+  barPresent,
+  ...ground
+}: {
+  above: boolean;
+  below: boolean;
+  barPresent: boolean;
+  url: string | null;
+  background: Background;
+  effect: Effects;
+}) {
+  const slide = "transition-[bottom,opacity] duration-300 ease-[var(--ease-glass)]";
+  return (
+    <>
+      <div
+        aria-hidden="true"
+        className={`edge-fade edge-fade-top pointer-events-none absolute inset-x-0 top-[104px] z-[15] h-11 overflow-hidden transition-opacity duration-300 ${above ? "" : "opacity-0"}`}
+      >
+        <div className="absolute inset-x-0 -top-[104px] h-screen">
+          <Ground {...ground} />
+        </div>
+      </div>
+      <div
+        aria-hidden="true"
+        className={`edge-fade edge-fade-bottom pointer-events-none absolute inset-x-0 z-[15] h-11 overflow-hidden ${slide} ${barPresent ? "bottom-[144px]" : "bottom-5"} ${below ? "" : "opacity-0"}`}
+      >
+        <div
+          className={`absolute inset-x-0 h-screen ${slide} ${barPresent ? "-bottom-[144px]" : "-bottom-5"}`}
+        >
+          <Ground {...ground} />
+        </div>
+      </div>
+    </>
+  );
+}
+
+/** The phone's layout (DESIGN.md, "The phone"), decided when the bundle was made. */
+const MOBILE = isMobile();
+
 export default function App() {
+  const effect = useEffectsSettings();
+  const background = useBackground();
   const [lang, setLang] = useState<Lang>("es");
   const [active, setActive] = useState<StringKey>("navHome");
   const [libraryOpen, setLibraryOpen] = useState(true);
@@ -215,6 +450,16 @@ export default function App() {
    */
   const [libraryCollapsed, setLibraryCollapsed] = useState(true);
   /**
+   * Below this width the library is the riel, whatever was chosen.
+   *
+   * **The content needs the pixels more than the names do.** At 900 px an open
+   * library and the queue leave a 340 px column in the middle, and the lyrics
+   * are a reading column. The choice is kept, not overwritten: widen the window
+   * and the library comes back the way it was.
+   */
+  const narrow = useNarrowWindow();
+  const railOnly = libraryCollapsed || narrow;
+  /**
    * The queue is there from the start, the way the library is.
    *
    * A queue you have to go looking for is a queue nobody reads, and the button that
@@ -222,9 +467,22 @@ export default function App() {
    * had to change: it already survives navigation, and Escape, the X and the button
    * are the only ways out.
    */
-  const [queueOpen, setQueueOpen] = useState(true);
+  const [queueOpen, setQueueOpen] = useState(!MOBILE);
   const [lyricsOpen, setLyricsOpen] = useState(false);
+  /** The lyrics over the whole screen. Only means something while they are open. */
+  const [cinema, setCinema] = useState(false);
   const [activeItem, setActiveItem] = useState("liked");
+  /**
+   * On the phone, whether the Biblioteca tab shows the list or the playlist
+   * opened from it. The desktop has no such question: its rail and the
+   * playlist are on screen together.
+   */
+  const [libraryList, setLibraryList] = useState(true);
+  // Opening a playlist from anywhere —Home, the list— lands on the playlist.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the id changing is the event.
+  useEffect(() => {
+    setLibraryList(false);
+  }, [activeItem]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   /**
    * The feedback form lives up here, outside `AuthGate`, because the people who
@@ -247,6 +505,143 @@ export default function App() {
    * a request to look up what the click was handed is a request for nothing.
    */
   const [detail, setDetail] = useState<Detail | null>(null);
+
+  /**
+   * The jam: the shared session, and whether its panel is open.
+   *
+   * **The session lives in the service, and this is only what it last said.** It
+   * has no local copy that could drift: the jam is a thing on the account, with
+   * its owner and its guests, and the app holds the last answer so the panel
+   * has something to draw.
+   *
+   * **It is not read on open.** The only door that reads a session is the one
+   * that also creates it —`current_or_new`—, so opening the panel would leave a
+   * jam open on the account of somebody who only wanted to look.
+   */
+  const [jamOpen, setJamOpen] = useState(false);
+  const [jam, setJam] = useState<JamSession | null>(null);
+  const [jamBusy, setJamBusy] = useState(false);
+  const [jamError, setJamError] = useState<string | null>(null);
+
+  /**
+   * The shared queue: the songs the jam has written down.
+   *
+   * **It is not the local queue.** The local one is this app's, and it is
+   * nobody else's business; this one is the jam's, and the other side can put
+   * songs in it. It comes from the service, and it is read on its own clock.
+   */
+  const [jamSongs, setJamSongs] = useState<Track[]>([]);
+
+  /**
+   * The head of the shared queue, as of the last poll.
+   *
+   * **It is a ref and not state because it is not for drawing.** It is how the
+   * app knows the queue moved: the first poll only writes it down, and from
+   * then on a head that is not the song playing is a song the other side put
+   * there.
+   */
+  const jamHead = useRef<string | null>(null);
+
+  /**
+   * The song that is playing, for the poll to compare against.
+   *
+   * **It is a ref because the poll must not restart when the song changes.**
+   * The poll reads it, and a poll that is rebuilt every time a song starts is
+   * a poll that asks twice per song.
+   */
+  const jamPlaying = useRef<string | null>(null);
+
+  /**
+   * Open a jam.
+   *
+   * **The button is what decides that there is a jam.** The service opens one
+   * if there is none, so the panel does not create anything by itself: it
+   * waits for this.
+   */
+  const startJam = useCallback(async () => {
+    setJamBusy(true);
+    setJamError(null);
+    try {
+      setJam(await jamStart());
+    } catch (e) {
+      setJamError(explain(e));
+    } finally {
+      setJamBusy(false);
+    }
+  }, []);
+
+  /** Join a jam with its code. */
+  const joinJam = useCallback(async (token: string) => {
+    setJamBusy(true);
+    setJamError(null);
+    try {
+      setJam(await jamJoin(token));
+    } catch (e) {
+      setJamError(explain(e));
+    } finally {
+      setJamBusy(false);
+    }
+  }, []);
+
+  /**
+   * Leave the jam.
+   *
+   * **Leaving and closing are two different doors, and who presses it decides
+   * which one opens.** The guest leaves the session and the jam goes on; the
+   * host closes it and nobody is in it anymore. A jam that nobody closes stays
+   * open on the account of whoever started it, and the next person to open one
+   * finds it there.
+   */
+  const leaveJam = useCallback(async () => {
+    if (!jam) return;
+    setJamBusy(true);
+    setJamError(null);
+    try {
+      await jamLeave(jam.session_id, jam.is_session_owner);
+      setJam(null);
+      setJamSongs([]);
+      jamHead.current = null;
+    } catch (e) {
+      setJamError(explain(e));
+    } finally {
+      setJamBusy(false);
+    }
+  }, [jam]);
+
+  /**
+   * Put a song in the jam's shared queue.
+   *
+   * **The queue is filled with a command, not with a list write.** The command
+   * goes to the session, the session knows whose device it is, and the song
+   * lands in the queue that both sides read.
+   */
+  const addToJam = useCallback(
+    async (track: Track) => {
+      if (!jam) return;
+      setJamBusy(true);
+      setJamError(null);
+      try {
+        await jamAddToQueue(jam.session_id, track.id);
+      } catch (e) {
+        setJamError(explain(e));
+      } finally {
+        setJamBusy(false);
+      }
+    },
+    [jam],
+  );
+
+  /**
+   * Whether the screens should offer to put a song in the jam.
+   *
+   * **The row only exists while there is a jam to put the song in.** A menu
+   * row that is always there and does nothing is worse than no row: it reads
+   * as broken.
+   */
+  const onAddToJam = useMemo(
+    () => (jam ? (track: Track) => void addToJam(track) : undefined),
+    [jam, addToJam],
+  );
 
   /**
    * How the shelf is ordered and drawn, read once at startup for the same reason the
@@ -290,6 +685,30 @@ export default function App() {
   const changeView = (view: LibraryView) => {
     setShelfView(view);
     void setLibraryView(view).catch(() => {});
+  };
+
+  // How every playlist is read, kept the same way as the shelf's: the screen
+  // changes first, the write follows, and a failed write only costs the restart.
+  const [trackPrefs, setTrackPrefs] = useState<TrackListPrefs>(DEFAULT_TRACK_LIST_PREFS);
+
+  useEffect(() => {
+    let alive = true;
+    void trackListPrefs()
+      .then((value) => {
+        if (alive) setTrackPrefs(value);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const changeTrackPrefs = (next: TrackListPrefs) => {
+    setTrackPrefs(next);
+    if (next.order !== trackPrefs.order || next.descending !== trackPrefs.descending) {
+      void setTrackOrder(next.order, next.descending).catch(() => {});
+    }
+    if (next.view !== trackPrefs.view) void setTrackView(next.view).catch(() => {});
   };
 
   /**
@@ -357,13 +776,40 @@ export default function App() {
   // can appear before any of this screen's own buttons are reachable.
   useEffect(() => {
     let alive = true;
-    void menuOpacity()
+    void surfaceOpacity()
       .then((value) => {
-        if (alive) applyMenuOpacity(value);
+        if (alive) applySurfaceOpacity(value);
       })
       // Swallowed on purpose: a read that fails leaves the CSS default standing,
       // which is the opaque menu. Nothing here is worth an unhandled rejection in
       // the console of the one build that has no backend to ask.
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // The theme was painted from the cache before React ran; the backend is the
+  // truth, and a cache that disagrees (cleared, or another build) is corrected.
+  useEffect(() => {
+    void savedTheme()
+      .then(applyTheme)
+      .catch(() => {});
+  }, []);
+
+  // The picture behind the glass, same moment and same reason as the effects.
+  useEffect(() => {
+    void loadBackground().catch(() => {});
+  }, []);
+
+  // The effects, at startup for the same reason: the bloom is the first thing
+  // on screen, and drawing the shipped one before the saved one is a flash.
+  useEffect(() => {
+    let alive = true;
+    void effects()
+      .then((value) => {
+        if (alive) applyEffects(value);
+      })
       .catch(() => {});
     return () => {
       alive = false;
@@ -400,6 +846,20 @@ export default function App() {
   const [repeat, setRepeat] = useState<RepeatMode>("off");
   const queryClient = useQueryClient();
   const t = strings[lang];
+  setErrorLanguage(lang);
+
+  // The tray menu is built in Rust, and its words live here with the others:
+  // sent on start, and again whenever the language changes.
+  useEffect(() => {
+    void trayLabels({
+      play: t.play,
+      pause: t.pause,
+      next: t.next,
+      previous: t.previous,
+      show: t.trayShow,
+      quit: t.trayQuit,
+    }).catch(() => {});
+  }, [t]);
 
   // These only ever run inside `AuthGate`'s children, which means they are never
   // mounted before there is a session — so no hook needs to ask "am I allowed to
@@ -417,9 +877,12 @@ export default function App() {
    * `sortPlaylists` copies rather than rearranging, so the cached query value is
    * left alone.
    */
+  // The same query Home reads: "recently played" is its `last_played`, refreshed
+  // whenever a play is recorded.
+  const lastPlayed = useHomeStats().data?.last_played;
   const orderedPlaylists = useMemo(
-    () => sortPlaylists(playlists.data ?? [], sortOrder),
-    [playlists.data, sortOrder],
+    () => sortPlaylists(playlists.data ?? [], sortOrder, lastPlayed),
+    [playlists.data, sortOrder, lastPlayed],
   );
 
   /**
@@ -538,6 +1001,17 @@ export default function App() {
   const [queue, setQueue] = useState<Queue | null>(null);
   const queueOverride = queue?.tracks ?? null;
   /**
+   * Which list the history should say a song came from.
+   *
+   * **Not the radio's context.** The radio needs a playlist or a song to seed
+   * from, and the saved songs are neither, so their queue carries no context.
+   * Home's "Sigue escuchando" still wants to say "Canciones que te gustan",
+   * so the history keeps its own note, set wherever a queue is set.
+   */
+  const historySource = useRef<PlayContext | null>(null);
+  /** Whether the saved songs are the list on screen: kept current further down. */
+  const likedOnScreen = useRef(false);
+  /**
    * The one door into the queue.
    *
    * Everything that sets a queue goes through here, so the lines that came
@@ -550,6 +1024,12 @@ export default function App() {
       // era de la cola anterior, y seguir usándolo haría saltar la app a una
       // canción que ya no está donde estaba.
       moveTo(-1);
+      historySource.current =
+        context?.kind === "playlist"
+          ? { kind: "playlist", id: context.id }
+          : likedOnScreen.current
+            ? { kind: "playlist", id: "liked" }
+            : null;
       setQueue(tracks ? { tracks, lines: {}, source: "list", context } : null);
     },
     [moveTo],
@@ -810,6 +1290,22 @@ export default function App() {
   );
 
   /**
+   * Play one song from the queue panel, and cut the queue where the panel says.
+   *
+   * **The cut is at the place, not at the song.** The panel knows which row was
+   * clicked; looking the song up by its id finds the *first* copy, and a queue can
+   * have the same song twice —one account here has a playlist of fifty items and
+   * forty-six different ids—. From there "what comes next" is a song from the
+   * past, and the panel lies about what is coming.
+   */
+  const onPlayFromQueue = useCallback(
+    (track: Track, row: number) => {
+      onPlay(track, rowPlace(queueAt, row));
+    },
+    [onPlay, queueAt],
+  );
+
+  /**
    * Play from a list that is not a playlist, and decide the order now.
    *
    * A playlist is a statement about order, so opening one and playing from it
@@ -857,6 +1353,140 @@ export default function App() {
   // — the song is fine, the sound is what is missing.
   const failedId = status?.error && !SESSION_ERRORS.has(status.error) ? status.trackId : null;
 
+  useEffect(() => {
+    jamPlaying.current = nowPlayingId;
+  }, [nowPlayingId]);
+
+  /**
+   * The listening history, on this machine only (`history.rs`).
+   *
+   * A song is written when its turn ends — another song starts, it finishes, or
+   * the window closes — and only if it was *heard* for 30 seconds: the clock
+   * runs while `playing` is true, so a paused song does not keep counting and a
+   * skip does not count at all.
+   */
+  const homeStats = useHomeStats();
+  const listening = useRef<{
+    track: Track;
+    context: PlayContext | null;
+    heardMs: number;
+    since: number | null;
+  } | null>(null);
+  const flushListening = useCallback(() => {
+    const turn = listening.current;
+    if (!turn) return;
+    listening.current = null;
+    const heard = turn.heardMs + (turn.since === null ? 0 : Date.now() - turn.since);
+    if (heard < MIN_LISTENED_MS) return;
+    const { track } = turn;
+    recordPlay({
+      at: Date.now(),
+      track_id: track.id,
+      name: track.name,
+      artists: track.artists,
+      album_id: track.album?.id ?? null,
+      album_name: track.album?.name ?? null,
+      image: track.album?.images[0]?.url ?? null,
+      duration_ms: track.duration_ms ?? 0,
+      listened_ms: Math.round(track.duration_ms ? Math.min(heard, track.duration_ms) : heard),
+      context: turn.context,
+    })
+      .then(() => queryClient.invalidateQueries({ queryKey: historyKey }))
+      .catch(() => {});
+  }, [queryClient]);
+
+  useEffect(() => {
+    const id = status?.trackId ?? null;
+    if (listening.current && listening.current.track.id !== id) flushListening();
+    if (!id) return;
+    if (!listening.current) {
+      const track =
+        queue?.tracks.find((item) => item.id === id) ??
+        (loadedTrack?.id === id ? loadedTrack : null);
+      if (!track) return;
+      listening.current = { track, context: historySource.current, heardMs: 0, since: null };
+    }
+    const turn = listening.current;
+    if (status?.playing && turn.since === null) turn.since = Date.now();
+    if (!status?.playing && turn.since !== null) {
+      turn.heardMs += Date.now() - turn.since;
+      turn.since = null;
+    }
+    if (status?.finished) flushListening();
+  }, [status?.trackId, status?.playing, status?.finished, queue, loadedTrack, flushListening]);
+
+  useEffect(() => {
+    window.addEventListener("beforeunload", flushListening);
+    return () => window.removeEventListener("beforeunload", flushListening);
+  }, [flushListening]);
+
+  /**
+   * Keep the jam up to date.
+   *
+   * **The jam has no pubsub here.** The `dealer` of librespot does not carry
+   * it, so the only way to learn that somebody joined is to ask: the session
+   * every few seconds, and the shared queue with it.
+   *
+   * **The session door creates a session when there is none**, so it is asked
+   * only while there is one in hand — and if the answer brings another
+   * session, the one that was here is gone: the panel says so instead of
+   * adopting the new one, which would be a jam nobody opened.
+   */
+  useEffect(() => {
+    const sessionId = jam?.session_id;
+    if (!sessionId) return;
+    let alive = true;
+
+    const tick = async () => {
+      try {
+        const [session, queue] = await Promise.all([jamStatus(), jamQueue(sessionId)]);
+        if (!alive) return;
+
+        if (session.session_id !== sessionId) {
+          setJam(null);
+          setJamSongs([]);
+          jamHead.current = null;
+          return;
+        }
+
+        setJam(session);
+        setJamSongs(queue);
+
+        // **The head of the shared queue is what the other side put in it.**
+        // The first poll only writes it down: the queue starts with a seed
+        // that the service fills by itself, and jumping into that would be
+        // playing something nobody chose.
+        //
+        // **A read that comes back empty does not erase the head.** The
+        // service answers `Not Found` while the jam has no queue, and that is
+        // a moment, not a state: if the head were forgotten there, the app
+        // would stop following until the queue changed again —and the queue
+        // changing is exactly what it was waiting for.
+        const head = queue[0];
+        if (head) {
+          const before = jamHead.current;
+          jamHead.current = head.id;
+          if (before !== null && before !== head.id && head.id !== jamPlaying.current) {
+            playTrack(head).catch((e) => {
+              console.error("Starless: no se pudo seguir la cola del jam", explain(e));
+            });
+          }
+        }
+      } catch (e) {
+        // A jam that cannot be read right now is not a jam that is over: the
+        // next poll asks again.
+        console.warn("Starless: no se pudo leer el jam", explain(e));
+      }
+    };
+
+    const timer = setInterval(() => void tick(), JAM_POLL_MS);
+    void tick();
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [jam?.session_id]);
+
   /**
    * The queue, in the order it will be played.
    *
@@ -872,17 +1502,10 @@ export default function App() {
    * played is still called "what comes next", and the app walks the queue
    * backwards.
    */
-  const upNext = useMemo(() => {
-    const at = queueAt;
-    // **Antes de que suene nada no hay "a continuación".** El panel muestra lo
-    // que viene después de la canción que está sonando, y si no está sonando
-    // ninguna no hay después: lo que se ve en pantalla es el contenido de la
-    // pantalla, no una cola. Una app recién abierta con ocho canciones bajo
-    // "a continuación" es una cola que se inventó sola, y el usuario tiene
-    // razón: nadie la pidió.
-    if (at < 0) return queueOverride ?? [];
-    return visibleTracks.slice(at + 1);
-  }, [queueAt, visibleTracks, queueOverride]);
+  const upNext = useMemo(
+    () => upNextTracks(queueAt, visibleTracks, queueOverride),
+    [queueAt, visibleTracks, queueOverride],
+  );
 
   /**
    * How many songs of the station's page are still ahead.
@@ -1103,6 +1726,7 @@ export default function App() {
       // reproducir: la frase que estaba diciendo era para otra canción.
       djPending.current = null;
       setDjVoice(null);
+      historySource.current = null;
       asked.current = track.id;
       intent.current += 1;
       setLoadedTrack(track);
@@ -1165,11 +1789,7 @@ export default function App() {
    * primera canción.
    */
   const placeOf = useCallback(
-    (songId: string) => {
-      const remembered = queueAtRef.current;
-      if (remembered >= 0 && visibleTracks[remembered]?.id === songId) return remembered;
-      return visibleTracks.findIndex((item) => item.id === songId);
-    },
+    (songId: string) => placeOfSong(queueAtRef.current, visibleTracks, songId),
     [visibleTracks],
   );
 
@@ -1425,6 +2045,9 @@ export default function App() {
    * make a fast launch feel slow.
    */
   useEffect(() => {
+    // A phone's updates are the system's: the check would fail and say "up to
+    // date", which is the silence `AGENTS.md` warns about.
+    if (isMobile()) return;
     const id = setTimeout(() => void checkForUpdate(), 2500);
     return () => clearTimeout(id);
   }, []);
@@ -1738,6 +2361,7 @@ export default function App() {
     screenError,
     leaveResults,
   } = useSearch(playRadio);
+  likedOnScreen.current = isLiked && !isHome && !detail && !showResults;
 
   /**
    * The area starts at the top of whatever it is now showing.
@@ -1779,16 +2403,39 @@ export default function App() {
    * the click refetches all over again — and every extra hover does it once
    * more. For a playlist past fifty songs that is one request per page, per
    * hover; the log showed a single playlist downloaded six times in ten seconds.
+   *
+   * **And the pointer has to rest before anything is asked for.** The rail is a
+   * column of tiles and the mouse crosses all of them; asking on every
+   * `pointerenter` started one full fetch per tile the mouse passed over, and
+   * they compete for the same connection — so the playlist you actually clicked
+   * got slower because of the ones you only swept past. The log says it: three
+   * fetches together took 534, 833 and 1168 ms, each one slower than the last
+   * because the other two were in the way. A fifth of a second of stillness is
+   * what separates "I am going to open this" from "the mouse is on its way
+   * somewhere else", and only the first one is worth a round trip.
    */
+  const prefetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onPrefetchPlaylist = useCallback(
     (playlistId: string) => {
-      void queryClient.prefetchQuery({
-        queryKey: keys.playlistTracks(playlistId),
-        queryFn: () => invoke<Track[]>("playlist_tracks", { playlistId }),
-        staleTime: PLAYLIST_STALE_MS,
-      });
+      if (prefetchTimer.current !== null) clearTimeout(prefetchTimer.current);
+      prefetchTimer.current = setTimeout(() => {
+        prefetchTimer.current = null;
+        void queryClient.prefetchQuery({
+          queryKey: keys.playlistTracks(playlistId),
+          queryFn: () => invoke<Track[]>("playlist_tracks", { playlistId }),
+          staleTime: PLAYLIST_STALE_MS,
+        });
+      }, PREFETCH_REST_MS);
     },
     [queryClient],
+  );
+
+  // The pending prefetch belongs to a screen that may not exist anymore.
+  useEffect(
+    () => () => {
+      if (prefetchTimer.current !== null) clearTimeout(prefetchTimer.current);
+    },
+    [],
   );
 
   /**
@@ -1823,6 +2470,44 @@ export default function App() {
     },
     [orderedPlaylists, onPlayDj, setQueueOverride, leaveResults],
   );
+
+  /**
+   * The phone's tab, read from the same `active` the desktop's top bar moves:
+   * one answer to "where am I", with Buscar as the one value the desktop has
+   * no use for.
+   */
+  const mobileTab: MobileTab =
+    active === "navSearch" ? "navSearch" : isHome ? "navHome" : "navLibrary";
+
+  const onSelectTab = useCallback(
+    (tab: MobileTab) => {
+      setLyricsOpen(false);
+      setDetail(null);
+      // A search's results are the search tab's; they would otherwise cover
+      // Home and the library, which read them first.
+      if (tab !== "navSearch") leaveResults();
+      // The library tab always lands on the list, whether it was open on a
+      // playlist or somewhere else entirely.
+      if (tab === "navLibrary") setLibraryList(true);
+      setActive(tab);
+    },
+    [leaveResults],
+  );
+
+  /**
+   * The phone's back button, once nothing is open on top of the page: the
+   * artist or album, the search's results, the playlist back to the library
+   * list, another tab back to Home. Home is where the app starts, and there
+   * the button sends the app behind the others (`lib/back.ts`).
+   */
+  useBackRoot(() => {
+    if (detail) setDetail(null);
+    else if (mobileTab === "navSearch" && showResults) leaveResults();
+    else if (mobileTab === "navLibrary" && !libraryList) setLibraryList(true);
+    else if (mobileTab !== "navHome") onSelectTab("navHome");
+    else return false;
+    return true;
+  });
 
   const onCycleRepeat = useCallback(() => {
     setRepeat((mode) => (mode === "off" ? "all" : mode === "all" ? "one" : "off"));
@@ -1862,10 +2547,91 @@ export default function App() {
    * `TrackList` still exists below it as the honest "we have not loaded it yet"
    * answer rather than a screen with no name on it.
    */
-  const playlistView = !lyricsOpen && !showResults && !isHome && !isLiked && !detail;
+  /**
+   * Whether the lyrics take the main surface. On the phone they never do: they
+   * take the full player's artwork, and the screen underneath stays what it was.
+   */
+  const lyricsInMain = lyricsOpen && !MOBILE;
+  const coverUrl = loadedTrack?.album?.images[0]?.url ?? null;
+  /**
+   * One ground, two pictures: the cover wins while it is asked for and there is
+   * a song to take it from, and the person's photo comes back the moment it is
+   * not. Never both stacked — two blurred images under the glass read as mud.
+   *
+   * On the phone the lyrics live in the full player, so "with lyrics" follows
+   * `lyricsOpen` itself: the player's sheet is glass and the cover shows through.
+   */
+  const lyricsShown = MOBILE ? lyricsOpen : lyricsInMain;
+  const coverGround = effect.cover === "always" || (effect.cover === "lyrics" && lyricsShown);
+  const groundUrl = (coverGround && coverUrl) || background.url;
+  const cinemaOn = cinema && lyricsInMain;
+
+  // Closing the lyrics, from anywhere, ends the cinema mode with them.
+  useEffect(() => {
+    if (!lyricsInMain) setCinema(false);
+  }, [lyricsInMain]);
+
+  // The window follows the mode. Asked of Tauri directly: the capability grants
+  // only `set-fullscreen`, and a refusal leaves the mode drawn in a window.
+  useEffect(() => {
+    if (MOBILE) return;
+    try {
+      void getCurrentWindow()
+        .setFullscreen(cinemaOn)
+        .catch(() => {});
+    } catch {
+      // `bun run dev` has no Tauri window to ask.
+    }
+  }, [cinemaOn]);
+
+  // F toggles the mode while the lyrics are open, Esc leaves it. Never while
+  // typing: an "f" in the search field is a letter, not a command.
+  useEffect(() => {
+    if (!lyricsInMain) return;
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, [contenteditable='true']")) return;
+      if (event.key === "Escape") setCinema(false);
+      else if (
+        (event.key === "f" || event.key === "F") &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey
+      ) {
+        setCinema((on) => !on);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lyricsInMain]);
+
+  const desktopLyrics = {
+    t,
+    lyrics: lyrics.data,
+    loading: lyrics.isLoading,
+    error: lyrics.error ? explain(lyrics.error) : null,
+    positionMs: status?.positionMs ?? 0,
+    playing: status?.playing ?? false,
+    title: loadedTrack?.name ?? "",
+    artists: loadedTrack ? trackArtists(loadedTrack) : "",
+    trackId: lyricsTrackId,
+    coverUrl,
+    coverSide: effect.coverSide,
+    onSwapSide: () => {
+      const next = effect.coverSide === "left" ? "right" : "left";
+      applyEffects({ ...effect, coverSide: next });
+      void setEffect("coverSide", next).catch(() => {});
+    },
+    onCinema: () => setCinema((on) => !on),
+    onClose: closeLyrics,
+  };
+  const playlistView = !lyricsInMain && !showResults && !isHome && !isLiked && !detail;
   const playlistScreen = playlistView && selected !== undefined;
   // Liked Songs is drawn by the same screen, so it shares the big button too.
-  const likedScreen = !lyricsOpen && !showResults && !isHome && isLiked && !detail;
+  const likedScreen = !lyricsInMain && !showResults && !isHome && isLiked && !detail;
+  /** What the phone's Buscar and Biblioteca tabs draw instead of the main screens. */
+  const mobileLibraryList = MOBILE && mobileTab === "navLibrary" && libraryList && !detail;
+  const mobileSearchIdle = MOBILE && mobileTab === "navSearch" && !showResults && !detail;
 
   /**
    * Is the playlist on screen the one that is sounding? It is what turns the big
@@ -1926,25 +2692,41 @@ export default function App() {
    * list would be a second source of truth for what plays next, which is the
    * drift this whole design exists to prevent.
    *
-   * **And when there is no queue, the song IS the queue.** Adding one song to a
-   * list of eight that nobody asked for is not adding a song: it is turning
-   * whatever the screen happens to be showing into a queue, and the panel would
-   * then show eight songs the user never put there.
+   * **And when there is no queue, the song is the beginning of one — and the list
+   * on screen stays behind it.**
+   *
+   * A queue with no room for anything else is a dead end: the user puts a song in
+   * it, plays it, and the queue is over. That is what it used to do — the added
+   * song *was* the queue — and it cost the list: the playlist the user was
+   * looking at disappeared from the queue the moment one song was added, and
+   * after that song there was nothing. The screen said one thing and the player
+   * did another.
+   *
+   * So the song goes first and the list follows it. The queue is the list on
+   * screen plus what the user put in it, and it is the same list either way: one
+   * source, no drift. The song the user chose plays first, and the playlist
+   * continues after it — which is what "I put it in the queue" means when
+   * nothing was playing.
    *
    * A duplicate is not deduplicated. A queue is not a set — somebody who adds the
    * same song twice meant to hear it twice, and quietly dropping the second is
    * the app disagreeing with a decision that was made on purpose.
    */
-  const onAddToQueue = useCallback((track: Track) => {
-    // La cola del DJ sigue siendo la cola del DJ: agregar una canción no
-    // borra las frases que la trajeron, ni la convierte en una lista.
-    setQueue((current) => ({
-      tracks: current ? [...current.tracks, track] : [track],
-      lines: current?.lines ?? {},
-      source: current?.source ?? "list",
-      context: current?.context ?? null,
-    }));
-  }, []);
+  const onAddToQueue = useCallback(
+    (track: Track) => {
+      // La cola del DJ sigue siendo la cola del DJ: agregar una canción no
+      // borra las frases que la trajeron, ni la convierte en una lista.
+      const edit = queueWithAdded(queue?.tracks ?? null, track, visibleTracks, queueAtRef.current);
+      setQueue({
+        tracks: edit.tracks,
+        lines: queue?.lines ?? {},
+        source: queue?.source ?? "list",
+        context: queue?.context ?? null,
+      });
+      moveTo(edit.at);
+    },
+    [queue, visibleTracks, moveTo],
+  );
 
   /**
    * La playlist entera a la cola, y no lo que el filtro dejó a la vista.
@@ -1958,15 +2740,20 @@ export default function App() {
    * la misma canción quiso oírla dos veces, y descartarla en silencio es la
    * app contradiciendo una decisión que se tomó a propósito.
    */
-  const onAddListToQueue = useCallback((tracks: Track[]) => {
-    if (tracks.length === 0) return;
-    setQueue((current) => ({
-      tracks: current ? [...current.tracks, ...tracks] : [...tracks],
-      lines: current?.lines ?? {},
-      source: current?.source ?? "list",
-      context: current?.context ?? null,
-    }));
-  }, []);
+  const onAddListToQueue = useCallback(
+    (tracks: Track[]) => {
+      if (tracks.length === 0) return;
+      const edit = queueWithListAdded(queue?.tracks ?? null, tracks, queueAtRef.current);
+      setQueue({
+        tracks: edit.tracks,
+        lines: queue?.lines ?? {},
+        source: queue?.source ?? "list",
+        context: queue?.context ?? null,
+      });
+      moveTo(edit.at);
+    },
+    [queue, moveTo],
+  );
 
   /**
    * Open an artist or an album, and come back from one.
@@ -2035,65 +2822,81 @@ export default function App() {
               ? t.loading
               : t.librarySubtitle;
 
+  /**
+   * Put the screen back the way a fresh session finds it.
+   *
+   * **The view behind the door belonged to the session that just ended.** The
+   * gate unmounts its children when it closes, but the state that decides what
+   * those children show lives up here — and it survives. So signing out of the
+   * settings panel and signing back in brought the settings panel back, whole,
+   * on top of the app: the previous session's screen, over the new one.
+   *
+   * What goes back to its first value is everything *about the account*: where
+   * you are, what is open, what is queued, what was playing. What stays is
+   * everything *about the person*: the language, the order of the shelf, the
+   * glass, the collapsed rail. Those are preferences, and a sign-out does not
+   * take preferences away.
+   */
+  const resetView = useCallback(() => {
+    setSettingsOpen(false);
+    setLyricsOpen(false);
+    setDetail(null);
+    setActive("navHome");
+    setActiveItem("liked");
+    closeNaming();
+    setQueueOverride(null);
+    leaveResults();
+  }, [closeNaming, setQueueOverride, leaveResults]);
+
   return (
     <div className="relative h-full overflow-hidden bg-ground">
       {/*
-        Colour bloom.
+        Bloom, in frost only: light on black, like the landing's chrome, so the
+        glass has something to show through without bringing hue back.
 
-        Deliberately FIXED, not tinted per album. A per-album tint made the chrome
-        unrepeatable — whatever hue the current track happened to be leaked into the
-        whole interface, which is how a palette stops being a palette. The warmth
-        here is Starless's own.
-
-        Also deliberately STATIC. It never animates. A continuously animating
-        backdrop under a blurred surface repaints the blur every frame, which is the
-        single most expensive thing this design could do — see DESIGN.md.
+        These three are static. The one light that moves is CursorGlow, and only
+        with the pointer: a backdrop that animates on its own under blurred glass
+        repaints the blur every frame — see DESIGN.md.
       */}
-      <div
-        className="pointer-events-none absolute inset-0"
-        style={{
-          background: [
-            "radial-gradient(130% 90% at 6% 116%, hsl(22 78% 38% / 0.20) 0%, transparent 58%)",
-            "radial-gradient(110% 80% at 98% -14%, hsl(78 68% 40% / 0.13) 0%, transparent 60%)",
-            "radial-gradient(120% 70% at 46% 124%, hsl(34 72% 36% / 0.14) 0%, transparent 62%)",
-            "linear-gradient(to top, rgb(10 10 18 / 0.9) 0%, rgb(10 10 18 / 0.3) 22%, transparent 46%)",
-          ].join(", "),
-        }}
-      />
+      <Ground url={groundUrl} background={background} effect={effect} />
 
-      <AuthGate t={t} onReport={() => setFeedbackOpen(true)}>
-        <TopBar
-          t={t}
-          active={active}
-          libraryOpen={libraryOpen}
-          onNavigate={(key) => {
-            setActive(key);
-            // "Inicio" es un destino, no un resaltado. Antes esto sólo cambiaba
-            // `active` y el contenido principal decide mirando `activeItem`, así
-            // que marcaba la pestaña y dejaba la playlist abierta en pantalla.
-            //
-            // No toca `activeItem` ni la cola a propósito: el inicio es una
-            // pantalla para mirar, no una lista que define qué sigue. Cambiar la
-            // playlist desde acá tiraría la cola de lo que se estaba escuchando
-            // sin que nadie lo pidiera.
-            setLyricsOpen(false);
-            leaveResults();
-          }}
-          onToggleLibrary={() => setLibraryOpen((v) => !v)}
-          query={draft}
-          onQueryChange={onQueryChange}
-          onSubmitSearch={onSubmitSearch}
-          onPickSuggestion={onPickSuggestion}
-          suggestions={suggestions}
-          suggestionCount={suggestionCount}
-          searching={searching}
-          searchError={searchError}
-          onOpenSettings={() => setSettingsOpen(true)}
-          updateVersion={updateVersion}
-        />
+      <AuthGate t={t} onReport={() => setFeedbackOpen(true)} onSignedOut={resetView}>
+        {/* The phone has no top bar and no rail: its navigation is the tab bar. */}
+        {MOBILE && <MobileTabBar t={t} active={mobileTab} onSelect={onSelectTab} />}
+        {!MOBILE && (
+          <TopBar
+            t={t}
+            active={active}
+            libraryOpen={libraryOpen}
+            onNavigate={(key) => {
+              setActive(key);
+              // "Inicio" es un destino, no un resaltado. Antes esto sólo cambiaba
+              // `active` y el contenido principal decide mirando `activeItem`, así
+              // que marcaba la pestaña y dejaba la playlist abierta en pantalla.
+              //
+              // No toca `activeItem` ni la cola a propósito: el inicio es una
+              // pantalla para mirar, no una lista que define qué sigue. Cambiar la
+              // playlist desde acá tiraría la cola de lo que se estaba escuchando
+              // sin que nadie lo pidiera.
+              setLyricsOpen(false);
+              leaveResults();
+            }}
+            onToggleLibrary={() => setLibraryOpen((v) => !v)}
+            query={draft}
+            onQueryChange={onQueryChange}
+            onSubmitSearch={onSubmitSearch}
+            onPickSuggestion={onPickSuggestion}
+            suggestions={suggestions}
+            suggestionCount={suggestionCount}
+            searching={searching}
+            searchError={searchError}
+            onOpenSettings={() => setSettingsOpen(true)}
+            updateVersion={updateVersion}
+          />
+        )}
 
         <AnimatePresence>
-          {libraryOpen && (
+          {libraryOpen && !MOBILE && (
             <LibrarySidebar
               t={t}
               account={account.data ?? null}
@@ -2101,9 +2904,9 @@ export default function App() {
               likedCount={liked.data?.length ?? null}
               error={Boolean(playlists.error ?? account.error) && !playlists.isLoading}
               activeId={activeItem}
-              collapsed={libraryCollapsed}
+              collapsed={railOnly}
               barPresent={barPresent}
-              onToggleCollapsed={() => setLibraryCollapsed((v) => !v)}
+              onToggleCollapsed={narrow ? undefined : () => setLibraryCollapsed((v) => !v)}
               sort={sortOrder}
               onSortChange={changeSort}
               view={shelfView}
@@ -2116,7 +2919,8 @@ export default function App() {
         </AnimatePresence>
 
         <AnimatePresence>
-          {queueOpen && (
+          {/* On the phone the queue lives in the full player, where the artwork was. */}
+          {queueOpen && !MOBILE && (
             <QueuePanel
               t={t}
               playing={status?.trackId ? loadedTrack : null}
@@ -2125,8 +2929,43 @@ export default function App() {
               dj={djVoice}
               station={queue?.source === "dj"}
               barPresent={barPresent}
-              onPlay={onPlay}
+              onPlay={onPlayFromQueue}
               onClose={() => setQueueOpen(false)}
+              onAddToQueue={onAddToQueue}
+              onOpenArtist={openArtist}
+              onOpenAlbum={openAlbum}
+              onNewPlaylist={openNaming}
+            />
+          )}
+        </AnimatePresence>
+
+        {/*
+            The jam, next to the queue and not instead of it.
+
+            **Spotify starts a Jam from the queue**, and closing the queue to
+            open the Jam is the wrong way round: the two panels answer
+            different questions —what is playing here, and who else is
+            listening— and both of them are worth having open at the same
+            time. When the queue is there, the jam docks to its left.
+
+            **The jam is on standby, so nothing opens this panel**: the door to
+            it is gone from the bar and from the queue. The panel and the
+            session behind it stay in the code, waiting for the day the shared
+            queue really works.
+        */}
+        <AnimatePresence>
+          {jamOpen && (
+            <JamPanel
+              t={t}
+              session={jam}
+              queue={jamSongs}
+              busy={jamBusy}
+              error={jamError}
+              besideQueue={queueOpen}
+              onStart={() => void startJam()}
+              onJoin={(token) => void joinJam(token)}
+              onLeave={() => void leaveJam()}
+              onClose={() => setJamOpen(false)}
             />
           )}
         </AnimatePresence>
@@ -2169,50 +3008,114 @@ export default function App() {
           // thumb inside the padding box, so padding on the right is exactly that
           // gap — and without it the last column of cards ended up touching the
           // thumb, which read as one object instead of two.
-          className={`absolute top-[104px] ${barPresent ? "bottom-[144px]" : "bottom-5"} overflow-x-hidden overflow-y-auto pr-3 transition-[left,right,bottom] duration-300 ease-[var(--ease-glass)] ${
-            libraryOpen ? (libraryCollapsed ? "left-[112px]" : "left-[280px]") : "left-9"
-          } ${queueOpen ? "right-[280px]" : "right-9"}`}
+          // On the phone: one column, the 12px inset, from below the status bar to
+          // above the mini player and the tab bar (72px each with their gap).
+          className={
+            MOBILE
+              ? `on-ground fixed inset-x-3 top-[max(12px,env(safe-area-inset-top))] ${barPresent ? "bottom-[calc(max(12px,env(safe-area-inset-bottom))+144px)]" : "bottom-[calc(max(12px,env(safe-area-inset-bottom))+72px)]"} overflow-x-hidden overflow-y-auto transition-[bottom] duration-300 ease-[var(--ease-glass)]`
+              : `on-ground content-fade absolute top-[104px] ${barPresent ? "bottom-[144px]" : "bottom-5"} overflow-x-hidden overflow-y-auto pr-3 transition-[left,right,bottom] duration-300 ease-[var(--ease-glass)] ${
+                  libraryOpen ? (railOnly ? "left-[112px]" : "left-[280px]") : "left-9"
+                } ${queueOpen ? "right-[280px]" : "right-9"}`
+          }
         >
           {/*
-            The heading belongs to the list, and there are three screens that bring
-            their own: the words, the playlist and the artist. It used to stay for
+            The heading belongs to the list, and there are four screens that bring
+            their own: the words, the playlist, the artist, and Home, whose
+            greeting is its title. It used to stay for
             the lyrics anyway — the playlist's name up here, the song's name
             underneath in the panel, and between them a subtitle counting the songs
             of a playlist nobody could see.
           */}
-          {!lyricsOpen && !playlistScreen && !likedScreen && !detail && (
-            <motion.header
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={SPRING}
-              className="mb-5"
+          {/*
+            The phone's Settings: a gear on Home, top right, instead of a tab
+            (DESIGN.md, "The phone").
+          */}
+          {MOBILE && isHome && !showResults && (
+            <button
+              type="button"
+              onClick={() => setSettingsOpen(true)}
+              aria-label={t.navSettings}
+              className="absolute top-1 right-1 z-10 grid size-11 place-items-center rounded-pill text-ink-muted active:scale-[0.94]"
             >
-              <h1 className="truncate text-[30px] leading-tight font-semibold tracking-tight">
-                {headerTitle}
-              </h1>
-              <p className="tabular mt-1 truncate text-[13px] text-ink-muted">{headerSubtitle}</p>
-            </motion.header>
+              <Settings className="size-[22px]" strokeWidth={2} />
+            </button>
           )}
 
-          {lyricsOpen ? (
+          {/* The phone's search field, at the top of its own tab. */}
+          {MOBILE && mobileTab === "navSearch" && (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                onSubmitSearch();
+              }}
+              className="glass-control mb-4 flex h-12 items-center gap-2.5 rounded-pill px-4"
+            >
+              <Search className="size-[18px] shrink-0 text-ink-muted" strokeWidth={2} />
+              <input
+                type="search"
+                enterKeyHint="search"
+                value={draft}
+                onChange={(event) => onQueryChange(event.target.value)}
+                placeholder={t.searchPlaceholder}
+                aria-label={t.searchPlaceholder}
+                className="min-w-0 flex-1 bg-transparent text-[16px] outline-none placeholder:text-ink-faint"
+              />
+            </form>
+          )}
+
+          {/* Back from a playlist to the phone's library list. */}
+          {MOBILE && mobileTab === "navLibrary" && !libraryList && !detail && (
+            <button
+              type="button"
+              onClick={() => setLibraryList(true)}
+              className="-ml-2 mb-2 flex items-center gap-1 rounded-pill py-1.5 pr-3 pl-1 text-[13.5px] font-medium text-ink-muted"
+            >
+              <ChevronLeft className="size-5" strokeWidth={2} />
+              {t.backToLibrary}
+            </button>
+          )}
+
+          {!lyricsInMain &&
+            !mobileLibraryList &&
+            !mobileSearchIdle &&
+            !playlistScreen &&
+            !likedScreen &&
+            !detail &&
+            !(isHome && !showResults) && (
+              <motion.header
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={SPRING}
+                className="mb-5"
+              >
+                <h1 className="truncate text-[30px] leading-tight font-semibold tracking-tight">
+                  {headerTitle}
+                </h1>
+                <p className="tabular mt-1 truncate text-[13px] text-ink-muted">{headerSubtitle}</p>
+              </motion.header>
+            )}
+
+          {mobileLibraryList ? (
+            <MobileLibrary
+              t={t}
+              playlists={orderedPlaylists}
+              likedCount={liked.data?.length ?? null}
+              error={Boolean(playlists.error ?? account.error) && !playlists.isLoading}
+              onSelect={(id) => {
+                onSelectFromRail(id);
+                // The DJ card plays instead of opening: the list stays.
+                const card = orderedPlaylists.find((playlist) => playlist.id === id);
+                if (!(card && isDjCard(card))) setLibraryList(false);
+              }}
+            />
+          ) : mobileSearchIdle ? null : lyricsInMain ? (
             /*
               The words replace the list rather than opening over it. DESIGN.md
               allows four floating layers and the queue already has one, and the
               lyrics are only worth reading with the transport right there — which
               it always is, on the player bar.
             */
-            <LyricsPanel
-              t={t}
-              lyrics={lyrics.data}
-              loading={lyrics.isLoading}
-              error={lyrics.error ? explain(lyrics.error) : null}
-              positionMs={status?.positionMs ?? 0}
-              playing={status?.playing ?? false}
-              title={loadedTrack?.name ?? ""}
-              artists={loadedTrack ? trackArtists(loadedTrack) : ""}
-              trackId={lyricsTrackId}
-              onClose={closeLyrics}
-            />
+            <LyricsPanel {...desktopLyrics} />
           ) : showResults ? (
             results ? (
               <SearchScreen
@@ -2225,9 +3128,10 @@ export default function App() {
                 onOpenArtist={openArtist}
                 onAddToQueue={onAddToQueue}
                 onNewPlaylist={openNaming}
+                onAddToJam={onAddToJam}
               />
             ) : (
-              <p className="rounded-card border border-white/8 bg-white/4 px-5 py-6 text-center text-[13px] text-ink-faint">
+              <p className="surface-card rounded-card border border-white/8 px-5 py-6 text-center text-[13px] text-ink-faint">
                 {resultsLoading ? t.searching : (screenError ?? t.searchNoResults)}
               </p>
             )
@@ -2241,6 +3145,17 @@ export default function App() {
               onPlayDj={onPlayDj}
               djBusy={djBusy}
               djUnavailable={djUnavailable}
+              stats={homeStats.data ?? null}
+              userName={account.data?.display_name ?? null}
+              onPlayTrack={(play) => playRadio(trackFromPlay(play))}
+              onOpenArtist={openArtist}
+              onOpenLiked={() => {
+                setActiveItem("liked");
+                setActive("navLibrary");
+                setQueueOverride(null);
+                setLyricsOpen(false);
+                setDetail(null);
+              }}
               onOpenPlaylist={(playlist) => {
                 setActiveItem(playlist.id);
                 setActive("navLibrary");
@@ -2308,7 +3223,10 @@ export default function App() {
               onOpenAlbum={openAlbum}
               onAddToQueue={onAddToQueue}
               onNewPlaylist={openNaming}
+              onAddToJam={onAddToJam}
               onAddListToQueue={onAddListToQueue}
+              prefs={trackPrefs}
+              onPrefsChange={changeTrackPrefs}
               shuffle={shuffle}
               onToggleShuffle={onToggleShuffle}
               playing={playlistPlaying}
@@ -2344,9 +3262,12 @@ export default function App() {
               onOpenAlbum={openAlbum}
               onAddToQueue={onAddToQueue}
               onNewPlaylist={openNaming}
+              onAddToJam={onAddToJam}
               // Los tres puntos de la playlist: la lista entera va a la cola, y
               // los detalles son un diálogo aparte.
               onAddListToQueue={onAddListToQueue}
+              prefs={trackPrefs}
+              onPrefsChange={changeTrackPrefs}
               // The two controls the playlist shares with the transport, handed the
               // transport's own state and handlers. Two shuffle buttons showing two
               // different answers is the thing this cannot be.
@@ -2384,9 +3305,20 @@ export default function App() {
           )}
 
           {account.data && account.data.product !== "premium" && (
-            <p className="mt-5 text-[12px] text-warn">{t.premiumRequired}</p>
+            <p className="mt-5 text-[12px] text-warn-ink">{t.premiumRequired}</p>
           )}
         </main>
+
+        {!MOBILE && (
+          <EdgeFade
+            above={moreAbove}
+            below={moreBelow}
+            barPresent={barPresent}
+            url={groundUrl}
+            background={background}
+            effect={effect}
+          />
+        )}
 
         <PlayerBar
           track={loadedTrack}
@@ -2397,15 +3329,64 @@ export default function App() {
           djBusy={djBusy}
           t={t}
           queueOpen={queueOpen}
-          onToggleQueue={() => setQueueOpen((v) => !v)}
+          onToggleQueue={() => {
+            setQueueOpen((v) => !v);
+            // **Los dos paneles viven en la misma esquina.** El jam y la cola
+            // contestan la misma pregunta —qué está sonando y qué sigue— y uno
+            // es sobre los demás. Abrir uno cierra al otro: dos paneles
+            // superpuestos en el mismo rincón son dos que nadie puede leer.
+            setJamOpen(false);
+            // On the phone the queue and the lyrics share the artwork's place.
+            if (MOBILE) setLyricsOpen(false);
+          }}
           lyricsOpen={lyricsOpen}
-          onToggleLyrics={() => setLyricsOpen((v) => !v)}
+          onToggleLyrics={() => {
+            setLyricsOpen((v) => !v);
+            if (MOBILE) setQueueOpen(false);
+          }}
           onPrevious={onPrevious}
           onNext={onNext}
           shuffle={shuffle}
           onToggleShuffle={onToggleShuffle}
           repeat={repeat}
           onCycleRepeat={onCycleRepeat}
+          mobile={MOBILE}
+          queue={
+            MOBILE && (
+              <QueuePanel
+                t={t}
+                embedded
+                playing={status?.trackId ? loadedTrack : null}
+                upNext={upNext}
+                narration={narration}
+                dj={djVoice}
+                station={queue?.source === "dj"}
+                barPresent={barPresent}
+                onPlay={onPlayFromQueue}
+                onClose={() => setQueueOpen(false)}
+                onAddToQueue={onAddToQueue}
+                onOpenArtist={openArtist}
+                onOpenAlbum={openAlbum}
+                onNewPlaylist={openNaming}
+              />
+            )
+          }
+          lyrics={
+            MOBILE && (
+              <LyricsPanel
+                t={t}
+                lyrics={lyrics.data}
+                loading={lyrics.isLoading}
+                error={lyrics.error ? explain(lyrics.error) : null}
+                positionMs={status?.positionMs ?? 0}
+                playing={status?.playing ?? false}
+                title={loadedTrack?.name ?? ""}
+                artists={loadedTrack ? trackArtists(loadedTrack) : ""}
+                trackId={lyricsTrackId}
+                onClose={closeLyrics}
+              />
+            )
+          }
         />
 
         <AnimatePresence>
@@ -2420,6 +3401,42 @@ export default function App() {
             />
           )}
         </AnimatePresence>
+
+        {/*
+          The cinema mode: the same lyrics panel over the whole window, the
+          window itself full screen, and the cover blurred behind it whatever
+          the background setting says — it is the look the mode exists for. It
+          sits over the app rather than rearranging it, so leaving it lands
+          exactly where the person was.
+        */}
+        <AnimatePresence>
+          {cinemaOn && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.4 }}
+              className="fixed inset-0 z-[60] overflow-hidden bg-ground px-[6vw] py-[6vh]"
+            >
+              {coverUrl && (
+                <div aria-hidden="true" className="pointer-events-none absolute inset-0">
+                  <div
+                    className="absolute inset-0 bg-cover bg-center"
+                    style={{
+                      backgroundImage: `url(${coverUrl})`,
+                      filter: `blur(${BACKGROUND_BLUR_PX * 1.5}px)`,
+                      scale: 1.15,
+                    }}
+                  />
+                  <div className="absolute inset-0 bg-ground opacity-55" />
+                </div>
+              )}
+              <div className="relative h-full">
+                <LyricsPanel {...desktopLyrics} cinema />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </AuthGate>
 
       {/*
@@ -2431,6 +3448,9 @@ export default function App() {
         broken in the only place the user could tell.
       */}
       <NewPlaylistDialog t={t} open={naming} onClose={closeNaming} onCreate={createPlaylist} />
+
+      {/* What a right-click on a playlist in the rail or on Home opens (lib/contextMenu.ts). */}
+      <PlaylistContextMenu t={t} playlists={playlists.data ?? []} onAddToQueue={onAddListToQueue} />
 
       {/* Outside the gate on purpose. A report about a crash is worth reading
           before signing in again, and `AuthGate` returns early while it decides
@@ -2447,7 +3467,7 @@ export default function App() {
           announced in — the whole point of the badge is that it is still there
           once someone signs in — and a notice that is not mounted yet cannot mark
           the Settings button the notice is pointing at. */}
-      <UpdateAlert t={t} />
+      {!isMobile() && <UpdateAlert t={t} />}
     </div>
   );
 }

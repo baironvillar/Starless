@@ -91,9 +91,9 @@ fn env_or(name: &str) -> Option<String> {
 /// Where librespot keeps its credential cache, so a second launch does not make
 /// the user authorise again.
 pub fn cache_dir() -> Result<PathBuf, String> {
-    dirs::data_dir()
+    crate::paths::data_dir()
         .map(|base| base.join("Starless"))
-        .ok_or_else(|| fail("no_data_dir", "dirs::data_dir() returned nothing"))
+        .ok_or_else(|| fail("no_data_dir", "paths::data_dir() returned nothing"))
 }
 
 /// Open the credential cache. Three slots, one directory: librespot treats them
@@ -161,7 +161,12 @@ pub fn has_cached_credentials() -> bool {
 pub fn session_config(client_id: &str) -> SessionConfig {
     let mut config = SessionConfig::default();
     config.client_id = client_id.to_string();
-    config.device_id = "Starless".to_string();
+    // A phone and a computer on one account are two devices, not one. No
+    // space: the jam puts the id in a URL path.
+    config.device_id = if cfg!(mobile) { "Starless-Android" } else { "Starless" }.to_string();
+    // librespot downloads each track into this folder, and its default is
+    // unwritable on a phone. See `paths::temp_dir`.
+    config.tmp_dir = crate::paths::temp_dir();
     config
 }
 
@@ -259,18 +264,177 @@ pub fn cached_session(cache: &Cache) -> Option<Session> {
 ///
 /// Blocking: it opens a browser and blocks until the user approves or cancels.
 /// Call it from a blocking thread, never from the UI thread.
-fn pkce(client_id: &str, redirect_uri: &str) -> Result<librespot_oauth::OAuthToken, String> {
-    librespot_oauth::OAuthClientBuilder::new(client_id, redirect_uri, SCOPES.to_vec())
+///
+/// `on_browser_done` is called once the browser is done with its part, approved
+/// or not. **That is the moment the person is looking at "Listo. Vuelve a
+/// Starless." instead of at Starless**, so it is the moment the window has to
+/// come back to the front by itself: the alternative is a person who has just
+/// authorised everything having to go and fetch a window that is hiding behind
+/// the browser.
+///
+/// `open_url` is the phone's way to the browser; the desktop one is inside
+/// `librespot-oauth`.
+#[cfg(desktop)]
+fn pkce(
+    client_id: &str,
+    redirect_uri: &str,
+    _open_url: impl FnOnce(&str),
+    on_browser_done: impl FnOnce() + Send + 'static,
+) -> Result<String, String> {
+    let token = librespot_oauth::OAuthClientBuilder::new(client_id, redirect_uri, SCOPES.to_vec())
         .open_in_browser()
-        .with_custom_message(
-            "<!doctype html><meta charset=utf-8>\
-             <body style=\"background:#0A0A12;color:#F4F4FA;font:16px system-ui;\
-             display:grid;place-items:center;height:100vh;margin:0\">\
-             <p>Listo. Vuelve a Starless.</p>",
-        )
+        .with_custom_message(CALLBACK_PAGE)
         .build()
         .map_err(|e| fail("oauth_unavailable", e))?
         .get_access_token()
+        .map_err(|e| fail("login_cancelled", e));
+
+    // Called on the way out, approved or abandoned: the browser is done either
+    // way and the app has something to say about it. A cancelled login that
+    // leaves the window behind the browser is the same silence as a successful
+    // one — the message is just the other kind.
+    on_browser_done();
+
+    token.map(|token| token.access_token)
+}
+
+/// What the browser shows once Spotify sends the person back.
+const CALLBACK_PAGE: &str = "<!doctype html><meta charset=utf-8>\
+     <body style=\"background:#08080A;color:#F4F5F7;font:16px system-ui;\
+     display:grid;place-items:center;height:100vh;margin:0\">\
+     <p>Listo. Vuelve a Starless.</p>";
+
+/// The same PKCE round trip, built here because `librespot-oauth` cannot do it
+/// on a phone.
+///
+/// **It opens the browser with the `open` crate, and `open` does not know
+/// Android**: it tries `xdg-open` and its cousins, none exist, and the failure
+/// happens on a background thread nobody hears. The URL is only printed to
+/// stdout, and its listener then waits for a callback with no timeout — so the
+/// login hung forever with the port taken. The crate offers no way to get the
+/// URL without opening it, so the phone opens it itself (`open_url`, which is
+/// `tauri-plugin-opener` and an Android intent) and listens with a deadline.
+///
+/// The redirect is the same `127.0.0.1:8989`: the browser runs on the same
+/// phone, so the loopback is the app's. See `docs/android.md`.
+#[cfg(mobile)]
+fn pkce(
+    client_id: &str,
+    redirect_uri: &str,
+    open_url: impl FnOnce(&str),
+    on_browser_done: impl FnOnce() + Send + 'static,
+) -> Result<String, String> {
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::TcpListener;
+    use std::time::{Duration, Instant};
+
+    use base64::Engine;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use rand::Rng;
+    use rand::distr::Alphanumeric;
+    use sha2::{Digest, Sha256};
+
+    // Long enough to type a password and pass a second factor; short enough
+    // that an abandoned login gives the port back.
+    const DEADLINE: Duration = Duration::from_secs(300);
+
+    let random = |len: usize| -> String {
+        rand::rng().sample_iter(&Alphanumeric).take(len).map(char::from).collect()
+    };
+    let verifier = random(64);
+    let state = random(16);
+    let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
+
+    let auth_url = url::Url::parse_with_params(
+        "https://accounts.spotify.com/authorize",
+        &[
+            ("response_type", "code"),
+            ("client_id", client_id),
+            ("redirect_uri", redirect_uri),
+            ("scope", &SCOPES.join(" ")),
+            ("code_challenge_method", "S256"),
+            ("code_challenge", &challenge),
+            ("state", &state),
+        ],
+    )
+    .map_err(|e| fail("oauth_unavailable", e))?;
+
+    // Listening before the browser opens: a fast approval must find the port.
+    let address = url::Url::parse(redirect_uri)
+        .ok()
+        .and_then(|u| u.socket_addrs(|| None).ok())
+        .and_then(|mut addrs| addrs.pop())
+        .ok_or_else(|| fail("oauth_unavailable", "el redirect no tiene puerto"))?;
+    let listener = TcpListener::bind(address).map_err(|e| fail("oauth_unavailable", e))?;
+    listener.set_nonblocking(true).map_err(|e| fail("oauth_unavailable", e))?;
+
+    open_url(auth_url.as_str());
+
+    let started = Instant::now();
+    let mut stream = loop {
+        match listener.accept() {
+            Ok((stream, _)) => break stream,
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                if started.elapsed() > DEADLINE {
+                    on_browser_done();
+                    return Err(fail("login_cancelled", "nadie volvió del navegador"));
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(e) => {
+                on_browser_done();
+                return Err(fail("login_cancelled", e));
+            }
+        }
+    };
+    // The accepted socket inherits non-blocking on some platforms.
+    let _ = stream.set_nonblocking(false);
+
+    let mut request_line = String::new();
+    BufReader::new(&stream)
+        .read_line(&mut request_line)
+        .map_err(|e| fail("login_cancelled", e))?;
+    let _ = write!(
+        stream,
+        "HTTP/1.1 200 OK\r\ncontent-type: text/html; charset=utf-8\r\ncontent-length: {}\r\n\r\n{}",
+        CALLBACK_PAGE.len(),
+        CALLBACK_PAGE
+    );
+    on_browser_done();
+
+    let path = request_line.split_whitespace().nth(1).unwrap_or_default();
+    let callback = url::Url::parse(&format!("http://127.0.0.1{path}"))
+        .map_err(|e| fail("login_cancelled", e))?;
+    let param = |name: &str| {
+        callback
+            .query_pairs()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.into_owned())
+    };
+    // A callback that is not ours is not an approval, whatever it carries.
+    if param("state").as_deref() != Some(state.as_str()) {
+        return Err(fail("login_cancelled", "el state del callback no coincide"));
+    }
+    let code = param("code")
+        .ok_or_else(|| fail("login_cancelled", param("error").unwrap_or_default()))?;
+
+    #[derive(serde::Deserialize)]
+    struct Token {
+        access_token: String,
+    }
+    reqwest::blocking::Client::new()
+        .post("https://accounts.spotify.com/api/token")
+        .form(&[
+            ("grant_type", "authorization_code"),
+            ("code", code.as_str()),
+            ("redirect_uri", redirect_uri),
+            ("client_id", client_id),
+            ("code_verifier", verifier.as_str()),
+        ])
+        .send()
+        .and_then(|response| response.error_for_status())
+        .and_then(|response| response.json::<Token>())
+        .map(|token| token.access_token)
         .map_err(|e| fail("login_cancelled", e))
 }
 
@@ -282,16 +446,19 @@ fn pkce(client_id: &str, redirect_uri: &str) -> Result<librespot_oauth::OAuthTok
 /// the music, so there is nothing left that needs a second question.
 ///
 /// Blocking. Call it from a blocking thread.
-pub fn login_interactively() -> Result<Session, String> {
+///
+/// `open_url` and `on_browser_done` are handed to the browser round trip: see
+/// [`pkce`].
+pub fn login_interactively(
+    open_url: impl FnOnce(&str),
+    on_browser_done: impl FnOnce() + Send + 'static,
+) -> Result<Session, String> {
     let client_id = streaming_client_id();
-    let token = pkce(&client_id, STREAMING_REDIRECT_URI)?;
+    let access_token = pkce(&client_id, STREAMING_REDIRECT_URI, open_url, on_browser_done)?;
 
     let cache = open_cache()?;
     let session = Session::new(session_config(&client_id), Some(cache));
-    start_connect(
-        &session,
-        Credentials::with_access_token(token.access_token.clone()),
-    );
+    start_connect(&session, Credentials::with_access_token(access_token));
 
     Ok(session)
 }

@@ -101,7 +101,7 @@ function Control({
       title={label}
       className={`grid size-8 shrink-0 place-items-center rounded-pill transition-colors duration-150 ${
         danger
-          ? "text-ink-muted hover:bg-live/20 hover:text-live"
+          ? "text-ink-muted hover:bg-live/20 hover:text-live-ink"
           : "text-ink-muted hover:bg-white/10 hover:text-ink"
       }`}
     >

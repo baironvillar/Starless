@@ -1,8 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MotionConfig } from "motion/react";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
+import { routeContextMenu } from "./lib/contextMenu";
+import { followPointer } from "./lib/followPointer";
+import { applyCachedSurfaceOpacity, applyCachedTheme, useEffectsSettings } from "./lib/spotify";
+import { isMobile } from "./lib/version";
 
 /**
  * Failures that are a moment, not a verdict.
@@ -53,10 +58,32 @@ const queryClient = new QueryClient({
   },
 });
 
+/**
+ * "Animaciones de la interfaz" off is Motion's reduced motion, forced: springs,
+ * entrances and press feedback jump to their end. "user" leaves it to the system.
+ */
+function Root() {
+  const { motion } = useEffectsSettings();
+  return (
+    <MotionConfig reducedMotion={motion === "off" ? "always" : "user"}>
+      <App />
+    </MotionConfig>
+  );
+}
+
+// Before the first paint: the theme decides the colour of every pixel, and the
+// backend's answer arrives a few frames too late to be the first one.
+applyCachedTheme();
+applyCachedSurfaceOpacity();
+// The phone's long press has its own path (PhoneTrackRow); right-click is the desktop's.
+if (!isMobile()) routeContextMenu();
+// For the life of the window: the glass play button's light follows the mouse.
+followPointer();
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <Root />
     </QueryClientProvider>
   </React.StrictMode>,
 );

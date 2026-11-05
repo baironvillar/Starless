@@ -1,16 +1,9 @@
-import {
-  Ellipsis,
-  House,
-  Library,
-  MonitorSmartphone,
-  Search,
-  SlidersHorizontal,
-  X,
-} from "lucide-react";
+import { House, Library, Search, Settings, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { StringKey } from "../lib/i18n";
 import type { Track } from "../lib/spotify";
+import { isMobile } from "../lib/version";
 import { MIN_QUERY_LENGTH, SEARCH_MENU_ID, SearchMenu, searchOptionId } from "./SearchMenu";
 import { WindowControls } from "./WindowControls";
 
@@ -160,6 +153,25 @@ export function TopBar({
     inputRef.current?.focus();
   };
 
+  /**
+   * Ctrl+F and Ctrl+L go to the search field, from anywhere.
+   *
+   * Both are claimed on purpose: left alone, WebView2 answers Ctrl+F with its
+   * own find-in-page bar, which searches the words on screen and not the
+   * catalogue — the same key doing two different searches.
+   */
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!event.ctrlKey || event.altKey || event.shiftKey || event.metaKey) return;
+      if (event.key !== "f" && event.key !== "F" && event.key !== "l" && event.key !== "L") return;
+      event.preventDefault();
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   return (
     <div ref={rootRef} className="contents">
       <motion.header
@@ -167,7 +179,7 @@ export function TopBar({
         animate={{ opacity: 1, y: 0 }}
         transition={SPRING}
         onBlur={onBlur}
-        className="glass pointer-events-auto absolute inset-x-5 top-5 z-20 grid h-16 grid-cols-[1fr_auto_1fr] items-center gap-4 rounded-card px-4"
+        className="surface pointer-events-auto absolute inset-x-5 top-5 z-20 grid h-16 grid-cols-[1fr_auto_1fr] items-center gap-4 rounded-card px-4"
         // With `decorations: false` there is no title bar left, so this row is
         // what moves the window. `"deep"` rather than bare so the whole bar
         // drags, not only the few pixels that are the bar itself and nothing
@@ -270,18 +282,22 @@ export function TopBar({
 
         {/* Secondary actions */}
         <div className="flex min-w-0 items-center justify-end gap-1 overflow-hidden">
-          {/* No queue button here on purpose: the player bar carries one, and the
-              queue is about what is sounding, which is what the player bar is
-              about. Two buttons for the same panel in two bars is one too many. */}
-          <IconButton label={t.device} className="hidden xl:grid">
-            <MonitorSmartphone className="size-[17px]" strokeWidth={2} />
-          </IconButton>
+          {/*
+              One icon, and it is the gear.
 
+              **The row used to have four.** The jam's door, the device, the
+              settings and the "more" —and three of those four were not doors to
+              anything: the device and the "more" were placeholders, and the jam
+              is on standby, so its door opens a room that is not ready.
+
+              An icon that leads nowhere reads as a broken promise, and a row of
+              four icons where one works is a row where the person has to guess
+              which one is real. So the row says one thing: the settings, and the
+              dot that means a new version is waiting —the only thing in this row
+              that is true today.
+          */}
           <IconButton label={t.navSettings} onClick={onOpenSettings} badge={updateVersion !== null}>
-            <SlidersHorizontal className="size-[17px]" strokeWidth={2} />
-          </IconButton>
-          <IconButton label={t.more} className="hidden xl:grid">
-            <Ellipsis className="size-[17px]" strokeWidth={2} />
+            <Settings className="size-[17px]" strokeWidth={2} />
           </IconButton>
 
           {/*
@@ -300,8 +316,13 @@ export function TopBar({
             the right, so that is where they are — and being last also means they
             are the hardest to hit by accident.
           */}
-          <span className="mx-1.5 h-6 w-px shrink-0 bg-white/10" />
-          <WindowControls t={t} />
+          {/* A phone has no window to minimise, maximise or close. */}
+          {!isMobile() && (
+            <>
+              <span className="mx-1.5 h-6 w-px shrink-0 bg-white/10" />
+              <WindowControls t={t} />
+            </>
+          )}
         </div>
       </motion.header>
 

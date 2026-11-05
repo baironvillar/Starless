@@ -5,19 +5,54 @@
 // cookies and the librespot session itself stay in Rust. If a future bug ever
 // needs the frontend to read a token, that is the bug, not the design.
 
+// On a phone the updater's helpers and the media card's fields have no reader
+// yet: the updater is the system's, and the card waits for a `MediaSession`.
+// The desktop build keeps the warning, and that is the one that finds dead code.
+#![cfg_attr(mobile, allow(dead_code))]
+
 mod auth;
+mod background;
+mod beat;
 mod crossfade;
+mod history;
 // Named `selftest`, never `diagnostic`: the `diagnostic` crate provides the
 // `#[diagnostic::on_unimplemented]` attribute that `#[tauri::command]` expands
 // to, and a local module of the same name shadows it at the crate root — which
 // breaks every command in this file with an error that points nowhere useful.
 mod logging;
+mod media_keys;
 mod models;
+mod paths;
 mod playback;
 mod report;
 mod selftest;
 mod settings;
 mod spclient;
+mod startup;
+#[cfg(desktop)]
+mod tray;
+/// A phone has no notification area: `tauri::tray` and `tauri::menu` do not
+/// exist there. Same calls, nothing behind them — the way `media_keys` and
+/// `startup` answer off Windows.
+#[cfg(mobile)]
+mod tray {
+    use tauri::AppHandle;
+
+    use crate::media_keys::NowPlaying;
+
+    #[derive(Debug, Clone, Default, serde::Deserialize)]
+    pub struct TrayLabels {}
+
+    pub fn install(_app: &AppHandle) {}
+
+    pub fn exists(_app: &AppHandle) -> bool {
+        false
+    }
+
+    pub fn set_labels(_app: &AppHandle, _labels: TrayLabels) {}
+
+    pub fn set_playing(_app: &AppHandle, _now: Option<NowPlaying>) {}
+}
 mod voice;
 
 use std::collections::HashMap;
@@ -29,10 +64,13 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 // The develop channel builds the same updater as the stable one, pointed at
 // another manifest. The trait is what hands out that builder.
+#[cfg(desktop)]
 use tauri_plugin_updater::UpdaterExt;
 
 use playback::{PlaybackState, PlaybackStatus};
-use models::{Account, DjMix, DjVoiceEvent, Lyrics, Playlist, PlaylistDetails, Track};
+use models::{
+    Account, DjMix, DjVoiceEvent, JamSession, Lyrics, Playlist, PlaylistDetails, Track,
+};
 
 /// The version a report carries, read from the compiled-in crate metadata.
 ///
@@ -105,10 +143,11 @@ async fn submit_crash_report(app: AppHandle) -> Result<report::ReportOutcome, St
 fn feedback_report_preview(
     message: String,
     attach_log: bool,
+    topic: String,
     state: State<SessionState>,
 ) -> String {
     report::preview(
-        report::Kind::Feedback,
+        report::Kind::from_topic(&topic),
         &message,
         attach_log,
         account_name(&state).as_deref(),
@@ -125,11 +164,12 @@ async fn submit_feedback(
     app: AppHandle,
     message: String,
     attach_log: bool,
+    topic: String,
 ) -> Result<report::ReportOutcome, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<SessionState>();
         report::submit(
-            report::Kind::Feedback,
+            report::Kind::from_topic(&topic),
             &message,
             attach_log,
             account_name(&state).as_deref(),
@@ -418,6 +458,7 @@ async fn find_prerelease_manifest(
 /// **The comparison is left to the webview.** The updater is asked for the
 /// update whatever the versions say, because "you are already running it" is
 /// an answer too, and only the frontend knows what is installed.
+#[cfg(desktop)]
 #[tauri::command]
 async fn check_prerelease_manifest(
     webview: tauri::Webview,
@@ -499,6 +540,22 @@ struct PublicChannel {
     same_build: bool,
 }
 
+/// **A phone has no updater.** The system installs the app, and the plugin's
+/// install answers `UnsupportedOs` there. The two commands stay in the handler
+/// list —`generate_handler!` takes no conditional entries— and say so.
+#[cfg(mobile)]
+#[tauri::command]
+async fn check_prerelease_manifest() -> Result<Option<serde_json::Value>, String> {
+    Err("el teléfono no tiene updater: lo instala el sistema".into())
+}
+
+#[cfg(mobile)]
+#[tauri::command]
+async fn check_public_manifest() -> Result<PublicChannel, String> {
+    Err("el teléfono no tiene updater: lo instala el sistema".into())
+}
+
+#[cfg(desktop)]
 #[tauri::command]
 async fn check_public_manifest(webview: tauri::Webview) -> Result<PublicChannel, String> {
     let client = github_client()?;
@@ -768,6 +825,31 @@ fn auth_status(session_state: State<SessionState>) -> AuthStatus {
     }
 }
 
+/// Put the window back in front of the person.
+///
+/// **Windows does not hand the foreground to a background process for free.**
+/// `SetForegroundWindow` is refused unless the caller owns the foreground, and
+/// during a login the browser owns it. `tao` does the work around that: it
+/// tries `SetForegroundWindow` first and, when Windows says no, it sends the
+/// ALT key to unlock the foreground lock and tries again. The result is a
+/// window that comes back on its own even though another program is in front.
+///
+/// The un-minimize comes first because `tao` refuses to focus a minimized
+/// window: raising one does nothing at all, and "the app is running but nothing
+/// happened" is the exact silence this is here to avoid.
+///
+/// From the backend, not from the webview: the window permissions this needs are
+/// not in `capabilities/default.json`, and the backend already has the handle.
+pub(crate) fn bring_to_front(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        // A phone brings the app back by itself; there is nothing minimised.
+        #[cfg(desktop)]
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
 /// Open the browser, wait for the approval, and come back with a session.
 ///
 /// The wait is user-paced — it blocks until they finish in the browser — so it
@@ -777,12 +859,29 @@ async fn begin_login(
     app: AppHandle,
     session_state: State<'_, SessionState>,
 ) -> Result<AuthStatus, String> {
-    let session = tauri::async_runtime::spawn_blocking(auth::login_interactively)
-        .await
-        .map_err(|e| {
-            log::error!("[login_task_failed]: {e}");
-            "login_task_failed".to_string()
-        })??;
+    // The browser takes the foreground for the approval, and the person is
+    // looking at it when it answers "Listo. Vuelve a Starless." — so the window
+    // comes back by itself the moment the browser is done, instead of waiting
+    // to be clicked.
+    let window = app.clone();
+    let opener = app.clone();
+    let session = tauri::async_runtime::spawn_blocking(move || {
+        auth::login_interactively(
+            // Only the phone uses it: see `auth::pkce`.
+            move |url| {
+                use tauri_plugin_opener::OpenerExt;
+                if let Err(error) = opener.opener().open_url(url, None::<&str>) {
+                    log::error!("[oauth_unavailable]: no se pudo abrir el navegador: {error}");
+                }
+            },
+            move || bring_to_front(&window),
+        )
+    })
+    .await
+    .map_err(|e| {
+        log::error!("[login_task_failed]: {e}");
+        "login_task_failed".to_string()
+    })??;
 
     // Same reasoning as the restore path: the device is opened while the handshake
     // completes, so the first song after signing in is not the thing that pays for it.
@@ -921,6 +1020,143 @@ spclient_command!(liked_tracks, spclient::liked_tracks, Vec<Track>);
 spclient_command!(playlist_tracks, spclient::playlist_tracks, Vec<Track>, playlist_id: String);
 spclient_command!(search_tracks, spclient::search_tracks, Vec<Track>, query: String);
 spclient_command!(lyrics, spclient::lyrics, Lyrics, track_id: String);
+
+// El jam: la sesión compartida.
+//
+// **No es una playlist: es una sesión, y el servicio no se llama jam.** Se
+// llama `social-connect`, y sus rutas no lo dicen. El protocolo entero —lo que
+// hay, lo que no, y cómo se midió— está en `docs/jam.md`.
+//
+// Los tres comandos son las tres puertas que se midieron: abrir, entrar y
+// cerrar. **Abrir es un `GET` que crea la sesión si no había**, así que el
+// botón del panel es el que decide que exista una.
+//
+// Cada uno salta a un hilo de bloqueo antes de hablar con la red: un comando
+// `async` que hace un viaje HTTP en el hilo principal congela la ventana
+// treinta segundos.
+#[tauri::command]
+async fn jam_start(app: AppHandle) -> Result<JamSession, String> {
+    let session = ready_session(&app).await?;
+
+    tauri::async_runtime::spawn_blocking(move || spclient::jam_session(&session, true))
+        .await
+        .map_err(|e| {
+            eprintln!("Starless [command_failed]: {e}");
+            "command_failed".to_string()
+        })?
+}
+
+/// Entrar a un jam con su código.
+#[tauri::command]
+async fn jam_join(app: AppHandle, token: String) -> Result<JamSession, String> {
+    let session = ready_session(&app).await?;
+
+    tauri::async_runtime::spawn_blocking(move || spclient::jam_join(&session, &token))
+        .await
+        .map_err(|e| {
+            eprintln!("Starless [command_failed]: {e}");
+            "command_failed".to_string()
+        })?
+}
+
+/// Leer la sesión, sin abrir ninguna.
+///
+/// **Es la misma puerta que abre la sesión, pero sin activarla.** El jam no
+/// tiene pubsub en librespot —el `dealer` no lo tiene—, así que la única
+/// forma de saber quién se unió es preguntar cada tanto.
+///
+/// **La puerta crea la sesión si no hay ninguna**, y por eso el panel la usa
+/// solo mientras tiene una sesión en la mano: si la respuesta trae otra
+/// sesión, la que tenía ya no está y el panel lo dice en vez de adoptarla.
+#[tauri::command]
+async fn jam_status(app: AppHandle) -> Result<JamSession, String> {
+    let session = ready_session(&app).await?;
+
+    tauri::async_runtime::spawn_blocking(move || spclient::jam_session(&session, false))
+        .await
+        .map_err(|e| {
+            eprintln!("Starless [command_failed]: {e}");
+            "command_failed".to_string()
+        })?
+}
+
+/// La cola compartida del jam: las canciones que el servicio tiene escrita.
+///
+/// **La cola es una lista**, y se lee por el servicio de listas —que habla
+/// protobuf— y no por la biblioteca.
+#[tauri::command]
+async fn jam_queue(app: AppHandle, session_id: String) -> Result<Vec<Track>, String> {
+    let session = ready_session(&app).await?;
+
+    tauri::async_runtime::spawn_blocking(move || spclient::jam_queue(&session, &session_id))
+        .await
+        .map_err(|e| {
+            eprintln!("Starless [command_failed]: {e}");
+            "command_failed".to_string()
+        })?
+}
+
+/// Salir del jam.
+///
+/// **Salir y cerrar no son la misma puerta.** Salir es un `POST` a
+/// `…/sessions/<id>/leave`, y es la puerta de un invitado: lo saca de la
+/// sesión y deja la sesión viva. Cerrar —borrar la sesión— es un `DELETE` a
+/// `…/sessions/<id>`, y es del anfitrión: sin él, la sesión queda abierta en
+/// la cuenta de quien la abrió.
+///
+/// **El que aprieta "salir" en el jam que él abrió cierra el jam para todos**,
+/// y por eso el comando hace las dos cosas cuando quien aprieta es el
+/// anfitrión: primero sale, y después la borra. La segunda puede contestar
+/// `404` —la sesión ya no está— y eso no es un fallo: es lo que se quería.
+#[tauri::command]
+async fn jam_leave(app: AppHandle, session_id: String, is_owner: bool) -> Result<(), String> {
+    let session = ready_session(&app).await?;
+
+    tauri::async_runtime::spawn_blocking(move || {
+        spclient::jam_leave(&session, &session_id)?;
+
+        if is_owner {
+            // Si la sesión ya no está, `jam_end` lo cuenta como un aviso.
+            if let Err(e) = spclient::jam_end(&session, &session_id) {
+                log::warn!("spclient: la sesión {session_id} no se pudo borrar: {e}");
+            }
+        }
+
+        Ok(())
+    })
+    .await
+    .map_err(|e| {
+        eprintln!("Starless [command_failed]: {e}");
+        "command_failed".to_string()
+    })?
+}
+
+/// Agregar una canción a la cola compartida del jam.
+///
+/// **La cola compartida se llena con un comando del player**, no con una
+/// escritura de lista: la puerta es `…/sessions/<id>/commands/from/<device>`
+/// y el cuerpo es un comando con `endpoint: "add_to_queue"`.
+///
+/// El comando lo aplica el servicio del jam, que es el que sabe de quién es
+/// cada dispositivo: por eso el `device` del camino es el nuestro y no el del
+/// anfitrión.
+#[tauri::command]
+async fn jam_add_to_queue(
+    app: AppHandle,
+    session_id: String,
+    track_id: String,
+) -> Result<(), String> {
+    let session = ready_session(&app).await?;
+
+    tauri::async_runtime::spawn_blocking(move || {
+        spclient::jam_add_to_queue(&session, &session_id, &track_id)
+    })
+    .await
+    .map_err(|e| {
+        eprintln!("Starless [command_failed]: {e}");
+        "command_failed".to_string()
+    })?
+}
 
 // El DJ: las canciones que Spotify le fabricó a la cuenta, y lo que dice al
 // empezar.
@@ -1510,8 +1746,8 @@ async fn play_track(
 }
 
 #[tauri::command]
-fn toggle_playback(state: State<PlaybackState>) -> Result<(), String> {
-    playback::toggle(&state)
+fn toggle_playback(app: tauri::AppHandle, state: State<PlaybackState>) -> Result<(), String> {
+    playback::toggle(&app, &state)
 }
 
 #[tauri::command]
@@ -1524,16 +1760,113 @@ fn set_volume(state: State<PlaybackState>, volume: u16) {
     playback::set_volume(&state, volume);
 }
 
+/// What Windows shows on its media card, and whether the media keys answer.
+/// `None` hides the card: nothing is loaded.
+#[tauri::command]
+fn media_session(
+    app: AppHandle,
+    state: State<media_keys::MediaKeys>,
+    now: Option<media_keys::NowPlaying>,
+) {
+    // The tray's first line is the same card, smaller.
+    tray::set_playing(&app, now.clone());
+    state.update(now);
+}
+
+/// The tray menu's words, in the language the app is in. See `tray.rs`.
+#[tauri::command]
+fn tray_labels(app: AppHandle, labels: tray::TrayLabels) {
+    tray::set_labels(&app, labels);
+}
+
+/// Low, normal or high. Applies the next time the player is built — the next
+/// launch — because it is part of the player's configuration.
+#[tauri::command]
+fn audio_quality() -> &'static str {
+    settings::saved_audio_quality()
+}
+
+#[tauri::command]
+fn set_audio_quality(quality: String) {
+    settings::save_audio_quality(&quality);
+}
+
+#[tauri::command]
+fn normalisation() -> bool {
+    settings::saved_normalisation()
+}
+
+#[tauri::command]
+fn set_normalisation(on: bool) {
+    settings::save_normalisation(on);
+}
+
+#[tauri::command]
+fn close_to_tray() -> bool {
+    settings::saved_close_to_tray()
+}
+
+#[tauri::command]
+fn set_close_to_tray(on: bool) {
+    settings::save_close_to_tray(on);
+}
+
+#[tauri::command]
+fn start_with_windows() -> bool {
+    startup::enabled()
+}
+
+/// Answers with what the registry says afterwards, which is what the switch
+/// draws: in a development build it never changes (see `startup::set`).
+#[tauri::command]
+fn set_start_with_windows(on: bool) -> bool {
+    startup::set(on)
+}
+
 /// How opaque the menus are, as a percentage. The default is opaque, not 55%.
 #[tauri::command]
-fn menu_opacity() -> u8 {
-    settings::saved_menu_opacity()
+fn surface_opacity() -> u8 {
+    settings::saved_surface_opacity()
 }
 
 /// Remember it. Clamped in `settings`, because the value lands in a CSS colour.
 #[tauri::command]
-fn set_menu_opacity(opacity: u8) {
-    settings::save_menu_opacity(opacity);
+fn set_surface_opacity(opacity: u8) {
+    settings::save_surface_opacity(opacity);
+}
+
+// --- Listening history (on this machine only) ------------------------------
+
+/// One song, heard. `history` drops it when it was a skip or history is off.
+#[tauri::command]
+fn record_play(play: history::Play) {
+    history::record(&play);
+}
+
+/// Home's history sections. `tz_offset_min` is the webview's `getTimezoneOffset()`,
+/// so "today" and "this week" are the person's and not UTC's.
+#[tauri::command]
+fn home_stats(tz_offset_min: i32) -> history::HomeStats {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    history::home_stats(now, tz_offset_min)
+}
+
+#[tauri::command]
+fn history_enabled() -> bool {
+    settings::saved_history_enabled()
+}
+
+#[tauri::command]
+fn set_history_enabled(enabled: bool) {
+    settings::save_history_enabled(enabled);
+}
+
+#[tauri::command]
+fn clear_history() {
+    history::clear();
 }
 
 /// How many seconds two songs overlap when one ends on its own; 0 is off.
@@ -1591,41 +1924,118 @@ fn set_library_view(view: String) {
     settings::save_library_view(&view);
 }
 
+/// How a playlist's songs are ordered, as `<order>-<asc|desc>`. Same reasoning
+/// as `library_sort`: the default is answered here, in one place.
+#[tauri::command]
+fn track_order() -> String {
+    settings::saved_track_order().to_string()
+}
+
+#[tauri::command]
+fn set_track_order(order: String) {
+    settings::save_track_order(&order);
+}
+
+#[tauri::command]
+fn track_view() -> String {
+    settings::saved_track_view().to_string()
+}
+
+#[tauri::command]
+fn set_track_view(view: String) {
+    settings::save_track_view(&view);
+}
+
+#[tauri::command]
+fn theme() -> String {
+    settings::saved_theme().to_string()
+}
+
+#[tauri::command]
+fn set_theme(theme: String) {
+    settings::save_theme(&theme);
+}
+
+/// The background effects, every one with its value. See `settings::EFFECTS`.
+#[tauri::command]
+fn effects() -> std::collections::BTreeMap<&'static str, &'static str> {
+    settings::saved_effects()
+}
+
+/// `settings` refuses any effect or value this build does not know.
+#[tauri::command]
+fn set_effect(name: String, value: String) {
+    settings::save_effect(&name, &value);
+}
+
+/// Everything under Settings → Customisation back to what ships.
+///
+/// The picture goes first because it is the only part that can fail: if it
+/// stays, nothing has changed, and the panel can say so without half a reset.
+#[tauri::command]
+async fn reset_customisation() -> Result<(), String> {
+    background::clear_background_image().await?;
+    settings::reset_customisation();
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let app = tauri::Builder::default()
-        // **Registered first, on purpose.** The plugin works by holding a lock
-        // that the second process cannot take, so it has to exist before anything
-        // else in `setup` can fail — otherwise the copy that starts while a crash
-        // is being handled sails through to a second session.
-        //
-        // What the second copy does is exit. What it must not do is reach
-        // `setup`: one account, one session. Two of them authenticate with the
-        // same credentials, and the one that loses the audio-key race hands its
-        // own bytes to the other one's decoder — six tracks burned in fourteen
-        // seconds, every one of them reported as a song Spotify would not
-        // deliver. See `AGENTS.md`.
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            log::info!("segunda instancia: le cedo el lugar a la que ya está");
-            if let Some(window) = app.get_webview_window("main") {
-                // Un-minimize first: raising a minimized window does nothing,
-                // and "the app is running but nothing happened" is the exact
-                // silence this is here to avoid.
-                let _ = window.unminimize();
-                let _ = window.show();
-                let _ = window.set_focus();
+    let context = tauri::generate_context!();
+    // Before any window exists: the taskbar reads the id when the window is
+    // created, and the media card reads it when the session opens.
+    media_keys::claim_app_id(&context.config().identifier);
+
+    let builder = tauri::Builder::default();
+    // **Registered first, on purpose.** The plugin works by holding a lock
+    // that the second process cannot take, so it has to exist before anything
+    // else in `setup` can fail — otherwise the copy that starts while a crash
+    // is being handled sails through to a second session.
+    //
+    // What the second copy does is exit. What it must not do is reach
+    // `setup`: one account, one session. Two of them authenticate with the
+    // same credentials, and the one that loses the audio-key race hands its
+    // own bytes to the other one's decoder — six tracks burned in fourteen
+    // seconds, every one of them reported as a song Spotify would not
+    // deliver. See `AGENTS.md`.
+    //
+    // Desktop only: a phone already keeps one process per app.
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        log::info!("segunda instancia: le cedo el lugar a la que ya está");
+        bring_to_front(app);
+    }));
+    let builder = builder.plugin(tauri_plugin_opener::init());
+    // The updater only downloads and verifies; *when* it runs is decided by the
+    // UI. An app that plays music must not install over itself mid-track, so
+    // Starless asks instead — see `update.rs`. A phone's updates are the
+    // system's.
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    let app = builder
+        // The close button, when the person chose the tray: the window goes,
+        // the app and the music stay. Alt+F4 and the button in the window's
+        // own controls both arrive here, so both do the same thing.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event
+                && window.label() == "main"
+                && settings::saved_close_to_tray()
+                && tray::exists(window.app_handle())
+            {
+                api.prevent_close();
+                let _ = window.hide();
             }
-        }))
-        .plugin(tauri_plugin_opener::init())
-        // The updater only downloads and verifies; *when* it runs is decided by the
-        // UI. An app that plays music must not install over itself mid-track, so
-        // Starless asks instead — see `update.rs`.
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        })
         .manage(SessionState::default())
         .manage(PlaybackState::default())
         .manage(DjState::default())
         .manage(RadioState::default())
         .setup(|app| {
+            // Before the log and the crash marker: on a phone they have no
+            // folder until the app says where its sandbox is. See `paths`.
+            #[cfg(mobile)]
+            paths::init(app.handle());
+
             // librespot narrates every refusal through `log`, and Starless is a
             // windowed app with no console to narrate into. Both halves matter:
             // without a logger a refusal is invisible, and without a file it is
@@ -1679,6 +2089,20 @@ pub fn run() {
             // device is alive as far as `is_invalid` is concerned, and the
             // window looks perfect while the app is deaf.
             playback::watch(handle.clone());
+
+            // The media keys answer from here on, whatever the window is doing.
+            app.manage(media_keys::MediaKeys::start(handle.clone()));
+
+            // The tray, and then the window's first decision: a launch at
+            // sign-in starts in it. Only with a tray to come back from — a
+            // hidden window with no icon is a process nobody can reach.
+            tray::install(&handle);
+            if startup::launched_minimized()
+                && tray::exists(&handle)
+                && let Some(window) = handle.get_webview_window("main")
+            {
+                let _ = window.hide();
+            }
 
             // **La conexión, cortada a propósito.**
             //
@@ -1758,6 +2182,13 @@ pub fn run() {
             if spclient::radio_requested() {
                 spclient::run_radio_probe(handle.clone());
             }
+            // El jam: la sesión compartida. La puerta se encontró en el cliente
+            // de escritorio; lo que falta es si una sesión de streaming la
+            // puede usar.
+            #[cfg(debug_assertions)]
+            if spclient::jam_requested() {
+                spclient::run_jam_probe(handle.clone());
+            }
             if selftest::requested() {
                 selftest::run(handle);
             }
@@ -1779,6 +2210,12 @@ pub fn run() {
             dj_mix,
             dj_more,
             dj_speak,
+            jam_start,
+            jam_join,
+            jam_status,
+            jam_queue,
+            jam_leave,
+            jam_add_to_queue,
             radio_start,
             radio_more,
             player_status,
@@ -1786,16 +2223,45 @@ pub fn run() {
             toggle_playback,
             seek_playback,
             set_volume,
-            menu_opacity,
-            set_menu_opacity,
+            media_session,
+            tray_labels,
+            audio_quality,
+            set_audio_quality,
+            normalisation,
+            set_normalisation,
+            close_to_tray,
+            set_close_to_tray,
+            start_with_windows,
+            set_start_with_windows,
+            surface_opacity,
+            set_surface_opacity,
+            reset_customisation,
             crossfade_seconds,
             set_crossfade_seconds,
+            record_play,
+            home_stats,
+            history_enabled,
+            set_history_enabled,
+            clear_history,
             accent,
             set_accent,
             library_sort,
             set_library_sort,
             library_view,
             set_library_view,
+            track_order,
+            set_track_order,
+            track_view,
+            set_track_view,
+            theme,
+            set_theme,
+            effects,
+            set_effect,
+            background::background_image,
+            background::set_background_image,
+            background::clear_background_image,
+            background::background_look,
+            background::set_background_look,
             previous_session_crashed,
             announce_clean_exit,
             log_frontend_error,
@@ -1808,7 +2274,7 @@ pub fn run() {
             feedback_report_preview,
             submit_feedback
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application");
 
     // `build` + `run` instead of the shorthand `.run(context)`, because the

@@ -1,7 +1,7 @@
 {
   "name": "starless",
   "private": true,
-  "version": "0.5.5",
+  "version": "0.6.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -18,7 +18,11 @@
     "logo": "bun run scripts/logo.ts",
     "logo:icons": "bun run scripts/logo.ts --icons",
     "logo:invert": "bun run scripts/logo.ts --invert",
-    "typecheck": "tsc --noEmit",
+    "logo:android": "bun run scripts/logo.ts --android",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p relay",
+    "relay:test": "bun test relay",
+    "test": "bun test",
+    "relay:deploy": "bunx wrangler deploy --config relay/wrangler.toml",
     "version": "bun run scripts/version.ts get",
     "version:bump": "bun run scripts/version.ts bump",
     "version:set": "bun run scripts/version.ts set",

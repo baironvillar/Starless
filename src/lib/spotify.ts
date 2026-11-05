@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { useMemo } from "react";
+import { useMemo, useSyncExternalStore } from "react";
+import { errors, type Lang } from "./i18n";
 
 /**
  * The account's real data, as Spotify sends it.
@@ -361,6 +362,122 @@ export async function radioMore(): Promise<DjMix> {
 }
 
 /**
+ * A shared session: the jam.
+ *
+ * **The jam is not a playlist: it is a session, and the service is not called
+ * jam.** It is `social-connect`, and its paths do not say so. The whole
+ * protocol —what exists, what does not, and how it was measured— is in
+ * `docs/jam.md`.
+ *
+ * The field names are the service's own, as they come: mostly `snake_case` and
+ * one in `camelCase`, which is how the service mixes the two conventions.
+ * Renaming one of them would give the same field two names depending on where
+ * you looked.
+ */
+export type JamMember = {
+  id: string;
+  username: string | null;
+  display_name: string | null;
+  image_url: string | null;
+  /** True when it can drive the playback, and not only listen. */
+  is_controlling: boolean;
+  is_listening: boolean;
+};
+
+export type JamSession = {
+  session_id: string;
+  /** The code people join with. */
+  join_session_token: string | null;
+  /** The code as a URI: `spotify:socialsession:<token>`. */
+  join_session_uri: string | null;
+  /** The joining door, with the service's internal prefix. */
+  join_session_url: string | null;
+  active: boolean;
+  is_session_owner: boolean;
+  session_members: JamMember[];
+  maxMemberCount: number | null;
+};
+
+/**
+ * Open a jam.
+ *
+ * **It is a `GET` that creates it.** The path is called `current_or_new`
+ * because it is literal: if there is no session, it opens one —with its join
+ * token and its owner— and `activate=true` also activates it. A `POST` on the
+ * same path answers `405`: that is not the verb.
+ */
+export async function jamStart(): Promise<JamSession> {
+  return invoke<JamSession>("jam_start");
+}
+
+/**
+ * Join a jam with its code.
+ *
+ * **It is a `POST` with a body**, and an empty one is enough: the token in the
+ * path is what identifies the session, not the body.
+ */
+export async function jamJoin(token: string): Promise<JamSession> {
+  return invoke<JamSession>("jam_join", { token });
+}
+
+/**
+ * Read the session, without opening one.
+ *
+ * **It is the same door that opens a jam, but without activating it.** The
+ * jam has no pubsub in librespot —the `dealer` has none— so the only way to
+ * learn who joined is to ask now and then.
+ *
+ * **That door creates a session when there is none**, so the panel asks only
+ * while it holds one: if the answer brings a different session, the one it
+ * had is gone, and the panel says so instead of adopting the new one.
+ */
+export async function jamStatus(): Promise<JamSession> {
+  return invoke<JamSession>("jam_status");
+}
+
+/**
+ * The shared queue: the songs the service has written down.
+ *
+ * **The queue is a list, not a playlist**, and it comes from the list
+ * service —which speaks protobuf— and not from the library.
+ */
+export async function jamQueue(sessionId: string): Promise<Track[]> {
+  return invoke<Track[]>("jam_queue", { sessionId });
+}
+
+/**
+ * Leave the jam.
+ *
+ * **Leaving and closing are two different doors.** Leaving is a `POST` to
+ * `…/sessions/<id>/leave`, and it is the guest's door: it takes the account
+ * out of the session and leaves the session alive. Closing —deleting the
+ * session— is a `DELETE` to `…/sessions/<id>`, and it belongs to the host:
+ * without it, the session stays open on the account that opened it.
+ *
+ * **The one who presses "leave" on the jam they opened closes the jam for
+ * everyone**, and that is why the command does both when the one pressing is
+ * the host.
+ */
+export async function jamLeave(sessionId: string, isOwner: boolean): Promise<void> {
+  return invoke<void>("jam_leave", { sessionId, isOwner });
+}
+
+/**
+ * Add a song to the shared queue.
+ *
+ * **The shared queue is filled with a player command, not with a list write.**
+ * The door is `…/sessions/<id>/commands/from/<device>` and the body is a command
+ * whose `endpoint` is `add_to_queue`.
+ *
+ * The command is the one the desktop client sends, and it is the door that
+ * crosses: whoever adds the song, the song lands in the jam's queue and both
+ * sides see it in the queue they poll.
+ */
+export async function jamAddToQueue(sessionId: string, trackId: string): Promise<void> {
+  return invoke<void>("jam_add_to_queue", { sessionId, trackId });
+}
+
+/**
  * Subscribe to playback events.
  *
  * Called from an effect, not from a hook body: the listener outlives any single
@@ -381,6 +498,19 @@ export function onPlaybackStatus(handler: (status: PlaybackStatus) => void): Pro
  */
 export function onDjVoice(handler: (event: DjVoiceEvent) => void): Promise<UnlistenFn> {
   return listen<DjVoiceEvent>("dj://voice", (event) => handler(event.payload));
+}
+
+/**
+ * Subscribe to the music's pulse: 0 between beats, up to 1 on a kick, about
+ * thirty times a second while something sounds (see `beat.rs`).
+ *
+ * **Feed it to a motion value, never to React state.** Thirty renders a second
+ * of the player bar is the same trap the volume echo already paid for.
+ * `bun run dev` has no backend, so there the pulse simply never arrives.
+ */
+export function onBeat(handler: (pulse: number) => void): Promise<UnlistenFn> | null {
+  if (!hasBackend()) return null;
+  return listen<number>("player://beat", (event) => handler(event.payload));
 }
 
 export async function playTrack(
@@ -421,18 +551,64 @@ export async function setVolume(volume: number): Promise<void> {
   return invoke<void>("set_volume", { volume });
 }
 
+/** What Windows shows on its media card. Mirrors `media_keys::NowPlaying`. */
+export type NowPlaying = {
+  title: string;
+  artist: string;
+  album: string;
+  artwork: string | null;
+  playing: boolean;
+  /** The phone's only: see `useMediaSession`. Rust ignores what it does not declare. */
+  loading?: boolean;
+  positionMs?: number;
+  durationMs?: number;
+};
+
+/**
+ * Tell Windows what is playing; `null` hides the card and frees the media keys.
+ *
+ * On the phone the same answer goes to Android (`window.StarlessMedia`): the lock
+ * screen, the notification, the headset buttons and the wake lock that keeps
+ * the next song loading with the screen off all live in Kotlin
+ * (`NowPlayingCenter.kt`), where Android's media session is.
+ */
+export async function mediaSession(now: NowPlaying | null): Promise<void> {
+  if (!hasBackend()) return;
+  window.StarlessMedia?.nowPlaying(JSON.stringify(now));
+  return invoke<void>("media_session", { now });
+}
+
+export type MediaKey = "play" | "pause" | "next" | "previous";
+
+/**
+ * Subscribe to the media keys — the ones on a keyboard or a headset, and the
+ * buttons on Windows' media card. They arrive here even with the window
+ * minimised, because Windows routes them to the media session and not to the
+ * focused window (see `media_keys.rs`).
+ */
+export function onMediaKey(handler: (key: MediaKey) => void): Promise<UnlistenFn> | null {
+  if (!hasBackend()) return null;
+  // The phone's lock screen and headset buttons arrive from Kotlin, which
+  // calls this function by name: the same keys, the same handler.
+  if (window.StarlessMedia) window.__starlessMediaKey = handler;
+  return listen<MediaKey>("media://key", (event) => handler(event.payload)).then((stop) => () => {
+    if (window.__starlessMediaKey === handler) window.__starlessMediaKey = undefined;
+    stop();
+  });
+}
+
 /*
  * How opaque the menus are, as a percentage. A setting rather than a constant
  * because how far someone is willing to push a translucent surface over their own
  * library is theirs to choose, not the design system's.
  *
- * These three mirror `settings::MENU_OPACITY_*` on purpose. The Rust side clamps
+ * These three mirror `settings::SURFACE_OPACITY_*` on purpose. The Rust side clamps
  * whatever arrives, and a slider that could reach a value the backend silently
  * rewrites is a slider that lies about where it is.
  */
-export const MENU_OPACITY_MIN = 55;
-export const MENU_OPACITY_MAX = 100;
-export const MENU_OPACITY_DEFAULT = 55;
+export const SURFACE_OPACITY_MIN = 6;
+export const SURFACE_OPACITY_MAX = 100;
+export const SURFACE_OPACITY_DEFAULT = 32;
 
 /**
  * `bun run dev` is Vite alone: there is no backend, so `invoke` has nothing to
@@ -444,34 +620,34 @@ export const MENU_OPACITY_DEFAULT = 55;
  * iterate on: the slider never left its loading state, because the read that
  * enables it never resolved.
  */
-const MENU_OPACITY_KEY = "starless:menu-opacity";
+const SURFACE_OPACITY_KEY = "starless:surface-opacity";
 
 function hasBackend(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
 function clampOpacity(value: number): number {
-  return Math.min(MENU_OPACITY_MAX, Math.max(MENU_OPACITY_MIN, Math.round(value)));
+  return Math.min(SURFACE_OPACITY_MAX, Math.max(SURFACE_OPACITY_MIN, Math.round(value)));
 }
 
-export async function menuOpacity(): Promise<number> {
+export async function surfaceOpacity(): Promise<number> {
   if (!hasBackend()) {
     // `Number(null)` is 0 and not NaN, so an absent key has to be checked before
     // the number is: otherwise "never chosen" would come back as the floor.
-    const raw = window.localStorage.getItem(MENU_OPACITY_KEY);
+    const raw = window.localStorage.getItem(SURFACE_OPACITY_KEY);
     const stored = Number(raw);
-    return raw !== null && Number.isFinite(stored) ? clampOpacity(stored) : MENU_OPACITY_DEFAULT;
+    return raw !== null && Number.isFinite(stored) ? clampOpacity(stored) : SURFACE_OPACITY_DEFAULT;
   }
-  return invoke<number>("menu_opacity");
+  return invoke<number>("surface_opacity");
 }
 
-export async function setMenuOpacity(opacity: number): Promise<void> {
+export async function setSurfaceOpacity(opacity: number): Promise<void> {
   const value = clampOpacity(opacity);
   if (!hasBackend()) {
-    window.localStorage.setItem(MENU_OPACITY_KEY, String(value));
+    window.localStorage.setItem(SURFACE_OPACITY_KEY, String(value));
     return;
   }
-  return invoke<void>("set_menu_opacity", { opacity: value });
+  return invoke<void>("set_surface_opacity", { opacity: value });
 }
 
 /**
@@ -487,15 +663,526 @@ export async function crossfadeSeconds(): Promise<number> {
   return invoke<number>("crossfade_seconds");
 }
 
+/**
+ * What the person listened to, kept on this machine (`history.rs`).
+ *
+ * Not telemetry: it never leaves the disk. It is what lets Home say "most
+ * played" and "keep listening", which Spotify no longer offers to this app.
+ */
+export type PlayContext = { kind: "playlist"; id: string };
+
+export type Play = {
+  at: number;
+  track_id: string;
+  name: string;
+  artists: Artist[];
+  album_id: string | null;
+  album_name: string | null;
+  image: string | null;
+  duration_ms: number;
+  listened_ms: number;
+  context: PlayContext | null;
+};
+
+export type HomeStats = {
+  has_history: boolean;
+  top_tracks: { play: Play; plays: number }[];
+  top_artists: { id: string; name: string; plays: number; image: string | null }[];
+  recent: Play[];
+  /** Monday first, in the person's time. */
+  week_minutes: number[];
+  today_index: number;
+  streak_days: number;
+  /** When each source (a playlist's id, or `liked`) was last heard, in ms since the epoch. */
+  last_played: Record<string, number>;
+};
+
+/** Under this a song was skipped, and `history.rs` drops it too. */
+export const MIN_LISTENED_MS = 30_000;
+
+const EMPTY_STATS: HomeStats = {
+  has_history: false,
+  top_tracks: [],
+  top_artists: [],
+  recent: [],
+  week_minutes: [0, 0, 0, 0, 0, 0, 0],
+  today_index: (new Date().getDay() + 6) % 7,
+  streak_days: 0,
+  last_played: {},
+};
+
+export const historyKey = ["home-stats"] as const;
+
+export async function recordPlay(play: Play): Promise<void> {
+  if (!hasBackend() || play.listened_ms < MIN_LISTENED_MS) return;
+  return invoke<void>("record_play", { play });
+}
+
+export function useHomeStats() {
+  return useQuery({
+    queryKey: historyKey,
+    queryFn: () =>
+      hasBackend()
+        ? invoke<HomeStats>("home_stats", { tzOffsetMin: new Date().getTimezoneOffset() })
+        : Promise.resolve(EMPTY_STATS),
+    staleTime: 60_000,
+  });
+}
+
+export async function historyEnabled(): Promise<boolean> {
+  if (!hasBackend()) return false;
+  return invoke<boolean>("history_enabled");
+}
+
+export async function setHistoryEnabled(enabled: boolean): Promise<void> {
+  if (!hasBackend()) return;
+  return invoke<void>("set_history_enabled", { enabled });
+}
+
+export async function clearHistory(): Promise<void> {
+  if (!hasBackend()) return;
+  return invoke<void>("clear_history");
+}
+
+/** Mirrors `settings::AUDIO_QUALITIES`. */
+export type AudioQuality = "low" | "normal" | "high";
+
+/** Read when the player is built, so a change applies on the next launch. */
+export async function audioQuality(): Promise<AudioQuality> {
+  if (!hasBackend()) return "high";
+  return invoke<AudioQuality>("audio_quality");
+}
+
+export async function setAudioQuality(quality: AudioQuality): Promise<void> {
+  if (!hasBackend()) return;
+  return invoke<void>("set_audio_quality", { quality });
+}
+
+export async function normalisation(): Promise<boolean> {
+  if (!hasBackend()) return false;
+  return invoke<boolean>("normalisation");
+}
+
+export async function setNormalisation(on: boolean): Promise<void> {
+  if (!hasBackend()) return;
+  return invoke<void>("set_normalisation", { on });
+}
+
+export async function closeToTray(): Promise<boolean> {
+  if (!hasBackend()) return true;
+  return invoke<boolean>("close_to_tray");
+}
+
+export async function setCloseToTray(on: boolean): Promise<void> {
+  if (!hasBackend()) return;
+  return invoke<void>("set_close_to_tray", { on });
+}
+
+/** Asked of the registry each time, not remembered: see `startup.rs`. */
+export async function startWithWindows(): Promise<boolean> {
+  if (!hasBackend()) return false;
+  return invoke<boolean>("start_with_windows");
+}
+
+/**
+ * Answers with what is true afterwards, and that is what the switch draws: a
+ * development build never writes the registry, so there it does not move.
+ */
+export async function setStartWithWindows(on: boolean): Promise<boolean> {
+  if (!hasBackend()) return false;
+  return invoke<boolean>("set_start_with_windows", { on });
+}
+
+/** The tray menu's words, in the app's language. Mirrors `tray::TrayLabels`. */
+export async function trayLabels(labels: {
+  play: string;
+  pause: string;
+  next: string;
+  previous: string;
+  show: string;
+  quit: string;
+}): Promise<void> {
+  if (!hasBackend()) return;
+  return invoke<void>("tray_labels", { labels });
+}
+
+/** A play, back into a track the player and the queue understand. */
+export function trackFromPlay(play: Play): Track {
+  return {
+    id: play.track_id,
+    name: play.name,
+    duration_ms: play.duration_ms || null,
+    artists: play.artists,
+    album: play.album_id
+      ? {
+          id: play.album_id,
+          name: play.album_name ?? "",
+          images: play.image ? [{ url: play.image }] : [],
+        }
+      : null,
+    popularity: null,
+    added_at: null,
+  };
+}
+
 export async function setCrossfadeSeconds(seconds: number): Promise<void> {
   if (!hasBackend()) return;
   const value = Math.min(CROSSFADE_MAX, Math.max(0, Math.round(seconds)));
   return invoke<void>("set_crossfade_seconds", { seconds: value });
 }
 
+/**
+ * The number the surfaces read, and whether they frost at all: `index.css` drops the
+ * content's fade when they do, because the mask would keep the blur from the picture.
+ */
+function writeSurfaceOpacity(value: number): void {
+  const root = document.documentElement;
+  root.style.setProperty("--surface-alpha", String(value / 100));
+  root.toggleAttribute("data-surface-frost", value > SURFACE_OPACITY_MIN);
+}
+
 /** Drive the CSS variable every overlay reads. No-op before the first paint matters. */
-export function applyMenuOpacity(opacity: number): void {
-  document.documentElement.style.setProperty("--menu-alpha", String(clampOpacity(opacity) / 100));
+export function applySurfaceOpacity(opacity: number): void {
+  const value = clampOpacity(opacity);
+  writeSurfaceOpacity(value);
+  try {
+    window.localStorage.setItem(SURFACE_OPACITY_KEY, String(value));
+  } catch {
+    // A blocked storage only costs the first frame.
+  }
+}
+
+/**
+ * The cached opacity, for the frame before the backend answers. Same reason as
+ * the theme: the bars are on screen from the first frame, and whoever chose solid
+ * would otherwise watch them turn solid on every launch.
+ */
+export function applyCachedSurfaceOpacity(): void {
+  let cached: string | null = null;
+  try {
+    cached = window.localStorage.getItem(SURFACE_OPACITY_KEY);
+  } catch {
+    // Same as above.
+  }
+  // Nothing cached is the default, written and not assumed: the default frosts, and
+  // the attribute that clears the content's fade for it exists only if it is set.
+  const value = Number(cached);
+  writeSurfaceOpacity(
+    cached !== null && Number.isFinite(value) ? clampOpacity(value) : SURFACE_OPACITY_DEFAULT,
+  );
+}
+
+/**
+ * The background effects. Mirrors `settings::EFFECTS`, the shipped value first.
+ *
+ * They live in a tiny store and not in `App`'s state: the bloom, the pointer
+ * light and the volume read them from three places, and the settings panel
+ * writes them while all three are on screen — a store is what lets a change
+ * answer at once without re-rendering the whole app for it.
+ */
+export const EFFECTS = {
+  glow: ["on", "off"],
+  beat: ["strong", "soft", "off"],
+  bloom: ["normal", "soft", "off"],
+  motion: ["on", "off"],
+  shape: ["top", "corners", "center", "side"],
+  grain: ["off", "on"],
+  cover: ["off", "lyrics", "always"],
+  coverSide: ["left", "right"],
+  play: ["bone", "accent", "cover", "glass"],
+} as const;
+
+export type EffectName = keyof typeof EFFECTS;
+export type Effects = { [K in EffectName]: (typeof EFFECTS)[K][number] };
+
+const EFFECTS_KEY = "starless:effects";
+
+export const EFFECTS_DEFAULT: Effects = {
+  glow: "on",
+  beat: "strong",
+  bloom: "normal",
+  motion: "on",
+  shape: "top",
+  grain: "off",
+  cover: "off",
+  coverSide: "left",
+  play: "bone",
+};
+
+/**
+ * Everything still: what the quiet mode switch writes. Only the movement —
+ * `shape` and `grain` are how the ground looks, and turning the effects off is
+ * not a reason to move the light somewhere else.
+ */
+export const EFFECTS_QUIET = {
+  glow: "off",
+  beat: "off",
+  bloom: "off",
+  motion: "off",
+} as const satisfies Partial<Effects>;
+
+/** Keep only what this build knows, the same gate Rust keeps. */
+function knownEffects(raw: Record<string, unknown>): Effects {
+  const out = { ...EFFECTS_DEFAULT };
+  for (const name of Object.keys(EFFECTS) as EffectName[]) {
+    const value = raw[name];
+    if ((EFFECTS[name] as readonly unknown[]).includes(value)) {
+      (out as Record<EffectName, unknown>)[name] = value;
+    }
+  }
+  return out;
+}
+
+let currentEffects = EFFECTS_DEFAULT;
+const effectListeners = new Set<() => void>();
+
+export function applyEffects(next: Effects): void {
+  currentEffects = next;
+  // The CSS half of `motion`: index.css stops every transition and keyframe
+  // under this attribute, the same rule the system's reduced motion gets.
+  document.documentElement.toggleAttribute("data-still", next.motion === "off");
+  for (const listener of effectListeners) listener();
+}
+
+export function useEffectsSettings(): Effects {
+  return useSyncExternalStore(
+    (listener) => {
+      effectListeners.add(listener);
+      return () => effectListeners.delete(listener);
+    },
+    () => currentEffects,
+  );
+}
+
+export async function effects(): Promise<Effects> {
+  if (!hasBackend()) {
+    try {
+      return knownEffects(JSON.parse(window.localStorage.getItem(EFFECTS_KEY) ?? "{}"));
+    } catch {
+      return EFFECTS_DEFAULT;
+    }
+  }
+  return knownEffects(await invoke<Record<string, string>>("effects"));
+}
+
+export async function setEffect<K extends EffectName>(name: K, value: Effects[K]): Promise<void> {
+  if (!hasBackend()) {
+    window.localStorage.setItem(EFFECTS_KEY, JSON.stringify({ ...currentEffects, [name]: value }));
+    return;
+  }
+  return invoke<void>("set_effect", { name, value });
+}
+
+/**
+ * Dark, light or the system's. Mirrors `settings::THEMES`, the shipped one first.
+ *
+ * The choice is stored in Rust like every other setting, and **also cached in
+ * localStorage**, because the first frame is painted before any `invoke` can
+ * answer: a light-theme user would otherwise see the dark app flash on every
+ * launch. The cache is a convenience for that frame; the backend is the truth.
+ */
+export const THEMES = ["dark", "light", "system"] as const;
+export type Theme = (typeof THEMES)[number];
+
+const THEME_KEY = "starless:theme";
+const SYSTEM_LIGHT = "(prefers-color-scheme: light)";
+
+let currentTheme: Theme = "dark";
+let systemQuery: MediaQueryList | null = null;
+
+function isTheme(value: unknown): value is Theme {
+  return (THEMES as readonly unknown[]).includes(value);
+}
+
+/**
+ * Where the last press landed, so a theme picked with the hand grows out of the
+ * hand. A press older than a moment is not the one that changed the theme —
+ * Windows switching under "system" is not a press at all — and then the circle
+ * grows from the middle of the window.
+ */
+let lastPress: { x: number; y: number; at: number } | null = null;
+let watchingPresses = false;
+
+function paintTheme(): void {
+  const light =
+    currentTheme === "light" ||
+    (currentTheme === "system" && window.matchMedia(SYSTEM_LIGHT).matches);
+  const next = light ? "light" : "dark";
+  const root = document.documentElement;
+  if (root.dataset.theme === next) return;
+  // The first paint is not a change, and with motion off a change is a cut.
+  const still =
+    root.dataset.theme === undefined ||
+    root.hasAttribute("data-still") ||
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+    typeof document.startViewTransition !== "function";
+  if (still) {
+    root.dataset.theme = next;
+    return;
+  }
+  /*
+   * The whole window changes colour at once, so it is not animated element by
+   * element — hundreds of tokens and every glass surface would repaint each
+   * frame. The browser photographs the old window, paints the new one, and the
+   * new photo is revealed as a circle that grows until it covers the corners.
+   */
+  const press = lastPress && performance.now() - lastPress.at < 1500 ? lastPress : null;
+  const x = press?.x ?? window.innerWidth / 2;
+  const y = press?.y ?? window.innerHeight / 2;
+  const reach = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y));
+  const change = document.startViewTransition(() => {
+    root.dataset.theme = next;
+  });
+  change.ready
+    .then(() =>
+      root.animate(
+        {
+          clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${reach}px at ${x}px ${y}px)`],
+        },
+        {
+          duration: 560,
+          easing: "cubic-bezier(0.65, 0, 0.35, 1)",
+          pseudoElement: "::view-transition-new(root)",
+        },
+      ),
+    )
+    .catch(() => {
+      // A transition that could not start still applied the theme.
+    });
+}
+
+/**
+ * Apply a choice. `system` listens to Windows while it is the choice, so
+ * switching Windows to light mode with the app open repaints it at once.
+ */
+export function applyTheme(next: Theme): void {
+  currentTheme = next;
+  if (!watchingPresses) {
+    watchingPresses = true;
+    window.addEventListener(
+      "pointerdown",
+      (event) => {
+        lastPress = { x: event.clientX, y: event.clientY, at: performance.now() };
+      },
+      { capture: true, passive: true },
+    );
+  }
+  try {
+    window.localStorage.setItem(THEME_KEY, next);
+  } catch {
+    // A blocked storage only costs the first frame.
+  }
+  if (next === "system" && !systemQuery) {
+    systemQuery = window.matchMedia(SYSTEM_LIGHT);
+    systemQuery.addEventListener("change", paintTheme);
+  } else if (next !== "system" && systemQuery) {
+    systemQuery.removeEventListener("change", paintTheme);
+    systemQuery = null;
+  }
+  paintTheme();
+}
+
+/** The cached choice, synchronously, for the frame before the backend answers. */
+export function applyCachedTheme(): void {
+  let cached: unknown = null;
+  try {
+    cached = window.localStorage.getItem(THEME_KEY);
+  } catch {
+    // Same as above.
+  }
+  applyTheme(isTheme(cached) ? cached : "dark");
+}
+
+export async function theme(): Promise<Theme> {
+  if (!hasBackend()) return currentTheme;
+  const value = await invoke<string>("theme");
+  return isTheme(value) ? value : "dark";
+}
+
+export async function setTheme(next: Theme): Promise<void> {
+  if (!hasBackend()) return;
+  return invoke<void>("set_theme", { theme: next });
+}
+
+/**
+ * The person's own picture behind the glass, and how dark and soft it is drawn.
+ *
+ * A store for the same reason as the effects: the ground is drawn by `App` and
+ * changed from the settings panel while it is on screen behind it.
+ *
+ * `url` is an object URL over the bytes Rust hands back, never a path: the
+ * webview has no business reading the disk, and the copy lives where sign-out
+ * cannot delete it (`background.rs`).
+ */
+export type Background = { url: string | null; dim: number; blur: number };
+
+/** Mirrors `settings::BACKGROUND_DIM_MAX` and the defaults beside it. */
+export const BACKGROUND_DIM_MAX = 90;
+export const BACKGROUND_DEFAULT: Background = { url: null, dim: 50, blur: 20 };
+
+/** The same limit `background.rs` keeps, checked here first so a huge pick never crosses. */
+const BACKGROUND_MAX_BYTES = 25 * 1024 * 1024;
+
+let currentBackground = BACKGROUND_DEFAULT;
+const backgroundListeners = new Set<() => void>();
+
+function setBackgroundState(next: Background): void {
+  if (currentBackground.url && currentBackground.url !== next.url) {
+    URL.revokeObjectURL(currentBackground.url);
+  }
+  currentBackground = next;
+  // The CSS has to know: text standing on a picture needs what `.on-ground` gives it.
+  document.documentElement.toggleAttribute("data-picture", next.url !== null);
+  for (const listener of backgroundListeners) listener();
+}
+
+export function useBackground(): Background {
+  return useSyncExternalStore(
+    (listener) => {
+      backgroundListeners.add(listener);
+      return () => backgroundListeners.delete(listener);
+    },
+    () => currentBackground,
+  );
+}
+
+/** Read the saved picture and look, once, at startup. */
+export async function loadBackground(): Promise<void> {
+  if (!hasBackend()) return;
+  const [bytes, look] = await Promise.all([
+    invoke<ArrayBuffer>("background_image"),
+    invoke<{ dim: number; blur: number }>("background_look"),
+  ]);
+  const url = bytes.byteLength > 0 ? URL.createObjectURL(new Blob([bytes])) : null;
+  setBackgroundState({ url, ...look });
+}
+
+/**
+ * Store a picked file and draw it. Rust checks the format by its bytes; the
+ * size is checked here too so twenty-five megabytes are not copied across the
+ * bridge only to be refused on the other side.
+ */
+export async function pickBackground(file: File): Promise<void> {
+  if (file.size > BACKGROUND_MAX_BYTES) throw "image_too_large";
+  if (hasBackend()) {
+    await invoke<void>("set_background_image", new Uint8Array(await file.arrayBuffer()));
+  }
+  setBackgroundState({ ...currentBackground, url: URL.createObjectURL(file) });
+}
+
+export async function clearBackground(): Promise<void> {
+  if (hasBackend()) await invoke<void>("clear_background_image");
+  setBackgroundState({ ...currentBackground, url: null });
+}
+
+/** Draw a look at once, without saving it: the sliders call this per step. */
+export function applyBackgroundLook(dim: number, blur: number): void {
+  setBackgroundState({ ...currentBackground, dim, blur });
+}
+
+export async function saveBackgroundLook(dim: number, blur: number): Promise<void> {
+  if (!hasBackend()) return;
+  return invoke<void>("set_background_look", { dim, blur });
 }
 
 /**
@@ -509,7 +1196,7 @@ export function applyMenuOpacity(opacity: number): void {
 const ACCENT_KEY = "starless:accent";
 
 /** The colour DESIGN.md ships. Also what "back to default" writes. */
-export const ACCENT_DEFAULT = "#c9f73c";
+export const ACCENT_DEFAULT = "#ff5a36";
 
 export function isHexColor(value: string): boolean {
   return /^#[0-9a-f]{6}$/i.test(value);
@@ -534,13 +1221,36 @@ export async function setAccentColor(color: string): Promise<void> {
 }
 
 /**
+ * Everything under Settings → Customisation back to what ships, the picture too.
+ *
+ * **One command and not one call per setting.** Each save reads and rewrites
+ * `settings.json`, so a row of them can overwrite each other; and it is the backend
+ * that knows which fields are customisation. Nothing is drawn until it answers: a
+ * reset that failed must not look like one that worked.
+ */
+export async function resetCustomisation(): Promise<void> {
+  if (hasBackend()) {
+    await invoke<void>("reset_customisation");
+  } else {
+    window.localStorage.removeItem(EFFECTS_KEY);
+    window.localStorage.removeItem(ACCENT_KEY);
+  }
+  applyTheme("dark");
+  applyAccentColor(null);
+  applySurfaceOpacity(SURFACE_OPACITY_DEFAULT);
+  applyEffects(EFFECTS_DEFAULT);
+  setBackgroundState(BACKGROUND_DEFAULT);
+}
+
+/**
  * Three variables, because one colour cannot stay one hex when it has to work
  * as a fill *and* as the label on top of that fill.
  *
  * The accent itself is the user's. `--color-accent-soft` is the tint the focus
  * outline uses, mixed toward white by the same ratio the shipped pair has
- * (#c9f73c → #d9ff6b) so the focus ring keeps its relationship to the accent
- * instead of being the one lime thing left on screen after a repaint.
+ * (Ember #ff5a36 → #ff7e62, the 0.22 mix) so the focus
+ * ring keeps its relationship to the accent instead of being the one leftover
+ * colour on screen after a repaint.
  *
  * `--color-on-accent` is the foreground for everything filled with the accent —
  * the Inicio button, the play buttons, the primary buttons of every prompt. It
@@ -564,7 +1274,7 @@ export function applyAccentColor(color: string | null): void {
   const value = color.toLowerCase();
   root.setProperty("--color-accent", value);
   root.setProperty("--color-accent-soft", mixToward(value, 0.22));
-  root.setProperty("--color-on-accent", isDark(value) ? "#f4f4fa" : "#0a0a12");
+  root.setProperty("--color-on-accent", isDark(value) ? "#edeae3" : "#0b0b0f");
 }
 
 /** `amount` of white mixed into `hex`, as `#rrggbb`. */
@@ -582,30 +1292,35 @@ function mixToward(hex: string, amount: number): string {
 /**
  * WCAG relative luminance, and the reason `--color-on-accent` exists.
  *
- * The threshold is 0.45 and not the 0.5 of a contrast formula: the filled
- * surfaces here are large and saturated, and a mid-tone accent at exactly 0.5
- * still reads better with the dark label than with the light one.
+ * The threshold is 0.17: the luminance at which Void and Bone give the same
+ * contrast. It used to be 0.45, which was harmless while the default was a pale
+ * chrome, and put a 2.6:1 Bone label on Ember — the default since the new
+ * identity — where Void gives 6.3:1.
  */
-function isDark(hex: string): boolean {
+export function isDark(hex: string): boolean {
   const [r, g, b] = [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16) / 255);
   const linear = [r, g, b].map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
-  return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2] < 0.45;
+  return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2] < 0.17;
 }
 
 /**
- * How the library is ordered, and why there are exactly these four.
+ * How the library is ordered, and why there are exactly these five.
  *
- * **There is no "recently added" and no "last played", and that is not an omission.**
- * A playlist carries an id, a name, its images, the owner's display name and a track
- * count — see `models.rs`. Not one of those is a date. An order called "recent" built
- * on that would be the order in which the list happened to arrive wearing the label
- * of a fact this app does not have, which is worse than not offering it: the user
- * trusts the label. Spotify's own "Recently added" is a server-side order over a
- * field this session cannot see.
+ * **There is no "recently added", and that is not an omission.** A playlist
+ * carries an id, a name, its images, the owner's display name and a track count —
+ * see `models.rs`. Not one of those is a date. An order called "recently added"
+ * built on that would be the order in which the list happened to arrive wearing
+ * the label of a fact this app does not have, which is worse than not offering
+ * it: the user trusts the label. Spotify's own is a server-side order over a field
+ * this session cannot see.
  *
- * So the orders are the four the data can answer honestly.
+ * **"Recently played" is the exception, because the date is ours.** The local
+ * history (`history.rs`) stamps every song heard in Starless with its time and
+ * the playlist it came from, so the last time a playlist sounded *here* is a
+ * fact this app does have. It is only this machine's listening, never Spotify's,
+ * and a playlist that never sounded here goes after the rest, by name.
  */
-export const LIBRARY_SORTS = ["name-asc", "name-desc", "creator", "tracks"] as const;
+export const LIBRARY_SORTS = ["name-asc", "name-desc", "creator", "tracks", "recent"] as const;
 export type LibrarySort = (typeof LIBRARY_SORTS)[number];
 
 /** Which of the two ways of looking at the shelf is on. */
@@ -619,6 +1334,23 @@ export function isLibrarySort(value: string): value is LibrarySort {
 export function isLibraryView(value: string): value is LibraryView {
   return (LIBRARY_VIEWS as readonly string[]).includes(value);
 }
+
+/** The orders a playlist's songs can be shown in; `custom` is the playlist's own. */
+export const PLAYLIST_ORDERS = ["custom", "title", "added", "artist", "album"] as const;
+export type PlaylistOrder = (typeof PLAYLIST_ORDERS)[number];
+
+/** How tall a row of a playlist is. */
+export const TRACK_LIST_VIEWS = ["list", "compact"] as const;
+export type TrackListView = (typeof TRACK_LIST_VIEWS)[number];
+
+/** How every playlist is read: one order, its direction, and the row height. */
+export type TrackListPrefs = { order: PlaylistOrder; descending: boolean; view: TrackListView };
+
+export const DEFAULT_TRACK_LIST_PREFS: TrackListPrefs = {
+  order: "custom",
+  descending: false,
+  view: "list",
+};
 
 /** Whoever made it, or `null` when the playlist does not say. */
 export function playlistCreator(playlist: Playlist): string | null {
@@ -644,10 +1376,28 @@ const byName = new Intl.Collator(undefined, { numeric: true, sensitivity: "base"
  * array coming out of React Query is the cache's own — sorting it would reorder the
  * cached value under every other screen that reads it.
  */
-export function sortPlaylists(playlists: Playlist[], sort: LibrarySort): Playlist[] {
+export function sortPlaylists(
+  playlists: Playlist[],
+  sort: LibrarySort,
+  lastPlayed: Record<string, number> = {},
+): Playlist[] {
   const sorted = [...playlists];
 
   switch (sort) {
+    case "recent":
+      sorted.sort((a, b) => {
+        const left = lastPlayed[a.id];
+        const right = lastPlayed[b.id];
+        // Never heard here is not "a long time ago": it goes after every
+        // playlist that was, and those keep their A–Z among themselves.
+        if (left === undefined || right === undefined) {
+          if (left !== right) return left === undefined ? 1 : -1;
+          return byName.compare(a.name, b.name);
+        }
+        return right - left || byName.compare(a.name, b.name);
+      });
+      break;
+
     case "name-desc":
       sorted.sort((a, b) => byName.compare(b.name, a.name));
       break;
@@ -718,6 +1468,46 @@ export async function setLibraryView(view: LibraryView): Promise<void> {
     return;
   }
   return invoke<void>("set_library_view", { view });
+}
+
+const TRACK_ORDER_KEY = "starless:track-order";
+const TRACK_VIEW_KEY = "starless:track-view";
+
+/**
+ * The order and the view a playlist opens in. Rust keeps the order as
+ * `<order>-<asc|desc>` and refuses one it does not know; this side checks the
+ * same shape again before it reaches a `switch`, like `librarySort`.
+ */
+export async function trackListPrefs(): Promise<TrackListPrefs> {
+  const [rawOrder, rawView] = hasBackend()
+    ? await Promise.all([invoke<string>("track_order"), invoke<string>("track_view")])
+    : [window.localStorage.getItem(TRACK_ORDER_KEY), window.localStorage.getItem(TRACK_VIEW_KEY)];
+  const [order, direction] = (rawOrder ?? "").split("-");
+  const known = (PLAYLIST_ORDERS as readonly string[]).includes(order);
+  return {
+    order: known ? (order as PlaylistOrder) : DEFAULT_TRACK_LIST_PREFS.order,
+    descending: known && direction === "desc",
+    view: (TRACK_LIST_VIEWS as readonly string[]).includes(rawView ?? "")
+      ? (rawView as TrackListView)
+      : DEFAULT_TRACK_LIST_PREFS.view,
+  };
+}
+
+export async function setTrackOrder(order: PlaylistOrder, descending: boolean): Promise<void> {
+  const value = `${order}-${descending ? "desc" : "asc"}`;
+  if (!hasBackend()) {
+    window.localStorage.setItem(TRACK_ORDER_KEY, value);
+    return;
+  }
+  return invoke<void>("set_track_order", { order: value });
+}
+
+export async function setTrackView(view: TrackListView): Promise<void> {
+  if (!hasBackend()) {
+    window.localStorage.setItem(TRACK_VIEW_KEY, view);
+    return;
+  }
+  return invoke<void>("set_track_view", { view });
 }
 
 /**
@@ -1066,109 +1856,21 @@ export async function signOut(): Promise<void> {
 }
 
 /**
- * Rust error codes, so a screen can say something true instead of "algo falló".
- * Anything unlisted is reported as-is rather than swallowed: a new code showing
- * up on screen is a signal, not noise.
+ * The language `explain()` answers in. It has callers outside the tree that
+ * gets `t` (hooks, console lines), so `App` sets it once per render instead of
+ * every caller passing it in.
  */
-const API_ERRORS: Record<string, string> = {
-  unauthorised: "La sesión venció. Vuelve a entrar.",
-  // Deliberately not "your account can't access this". In development mode a 403
-  // on a playlist means Spotify will not serve its contents to a third-party app
-  // unless the account owns or collaborates on it — which has nothing to do with
-  // what the account is allowed to do. Blaming the account sends people looking
-  // for a permissions problem that is not theirs to fix.
-  forbidden: "Spotify no entrega el contenido de esta playlist a una app en desarrollo.",
-  rate_limited: "Spotify está limitando las peticiones. Espera un momento.",
-  // A failure that resolves by itself, and the one the app really does retry
-  // while the user is still looking at the screen.
-  //
-  // **It does not say whose fault it is, on purpose.** librespot raises this for
-  // a service that is down *and* for a `ConnectionRefused` on this machine — the
-  // home network went down — and the two arrive as the same kind. "Spotify está
-  // teniendo problemas" is the wrong sentence for someone whose router just
-  // rebooted: it sends them off to look for a problem they do not have, in a
-  // service they cannot go and check.
-  service_unavailable: "No se pudo llegar a Spotify en este momento. Starless sigue reintentando.",
-  not_signed_in: "Primero hay que iniciar sesión.",
-  login_expired: "La sesión venció. Vuelve a entrar.",
-  network_failed: "No se pudo hablar con Spotify.",
-  bad_response: "Spotify respondió algo que no entendemos.",
-  token_refresh_failed: "No se pudo renovar la sesión. Vuelve a entrar.",
-  command_failed: "La operación falló.",
-  session_busy: "La sesión está ocupada. Inténtalo de nuevo.",
+let errorLang: Lang = "es";
 
-  // Playback. None of these are edge cases: each one is a reason a click produces
-  // nothing, and a click that produces nothing with no explanation is the single
-  // worst failure an app can have.
-  no_player: "El reproductor todavía no está listo. Inténtalo de nuevo.",
-  // The play button with nothing loaded behind it. The app does not press it
-  // in this state — the button is disabled when there is no track — but the
-  // command can be asked anyway, and the answer has to be a sentence and not a
-  // code the user would have to decode.
-  no_track: "No hay ninguna canción cargada.",
-  audio_device_failed: "No se pudo abrir el dispositivo de audio de Windows.",
-  // The player stopped answering. Not a broken song and not a broken
-  // connection: the output device stopped consuming, librespot's sink waits
-  // for it forever, and the app noticed that the position had stopped moving
-  // and went to build another player. The app is doing something about it, so
-  // this is what it says while it does.
-  audio_stalled: "El audio se trabó. Volviendo a abrir el dispositivo de salida…",
-  // Phrased as a fact about this app, not an accusation. The event behind it has
-  // at least two very different causes — Spotify refusing to serve the track, and
-  // the decoder choking on bytes that were delivered fine — and the status carries
-  // no way to tell them apart. Saying "Spotify did not deliver this song" picks
-  // one of them and sends the user somewhere the problem is not.
-  track_unavailable: "No se pudo reproducir esta canción.",
-  // Its own code, not `track_unavailable` wearing a hat. The song was fine: the
-  // connection to Spotify was gone, so there was nobody left to ask for the key
-  // that decrypts it — and librespot, which never reconnects on its own, answers
-  // a missing key by playing the file undecrypted. The decoder then reports
-  // ciphertext as an unplayable song. Same event, opposite truth.
-  //
-  // **This is the end of the road.** The app tries to build the session again
-  // on its own, and this is what is left when that does not work: the
-  // connection is gone and it could not be brought back.
-  connection_lost:
-    "Se perdió la conexión con Spotify y no se pudo volver. Cierra y abre Starless para seguir escuchando.",
-  // Not a failure yet. The session died and the app is going to build it again
-  // — the same credentials, a new connection — and the track that failed goes
-  // back on when it is up. Saying "it was lost" here would be a lie about a
-  // thing that is still being fixed.
-  reconnecting: "Se perdió la conexión con Spotify. Volviendo a conectarse…",
-  bad_track_id: "Esa canción no tiene un identificador válido.",
-  // Not a failure. Spotify answers 404 when nobody wrote the words down, and that
-  // is a fact about the song; saying "could not read" instead would point the user
-  // at their own machine when the answer was about the track.
-  no_lyrics: "Esta canción no tiene letra.",
-  session_dropped: "Se cayó la sesión de reproducción.",
-
-  // Playlist writes. The three that can come out of an "add to playlist" are
-  // three different problems: the playlist is not in the library, the service
-  // refused the change, and the id was not an id. Saying "it failed" for all
-  // three sends the user looking in the wrong place.
-  playlist_not_found: "Esa playlist no está en tu biblioteca.",
-  add_failed: "No se pudo agregar la canción a la playlist.",
-  // The details are one write with two failures of their own: the service
-  // refused the change, or the picture did not go up. "It failed" for the two
-  // is the same message for two problems that need two different answers.
-  details_failed: "No se pudieron guardar los detalles de la playlist.",
-  upload_failed: "No se pudo subir la imagen.",
-  // The visibility is a second write, against a different list: the name and the
-  // description may already be saved when this one fails, and saying "it failed"
-  // for both would hide which of the two it was.
-  visibility_failed: "Se guardaron los detalles, pero la playlist no cambió de visibilidad.",
-  empty_name: "La playlist necesita un nombre.",
-  // These two were emitted by Rust and had no sentence here, so the user read
-  // the raw code on screen. They are the two the playlist commands can answer.
-  bad_id: "Ese identificador no es válido.",
-  no_session: "La sesión no está lista. Inténtalo de nuevo.",
-};
+export function setErrorLanguage(lang: Lang): void {
+  errorLang = lang;
+}
 
 /** Best-effort sentence for an error thrown by `invoke`. */
 export function explain(error: unknown): string {
   const raw = typeof error === "string" ? error : String(error);
   const code = raw.replace(/^.*?:\s*/, "");
-  return API_ERRORS[code] ?? code;
+  return (errors[errorLang] as Record<string, string>)[code] ?? code;
 }
 
 /**
@@ -1198,3 +1900,12 @@ export const SESSION_ERRORS = new Set([
   "audio_stalled",
   "audio_device_failed",
 ]);
+
+declare global {
+  interface Window {
+    /** `NowPlayingCenter.kt`'s bridge, on Android only: `NowPlaying` as JSON, or "null". */
+    StarlessMedia?: { nowPlaying: (json: string) => void };
+    /** What Kotlin calls when a lock-screen, notification or headset button is pressed. */
+    __starlessMediaKey?: (key: MediaKey) => void;
+  }
+}

@@ -68,6 +68,8 @@ type MediaCardProps = {
   eyebrow?: string;
   /** Width when the card sits on a scrolling shelf instead of a grid. */
   className?: string;
+  /** The playlist a right-click on the card opens the menu of (lib/contextMenu.ts). */
+  menuId?: string;
 };
 
 /**
@@ -98,6 +100,7 @@ export function MediaCard({
   eyebrow,
   playLabel,
   className = "",
+  menuId,
 }: MediaCardProps) {
   const interactive = Boolean(onPlay || onOpen);
   const radius = round ? "rounded-full" : "rounded-[10px]";
@@ -110,6 +113,7 @@ export function MediaCard({
       whileHover={interactive ? { y: -4 } : undefined}
       onPointerEnter={onPrefetch}
       onFocusCapture={onPrefetch}
+      data-playlist-id={menuId}
       className={`group/card relative ${className}`}
     >
       {/*
@@ -146,7 +150,7 @@ export function MediaCard({
         ) : null}
 
         {/*
-          A lime disc floating on a bright cover loses its edge, so it carries its
+          An accent disc floating on a bright cover loses its edge, so it carries its
           own shadow rather than relying on the artwork behind it.
         */}
         {onPlay && (
@@ -183,7 +187,7 @@ export function MediaCard({
       )}
       <p
         className={`mt-0.5 truncate text-[13.5px] font-semibold transition-colors duration-200 ${
-          onOpen ? "group-hover/card:text-accent" : ""
+          onOpen ? "group-hover/card:text-accent-ink" : ""
         } ${round ? "text-center" : ""}`}
       >
         {title}

@@ -36,6 +36,17 @@ export function isPrerelease(): boolean {
 }
 
 /**
+ * Whether this build runs on a phone, decided when the bundle was made.
+ *
+ * A phone has no window to minimise, no tray, no sign-in to start with, and
+ * no updater: the system installs the app. What only a desktop has asks this
+ * before it draws. The `typeof` guard is the one `isPrerelease` explains.
+ */
+export function isMobile(): boolean {
+  return typeof __STARLESS_MOBILE__ !== "undefined" && __STARLESS_MOBILE__;
+}
+
+/**
  * Whether this build is the one published as the public release.
  *
  * **A fact the app can learn, and a fact worth learning.** A public release

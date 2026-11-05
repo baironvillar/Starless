@@ -93,7 +93,7 @@ export function SearchMenu({
         role="listbox"
         id={SEARCH_MENU_ID}
         aria-label={t.searchResultsFor.replace("{query}", query)}
-        className="glass-overlay pointer-events-auto w-[clamp(180px,30vw,420px)] origin-top overflow-hidden rounded-card py-1.5"
+        className="surface-menu pointer-events-auto w-[clamp(180px,30vw,420px)] origin-top overflow-hidden rounded-card py-1.5"
       >
         {/* The empty states live inside the panel rather than replacing it: the
             panel IS the answer, and a field that empties itself the moment it has
@@ -113,7 +113,7 @@ export function SearchMenu({
           <p className="px-4 py-2 text-[13px] text-ink-faint">{t.searchNoMatches}</p>
         )}
 
-        {error && <p className="px-4 py-2 text-[13px] text-warn">{error}</p>}
+        {error && <p className="px-4 py-2 text-[13px] text-warn-ink">{error}</p>}
 
         {suggestions.map((track, index) => {
           const active = highlighted === index;
@@ -155,7 +155,7 @@ export function SearchMenu({
 
               <CornerDownLeft
                 className={`size-3.5 shrink-0 transition-opacity duration-150 ${
-                  active ? "text-accent opacity-100" : "opacity-0"
+                  active ? "text-accent-ink opacity-100" : "opacity-0"
                 }`}
                 strokeWidth={2}
               />
@@ -186,7 +186,7 @@ export function SearchMenu({
             )}
             <CornerDownLeft
               className={`size-3.5 shrink-0 transition-opacity duration-150 ${
-                highlighted === allIndex ? "text-accent opacity-100" : "opacity-0"
+                highlighted === allIndex ? "text-accent-ink opacity-100" : "opacity-0"
               }`}
               strokeWidth={2}
             />

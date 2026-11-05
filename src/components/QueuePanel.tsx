@@ -1,8 +1,11 @@
 import { Play, X } from "lucide-react";
 import { motion } from "motion/react";
+import { useEffect, useRef, useState } from "react";
 import type { StringKey } from "../lib/i18n";
-import { SPRING, SPRING_SHEET } from "../lib/motion";
+import { SHEET_EXIT, SPRING_SHEET } from "../lib/motion";
 import {
+  type Album,
+  type Artist,
   coverImage,
   type DjNarration,
   formatDuration,
@@ -10,7 +13,28 @@ import {
   trackArtists,
   trackRowKeys,
 } from "../lib/spotify";
+import { useRowWindow } from "../lib/useRowWindow";
 import { DjArtwork } from "./DjArtwork";
+import { TrackMenu } from "./TrackMenu";
+
+/** A piece's place in the cascade the panel arrives in (`.cascade` in index.css). */
+const at = (index: number) => ({ "--i": index }) as React.CSSProperties;
+
+/**
+ * How far the panel travels to leave the frame.
+ *
+ * **The sheet leaves the window; it does not fade in it.** The queue is glass
+ * over the content — the covers behind it are blurred through it, by design.
+ * A panel that fades out while it is still on top of the content shows two
+ * images on the same pixels: its own rows at half opacity over the sharp
+ * content behind. That is the fusing, and the library does not have it
+ * because the rail has a column of its own and nothing is ever behind it.
+ *
+ * So the glass keeps its opacity all the way and travels instead: 240 px of
+ * panel plus the 20 px of `right-5` that hold it off the edge, which puts its
+ * left edge exactly on the edge of the window.
+ */
+const OUT_OF_FRAME = 260;
 
 type QueuePanelProps = {
   t: Record<StringKey, string>;
@@ -53,8 +77,31 @@ type QueuePanelProps = {
    * the window's own inset: that space is the queue's, not empty ground.
    */
   barPresent: boolean;
-  onPlay: (track: Track) => void;
+  /** Inside the phone's full player, where the artwork was: no panel of its own. */
+  embedded?: boolean;
+  /**
+   * Play a song from the panel, and say which row it was.
+   *
+   * **The row's place, not the song.** The queue can hold the same song twice,
+   * and looking it up by its id finds the first copy —the one that already
+   * played—. The panel knows the place, so it says it.
+   */
+  onPlay: (track: Track, row: number) => void;
   onClose: () => void;
+  /**
+   * Add a song to the queue that is on screen.
+   *
+   * **The row's own "add to queue".** It is the app's queue, the one the panel
+   * is showing: a song that is put here goes right after the one that is
+   * sounding.
+   */
+  onAddToQueue: (track: Track) => void;
+  /** The row's menu: the artist of the song. */
+  onOpenArtist?: (artist: Artist) => void;
+  /** The row's menu: the album of the song. */
+  onOpenAlbum?: (album: Album) => void;
+  /** The row's menu: the playlist the song goes into. */
+  onNewPlaylist: (track: Track) => void;
 };
 
 /**
@@ -104,34 +151,110 @@ export function QueuePanel({
   dj,
   station,
   barPresent,
+  embedded = false,
   onPlay,
   onClose,
+  onAddToQueue,
+  onOpenArtist,
+  onOpenAlbum,
+  onNewPlaylist,
 }: QueuePanelProps) {
   const rowKeys = trackRowKeys(upNext);
+  const nextRef = useRef<HTMLUListElement>(null);
+  const { first, last, pitch } = useRowWindow(nextRef, upNext.length);
+
+  /**
+   * The panel is shown before its pieces are.
+   *
+   * **The flip waits a frame.** The pieces start hidden and are revealed a
+   * frame later, so the browser paints the hidden state before it is undone:
+   * a transition needs two states, and a piece that was never painted hidden
+   * simply appears.
+   */
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    let second = 0;
+    const firstFrame = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => setShown(true));
+    });
+    return () => {
+      cancelAnimationFrame(firstFrame);
+      cancelAnimationFrame(second);
+    };
+  }, []);
+
+  /**
+   * The places in the cascade, in the order the pieces arrive.
+   *
+   * **The order is the order on screen.** The header, then the DJ's line if
+   * there is one, then what is sounding, then what follows, and then each row
+   * of it. The wave stops growing at the twelfth piece, so a long queue does
+   * not keep its last rows waiting.
+   */
+  const withNarration = !dj && Boolean(narration);
+  const nowLabel = withNarration ? 2 : 1;
+  const nowRow = withNarration ? 3 : 2;
+  const nextLabel = withNarration ? 4 : 3;
+  const firstRow = withNarration ? 5 : 4;
 
   return (
     <motion.aside
-      initial={{ opacity: 0, x: 18 }}
-      animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: 18 }}
+      /*
+       * **The sheet slides; it never fades.** See `OUT_OF_FRAME`: a glass
+       * panel that fades while it is on top of the content puts two images on
+       * the same pixels, and the closing frame shows it. Sliding keeps the
+       * glass opaque all the way, so what is behind it is revealed by the
+       * panel moving away and not by the panel turning into air.
+       *
+       * Embedded —the queue inside the phone's player— has no glass and no
+       * position of its own: it takes the artwork's place inside a surface
+       * that already has them, so it fades.
+       */
+      initial={embedded ? { opacity: 0 } : { x: OUT_OF_FRAME }}
+      animate={embedded ? { opacity: 1 } : { x: 0 }}
+      exit={embedded ? { opacity: 0 } : { x: OUT_OF_FRAME, transition: SHEET_EXIT }}
       transition={SPRING_SHEET}
       role="dialog"
       aria-label={t.queue}
-      className={`glass-sheet pointer-events-auto absolute top-[104px] right-5 ${barPresent ? "bottom-[144px]" : "bottom-5"} z-30 flex w-[240px] flex-col overflow-hidden rounded-card transition-[bottom] duration-300 ease-[var(--ease-glass)]`}
+      // The panel arrives as one shape and its pieces cascade in
+      // (`.cascade` in index.css), the way the library's do.
+      data-shown={shown}
+      // On the phone the queue takes the artwork's place in the full player
+      // (DESIGN.md, "The phone"): the same list, without the side panel's glass
+      // and position, inside a surface that already has them.
+      className={
+        embedded
+          ? "flex h-full min-h-0 flex-col overflow-hidden"
+          : `surface pointer-events-auto absolute top-[104px] right-5 ${barPresent ? "bottom-[144px]" : "bottom-5"} z-30 flex w-[240px] flex-col overflow-hidden rounded-card transition-[bottom] duration-300 ease-[var(--ease-glass)]`
+      }
     >
-      <header className="flex shrink-0 items-center justify-between gap-2 px-4 pt-4 pb-3">
+      <header
+        className="cascade flex shrink-0 items-center justify-between gap-2 px-4 pt-4 pb-3"
+        style={at(0)}
+      >
         <h2 className="truncate text-[15px] font-semibold tracking-tight">{t.queue}</h2>
-        <motion.button
-          type="button"
-          onClick={onClose}
-          whileTap={{ scale: 0.9 }}
-          transition={SPRING_SHEET}
-          aria-label={t.close}
-          title={t.close}
-          className="grid size-8 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink"
-        >
-          <X className="size-[17px]" strokeWidth={2} />
-        </motion.button>
+        {/*
+            Only the close.
+
+            **The jam used to open from here**, next to this panel, and its icon
+            is gone while the jam is on standby: an icon that opens a shared
+            session that does not work yet is a door to a room that is not built.
+
+            Embedded, the full player's own queue button is the close.
+        */}
+        {!embedded && (
+          <motion.button
+            type="button"
+            onClick={onClose}
+            whileTap={{ scale: 0.9 }}
+            transition={SPRING_SHEET}
+            aria-label={t.close}
+            title={t.close}
+            className="grid size-8 shrink-0 place-items-center rounded-pill text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink"
+          >
+            <X className="size-[17px]" strokeWidth={2} />
+          </motion.button>
+        )}
       </header>
 
       {/* `pr-3` is the gap between the covers and the thumb; see the same note in
@@ -144,13 +267,13 @@ export function QueuePanel({
         */}
         {!dj && narration && <Narration narration={narration} />}
 
-        <Section label={t.queueNowPlaying}>
+        <Section label={t.queueNowPlaying} labelPiece={nowLabel}>
           {dj ? (
-            <NowPlayingDj dj={dj} t={t} />
+            <NowPlayingDj dj={dj} t={t} piece={nowRow} />
           ) : playing ? (
-            <NowPlaying track={playing} />
+            <NowPlaying track={playing} piece={nowRow} />
           ) : (
-            <Empty t={t} />
+            <Empty t={t} piece={nowRow} />
           )}
         </Section>
 
@@ -163,13 +286,31 @@ export function QueuePanel({
             so what comes is not decided yet.
         */}
         {!station && (
-          <Section label={t.queueNextUp}>
+          <Section label={t.queueNextUp} listRef={nextRef} labelPiece={nextLabel}>
             {upNext.length > 0 ? (
-              upNext.map((track, index) => (
-                <QueueRow key={rowKeys[index]} track={track} position={index + 1} onPlay={onPlay} />
-              ))
+              <>
+                {first > 0 && <li style={{ height: first * pitch }} aria-hidden />}
+                {upNext.slice(first, last).map((track, offset) => (
+                  <QueueRow
+                    key={rowKeys[first + offset]}
+                    t={t}
+                    track={track}
+                    position={first + offset + 1}
+                    piece={firstRow + first + offset}
+                    onPlay={onPlay}
+                    row={first + offset}
+                    onAddToQueue={onAddToQueue}
+                    onOpenArtist={onOpenArtist}
+                    onOpenAlbum={onOpenAlbum}
+                    onNewPlaylist={onNewPlaylist}
+                  />
+                ))}
+                {last < upNext.length && (
+                  <li style={{ height: (upNext.length - last) * pitch }} aria-hidden />
+                )}
+              </>
             ) : (
-              <Empty t={t} />
+              <Empty t={t} piece={firstRow} />
             )}
           </Section>
         )}
@@ -178,13 +319,29 @@ export function QueuePanel({
   );
 }
 
-function Section({ label, children }: { label: string; children: React.ReactNode }) {
+function Section({
+  label,
+  children,
+  listRef,
+  labelPiece,
+}: {
+  label: string;
+  children: React.ReactNode;
+  listRef?: React.Ref<HTMLUListElement>;
+  /** The label's place in the cascade the panel arrives in. */
+  labelPiece: number;
+}) {
   return (
     <section>
-      <h3 className="px-2 pb-1.5 text-[12px] font-semibold tracking-wide uppercase text-ink-faint">
+      <h3
+        className="cascade px-2 pb-1.5 text-[12px] font-semibold tracking-wide uppercase text-ink-faint"
+        style={at(labelPiece)}
+      >
         {label}
       </h3>
-      <ul className="flex flex-col gap-0.5">{children}</ul>
+      <ul ref={listRef} className="flex flex-col gap-0.5">
+        {children}
+      </ul>
     </section>
   );
 }
@@ -200,19 +357,14 @@ function Section({ label, children }: { label: string; children: React.ReactNode
  */
 function Narration({ narration }: { narration: DjNarration }) {
   return (
-    <motion.section
-      initial={{ opacity: 0, y: -6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={SPRING}
-      aria-label={narration.speaker}
-    >
+    <section className="cascade" style={at(1)} aria-label={narration.speaker}>
       <h3 className="px-2 pb-1.5 text-[12px] font-semibold tracking-wide uppercase text-ink-faint">
         {narration.speaker}
       </h3>
       <blockquote className="rounded-[14px] bg-white/6 px-3 py-2.5 text-[12.5px] leading-relaxed text-ink-muted">
         {narration.line}
       </blockquote>
-    </motion.section>
+    </section>
   );
 }
 
@@ -227,12 +379,14 @@ function Narration({ narration }: { narration: DjNarration }) {
 function NowPlayingDj({
   dj,
   t,
+  piece,
 }: {
   dj: { speaker: string | null; line: string | null };
   t: Record<StringKey, string>;
+  piece: number;
 }) {
   return (
-    <li>
+    <li className="cascade" style={at(piece)}>
       <div className="flex items-center gap-3 rounded-[14px] bg-white/6 px-2 py-2">
         <span className="relative size-11 shrink-0 overflow-hidden rounded-[10px]">
           <DjArtwork />
@@ -250,9 +404,9 @@ function NowPlayingDj({
   );
 }
 
-function NowPlaying({ track }: { track: Track }) {
+function NowPlaying({ track, piece }: { track: Track; piece: number }) {
   return (
-    <li>
+    <li className="cascade" style={at(piece)}>
       <div className="flex items-center gap-3 rounded-[14px] bg-white/6 px-2 py-2">
         <span className="relative size-11 shrink-0 rounded-[10px]">
           <Cover track={track} className="absolute inset-0 size-full rounded-[10px]" />
@@ -273,52 +427,106 @@ function NowPlaying({ track }: { track: Track }) {
   );
 }
 
+/**
+ * A row of the queue.
+ *
+ * **The row arrives with the wave, and not with its own spring.** The panel
+ * cascades its pieces —the header, the labels, the rows— and a row that
+ * animated on its own would be a second rhythm on top of the first one.
+ */
 function QueueRow({
+  t,
   track,
   position,
+  piece,
   onPlay,
+  onAddToQueue,
+  onOpenArtist,
+  onOpenAlbum,
+  onNewPlaylist,
+  row,
 }: {
+  t: Record<StringKey, string>;
   track: Track;
   position?: number;
-  onPlay: (track: Track) => void;
+  /** The row's place in the cascade the panel arrives in. */
+  piece: number;
+  onPlay: (track: Track, row: number) => void;
+  onAddToQueue: (track: Track) => void;
+  onOpenArtist?: (artist: Artist) => void;
+  onOpenAlbum?: (album: Album) => void;
+  onNewPlaylist: (track: Track) => void;
+  row: number;
 }) {
   return (
-    <motion.li
-      initial={{ opacity: 0, x: 8 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ ...SPRING, delay: 0.02 * (position ?? 0) }}
-    >
-      <button
-        type="button"
-        onClick={() => onPlay(track)}
-        className="group flex w-full items-center gap-3 rounded-[14px] px-2 py-2 text-left transition-colors duration-200 hover:bg-white/6"
-      >
-        {position !== undefined ? (
-          <span className="tabular w-3 shrink-0 text-[12px] text-ink-faint">{position}</span>
-        ) : (
-          <span className="w-3 shrink-0" />
-        )}
+    <li data-row className="cascade" style={at(piece)}>
+      {/*
+          The row is a div with the play button inside, and not a button with
+          the play button inside it.
 
-        <span className="relative size-9 shrink-0 rounded-[9px]">
-          <Cover track={track} className="absolute inset-0 size-full rounded-[9px]" />
-          <span className="absolute inset-0 grid place-items-center rounded-[9px] bg-ground/55 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-            <Play className="size-3.5 translate-x-px fill-ink text-ink" strokeWidth={0} />
+          **A button inside a button is not a thing** —the browser swallows the
+          inner one and the click lands on the outer— and the plus needs to be
+          its own control, with its own label.
+      */}
+      <div className="group flex w-full items-center gap-1 rounded-[14px] px-2 py-2 text-left transition-colors duration-200 hover:bg-white/6">
+        <button
+          type="button"
+          onClick={() => onPlay(track, row)}
+          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+        >
+          {position !== undefined ? (
+            <span className="tabular w-3 shrink-0 text-[12px] text-ink-faint">{position}</span>
+          ) : (
+            <span className="w-3 shrink-0" />
+          )}
+
+          <span className="relative size-9 shrink-0 rounded-[9px]">
+            <Cover track={track} className="absolute inset-0 size-full rounded-[9px]" />
+            <span className="absolute inset-0 grid place-items-center rounded-[9px] bg-ground/55 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+              <Play className="size-3.5 translate-x-px fill-ink text-ink" strokeWidth={0} />
+            </span>
           </span>
-        </span>
 
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-medium">{track.name}</span>
-          <span className="block truncate text-[12px] text-ink-muted">{trackArtists(track)}</span>
-        </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[13px] font-medium">{track.name}</span>
+            <span className="block truncate text-[12px] text-ink-muted">{trackArtists(track)}</span>
+          </span>
 
-        <span className="tabular shrink-0 text-[12px] text-ink-faint">
-          {formatDuration(track.duration_ms)}
-        </span>
-      </button>
-    </motion.li>
+          <span className="tabular shrink-0 text-[12px] text-ink-faint">
+            {formatDuration(track.duration_ms)}
+          </span>
+        </button>
+
+        {/*
+            The three dots of the row, and nothing else.
+
+            **The same menu the songs have everywhere else.** It is not the jam's:
+            adding to a playlist, adding to the queue, going to the artist or the
+            album and copying the link are the app's own business, and they were
+            here before the jam and they are here without it.
+
+            The menu appears on approach, like every other control in a row: a
+            button that is always there gives every song a permanent question
+            mark, and the list goes from something you read to something you
+            operate.
+        */}
+        <TrackMenu
+          t={t}
+          track={track}
+          onOpenArtist={onOpenArtist}
+          onOpenAlbum={onOpenAlbum}
+          onAddToQueue={onAddToQueue}
+          onNewPlaylist={onNewPlaylist}
+        />
+      </div>
+    </li>
   );
 }
 
-function Empty({ t }: { t: Record<StringKey, string> }) {
-  return <li className="px-2 py-1.5 text-[12.5px] text-ink-faint">{t.queueEmpty}</li>;
+function Empty({ t, piece }: { t: Record<StringKey, string>; piece: number }) {
+  return (
+    <li className="cascade px-2 py-1.5 text-[12.5px] text-ink-faint" style={at(piece)}>
+      {t.queueEmpty}
+    </li>
+  );
 }

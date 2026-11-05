@@ -8,7 +8,11 @@ import {
   type Track as SpotifyTrack,
   trackRowKeys,
 } from "../lib/spotify";
+import { isMobile } from "../lib/version";
 import { ArtistLine } from "./ArtistLine";
+import { PhoneTrackRow } from "./PhoneTrackRow";
+
+const MOBILE = isMobile();
 
 type TrackListProps = {
   tracks: SpotifyTrack[];
@@ -51,23 +55,6 @@ type TrackListProps = {
  * never clicked, which is why this column carries `failed` and not just the happy
  * paths.
  */
-/**
- * How the rows arrive, and — the part that matters — where the stagger stops.
- *
- * A row enters at `opacity: 0` and takes up its space immediately, so a delay
- * that is not capped shows the user **blank rows that exist but cannot be seen
- * yet**. With `0.03 * index` and no ceiling, `Mi playlist n.º 3` — 198 songs —
- * made row 198 wait 5.9 seconds, and the list looked like it had holes in it
- * for as long as it took to scroll. The cap keeps the cascade on the first
- * dozen rows, which is all the eye can follow anyway: past that, staggering is
- * not an entrance, it is a wait.
- *
- * `NumberedTrackList` has always capped this. Two lists of songs rendering the
- * same list of songs is not a thing that should have needed discovering twice.
- */
-const STAGGER_STEP = 0.03;
-const STAGGER_CAP = 12;
-
 export function TrackList({
   tracks,
   t,
@@ -91,8 +78,10 @@ export function TrackList({
     : `grid-cols-[minmax(0,1fr)_64px${trackMenu ? "_40px" : ""}]`;
 
   return (
-    <div className="overflow-hidden rounded-card border border-white/8 bg-white/4">
-      <div className={`grid items-center gap-4 border-b border-white/8 px-5 py-2.5 ${columns}`}>
+    <div className="surface-card arrive overflow-hidden rounded-card border border-white/8">
+      <div
+        className={`grid items-center gap-4 border-b border-white/8 px-5 py-2.5 ${columns} ${MOBILE ? "hidden" : ""}`}
+      >
         <span className="text-[12px] font-semibold tracking-wide uppercase text-ink-faint">
           {t.columnTitle}
         </span>
@@ -109,93 +98,117 @@ export function TrackList({
 
       {loading && <Row className="justify-center py-6 text-[13px] text-ink-faint">{t.loading}</Row>}
 
-      {error && !loading && <Row className="py-6 text-[13px] text-warn">{error}</Row>}
+      {error && !loading && <Row className="py-6 text-[13px] text-warn-ink">{error}</Row>}
 
       {!loading && !error && empty && tracks.length === 0 && (
         <Row className="justify-center py-6 text-[13px] text-ink-faint">{empty}</Row>
       )}
 
-      {!loading &&
-        !error &&
-        tracks.map((track, index) => {
-          const isPlaying = track.id === nowPlayingId;
-          const isLoading = track.id === loadingId;
-          const isFailed = track.id === failedId;
-          const cover = coverImage(track.album?.images);
+      {/*
+        The list arrives as one shape.
+        *
+        * The rows used to come in one at a time, each one thirty milliseconds
+        * after the one above it, and the effect was a list of ghosts: half of
+        * the table was there and half of it was not, over a background image,
+        * for the better part of half a second. A table is not a shelf of tiles
+        * — it is one thing, and it should land as one thing.
+        *
+        * This box mounts when the songs arrive and unmounts when they are
+        * gone, so the fade plays exactly when there is something to arrive.
+        */}
+      {!loading && !error && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={SPRING}>
+          {tracks.map((track, index) => {
+            const isPlaying = track.id === nowPlayingId;
+            const isLoading = track.id === loadingId;
+            const isFailed = track.id === failedId;
+            const cover = coverImage(track.album?.images);
 
-          return (
-            <motion.div
-              key={rowKeys[index]}
-              role="button"
-              tabIndex={0}
-              onClick={() => onPlay?.(track)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  onPlay?.(track);
-                }
-              }}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{
-                ...SPRING,
-                delay: Math.min(index, STAGGER_CAP) * STAGGER_STEP,
-              }}
-              className={`group grid w-full cursor-pointer items-center gap-4 border-b border-white/8 px-5 py-2.5 text-left transition-colors duration-200 last:border-b-0 hover:bg-white/6 ${columns}`}
-            >
-              <div className="flex min-w-0 items-center gap-3.5">
+            if (MOBILE) {
+              return (
+                <PhoneTrackRow
+                  key={rowKeys[index]}
+                  track={track}
+                  index={index}
+                  playing={isPlaying}
+                  loading={isLoading}
+                  failed={isFailed}
+                  onPlay={onPlay}
+                  onOpenArtist={onOpenArtist}
+                  menu={trackMenu?.(track)}
+                />
+              );
+            }
+
+            return (
+              <motion.div
+                key={rowKeys[index]}
+                role="button"
+                tabIndex={0}
+                onClick={() => onPlay?.(track)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onPlay?.(track);
+                  }
+                }}
+                className={`group grid w-full cursor-pointer items-center gap-4 border-b border-white/8 px-5 py-2.5 text-left transition-colors duration-200 last:border-b-0 hover:bg-white/6 ${columns}`}
+              >
+                <div className="flex min-w-0 items-center gap-3.5">
+                  {showStatus && (
+                    <span className="grid size-4 shrink-0 place-items-center">
+                      {isPlaying ? (
+                        <motion.span
+                          className="size-2 rounded-pill bg-live"
+                          animate={{ scale: [1, 1.35, 1] }}
+                          transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                        />
+                      ) : isLoading ? (
+                        <motion.span
+                          className="size-2 rounded-pill bg-accent"
+                          animate={{ opacity: [1, 0.25, 1] }}
+                          transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut" }}
+                        />
+                      ) : (
+                        <span className="size-2 rounded-pill bg-white/16 opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
+                      )}
+                    </span>
+                  )}
+
+                  <Cover cover={cover} alt={track.album?.name ?? track.name} />
+
+                  <div className="min-w-0">
+                    <p className="truncate text-[13.5px] font-semibold">{track.name}</p>
+                    <ArtistLine
+                      track={track}
+                      onOpenArtist={onOpenArtist}
+                      className="truncate text-[12.5px] text-ink-muted"
+                    />
+                  </div>
+                </div>
+
                 {showStatus && (
-                  <span className="grid size-4 shrink-0 place-items-center">
-                    {isPlaying ? (
-                      <motion.span
-                        className="size-2 rounded-pill bg-live"
-                        animate={{ scale: [1, 1.35, 1] }}
-                        transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-                      />
-                    ) : isLoading ? (
-                      <motion.span
-                        className="size-2 rounded-pill bg-accent"
-                        animate={{ opacity: [1, 0.25, 1] }}
-                        transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut" }}
-                      />
-                    ) : (
-                      <span className="size-2 rounded-pill bg-white/16 opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
+                  <span className="flex w-[132px] items-center gap-1.5 text-[12px] font-medium text-ink-muted">
+                    {isPlaying && <span className="text-live-ink">{t.nowPlaying}</span>}
+                    {isLoading && !isPlaying && (
+                      <span className="text-accent-ink">{t.loadingPlayback}</span>
                     )}
+                    {isFailed && !isPlaying && <span className="text-warn-ink">{t.failed}</span>}
                   </span>
                 )}
 
-                <Cover cover={cover} alt={track.album?.name ?? track.name} />
-
-                <div className="min-w-0">
-                  <p className="truncate text-[13.5px] font-semibold">{track.name}</p>
-                  <ArtistLine
-                    track={track}
-                    onOpenArtist={onOpenArtist}
-                    className="truncate text-[12.5px] text-ink-muted"
-                  />
-                </div>
-              </div>
-
-              {showStatus && (
-                <span className="flex w-[132px] items-center gap-1.5 text-[12px] font-medium text-ink-muted">
-                  {isPlaying && <span className="text-live">{t.nowPlaying}</span>}
-                  {isLoading && !isPlaying && (
-                    <span className="text-accent">{t.loadingPlayback}</span>
-                  )}
-                  {isFailed && !isPlaying && <span className="text-warn">{t.failed}</span>}
+                <span className="tabular text-right text-[12.5px] text-ink-muted">
+                  {formatDuration(track.duration_ms)}
                 </span>
-              )}
 
-              <span className="tabular text-right text-[12.5px] text-ink-muted">
-                {formatDuration(track.duration_ms)}
-              </span>
-
-              {/* Stops the row's own click: a dot that both opened a menu and
+                {/* Stops the row's own click: a dot that both opened a menu and
                   started the song is not a control. */}
-              {trackMenu?.(track)}
-            </motion.div>
-          );
-        })}
+                {trackMenu?.(track)}
+              </motion.div>
+            );
+          })}
+        </motion.div>
+      )}
 
       {!loading && !error && tracks.length === 0 && (
         <Row className="justify-center py-6 text-[13px] text-ink-faint">{t.emptyList}</Row>

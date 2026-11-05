@@ -27,14 +27,14 @@ no debería convertirlo en una sesión reproducible, es un problema.
 **Lo que se escribe en disco.** La cache de credenciales de librespot, el log
 local con rotación, y el `settings.json` que guarda el volumen.
 
-**El reporte automático de crashes.** Los builds oficiales llevan dentro un token
-de GitHub con permiso de `Issues: Write` sobre este repositorio y nada más, para
-que el botón del reporte pueda abrir el issue sin que tú hagas nada. Cualquiera
-que tenga Starless instalado puede extraer ese token del binario: **cualquiera
-puede abrir issues en este repositorio**. Eso es un vector de spam, no de
-lectura — el token no puede ver el código ni los issues privados. Si alguna vez
-se usa para abusar, se revoca desde los settings del repo y hay que recompilar
-con `STARLESS_REPORT_TOKEN` vacío para que el botón vuelva al modo navegador.
+**El reporte de crashes y el feedback.** La app no lleva ningún token. Los
+reportes van al relay de `relay/`, un Cloudflare Worker que guarda un token de
+GitHub con permiso de `Issues: Read and write` sobre este repositorio y nada
+más, y es el que crea el issue. La dirección del relay es pública: cualquiera
+puede mandarle un reporte, y por eso el relay valida cada campo y limita los
+envíos por dirección y por hora. Lo peor que se puede hacer con él es abrir
+issues de spam hasta el límite. Si el token se filtra, se revoca y se cambia en
+el relay, sin publicar una versión nueva de la app.
 
 Si encontrás una forma de mandar algo que no sea un reporte de crash, o de saltarse
 el botón, eso sí es un hallazgo y va por acá.

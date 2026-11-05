@@ -19,12 +19,13 @@
 //! starting is not one. A first run has no file; a file truncated by a power cut
 //! has no volume. Both answers are "whatever the default is", and the app opens.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
 /// Where the file lives.
 pub fn settings_path() -> Option<PathBuf> {
-    dirs::data_local_dir().map(|base| base.join("Starless").join("settings.json"))
+    crate::paths::data_local_dir().map(|base| base.join("Starless").join("settings.json"))
 }
 
 /// Every field is optional, and every field defaults.
@@ -43,14 +44,14 @@ pub struct Settings {
     #[serde(default)]
     pub volume: Option<u16>,
 
-    /// How opaque the menus are, as a percentage.
+    /// How opaque the surfaces are, as a percentage: the bars, the queue, the
+    /// shortcuts on Home, and the menus from 55% up.
     ///
-    /// The user's own glass. It exists because `glass-overlay` cannot promise to
-    /// stay readable on its own: the blur it leans on is not rendered in the
-    /// packaged build, and how much translucency someone is willing to trade for
-    /// depth is their call, not the design system's.
+    /// A field of its own and not the old `menu_opacity` renamed: that number
+    /// meant the menus only, and its default of 55 read here would turn the bars
+    /// dark for everyone who never asked for it.
     #[serde(default)]
-    pub menu_opacity: Option<u8>,
+    pub surface_opacity: Option<u8>,
 
     /// How many seconds two songs overlap when one ends on its own; 0 is off.
     ///
@@ -58,6 +59,12 @@ pub struct Settings {
     /// volume, so it lives here and survives a sign-out.
     #[serde(default)]
     pub crossfade_seconds: Option<u8>,
+
+    /// Whether Home's history is kept on this machine (`history.rs`). On unless
+    /// the person turned it off: it never leaves the disk, so it is not the
+    /// telemetry PRODUCT.md rules out, and Home is mostly empty without it.
+    #[serde(default)]
+    pub history_enabled: Option<bool>,
 
     /// The accent colour the user picked, as `#rrggbb`, or `None` for the one
     /// DESIGN.md ships.
@@ -79,7 +86,79 @@ pub struct Settings {
     /// Grid or list, as one of [`LIBRARY_VIEWS`]. Same reasoning as `library_sort`.
     #[serde(default)]
     pub library_view: Option<String>,
+
+    /// How a playlist's songs are ordered and which way round, as one of
+    /// [`TRACK_ORDERS`]. One for every playlist, like the client this mirrors:
+    /// it is how the person reads a list, not a fact about one list.
+    #[serde(default)]
+    pub track_order: Option<String>,
+
+    /// Dark, light or the system's, as one of [`THEMES`].
+    #[serde(default)]
+    pub theme: Option<String>,
+
+    /// List or compact, as one of [`TRACK_VIEWS`].
+    #[serde(default)]
+    pub track_view: Option<String>,
+
+    /// The background effects, by name: one of [`EFFECTS`] each. A map and not
+    /// three fields because the three are one gate — a name and a value this
+    /// build knows — and a fourth effect should not need a fourth copy of it.
+    #[serde(default)]
+    pub effects: BTreeMap<String, String>,
+
+    /// The streaming quality, as one of [`AUDIO_QUALITIES`]. Read when the
+    /// player is built, so a change applies on the next launch.
+    #[serde(default)]
+    pub audio_quality: Option<String>,
+
+    /// Whether songs are levelled to the same loudness. Same moment as the
+    /// quality: it is part of the player's configuration.
+    #[serde(default)]
+    pub normalisation: Option<bool>,
+
+    /// Whether the window's close button hides Starless in the tray instead of
+    /// quitting it.
+    #[serde(default)]
+    pub close_to_tray: Option<bool>,
+
+    /// How dark the background picture is drawn, 0..=[`BACKGROUND_DIM_MAX`].
+    /// The picture itself is a file beside this one (`background.rs`).
+    #[serde(default)]
+    pub background_dim: Option<u8>,
+
+    /// How soft the background picture is drawn, 0..=100 of the frontend's range.
+    #[serde(default)]
+    pub background_blur: Option<u8>,
 }
+
+/// Back to what ships: everything under Settings → Customisation, and nothing else.
+///
+/// **A new setting in that section has to be added here,** or the button that
+/// promises all of them quietly stops being true. The volume, the audio and the
+/// order of the library are how this person listens and reads, not how the app
+/// looks, so they stay. The picture is a file and not a field: the command that
+/// calls this removes it.
+fn clear_customisation(settings: &mut Settings) {
+    settings.theme = None;
+    settings.accent = None;
+    settings.surface_opacity = None;
+    settings.effects.clear();
+    settings.background_dim = None;
+    settings.background_blur = None;
+}
+
+pub fn reset_customisation() {
+    update(clear_customisation);
+}
+
+/// Low, normal and high: 96, 160 and 320 kbps.
+pub const AUDIO_QUALITIES: [&str; 3] = ["low", "normal", "high"];
+
+/// High, because the only accounts that can play at all are Premium, and every
+/// Premium account can stream 320. librespot's own default is 160, which is
+/// what every song played at before this setting did anything.
+pub const DEFAULT_AUDIO_QUALITY: &str = "high";
 
 /// Read-modify-write, so the day a third field appears this keeps working
 /// without anyone having to remember to touch it.
@@ -107,19 +186,17 @@ fn update(change: impl FnOnce(&mut Settings)) {
     }
 }
 
-/// How opaque the menus are when nobody has said otherwise.
+/// How opaque the surfaces are when nobody has said otherwise.
 ///
-/// Translucent, at the bottom of the range: this is the glass DESIGN.md is written
-/// around, and it was solid only while the packaged build shipped a dead blur — at
-/// 55% with nothing blurring it you could read the library straight through the
-/// settings panel. Now that the blur is back, the translucent surface is the safe
-/// one again, and the slider goes up from here for whoever wants it solid.
-pub const DEFAULT_MENU_OPACITY: u8 = 55;
+/// Frosted, with the picture still reading through it: the whole window is one
+/// material without anyone having to ask for it. Mirrors `SURFACE_OPACITY_DEFAULT`
+/// in `spotify.ts` and `--surface-alpha` in `index.css`.
+pub const DEFAULT_SURFACE_OPACITY: u8 = 32;
 
-/// The ends of the slider. The floor is where the blur stops turning what is
-/// behind a menu into a smear and starts letting it back into being text.
-pub const MENU_OPACITY_MIN: u8 = 55;
-pub const MENU_OPACITY_MAX: u8 = 100;
+/// The ends of the slider. The floor has to match `--surface-alpha` in
+/// `index.css`, which measures everything from it.
+pub const SURFACE_OPACITY_MIN: u8 = 6;
+pub const SURFACE_OPACITY_MAX: u8 = 100;
 
 /// Read the settings, or the defaults.
 ///
@@ -160,14 +237,14 @@ pub fn save_volume(volume: u16) {
     update(|settings| settings.volume = Some(volume));
 }
 
-/// Remember how opaque the menus should be. Clamped on the way in, because this
+/// Remember how opaque the surfaces should be. Clamped on the way in, because this
 /// value ends up in a CSS colour and a slider is only a suggestion.
-pub fn save_menu_opacity(opacity: u8) {
-    let opacity = opacity.clamp(MENU_OPACITY_MIN, MENU_OPACITY_MAX);
-    if load().menu_opacity == Some(opacity) {
+pub fn save_surface_opacity(opacity: u8) {
+    let opacity = opacity.clamp(SURFACE_OPACITY_MIN, SURFACE_OPACITY_MAX);
+    if load().surface_opacity == Some(opacity) {
         return;
     }
-    update(|settings| settings.menu_opacity = Some(opacity));
+    update(|settings| settings.surface_opacity = Some(opacity));
 }
 
 /// Remember the crossfade. Clamped on the way in, like the opacity: a slider
@@ -218,8 +295,9 @@ fn is_hex_color(value: &str) -> bool {
 /// How the library opens: by name, and which way round.
 pub const DEFAULT_LIBRARY_SORT: &str = "name-asc";
 
-/// The four orders the data can answer. Anything else in the file is ignored.
-pub const LIBRARY_SORTS: [&str; 4] = ["name-asc", "name-desc", "creator", "tracks"];
+/// The orders the data can answer; `recent` reads the local history. Anything
+/// else in the file is ignored.
+pub const LIBRARY_SORTS: [&str; 5] = ["name-asc", "name-desc", "creator", "tracks", "recent"];
 
 /// Which way the shelf is drawn. The grid is the one that ships, because the card
 /// is what the artwork is for.
@@ -263,6 +341,139 @@ pub fn saved_library_view() -> &'static str {
     known_or_default(load().library_view.as_deref(), &LIBRARY_VIEWS, DEFAULT_LIBRARY_VIEW)
 }
 
+/// A playlist opens in its own order, top to bottom.
+pub const DEFAULT_TRACK_ORDER: &str = "custom-asc";
+
+/// Every order `PlaylistScreen` offers, each both ways round.
+pub const TRACK_ORDERS: [&str; 10] = [
+    "custom-asc",
+    "custom-desc",
+    "title-asc",
+    "title-desc",
+    "added-asc",
+    "added-desc",
+    "artist-asc",
+    "artist-desc",
+    "album-asc",
+    "album-desc",
+];
+
+pub const DEFAULT_TRACK_VIEW: &str = "list";
+
+pub const TRACK_VIEWS: [&str; 2] = ["list", "compact"];
+
+/// Same gate as `save_library_sort`, for the same reason.
+pub fn save_track_order(order: &str) {
+    if !TRACK_ORDERS.contains(&order) {
+        log::warn!("orden de canciones ignorado, no es una orden conocida: {order}");
+        return;
+    }
+    if load().track_order.as_deref() == Some(order) {
+        return;
+    }
+    update(|settings| settings.track_order = Some(order.to_string()));
+}
+
+pub fn saved_track_order() -> &'static str {
+    known_or_default(load().track_order.as_deref(), &TRACK_ORDERS, DEFAULT_TRACK_ORDER)
+}
+
+pub fn save_track_view(view: &str) {
+    if !TRACK_VIEWS.contains(&view) {
+        log::warn!("vista de canciones ignorada, no es una vista conocida: {view}");
+        return;
+    }
+    if load().track_view.as_deref() == Some(view) {
+        return;
+    }
+    update(|settings| settings.track_view = Some(view.to_string()));
+}
+
+pub fn saved_track_view() -> &'static str {
+    known_or_default(load().track_view.as_deref(), &TRACK_VIEWS, DEFAULT_TRACK_VIEW)
+}
+
+/// Dark first: it is what the app is designed around and what it shipped as.
+/// `system` follows Windows, and the frontend resolves it, because the
+/// webview is what hears the system change while the app is open.
+pub const THEMES: [&str; 3] = ["dark", "light", "system"];
+
+/// Same gate as the track view.
+pub fn save_theme(theme: &str) {
+    if !THEMES.contains(&theme) {
+        log::warn!("tema ignorado, no es uno conocido: {theme}");
+        return;
+    }
+    if load().theme.as_deref() == Some(theme) {
+        return;
+    }
+    update(|settings| settings.theme = Some(theme.to_string()));
+}
+
+pub fn saved_theme() -> &'static str {
+    known_or_default(load().theme.as_deref(), &THEMES, THEMES[0])
+}
+
+/// Every effect and the values it takes, **the shipped one first**.
+///
+/// `glow` is the light that follows the pointer, `beat` the pulse on the volume
+/// (`soft` halves it, which also keeps it under the kick that sends a wave) and
+/// `bloom` the frost light behind the glass. They are the movement DESIGN.md
+/// allows under the glass, so whoever finds it too much can take it back.
+/// `motion` is the interface's own: springs, entrances and press feedback.
+///
+/// `shape` and `grain` are not movement but the look of the ground: where the
+/// bloom sits, and a fixed film of noise over it. Quiet mode leaves them alone.
+///
+/// `cover` draws the playing song's cover, blurred, as the ground — only beside
+/// the lyrics, or always — and `coverSide` is which side of the lyrics the
+/// sharp cover sits on. Same look, so the same map.
+///
+/// `play` is how the bar's play button is dressed: bone, the accent, the
+/// playing cover's colour, or glass with the accent glowing under it. A look
+/// with a closed list of values, which is exactly what this gate is for.
+pub const EFFECTS: [(&str, &[&str]); 9] = [
+    ("glow", &["on", "off"]),
+    ("beat", &["strong", "soft", "off"]),
+    ("bloom", &["normal", "soft", "off"]),
+    ("motion", &["on", "off"]),
+    ("shape", &["top", "corners", "center", "side"]),
+    ("grain", &["off", "on"]),
+    ("cover", &["off", "lyrics", "always"]),
+    ("coverSide", &["left", "right"]),
+    ("play", &["bone", "accent", "cover", "glass"]),
+];
+
+/// Remember one effect. Same gate as `save_library_sort`: an unknown name or
+/// value is refused, because it would reach the frontend as a case with no match.
+pub fn save_effect(name: &str, value: &str) {
+    let Some((name, values)) = EFFECTS.iter().find(|(known, _)| *known == name) else {
+        log::warn!("efecto ignorado, no es un efecto conocido: {name}");
+        return;
+    };
+    if !values.contains(&value) {
+        log::warn!("valor de efecto ignorado: {name}={value}");
+        return;
+    }
+    if load().effects.get(*name).map(String::as_str) == Some(value) {
+        return;
+    }
+    update(|settings| {
+        settings.effects.insert(name.to_string(), value.to_string());
+    });
+}
+
+/// Every effect with its value, the shipped one where nothing valid was saved.
+pub fn saved_effects() -> BTreeMap<&'static str, &'static str> {
+    let saved = load().effects;
+    EFFECTS
+        .iter()
+        .map(|(name, values)| {
+            (*name, known_or_default(saved.get(*name).map(String::as_str), values, values[0]))
+        })
+        .collect()
+}
+
 /// The saved value when it is one this build knows, and the default when it is not.
 ///
 /// A hand-edited file is as likely as a bad write, and an order this build does not
@@ -283,11 +494,100 @@ pub fn saved_volume() -> Option<u16> {
 }
 
 /// The chosen menu opacity, already clamped, or the default.
-pub fn saved_menu_opacity() -> u8 {
+pub fn saved_surface_opacity() -> u8 {
     load()
-        .menu_opacity
-        .unwrap_or(DEFAULT_MENU_OPACITY)
-        .clamp(MENU_OPACITY_MIN, MENU_OPACITY_MAX)
+        .surface_opacity
+        .unwrap_or(DEFAULT_SURFACE_OPACITY)
+        .clamp(SURFACE_OPACITY_MIN, SURFACE_OPACITY_MAX)
+}
+
+/// The darkest the picture can be drawn. Not 100: a black picture is the
+/// absence of one, and the control for that is "remove".
+pub const BACKGROUND_DIM_MAX: u8 = 90;
+
+/// Half dark and a little soft, so the first picture anyone picks already sits
+/// behind the glass instead of competing with the text on it.
+pub const DEFAULT_BACKGROUND_DIM: u8 = 50;
+pub const DEFAULT_BACKGROUND_BLUR: u8 = 20;
+
+/// Remember how the background picture is drawn. Clamped on the way in, like
+/// the menu opacity: both end up in CSS.
+pub fn save_background_look(dim: u8, blur: u8) {
+    let dim = dim.min(BACKGROUND_DIM_MAX);
+    let blur = blur.min(100);
+    let saved = load();
+    if saved.background_dim == Some(dim) && saved.background_blur == Some(blur) {
+        return;
+    }
+    update(|settings| {
+        settings.background_dim = Some(dim);
+        settings.background_blur = Some(blur);
+    });
+}
+
+/// `(dim, blur)`, clamped, or the defaults.
+pub fn saved_background_look() -> (u8, u8) {
+    let saved = load();
+    (
+        saved.background_dim.unwrap_or(DEFAULT_BACKGROUND_DIM).min(BACKGROUND_DIM_MAX),
+        saved.background_blur.unwrap_or(DEFAULT_BACKGROUND_BLUR).min(100),
+    )
+}
+
+/// Remember whether the history is kept.
+pub fn save_history_enabled(enabled: bool) {
+    if load().history_enabled == Some(enabled) {
+        return;
+    }
+    update(|settings| settings.history_enabled = Some(enabled));
+}
+
+/// Whether the history is kept: on until the person says otherwise.
+pub fn saved_history_enabled() -> bool {
+    load().history_enabled.unwrap_or(true)
+}
+
+/// Remember the streaming quality. Refuses anything outside [`AUDIO_QUALITIES`],
+/// like the library sort.
+pub fn save_audio_quality(quality: &str) {
+    if !AUDIO_QUALITIES.contains(&quality) {
+        log::warn!("calidad de audio ignorada, no es una calidad conocida: {quality}");
+        return;
+    }
+    if load().audio_quality.as_deref() == Some(quality) {
+        return;
+    }
+    update(|settings| settings.audio_quality = Some(quality.to_string()));
+}
+
+pub fn saved_audio_quality() -> &'static str {
+    known_or_default(load().audio_quality.as_deref(), &AUDIO_QUALITIES, DEFAULT_AUDIO_QUALITY)
+}
+
+pub fn save_normalisation(on: bool) {
+    if load().normalisation == Some(on) {
+        return;
+    }
+    update(|settings| settings.normalisation = Some(on));
+}
+
+/// Off until the person turns it on: it changes how every song sounds, and
+/// it is what the app did before the switch was wired.
+pub fn saved_normalisation() -> bool {
+    load().normalisation.unwrap_or(false)
+}
+
+pub fn save_close_to_tray(on: bool) {
+    if load().close_to_tray == Some(on) {
+        return;
+    }
+    update(|settings| settings.close_to_tray = Some(on));
+}
+
+/// On by default: a music app whose close button stops the music is the one
+/// people learn to minimise instead of closing.
+pub fn saved_close_to_tray() -> bool {
+    load().close_to_tray.unwrap_or(true)
 }
 
 /// The chosen crossfade in seconds, or 0 — off — when it was never chosen.
@@ -301,8 +601,49 @@ pub fn saved_crossfade_seconds() -> u8 {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_hex_color, known_or_default, LIBRARY_SORTS, LIBRARY_VIEWS, DEFAULT_LIBRARY_SORT,
+        clear_customisation, is_hex_color, known_or_default, Settings, DEFAULT_LIBRARY_SORT,
+        DEFAULT_TRACK_ORDER, EFFECTS, LIBRARY_SORTS, LIBRARY_VIEWS, TRACK_ORDERS,
     };
+
+    /// The reset takes back how the app looks and leaves how the person listens.
+    #[test]
+    fn the_reset_only_takes_back_the_customisation() {
+        let mut settings = Settings {
+            theme: Some("light".into()),
+            accent: Some("#112233".into()),
+            surface_opacity: Some(80),
+            background_dim: Some(10),
+            background_blur: Some(90),
+            volume: Some(1234),
+            audio_quality: Some("low".into()),
+            library_sort: Some("name-desc".into()),
+            ..Default::default()
+        };
+        settings.effects.insert("grain".into(), "on".into());
+
+        clear_customisation(&mut settings);
+
+        assert!(settings.theme.is_none());
+        assert!(settings.accent.is_none());
+        assert!(settings.surface_opacity.is_none());
+        assert!(settings.effects.is_empty());
+        assert!(settings.background_dim.is_none());
+        assert!(settings.background_blur.is_none());
+        assert_eq!(settings.volume, Some(1234));
+        assert_eq!(settings.audio_quality.as_deref(), Some("low"));
+        assert_eq!(settings.library_sort.as_deref(), Some("name-desc"));
+    }
+
+    /// The frontend reads the first value as the shipped one and switches on the
+    /// rest, so every effect needs one, and no two effects can share a name.
+    #[test]
+    fn every_effect_has_a_default_and_a_name_of_its_own() {
+        for (i, (name, values)) in EFFECTS.iter().enumerate() {
+            assert!(!values.is_empty(), "{name} sin valores");
+            assert!(EFFECTS[i + 1..].iter().all(|(other, _)| other != name), "{name} repetido");
+        }
+        assert_eq!(known_or_default(Some("loud"), EFFECTS[1].1, EFFECTS[1].1[0]), "strong");
+    }
 
     /// The accent is the one setting whose value is written onto `:root`, so the
     /// gate that keeps it a colour is the test that matters. A `settings.json` is
@@ -355,5 +696,22 @@ mod tests {
         // not a view, so neither may satisfy the other's gate.
         assert!(!LIBRARY_VIEWS.contains(&"tracks"));
         assert!(!LIBRARY_SORTS.contains(&"grid"));
+    }
+
+    /// The frontend writes `<order>-<asc|desc>` for the five orders of
+    /// `PLAYLIST_ORDERS` in `spotify.ts`; one missing here would be refused on
+    /// save and the screen would forget it on every restart.
+    #[test]
+    fn every_playlist_order_is_known_both_ways_round() {
+        for order in ["custom", "title", "added", "artist", "album"] {
+            for direction in ["asc", "desc"] {
+                let value = format!("{order}-{direction}");
+                assert!(TRACK_ORDERS.contains(&value.as_str()), "{value}");
+            }
+        }
+        assert_eq!(
+            known_or_default(Some("title"), &TRACK_ORDERS, DEFAULT_TRACK_ORDER),
+            "custom-asc"
+        );
     }
 }

@@ -1,11 +1,11 @@
 <!--
   El pull request de la línea pública: `develop` hacia `main`.
-  El título es la versión y nada más: `0.5.6`. El merge commit lleva el mismo.
+  El título es la versión y nada más: `0.6.0`. El merge commit lleva el mismo.
 -->
 
 ## Version
 
-<!-- La versión que sale al público, por ejemplo `0.5.6`. -->
+<!-- La versión que sale al público, por ejemplo `0.6.0`. -->
 
 ## Checklist
 

@@ -10,7 +10,14 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+# Astro writes its generated types here on every `astro dev`.
+.astro
 *.local
+
+# Wrangler's scratch: the bundles it builds while it runs the relay locally or
+# deploys it. They are generated, they name the machine that made them, and
+# they break the lint the moment somebody runs `wrangler dev`.
+.wrangler/
 
 # The updater's private signing key. It can sign an update for every installed
 # copy of Starless, it is never needed to build the app, and a repository is the

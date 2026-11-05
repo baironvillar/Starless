@@ -337,3 +337,55 @@ pub struct Account {
     #[serde(default)]
     pub images: Vec<Image>,
 }
+
+/// Una sesión compartida: el jam.
+///
+/// **El jam no es una playlist: es una sesión.** Tiene participantes, un
+/// anfitrión, y un código con el que se une la gente. El servicio que la
+/// sostiene se llama `social-connect`, y no `jam`.
+///
+/// **Los nombres son los del servicio, sin renombrar.** Casi todos vienen en
+/// `snake_case` y uno en `camelCase` —`maxMemberCount`—, que es como el
+/// servicio mezcla las dos convenciones. Renombrar uno solo haría que el mismo
+/// campo tuviera dos nombres según de dónde se mirara.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct JamSession {
+    pub session_id: String,
+    /// El código con el que se une la gente.
+    #[serde(default)]
+    pub join_session_token: Option<String>,
+    /// La URI del código: `spotify:socialsession:<token>`.
+    #[serde(default)]
+    pub join_session_uri: Option<String>,
+    /// La puerta de unirse, con el prefijo interno del servicio.
+    #[serde(default)]
+    pub join_session_url: Option<String>,
+    /// `true` cuando la sesión está activada.
+    #[serde(default)]
+    pub active: bool,
+    /// `true` cuando la cuenta es la que la abrió.
+    #[serde(default)]
+    pub is_session_owner: bool,
+    #[serde(default)]
+    pub session_members: Vec<JamMember>,
+    /// El servicio escribe este en camelCase y todo lo demás en snake_case.
+    #[serde(rename = "maxMemberCount", default)]
+    pub max_member_count: Option<u32>,
+}
+
+/// Alguien que está en el jam.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct JamMember {
+    pub id: String,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub image_url: Option<String>,
+    /// `true` cuando puede manejar la reproducción, y no sólo escuchar.
+    #[serde(default)]
+    pub is_controlling: bool,
+    #[serde(default)]
+    pub is_listening: bool,
+}

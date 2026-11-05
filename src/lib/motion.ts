@@ -26,3 +26,23 @@ export const SPRING = { type: "spring", stiffness: 420, damping: 32 } as const;
 export const SPRING_SHEET = { type: "spring", stiffness: 380, damping: 34 } as const;
 
 export const SPRING_GATE = { type: "spring", stiffness: 380, damping: 32 } as const;
+
+/**
+ * `--ease-glass` from `index.css`, for `motion`.
+ *
+ * The two have to be the same curve, not two curves that look alike: the
+ * library rail and the content beside it move together, one in CSS and one in
+ * `motion`, and a gap between them that breathes is the bug this exists to
+ * close.
+ */
+export const EASE_GLASS = [0.32, 0.72, 0, 1] as const;
+
+/**
+ * How a docked panel leaves.
+ *
+ * **Faster than it came, and without a spring.** It arrived because someone
+ * asked for it and their eye follows it in; it leaves because they are done
+ * with it, and the settle of a spring on the way out is the panel lingering
+ * after it was dismissed.
+ */
+export const SHEET_EXIT = { duration: 0.18, ease: EASE_GLASS } as const;

@@ -31,7 +31,7 @@ const MAX_BYTES: u64 = 2 * 1024 * 1024;
 /// the user's data, `%LOCALAPPDATA%` stays on the machine and holds what belongs
 /// to this installation. A log belongs to the second kind.
 pub fn log_path() -> Option<PathBuf> {
-    dirs::data_local_dir().map(|base| base.join("Starless").join("starless.log"))
+    crate::paths::data_local_dir().map(|base| base.join("Starless").join("starless.log"))
 }
 
 /// Writes each line to both the file and the terminal.
@@ -95,9 +95,15 @@ pub fn init() {
     // Getting this wrong filters out every line Starless writes about itself,
     // which leaves only librespot's — and librespot's is not the half that
     // explains our own decisions.
+    //
+    // `symphonia=error` because a file that arrives undecrypted makes the MP3
+    // demuxer write a `skipping junk` line per sync word it trips over — five
+    // hundred per failed track. They say nothing (the cause is the audio-key
+    // line above them) and they push everything else out of the 48 KB a report
+    // carries.
     let mut builder = env_logger::Builder::from_env(
         env_logger::Env::default()
-            .default_filter_or("warn,librespot=info,starless_lib=info"),
+            .default_filter_or("warn,symphonia=error,librespot=info,starless_lib=info"),
     );
     builder.format_timestamp_millis();
 

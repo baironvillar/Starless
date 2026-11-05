@@ -10,7 +10,7 @@ este repo.
 |---|---|---|
 | Un comando Tauri nuevo | registrarlo en `generate_handler!` de `lib.rs` **y** su wrapper en `spotify.ts` | el webview invoca un comando que no existe; o el comando existe y nadie lo llama |
 | Un comando que hace I/O | `async`, o el macro `spclient_command!` | un comando sin `async` corre en el hilo principal: treinta segundos de ventana congelada |
-| Un código de error nuevo en Rust | una frase en `API_ERRORS` (`spotify.ts`) | el usuario lee `bad_id` en vez de una frase. **Ya pasa hoy**: ver deudas |
+| Un código de error nuevo en Rust | una frase en `errors` (`i18n.ts`), **en los dos idiomas**: el tipo no compila si falta la inglesa | el usuario lee `bad_id` en vez de una frase |
 | Texto de usuario | `i18n.ts`, **los dos idiomas a la vez** | un usuario en inglés lee español (regla 5) |
 | Una lista de canciones | `trackRowKeys(tracks)` como `key` | filas perdedoras quedan montadas y pintan la lista **anterior** bajo un encabezado nuevo |
 | Un fallo de pista en Rust | `Session::is_invalid()` **antes** de declarar la pista muerta | `track_unavailable` cuando lo que pasó es que se cayó la conexión. El log miente |
@@ -22,6 +22,7 @@ este repo.
 | Un archivo de panic / marker | los **tres** lugares de nombre juntos (`AGENTS.md`, trampa del panic) | los reportes salen sin el panic, que es justo la falla que el reporte existe para contar |
 | Un elemento de biblioteca que no es una playlist | `isDjCard` (`spotify.ts`) y el mismo predicado en **cada** lugar donde el elemento aparece | el DJ se abre como una playlist y muestra una pantalla vacía: su contenido no está en la lista |
 | El panel "A continuación" | que la cuenta salga de la **cola** (`queueAt`), no de lo que se ve en pantalla | una app recién abierta muestra ocho canciones bajo un encabezado de cola que nadie pidió |
+| Una canción agregada a la cola | `queueWithAdded` (`src/lib/queue.ts`), que la pone **después de la que está sonando** y **reemplaza** la copia que ya estaba | la canción agregada es la cola entera, o queda al final de una cola larga, o aparece dos veces en el panel |
 | Un dato que sólo la build sabe (el canal) | la env en el paso de CI **y** el `define` de `vite.config.ts` **y** la declaración en `vite-env.d.ts` | el frontend no compila, o la app se dice "release" en una build de `develop` |
 
 ## Por qué la tabla es la parte importante

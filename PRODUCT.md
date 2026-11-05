@@ -88,6 +88,10 @@ The performance claims above are design targets, not measurements. Do not presen
 
 Withdrawing it needs withdrawing the promise. Analytics is still off the table; this is a file someone hands over on purpose after their app has already died.
 
+### The listening history is not telemetry
+
+Home's "most played", "keep listening" and "your week" come from a history Starless keeps **on this machine only** (`history.rs`, a `history.jsonl` next to `settings.json`). It never leaves the disk, so it reports to nobody and promise 3 stands. It records a song only after 30 seconds of real listening, keeps 120 days, and the person can switch it off or delete it from Settings. Sending any of it anywhere would be telemetry, and is ruled out like the rest.
+
 ## Accessibility & Inclusion
 
 Not established with the user. Open questions: contrast targets, full keyboard operability of navigation and transport controls, and screen-reader labelling for player controls, search and dialogs. Do not assume a conformance level has been agreed.

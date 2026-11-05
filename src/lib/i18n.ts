@@ -43,11 +43,41 @@ export const strings = {
     collapseLibrary: "Contraer la biblioteca",
     expandLibrary: "Expandir la biblioteca",
     navSettings: "Ajustes",
+    navSearch: "Buscar",
+    tabLibrary: "Biblioteca",
+    backToLibrary: "Volver a la biblioteca",
 
     libraryTitle: "Tu biblioteca",
     likedSongs: "Canciones que te gustan",
     yourPlaylists: "Tus playlists",
     madeForYou: "Hecho para ti",
+    greetingMorning: "Buenos días",
+    greetingAfternoon: "Buenas tardes",
+    greetingNight: "Buenas noches",
+    quickAccess: "Accesos rápidos",
+    keepListening: "Sigue escuchando",
+    mostPlayed: "Lo más escuchado",
+    mostPlayedNote: "Últimas 4 semanas · calculado en este equipo, nada sale de aquí",
+    tabSongs: "Canciones",
+    tabArtists: "Artistas",
+    playsShort: "reprod.",
+    yourWeek: "Tu semana",
+    weekListened: "escuchados esta semana",
+    weekdaysShort: "LMXJVSD",
+    artistOfMonth: "Artista del mes",
+    streak: "Racha",
+    day: "día",
+    days: "días",
+    radioOf: "Radio de",
+    seeAll: "Ver todas",
+    seeLess: "Ver menos",
+    historyStartsTitle: "Tu historial empieza hoy",
+    historyStartsBody:
+      "Lo más escuchado, Sigue escuchando y Tu semana se llenan solos mientras escuchas. Una canción cuenta cuando la oyes más de 30 segundos.",
+    historySetting: "Historial en este equipo",
+    historySettingHint: "Guarda lo que escuchas para el Inicio. Nunca sale de tu equipo.",
+    clearHistory: "Borrar historial",
+    historyCleared: "Historial borrado",
     // El DJ de la cuenta. Su card no muestra cuántas canciones tiene —no se
     // sabe hasta que se pide el mix— sino lo que es: alguien que elige.
     djSubtitle: "Elige la música por ti",
@@ -67,6 +97,8 @@ export const strings = {
     sortNameDesc: "Nombre, de Z a A",
     sortCreator: "Por creador",
     sortTracks: "Por cantidad de canciones",
+    sortRecent: "Reproducido recientemente",
+    sortRecentEmpty: "Se arma con lo que escuchas en Starless.",
     viewGrid: "Cuadrícula",
     viewList: "Lista",
     newPlaylistName: "Nombre",
@@ -188,6 +220,8 @@ export const strings = {
     authReport: "¿Algo no anda? Cuéntanos qué pasó.",
     feedbackEmpty: "Cuéntanos qué pasó, o adjunta el log para que el reporte sirva de algo.",
     authWaiting: "Termina la autorización en el navegador…",
+    authConnecting: "Conectando con Spotify…",
+    authTimeout: "Spotify no respondió. Probá otra vez.",
     authPremium:
       "Se necesita Premium. Sin Premium, Spotify no entrega audio aunque la cuenta sea válida.",
     authPrivate: "Tu sesión se queda en este equipo. Ni credenciales ni historial salen de aquí.",
@@ -205,8 +239,37 @@ export const strings = {
     queueNowPlaying: "Ahora suena",
     queueNextUp: "A continuación",
     queueEmpty: "Nada en cola",
-    device: "Dispositivo",
-    more: "Más opciones",
+
+    // El jam: la sesión compartida.
+    //
+    // La puerta está donde la tiene Spotify: arriba a la derecha, junto a los
+    // amigos. "Start a Jam" es el nombre que el servicio ya usa, y se deja
+    // como está: traducir el nombre de una función de otro producto lo hace
+    // más difícil de buscar y no más fácil de entender.
+    jam: "Jam",
+    jamActivity: "Actividad de escucha",
+    jamStart: "Empezar un jam",
+    jamStartHint: "Invitá a otros a tu jam y escuchen juntos, desde cualquier lado.",
+    jamLeave: "Terminar el jam",
+    jamLeaveGuest: "Salir del jam",
+    jamEnding: "Terminando…",
+    jamLeaving: "Saliendo…",
+    jamCode: "Código para compartir",
+    jamCopied: "Copiado",
+    jamCopy: "Copiar el código",
+    jamJoinTitle: "Entrar a un jam",
+    jamJoinPlaceholder: "Código del jam",
+    jamJoin: "Entrar",
+    jamJoining: "Entrando…",
+    jamMembers: "En el jam",
+    jamAlone: "Por ahora estás solo.",
+    jamQueue: "Cola compartida",
+    jamQueueEmpty: "La cola compartida todavía no tiene canciones.",
+    jamQueueHint: "Es la cola del jam: lo que suma cualquiera de los dos, lo escuchan los dos.",
+    addToJam: "Agregar al jam",
+    jamFailed: "No se pudo abrir el jam.",
+    jamJoinFailed: "No se pudo entrar al jam.",
+    jamLeaveFailed: "No se pudo terminar el jam.",
 
     // Settings
     settingsTitle: "Ajustes",
@@ -215,18 +278,86 @@ export const strings = {
     sectionAudio: "Audio",
     sectionAccount: "Cuenta",
     sectionCustom: "Personalización",
-    menuOpacity: "Opacidad de los menús",
-    menuOpacityHint: "Qué tan sólidos se ven los menús. Más sólido es más fácil de leer.",
-    menuOpacitySolid: "Sólido",
-    menuOpacityGlass: "Translúcido",
-    accentColor: "Color de acento",
+    // Las partes de la personalización: cada una es una pantalla corta.
+    customAppearance: "Apariencia",
+    customBackground: "Fondo",
+    customEffects: "Efectos",
+    settingsSearch: "Buscar ajustes",
+    settingsNoResults: "Nada coincide con esa búsqueda.",
+    surfaceOpacity: "Opacidad de las superficies",
+    surfaceOpacityHint:
+      "Cuánto se ve tu fondo a través de las barras, la biblioteca, la cola, los accesos y los menús. Ajustes y los diálogos no bajan del 55 %, para que se puedan leer sobre las canciones.",
+    surfaceOpacityClear: "Transparente",
+    surfaceOpacitySolid: "Sólido",
+    peekHold: "Mantén pulsado para ver",
+    compare: "Comparar",
+    compareDone: "Listo",
+    resetCustomisation: "Restablecer la personalización",
+    resetCustomisationHint:
+      "Devuelve el tema, el color, la opacidad, el fondo y los efectos a como vienen.",
+    resetCustomisationWarning: "También se quita tu imagen de fondo. ¿Seguimos?",
+    resetCustomisationAction: "Restablecer",
+    resetCustomisationConfirm: "Sí, restablecer",
+    resetCustomisationCancel: "Cancelar",
+    accentColor: "Color principal",
     accentColorHint: "El color que marca las acciones.",
     accentColorCustom: "Otro color",
+    playButton: "Botón de reproducir",
+    playButtonBone: "Hueso",
+    playButtonAccent: "Color principal",
+    playButtonCover: "Portada",
+    playButtonGlass: "Vidrio con luz",
+    playButtonBoneHint: "Hueso: neutro sobre cualquier fondo.",
+    playButtonAccentHint: "Toma tu color principal.",
+    playButtonCoverHint: "Toma el color de la portada que suena, y cambia con cada canción.",
+    playButtonGlassHint: "Vidrio esmerilado, con tu color brillando debajo.",
+    pointerGlow: "Luz que sigue al mouse",
+    pointerGlowHint: "Un resplandor que acompaña al puntero sobre el fondo.",
+    beatPulse: "Pulso en el volumen",
+    beatPulseHint: "El control de volumen late con el ritmo de la canción.",
+    beatStrong: "Con ondas",
+    beatSoft: "Suave",
+    bloomLight: "Resplandor del fondo",
+    bloomLightHint: "La luz detrás del vidrio. Menos luz es un fondo más negro.",
+    bloomNormal: "Normal",
+    bloomSoft: "Suave",
+    bloomShape: "Forma del resplandor",
+    bloomShapeHint: "Dónde cae la luz gris detrás del vidrio.",
+    bloomShapeTop: "Arriba",
+    bloomShapeCorners: "Esquinas",
+    bloomShapeCenter: "Centro",
+    bloomShapeSide: "Lateral",
+    grain: "Grano",
+    grainHint: "Una textura fina sobre el fondo, como de película.",
+    backgroundImage: "Imagen de fondo",
+    backgroundImageHint: "Una foto tuya detrás del vidrio. PNG, JPEG, WebP o GIF, hasta 25 MB.",
+    backgroundImagePick: "Elegir imagen",
+    backgroundImageChange: "Cambiar",
+    backgroundImageRemove: "Quitar",
+    coverBackground: "Portada de fondo",
+    coverBackgroundHint:
+      "La portada de la canción que suena, difuminada detrás del vidrio. Mientras se ve, tapa tu imagen.",
+    coverBackgroundLyrics: "En las letras",
+    coverBackgroundAlways: "Siempre",
+    coverSideSwap: "Cambiar la portada de lado",
+    cinemaEnter: "Modo cine (F)",
+    cinemaExit: "Salir del modo cine (Esc)",
+    backgroundDim: "Atenuar",
+    backgroundDimHint: "Más atenuada, el texto se lee mejor encima.",
+    backgroundBlur: "Difuminar",
+    backgroundBlurHint: "Más difuminada, la foto queda en colores y no compite con la app.",
+    effectOff: "Apagado",
+    uiMotion: "Animaciones de la interfaz",
+    uiMotionHint:
+      "Paneles, barra y botones se mueven al abrir y al pulsar. Apagadas, todo cambia al instante.",
+    quietMode: "Modo quieto",
+    quietModeHint: "Apaga todos los efectos de una vez. Al desactivarlo vuelven los de fábrica.",
     sectionDiagnostics: "Diagnóstico",
     close: "Cerrar",
 
     theme: "Tema",
     themeDark: "Oscuro",
+    themeLight: "Claro",
     themeSystem: "Del sistema",
 
     colourMode: "Modo daltónico",
@@ -236,13 +367,15 @@ export const strings = {
     colourModeOn: "Activado",
 
     audioQuality: "Calidad de audio",
-    audioQualityHint: "Más calidad significa más datos y algo menos de batería.",
+    audioQualityHint:
+      "Más calidad significa más datos y algo menos de batería. Se aplica la próxima vez que abras Starless.",
     qualityLow: "Baja",
     qualityNormal: "Normal",
     qualityHigh: "Alta",
 
     normalisation: "Normalizar volumen",
-    normalisationHint: "Iguala el volumen entre canciones para que no te sorprendan los picos.",
+    normalisationHint:
+      "Iguala el volumen entre canciones para que no te sorprendan los picos. Se aplica la próxima vez que abras Starless.",
     crossfade: "Transición entre canciones",
     crossfadeHint:
       "Cuando una canción termina sola, la siguiente empieza esos segundos antes y las dos se mezclan.",
@@ -251,6 +384,11 @@ export const strings = {
 
     startWithWindows: "Iniciar con Windows",
     startWithWindowsHint: "Starless se abre minimizado a la bandeja al arrancar el sistema.",
+    closeToTray: "Al cerrar, seguir en la bandeja",
+    closeToTrayHint:
+      "La X esconde la ventana y la música sigue. Para salir, usa Salir en el ícono de la bandeja.",
+    trayShow: "Mostrar Starless",
+    trayQuit: "Salir",
 
     signedInAs: "Sesión iniciada como",
     signOut: "Cerrar sesión",
@@ -331,7 +469,7 @@ export const strings = {
     crashKicker: "La sesión anterior falló",
     crashTitle: "Starless no se cerró bien",
     crashBody:
-      "La app terminó sin cerrarse. Puede ser un fallo puntual o algo de la máquina. Si quieres, mandamos el registro para encontrarlo.",
+      "La app falló y se cerró sola. Si quieres, mandamos el registro para encontrar qué pasó.",
     crashShowDetail: "Ver qué se enviaría",
     crashHideDetail: "Ocultar el detalle",
     crashScrubbed: "Sin datos personales",
@@ -340,6 +478,13 @@ export const strings = {
     crashDismiss: "Ahora no",
     crashPrivacy: "No se envía nada hasta que aprietes el botón. Starless no reporta uso.",
     crashSent: "Reporte creado:",
+    crashSentDuplicate: "Ya lo habían reportado; sumamos el tuyo:",
+    reportRateLimited: "Llegaste al límite de reportes por hora. Prueba de nuevo más tarde.",
+    reportRejected: "El servidor no aceptó este reporte. Prueba acortando el mensaje.",
+    feedbackTopic: "Qué nos cuentas",
+    feedbackTopicBug: "Un problema",
+    feedbackTopicIdea: "Una idea",
+    feedbackTopicOther: "Otra cosa",
     crashReportUnavailable: "No se pudo preparar el reporte.",
     crashReportFailed: "No se pudo enviar el reporte.",
 
@@ -392,11 +537,41 @@ export const strings = {
     collapseLibrary: "Collapse the library",
     expandLibrary: "Expand the library",
     navSettings: "Settings",
+    navSearch: "Search",
+    tabLibrary: "Library",
+    backToLibrary: "Back to the library",
 
     libraryTitle: "Your library",
     likedSongs: "Liked Songs",
     yourPlaylists: "Your playlists",
     madeForYou: "Made for you",
+    greetingMorning: "Good morning",
+    greetingAfternoon: "Good afternoon",
+    greetingNight: "Good evening",
+    quickAccess: "Quick access",
+    keepListening: "Keep listening",
+    mostPlayed: "Most played",
+    mostPlayedNote: "Last 4 weeks · worked out on this computer, nothing leaves it",
+    tabSongs: "Songs",
+    tabArtists: "Artists",
+    playsShort: "plays",
+    yourWeek: "Your week",
+    weekListened: "listened this week",
+    weekdaysShort: "MTWTFSS",
+    artistOfMonth: "Artist of the month",
+    streak: "Streak",
+    day: "day",
+    days: "days",
+    radioOf: "Radio from",
+    seeAll: "See all",
+    seeLess: "See less",
+    historyStartsTitle: "Your history starts today",
+    historyStartsBody:
+      "Most played, Keep listening and Your week fill in on their own as you listen. A song counts once you hear more than 30 seconds of it.",
+    historySetting: "History on this computer",
+    historySettingHint: "Keeps what you listen to for Home. It never leaves your computer.",
+    clearHistory: "Clear history",
+    historyCleared: "History cleared",
     // The account's DJ. Its card does not say how many songs it has —that is
     // only known once the mix is asked for— but what it is: someone who picks.
     djSubtitle: "Picks the music for you",
@@ -416,6 +591,8 @@ export const strings = {
     sortNameDesc: "Name, Z to A",
     sortCreator: "By creator",
     sortTracks: "By song count",
+    sortRecent: "Recently played",
+    sortRecentEmpty: "Built from what you play in Starless.",
     viewGrid: "Grid",
     viewList: "List",
     newPlaylistName: "Name",
@@ -536,6 +713,8 @@ export const strings = {
     authReport: "Something not working? Tell us what happened.",
     feedbackEmpty: "Tell us what happened, or attach the log so the report is worth reading.",
     authWaiting: "Finish the approval in your browser…",
+    authConnecting: "Connecting to Spotify…",
+    authTimeout: "Spotify did not answer. Try again.",
     authPremium:
       "Premium is required. Without it, Spotify delivers no audio even when the account is valid.",
     authPrivate: "Your session stays on this machine. Neither credentials nor history leave it.",
@@ -552,8 +731,37 @@ export const strings = {
     queueNowPlaying: "Now playing",
     queueNextUp: "Next up",
     queueEmpty: "Nothing queued",
-    device: "Device",
-    more: "More options",
+
+    // The jam: the shared session.
+    //
+    // The door is where Spotify keeps it: top right, next to the friends.
+    // "Start a Jam" is the name the service already uses, and it stays as it
+    // is: translating the name of another product's feature makes it harder to
+    // look up, not easier to understand.
+    jam: "Jam",
+    jamActivity: "Listening activity",
+    jamStart: "Start a Jam",
+    jamStartHint: "Invite others to your Jam, and listen together from anywhere.",
+    jamLeave: "End the Jam",
+    jamLeaveGuest: "Leave the Jam",
+    jamEnding: "Ending…",
+    jamLeaving: "Leaving…",
+    jamCode: "Code to share",
+    jamCopied: "Copied",
+    jamCopy: "Copy the code",
+    jamJoinTitle: "Join a Jam",
+    jamJoinPlaceholder: "Jam code",
+    jamJoin: "Join",
+    jamJoining: "Joining…",
+    jamMembers: "In the Jam",
+    jamAlone: "You are on your own for now.",
+    jamQueue: "Shared queue",
+    jamQueueEmpty: "The shared queue has no songs yet.",
+    jamQueueHint: "It is the Jam's queue: whatever either of you adds, both hear it.",
+    addToJam: "Add to the Jam",
+    jamFailed: "Could not start the Jam.",
+    jamJoinFailed: "Could not join the Jam.",
+    jamLeaveFailed: "Could not end the Jam.",
 
     settingsTitle: "Settings",
     settingsSubtitle: "Audio, account and diagnostics.",
@@ -561,18 +769,87 @@ export const strings = {
     sectionAudio: "Audio",
     sectionAccount: "Account",
     sectionCustom: "Customisation",
-    menuOpacity: "Menu opacity",
-    menuOpacityHint: "How solid the menus look. More solid is easier to read.",
-    menuOpacitySolid: "Solid",
-    menuOpacityGlass: "Translucent",
-    accentColor: "Accent colour",
+    // The parts of the customisation: each one is a short screen.
+    customAppearance: "Appearance",
+    customBackground: "Background",
+    customEffects: "Effects",
+    settingsSearch: "Search settings",
+    settingsNoResults: "Nothing matches that search.",
+    surfaceOpacity: "Surface opacity",
+    surfaceOpacityHint:
+      "How much of your background shows through the bars, the library, the queue, the shortcuts and the menus. Settings and dialogs stay at 55% or more, so they stay readable over your songs.",
+    surfaceOpacityClear: "Transparent",
+    surfaceOpacitySolid: "Solid",
+    peekHold: "Hold to preview",
+    compare: "Compare",
+    compareDone: "Done",
+    resetCustomisation: "Reset customisation",
+    resetCustomisationHint:
+      "Takes the theme, the colour, the opacity, the background and the effects back to what ships.",
+    resetCustomisationWarning: "This also removes your background picture. Go ahead?",
+    resetCustomisationAction: "Reset",
+    resetCustomisationConfirm: "Yes, reset",
+    resetCustomisationCancel: "Cancel",
+    accentColor: "Main colour",
     accentColorHint: "The colour that marks actions.",
     accentColorCustom: "Custom colour",
+    playButton: "Play button",
+    playButtonBone: "Bone",
+    playButtonAccent: "Main colour",
+    playButtonCover: "Cover",
+    playButtonGlass: "Glass with light",
+    playButtonBoneHint: "Bone: neutral on any background.",
+    playButtonAccentHint: "It takes your main colour.",
+    playButtonCoverHint: "It takes the colour of the playing cover, and changes with every song.",
+    playButtonGlassHint: "Frosted glass, with your colour glowing underneath.",
+    pointerGlow: "Light that follows the mouse",
+    pointerGlowHint: "A glow that keeps the pointer company over the background.",
+    beatPulse: "Pulse on the volume",
+    beatPulseHint: "The volume control beats with the song's rhythm.",
+    beatStrong: "With waves",
+    beatSoft: "Soft",
+    bloomLight: "Background glow",
+    bloomLightHint: "The light behind the glass. Less light is a blacker background.",
+    bloomNormal: "Normal",
+    bloomSoft: "Soft",
+    bloomShape: "Glow shape",
+    bloomShapeHint: "Where the grey light falls behind the glass.",
+    bloomShapeTop: "Top",
+    bloomShapeCorners: "Corners",
+    bloomShapeCenter: "Centre",
+    bloomShapeSide: "Side",
+    grain: "Grain",
+    grainHint: "A fine film-like texture over the background.",
+    backgroundImage: "Background picture",
+    backgroundImageHint: "A photo of yours behind the glass. PNG, JPEG, WebP or GIF, up to 25 MB.",
+    backgroundImagePick: "Choose picture",
+    backgroundImageChange: "Change",
+    backgroundImageRemove: "Remove",
+    coverBackground: "Cover as background",
+    coverBackgroundHint:
+      "The playing song's cover, blurred behind the glass. While it shows, it covers your picture.",
+    coverBackgroundLyrics: "With lyrics",
+    coverBackgroundAlways: "Always",
+    coverSideSwap: "Move the cover to the other side",
+    cinemaEnter: "Cinema mode (F)",
+    cinemaExit: "Leave cinema mode (Esc)",
+    backgroundDim: "Fade",
+    backgroundDimHint: "The more faded, the easier the text on top is to read.",
+    backgroundBlur: "Blur",
+    backgroundBlurHint:
+      "The softer the photo, the more it turns to colour and stays out of the way.",
+    effectOff: "Off",
+    uiMotion: "Interface animations",
+    uiMotionHint:
+      "Panels, the bar and buttons move as they open and as you press them. Off, everything changes at once.",
+    quietMode: "Quiet mode",
+    quietModeHint: "Turns every effect off at once. Turning it off brings the shipped ones back.",
     sectionDiagnostics: "Diagnostics",
     close: "Close",
 
     theme: "Theme",
     themeDark: "Dark",
+    themeLight: "Light",
     themeSystem: "Match system",
 
     colourMode: "Colour mode",
@@ -581,13 +858,15 @@ export const strings = {
     colourModeOn: "On",
 
     audioQuality: "Audio quality",
-    audioQualityHint: "Higher quality uses more data and a little more battery.",
+    audioQualityHint:
+      "Higher quality uses more data and a little more battery. Takes effect the next time you open Starless.",
     qualityLow: "Low",
     qualityNormal: "Normal",
     qualityHigh: "High",
 
     normalisation: "Normalise volume",
-    normalisationHint: "Levels the volume across songs so no track jumps out at you.",
+    normalisationHint:
+      "Levels the volume across songs so no track jumps out at you. Takes effect the next time you open Starless.",
     crossfade: "Crossfade",
     crossfadeHint:
       "When a song ends on its own, the next one starts that many seconds early and the two blend.",
@@ -596,6 +875,11 @@ export const strings = {
 
     startWithWindows: "Start with Windows",
     startWithWindowsHint: "Starless opens minimised to the tray when the system starts.",
+    closeToTray: "Keep running in the tray when closed",
+    closeToTrayHint:
+      "The X hides the window and the music keeps going. To leave, use Quit on the tray icon.",
+    trayShow: "Show Starless",
+    trayQuit: "Quit",
 
     signedInAs: "Signed in as",
     signOut: "Sign out",
@@ -664,7 +948,7 @@ export const strings = {
     crashKicker: "The last session failed",
     crashTitle: "Starless did not close cleanly",
     crashBody:
-      "The app ended without shutting down. It could be a one-off bug or something about the machine. If you want, we can send the log so it can be found.",
+      "The app failed and shut itself down. If you want, we can send the log to find out what happened.",
     crashShowDetail: "See what would be sent",
     crashHideDetail: "Hide the detail",
     crashScrubbed: "No personal data",
@@ -673,6 +957,13 @@ export const strings = {
     crashDismiss: "Not now",
     crashPrivacy: "Nothing is sent until you press the button. Starless reports no usage.",
     crashSent: "Report created:",
+    crashSentDuplicate: "Already reported; we added yours:",
+    reportRateLimited: "You reached the limit of reports per hour. Try again later.",
+    reportRejected: "The server did not accept this report. Try a shorter message.",
+    feedbackTopic: "What it is about",
+    feedbackTopicBug: "A problem",
+    feedbackTopicIdea: "An idea",
+    feedbackTopicOther: "Something else",
     crashReportUnavailable: "The report could not be prepared.",
     crashReportFailed: "The report could not be sent.",
 
@@ -697,3 +988,145 @@ export const strings = {
 } satisfies Record<Lang, Record<string, string>>;
 
 export type StringKey = keyof (typeof strings)["es"];
+
+const errorsEs = {
+  unauthorised: "La sesión venció. Vuelve a entrar.",
+  // Deliberately not "your account can't access this". In development mode a 403
+  // on a playlist means Spotify will not serve its contents to a third-party app
+  // unless the account owns or collaborates on it — which has nothing to do with
+  // what the account is allowed to do. Blaming the account sends people looking
+  // for a permissions problem that is not theirs to fix.
+  forbidden: "Spotify no entrega el contenido de esta playlist a una app en desarrollo.",
+  rate_limited: "Spotify está limitando las peticiones. Espera un momento.",
+  // A failure that resolves by itself, and the one the app really does retry
+  // while the user is still looking at the screen.
+  //
+  // **It does not say whose fault it is, on purpose.** librespot raises this for
+  // a service that is down *and* for a `ConnectionRefused` on this machine — the
+  // home network went down — and the two arrive as the same kind. "Spotify está
+  // teniendo problemas" is the wrong sentence for someone whose router just
+  // rebooted: it sends them off to look for a problem they do not have, in a
+  // service they cannot go and check.
+  service_unavailable: "No se pudo llegar a Spotify en este momento. Starless sigue reintentando.",
+  not_signed_in: "Primero hay que iniciar sesión.",
+  login_expired: "La sesión venció. Vuelve a entrar.",
+  network_failed: "No se pudo hablar con Spotify.",
+  bad_response: "Spotify respondió algo que no entendemos.",
+  token_refresh_failed: "No se pudo renovar la sesión. Vuelve a entrar.",
+  command_failed: "La operación falló.",
+  session_busy: "La sesión está ocupada. Inténtalo de nuevo.",
+  image_too_large: "Esa imagen pesa más de 25 MB. Prueba con una más liviana.",
+  image_unsupported:
+    "Ese archivo no es una imagen que se pueda usar. Prueba con PNG, JPEG, WebP o GIF.",
+
+  // Playback. None of these are edge cases: each one is a reason a click produces
+  // nothing, and a click that produces nothing with no explanation is the single
+  // worst failure an app can have.
+  no_player: "El reproductor todavía no está listo. Inténtalo de nuevo.",
+  // The play button with nothing loaded behind it. The app does not press it
+  // in this state — the button is disabled when there is no track — but the
+  // command can be asked anyway, and the answer has to be a sentence and not a
+  // code the user would have to decode.
+  no_track: "No hay ninguna canción cargada.",
+  audio_device_failed: "No se pudo abrir el dispositivo de audio de Windows.",
+  // The player stopped answering. Not a broken song and not a broken
+  // connection: the output device stopped consuming, librespot's sink waits
+  // for it forever, and the app noticed that the position had stopped moving
+  // and went to build another player. The app is doing something about it, so
+  // this is what it says while it does.
+  audio_stalled: "El audio se trabó. Volviendo a abrir el dispositivo de salida…",
+  // Phrased as a fact about this app, not an accusation. The event behind it has
+  // at least two very different causes — Spotify refusing to serve the track, and
+  // the decoder choking on bytes that were delivered fine — and the status carries
+  // no way to tell them apart. Saying "Spotify did not deliver this song" picks
+  // one of them and sends the user somewhere the problem is not.
+  track_unavailable: "No se pudo reproducir esta canción.",
+  // Its own code, not `track_unavailable` wearing a hat. The song was fine: the
+  // connection to Spotify was gone, so there was nobody left to ask for the key
+  // that decrypts it — and librespot, which never reconnects on its own, answers
+  // a missing key by playing the file undecrypted. The decoder then reports
+  // ciphertext as an unplayable song. Same event, opposite truth.
+  //
+  // **This is the end of the road.** The app tries to build the session again
+  // on its own, and this is what is left when that does not work: the
+  // connection is gone and it could not be brought back.
+  connection_lost:
+    "Se perdió la conexión con Spotify y no se pudo volver. Cierra y abre Starless para seguir escuchando.",
+  // Not a failure yet. The session died and the app is going to build it again
+  // — the same credentials, a new connection — and the track that failed goes
+  // back on when it is up. Saying "it was lost" here would be a lie about a
+  // thing that is still being fixed.
+  reconnecting: "Se perdió la conexión con Spotify. Volviendo a conectarse…",
+  bad_track_id: "Esa canción no tiene un identificador válido.",
+  // Not a failure. Spotify answers 404 when nobody wrote the words down, and that
+  // is a fact about the song; saying "could not read" instead would point the user
+  // at their own machine when the answer was about the track.
+  no_lyrics: "Esta canción no tiene letra.",
+  session_dropped: "Se cayó la sesión de reproducción.",
+
+  // Playlist writes. The three that can come out of an "add to playlist" are
+  // three different problems: the playlist is not in the library, the service
+  // refused the change, and the id was not an id. Saying "it failed" for all
+  // three sends the user looking in the wrong place.
+  playlist_not_found: "Esa playlist no está en tu biblioteca.",
+  add_failed: "No se pudo agregar la canción a la playlist.",
+  // The details are one write with two failures of their own: the service
+  // refused the change, or the picture did not go up. "It failed" for the two
+  // is the same message for two problems that need two different answers.
+  details_failed: "No se pudieron guardar los detalles de la playlist.",
+  upload_failed: "No se pudo subir la imagen.",
+  // The visibility is a second write, against a different list: the name and the
+  // description may already be saved when this one fails, and saying "it failed"
+  // for both would hide which of the two it was.
+  visibility_failed: "Se guardaron los detalles, pero la playlist no cambió de visibilidad.",
+  empty_name: "La playlist necesita un nombre.",
+  // These two were emitted by Rust and had no sentence here, so the user read
+  // the raw code on screen. They are the two the playlist commands can answer.
+  bad_id: "Ese identificador no es válido.",
+  no_session: "La sesión no está lista. Inténtalo de nuevo.",
+};
+
+/**
+ * Rust error codes, so a screen can say something true instead of "algo falló",
+ * in the language the app is in. The comments live on the Spanish side; the
+ * English says the same thing for the same reasons.
+ * Anything unlisted is reported as-is rather than swallowed: a new code showing
+ * up on screen is a signal, not noise.
+ */
+export const errors: Record<Lang, Record<keyof typeof errorsEs, string>> = {
+  es: errorsEs,
+  en: {
+    unauthorised: "Your session expired. Sign in again.",
+    forbidden: "Spotify doesn't serve this playlist's contents to an app in development.",
+    rate_limited: "Spotify is limiting requests. Give it a moment.",
+    service_unavailable: "Couldn't reach Spotify right now. Starless keeps trying.",
+    not_signed_in: "You need to sign in first.",
+    login_expired: "Your session expired. Sign in again.",
+    network_failed: "Couldn't talk to Spotify.",
+    bad_response: "Spotify sent back something we don't understand.",
+    token_refresh_failed: "Couldn't renew the session. Sign in again.",
+    command_failed: "The operation failed.",
+    session_busy: "The session is busy. Try again.",
+    image_too_large: "That picture is over 25 MB. Try a lighter one.",
+    image_unsupported: "That file isn't a picture we can use. Try PNG, JPEG, WebP or GIF.",
+    no_player: "The player isn't ready yet. Try again.",
+    no_track: "No song is loaded.",
+    audio_device_failed: "Couldn't open the Windows audio device.",
+    audio_stalled: "The audio got stuck. Reopening the output device…",
+    track_unavailable: "This song couldn't be played.",
+    connection_lost:
+      "The connection to Spotify was lost and couldn't be brought back. Close and reopen Starless to keep listening.",
+    reconnecting: "The connection to Spotify was lost. Reconnecting…",
+    bad_track_id: "That song doesn't have a valid identifier.",
+    no_lyrics: "This song has no lyrics.",
+    session_dropped: "The playback session dropped.",
+    playlist_not_found: "That playlist isn't in your library.",
+    add_failed: "Couldn't add the song to the playlist.",
+    details_failed: "Couldn't save the playlist's details.",
+    upload_failed: "Couldn't upload the image.",
+    visibility_failed: "The details were saved, but the playlist's visibility didn't change.",
+    empty_name: "The playlist needs a name.",
+    bad_id: "That identifier isn't valid.",
+    no_session: "The session isn't ready. Try again.",
+  },
+};

@@ -1,8 +1,9 @@
 import { Check, Link2, ListPlus, MoreHorizontal, Pencil } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { copyText } from "../lib/clipboard";
+import { type MenuPoint, PLAYLIST_MENU, useMenuAt } from "../lib/contextMenu";
 import type { StringKey } from "../lib/i18n";
-import type { Playlist, Track } from "../lib/spotify";
+import { type Playlist, type Track, usePlaylistTracks } from "../lib/spotify";
 import { MenuItem, MenuPanel } from "./MenuPanel";
 
 type PlaylistMenuProps = {
@@ -32,6 +33,13 @@ type PlaylistMenuProps = {
   onAddToQueue: (tracks: Track[]) => void;
   /** Open the dialog with the details of the playlist. */
   onEditDetails: () => void;
+  /**
+   * With `at`, the menu has no dots of its own: it is the shared one a
+   * right-click opens on a playlist in the rail or on Home, open while `at` is
+   * a point and closed with `onClose`.
+   */
+  at?: MenuPoint | null;
+  onClose?: () => void;
 };
 
 /** How long the confirmation stays up before the menu closes by itself. */
@@ -66,17 +74,28 @@ export function PlaylistMenu({
   mine,
   onAddToQueue,
   onEditDetails,
+  at,
+  onClose,
 }: PlaylistMenuProps) {
-  const [open, setOpen] = useState(false);
+  const headless = at !== undefined;
+  const [ownOpen, setOpen] = useState(false);
+  const open = headless ? at !== null : ownOpen;
   const [copied, setCopied] = useState<"idle" | "done" | "failed">("idle");
   const [queued, setQueued] = useState(false);
+  // Where a right-click on the heading opened it; null when the dots did.
+  const [point, setPoint] = useState<MenuPoint | null>(null);
 
   const anchor = useRef<HTMLButtonElement>(null);
+  useMenuAt(anchor, (where) => {
+    setPoint(where);
+    setOpen(true);
+  });
 
   const empty = tracks.length === 0;
 
   const close = () => {
     setOpen(false);
+    onClose?.();
     // The confirmation belongs to the menu; leaving it lit would light up the
     // next playlist's dots too.
     setCopied("idle");
@@ -106,23 +125,35 @@ export function PlaylistMenu({
 
   return (
     <>
-      <button
-        ref={anchor}
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpen((value) => !value);
-        }}
-        aria-label={t.playlistMenuFor.replace("{name}", playlist.name)}
-        title={t.playlistMenu}
-        className={`grid size-9 shrink-0 place-items-center rounded-pill transition-colors duration-200 ${
-          open ? "bg-white/10 text-ink" : "text-ink-muted hover:text-ink"
-        }`}
-      >
-        <MoreHorizontal className="size-5" strokeWidth={2} />
-      </button>
+      {!headless && (
+        <button
+          ref={anchor}
+          type="button"
+          // What a right-click on the playlist's heading opens.
+          data-playlist-menu=""
+          onClick={(e) => {
+            e.stopPropagation();
+            setPoint(null);
+            setOpen((value) => !value);
+          }}
+          aria-label={t.playlistMenuFor.replace("{name}", playlist.name)}
+          title={t.playlistMenu}
+          className={`grid size-9 shrink-0 place-items-center rounded-pill transition-colors duration-200 ${
+            open ? "bg-white/10 text-ink" : "text-ink-muted hover:text-ink"
+          }`}
+        >
+          <MoreHorizontal className="size-5" strokeWidth={2} />
+        </button>
+      )}
 
-      <MenuPanel open={open} onClose={close} anchor={anchor} label={t.playlistMenu} width={236}>
+      <MenuPanel
+        open={open}
+        onClose={close}
+        anchor={anchor}
+        point={headless ? at : point}
+        label={t.playlistMenu}
+        width={236}
+      >
         {/*
           **Una playlist sin canciones no tiene nada que mandar a la cola.** La
           fila se esconde en vez de quedar apagada: una fila que no hace nada se
@@ -168,7 +199,7 @@ export function PlaylistMenu({
           label={copied === "failed" ? t.copyFailed : t.copyLink}
           icon={
             copied === "done" ? (
-              <Check className="size-4 text-accent" strokeWidth={2.5} />
+              <Check className="size-4 text-accent-ink" strokeWidth={2.5} />
             ) : (
               <Link2 className="size-4" strokeWidth={2} />
             )
@@ -177,5 +208,56 @@ export function PlaylistMenu({
         />
       </MenuPanel>
     </>
+  );
+}
+
+/**
+ * The menu a right-click opens on a playlist in the rail or on Home.
+ *
+ * **One menu for every tile, mounted once.** A menu per tile would be a
+ * hundred hidden menus for a library of a hundred playlists. This one listens
+ * for `PLAYLIST_MENU`, finds the playlist, and loads its songs the moment it
+ * opens — the queue row appears when they arrive, since a row that does
+ * nothing until then would read as broken.
+ *
+ * **Without "Edit details".** The dialog lives on the playlist's own screen,
+ * so the row stays there, where the right-click on the heading still offers it.
+ */
+export function PlaylistContextMenu({
+  t,
+  playlists,
+  onAddToQueue,
+}: {
+  t: Record<StringKey, string>;
+  playlists: Playlist[];
+  onAddToQueue: (tracks: Track[]) => void;
+}) {
+  const [target, setTarget] = useState<{ playlist: Playlist; at: MenuPoint } | null>(null);
+
+  useEffect(() => {
+    const onMenu = (event: Event) => {
+      const { id, x, y } = (event as CustomEvent<{ id: string } & MenuPoint>).detail;
+      const playlist = playlists.find((candidate) => candidate.id === id);
+      if (playlist) setTarget({ playlist, at: { x, y } });
+    };
+    window.addEventListener(PLAYLIST_MENU, onMenu);
+    return () => window.removeEventListener(PLAYLIST_MENU, onMenu);
+  }, [playlists]);
+
+  const tracks = usePlaylistTracks(target?.playlist.id ?? null);
+  if (!target) return null;
+  return (
+    <PlaylistMenu
+      // A new right-click is a new menu: the last one's confirmations do not carry over.
+      key={`${target.playlist.id}:${target.at.x}:${target.at.y}`}
+      t={t}
+      playlist={target.playlist}
+      tracks={tracks.data ?? []}
+      mine={false}
+      onAddToQueue={onAddToQueue}
+      onEditDetails={() => {}}
+      at={target.at}
+      onClose={() => setTarget(null)}
+    />
   );
 }

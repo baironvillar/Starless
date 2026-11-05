@@ -81,7 +81,7 @@ export function DevPanel({ t }: DevPanelProps) {
       </div>
 
       {crashPlanted && <p className="mt-2.5 text-[12px] text-ink-faint">{t.devCrashPlanted}</p>}
-      {crashError && <p className="mt-2.5 text-[12px] text-warn">{crashError}</p>}
+      {crashError && <p className="mt-2.5 text-[12px] text-warn-ink">{crashError}</p>}
     </div>
   );
 }

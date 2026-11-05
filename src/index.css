@@ -6,46 +6,207 @@
  */
 
 @theme {
-  /* Colour. Saturation lives in the bloom and in state marks, never in flat panel fills. */
-  --color-ground: #0a0a12;
-  --color-ink: #f4f4fa;
-  --color-ink-muted: #9a9ab0;
-  --color-ink-faint: #9090a8;
+  /* Colour. "A night without stars": deep blacks and one warm light (brand-kit/tokens.css). */
+  --color-ground: #0b0b0f; /* Void */
+  --color-night: #15151b; /* Night — surfaces */
+  --color-eclipse: #24242c; /* Eclipse — borders, tracks */
+  --color-ink: #edeae3; /* Bone */
+  --color-ink-muted: #9a97a0; /* Smoke */
+  --color-ink-faint: #8c8992;
 
-  --color-accent: #c9f73c;
-  --color-accent-soft: #d9ff6b;
+  /* Ember, the one action colour. ≤ 10% of the screen. */
+  --color-accent: #ff5a36;
+  --color-accent-soft: #ff7e62;
   /* The label that sits on top of a filled accent surface. A token, not a
    * literal, because the accent is the user's to change and a dark one with a
    * dark label is a button nobody can read. `applyAccentColor` overwrites all
    * three at runtime when there is a colour to apply. */
-  --color-on-accent: #0a0a12;
+  --color-on-accent: #0b0b0f;
   --color-live: #ff5a36;
-  --color-warn: #ffb020;
+  --color-ok: #3dd6c4; /* Tide */
+  --color-warn: #f5b83d; /* Amber */
+
+  /*
+   * The same three colours when they are text. On the dark ground they are the
+   * colours themselves; on the light one Ember is 2.4:1 against Bone, so the
+   * light theme darkens them (below). A fill keeps the bright colour either way.
+   */
+  --color-accent-ink: var(--color-accent);
+  --color-live-ink: var(--color-live);
+  --color-warn-ink: var(--color-warn);
 
   /* Radius. Corner radius on a floating surface is what tells the eye it is detached. */
   --radius-card: 20px;
   --radius-pill: 999px;
 
-  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Syne", "DM Sans", ui-sans-serif, sans-serif;
+  /* Numbers: timecodes, counts, the version. Also raw logs and codes. */
+  --font-mono: "DM Mono", ui-monospace, monospace;
 
   /* A single spacing rhythm. Everything snaps to 4px. */
   --spacing: 0.25rem;
 
   --ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
 
+}
+
+/*
+ * The values the theme changes that are not a named colour: what the glass is
+ * tinted with, what the hairlines and veils are drawn in, the light behind the
+ * glass, and how heavy the lift's shadow is. Channels, not colours, so each use
+ * keeps its own alpha.
+ */
+:root {
   /*
-   * How opaque the menus are, as the user's own glass.
-   *
-   * Default 0.55: the glass DESIGN.md is written around, at the bottom of the
-   * slider. The floor is 55% because that is about how far the blur can be pushed
-   * before what sits behind stops being a smear and turns back into readable text.
-   *
-   * The fallback in `var()` matters: the customizer sets this from a saved setting
-   * once the app is up, and the very first frame has to look like the choice
-   * already rather than like the default nobody picked.
+   * The one opacity the person picks, and everything below is measured from it.
+   * 0.06 is the bottom of the slider: the veil the shortcuts on Home always had.
+   * The default is 0.32, the first value where the frost has reached its full
+   * saturation and the picture still reads through it.
    */
-  --menu-alpha: 0.55;
+  --surface-alpha: 0.32;
+  /*
+   * **The menus follow it, from 55% up.** They open over songs, so under that the
+   * text behind them lands in the same pixels as their own. Same slider, same
+   * number; they just wait for it there.
+   */
+  --menu-alpha: max(0.55, var(--surface-alpha));
+  /*
+   * **A sheet or a dialog is the surfaces' grey with a floor.** 55% of plain Night
+   * read 2.0:1 over a bright picture. So at the bottom of the slider the tint is the
+   * same lifted grey the surfaces have, and it arrives at Night with them. The desktop
+   * menus do not use this: they are `surface-menu`, with no floor. Muted text here
+   * reads 5.0:1 over a picture at 170, 4.3:1 at 200, and 3.3:1 over pure white.
+   */
+  --surface-menu-dim: 0.85;
+  --menu-tint: color-mix(
+    in srgb,
+    rgb(var(--glass-rgb)) calc(82% + var(--surface-solidity) * 18%),
+    rgb(var(--line-rgb))
+  );
+  --menu-bg: color-mix(in srgb, var(--menu-tint) calc(var(--menu-alpha) * 100%), transparent);
+  --menu-dim: 0.72;
+  --menu-saturate: 110%;
+  --menu-ink-muted: #d3d0d4;
+  --menu-ink-faint: #c6c3c9;
+  /*
+   * How present a lyric line is. Over the bloom these are the whole answer; over a
+   * picture `.on-ground` raises them, because 35% of the ink over a bright picture
+   * is no line at all.
+   */
+  --lyric-idle: 0.7;
+  --lyric-near: 0.6;
+  --lyric-far: 0.35;
+  --glass-rgb: 21 21 27;
+  --line-rgb: 255 255 255;
+  --bloom-a: 237 234 227;
+  --bloom-b: 196 193 200;
+  --lift-alpha: 0.6;
+  --glass-lift: 0;
+  --glass-saturate: 180%;
+  --surface-saturate: 0.6;
+  color-scheme: dark;
+}
+
+/*
+ * The light theme: Bone for the ground and Night for the ink, the brand's
+ * two ends swapped.
+ *
+ * **`--color-white` is redefined, and that is the trick that makes this one
+ * block.** Two hundred places draw a veil or a hairline as `bg-white/6` or
+ * `border-white/8`: white at a few percent, which on black is "a little
+ * lighter". On Bone the same intent is "a little darker", so in light white
+ * *is* Night. The few things that are white because they are white — a
+ * toggle's knob — say `#fff` instead.
+ *
+ * The bloom becomes white light on Bone, and the text tokens of the three
+ * colours darken until they pass 4.5:1 on the ground. Every pair is measured
+ * in DESIGN.md.
+ */
+:root[data-theme="light"] {
+  /*
+   * The ground sits a step below the panels, like paper under cards: at
+   * `#E4E1DA` against `#F4F2ED` the two were 1.17:1 apart and the rail, the
+   * queue and the content melted into one white sheet. `#D6D1C6` gives 1.36:1.
+   * The faint, live and warn inks darkened with it to stay over 4.5:1 on it.
+   */
+  --color-ground: #d6d1c6;
+  --color-night: #f4f2ed;
+  --color-eclipse: #c4bfb4;
+  --color-ink: #15151b;
+  --color-ink-muted: #4f4c55;
+  --color-ink-faint: #55525c;
+  --color-white: #15151b;
+  --color-accent-ink: color-mix(in oklab, var(--color-accent) 55%, #000);
+  --color-live-ink: #9a2e18;
+  --color-warn-ink: #764c00;
+
+  --glass-rgb: 247 245 240;
+  --line-rgb: 21 21 27;
+  /*
+   * The bloom is a warm paper light and not white: white bloom on a light
+   * ground painted the middle of the window white, exactly where the panels
+   * needed something darker to stand on.
+   */
+  --bloom-a: 233 228 218;
+  --bloom-b: 222 216 205;
+  --lift-alpha: 0.16;
+  /*
+   * On a light ground a panel is told apart by its shadow as much as by its
+   * tone: a soft contact shadow and a wider one, at every opacity — the dark
+   * theme waits for 55% because an outer shadow under a translucent dark fill
+   * reads as dirt, and on light it reads as depth. A top highlight finishes
+   * the edge.
+   */
+  --surface-lift: 0 1px 2px rgb(21 21 27 / 0.06), 0 10px 28px -10px rgb(21 21 27 / 0.18);
+  --surface-edge: inset 0 0 0 1px rgb(21 21 27 / 0.1), inset 0 1px 0 rgb(255 255 255 / 0.55);
+  /*
+   * And by being lighter than the ground: at the default 32% a light surface was
+   * mostly the ground showing through, the same tone as what it sat on. The
+   * surfaces get the lift the sheets already have — the person's position on
+   * the slider, lifted toward solid — so a panel is paper on the desk.
+   */
+  --surface-bg: color-mix(
+    in srgb,
+    rgb(var(--glass-rgb))
+    calc((var(--glass-lift) + var(--surface-solidity) * (1 - var(--glass-lift))) * 100%),
+    rgb(var(--line-rgb) / 0.06)
+  );
+  /*
+   * A light glass lets colour through where a dark one swallows it: at 55%
+   * over a pink cover the settings sheet turned pink. The alpha the person
+   * picked is kept as a position on the slider and lifted toward solid — 55%
+   * draws at 73%, 100% stays 100% — and the blur saturates less.
+   */
+  --glass-lift: 0.4;
+  --glass-saturate: 130%;
+  /* The light glass is already lifted toward solid: dimming it would grey it. */
+  --menu-bg: rgb(
+    var(--glass-rgb) / calc(var(--glass-lift) + var(--menu-alpha, 0.55) * (1 - var(--glass-lift)))
+  );
+  --surface-menu-dim: 1;
+  --menu-dim: 1;
+  --menu-saturate: 130%;
+  --menu-ink-muted: #4f4c55;
+  --menu-ink-faint: #5f5c66;
+  --surface-saturate: 0.3;
+  color-scheme: light;
+}
+
+/* The noise tile is white on black; on Bone it has to be dark to be seen. */
+:root[data-theme="light"] .grain {
+  filter: invert(1);
+}
+
+/*
+ * A theme change is revealed as a circle (`paintTheme`), not crossfaded: the
+ * browser's default fade would show both windows at half strength on top of
+ * the circle. The new window sits whole over the old one and its clip grows.
+ */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
 }
 
 /*
@@ -85,9 +246,10 @@
  * translucency stops being depth and becomes a readability problem.
  */
 @utility glass {
-  background-color: rgb(20 20 32 / 0.55);
-  backdrop-filter: blur(24px) saturate(180%);
-  box-shadow: 0 24px 48px -12px rgb(0 0 0 / 0.6);
+  /* 0.46, under the 0.5 floor on purpose: behind the bars is mostly the frost bloom, and the user asked for more see-through. */
+  background-color: rgb(var(--glass-rgb) / calc(var(--glass-lift) + 0.46 * (1 - var(--glass-lift))));
+  backdrop-filter: blur(24px) saturate(var(--glass-saturate));
+  box-shadow: 0 24px 48px -12px rgb(0 0 0 / var(--lift-alpha));
   contain: paint;
 }
 
@@ -106,55 +268,441 @@
  * depth, a collision. That is why the sheet's floor is the user's to cross.
  */
 @utility glass-overlay {
-  background-color: rgb(20 20 32 / var(--menu-alpha, 0.55));
-  backdrop-filter: blur(24px) saturate(180%);
-  box-shadow: 0 24px 48px -12px rgb(0 0 0 / 0.6);
+  background-color: var(--menu-bg);
+  /* 110% and not the bars' 180%: at 180% one cover behind a menu became a blue stain under its text. */
+  backdrop-filter: blur(24px) saturate(var(--menu-saturate)) brightness(var(--menu-dim));
+  /* The edge is for the picture, as on the surfaces, and it is what keeps a submenu apart from its menu. */
+  box-shadow:
+    inset 0 0 0 1px rgb(var(--line-rgb) / 0.1),
+    0 24px 48px -12px rgb(0 0 0 / var(--lift-alpha));
   contain: paint;
 }
 
 /*
- * The legend for the opacity slider: what a menu looks like at the current
+ * The legend for the opacity slider: what a surface looks like at the current
  * value, drawn inside the settings sheet.
  *
  * It is a legend, not a surface, and it stays out of the glass recipe on purpose
- * — no blur, no stacking, nothing to nest inside a sheet that is already opaque.
- * The stripes are the thing the alpha is measured against; without something
- * behind them, 100% and 55% are the same grey and the control answers nothing
- * while it is being dragged.
+ * — no blur, no stacking, nothing to nest inside a sheet. The stripes are the
+ * thing the alpha is measured against; without something behind them the control
+ * answers nothing while it is being dragged.
+ *
+ * **The legend has its own alpha, and it is the one that moves.** The surfaces
+ * read `--surface-alpha`, which the panel only changes once the hand stops: every
+ * surface that reads it repaints, the settings sheet among them, so a drag that
+ * moves it repaints half the window on every pointer event. The legend is a 46x28
+ * box with a gradient — it can answer at pointer speed, and that is the whole
+ * reason it is there. `--legend-alpha` is set on the legend itself, so only that
+ * box is restyled.
  */
-@utility menu-legend {
+@utility surface-legend {
   width: 46px;
   height: 28px;
   border-radius: 7px;
-  border: 1px solid rgb(255 255 255 / 0.14);
+  border: 1px solid rgb(var(--line-rgb) / 0.14);
+  --legend-color: color-mix(
+    in srgb,
+    rgb(var(--glass-rgb)) calc((var(--legend-alpha) - 0.06) / 0.94 * 100%),
+    rgb(var(--line-rgb) / 0.06)
+  );
   background-image:
-    linear-gradient(rgb(20 20 32 / var(--menu-alpha, 0.55)), rgb(20 20 32 / var(--menu-alpha, 0.55))),
+    linear-gradient(var(--legend-color), var(--legend-color)),
     repeating-linear-gradient(
       115deg,
-      rgb(255 255 255 / 0.26) 0 2px,
-      rgb(255 255 255 / 0.05) 2px 7px
+      rgb(var(--line-rgb) / 0.26) 0 2px,
+      rgb(var(--line-rgb) / 0.05) 2px 7px
     );
 }
 
 /*
- * A sheet: the settings panel and the queue. Both cover most of the window, and
- * these follow `--menu-alpha` like every other surface — the floor is the user's,
- * not ours.
+ * A sheet: the settings panel and the jam. They sit over content, and these
+ * follow `--menu-alpha` like every other menu — the floor is the user's, not ours.
  *
  * What the slider trades is measured: these sit over the library's own text, in
  * the same pixels as their own navigation, so at the bottom of the range the blur
  * has to be doing all the work to keep it a smear. That measurement is why the
  * slider stops at 55% rather than at 0 — not a reason to overrule the choice.
  *
- * The three bars keep their own fixed 55%: they are the signature, they read as
- * depth because there is little behind them to collide with, and nothing about
- * them was ever adjustable.
+ * The bars and the queue go lower on the same slider, and without blur: nothing
+ * sits behind them to collide with (`surface`, below).
  */
 @utility glass-sheet {
-  background-color: rgb(20 20 32 / var(--menu-alpha, 0.55));
-  backdrop-filter: blur(24px) saturate(180%);
-  box-shadow: 0 24px 48px -12px rgb(0 0 0 / 0.6);
+  /* The bottom of the slider cannot reach a sheet: it covers the library's own text. */
+  background-color: var(--menu-bg);
+  backdrop-filter: blur(24px) saturate(var(--menu-saturate)) brightness(var(--menu-dim));
+  box-shadow:
+    inset 0 0 0 1px rgb(var(--line-rgb) / 0.1),
+    0 24px 48px -12px rgb(0 0 0 / var(--lift-alpha));
   contain: paint;
+}
+
+:is(.glass-overlay, .glass-sheet) {
+  --color-ink-muted: var(--menu-ink-muted);
+  --color-ink-faint: var(--menu-ink-faint);
+}
+
+/*
+ * The surfaces: the three bars, the queue and the shortcuts on Home.
+ *
+ * **One material, and one number.** The bars used to be dark glass and the
+ * shortcuts a plain veil: the same picture behind them read sharp in the middle
+ * and smeared at the sides, and the window looked like two designs.
+ *
+ * `--surface-solidity` runs from 0 at the bottom of the slider to 1 at the top,
+ * and the tint runs with it from the veil to the solid glass colour. The two ends
+ * are different colours on purpose: at the bottom a surface is a little lighter
+ * than what is behind it, at the top it is the app's own Night.
+ *
+ * **The tint alone cannot carry the slider.** It adds almost the same light at
+ * every value (15 to 21 out of 255), so moving it mostly dims what is behind, and
+ * a tint that starts lighter than a mid-grey picture and ends darker has to cross
+ * it. Measured over a picture at 105: the rail read +9 at 6%, -2 at 20%, and the
+ * surface is gone altogether near 15%. That crossing cannot be tuned away, because
+ * the picture is the person's, so the surface stops depending on brightness to
+ * exist: frost separates it by texture and the edge separates it on flat ground.
+ * Both start at nothing, so the 6% veil stays exactly what it was.
+ *
+ * **The lift waits for 55%.** An outer shadow is not drawn under its own box, so
+ * under a translucent fill it reads as a dirty halo around a clean window: at 20%
+ * it took the gap beside the rail from 105 to 102. It starts once the fill can
+ * hide that.
+ *
+ * A surface that floats over content (the phone's bars, a menu, the jam, the
+ * settings sheet) stays on real glass: these only start blurring along the slider,
+ * and at the bottom of it the text behind them would collide with their own.
+ */
+:root {
+  --surface-solidity: calc((var(--surface-alpha) - 0.06) / 0.94);
+  --surface-filter: blur(min(24px, calc(var(--surface-solidity) * 80px)))
+    saturate(calc(1 + var(--surface-saturate) * min(1, calc(var(--surface-solidity) * 4))));
+  --surface-edge: inset 0 0 0 1px
+    rgb(var(--line-rgb) / calc(0.1 * min(1, calc(var(--surface-solidity) * 8))));
+  --surface-bg: color-mix(
+    in srgb,
+    rgb(var(--glass-rgb)) calc(var(--surface-solidity) * 100%),
+    rgb(var(--line-rgb) / 0.06)
+  );
+  --surface-hover: color-mix(in srgb, var(--surface-bg), rgb(var(--line-rgb)) 6%);
+  --surface-lift: 0 24px 48px -12px
+    rgb(0 0 0 / calc(var(--lift-alpha) * max(0, calc((var(--surface-alpha) - 0.55) / 0.45))));
+  /*
+   * With only a veil between the text and the person's picture, the grey of a
+   * secondary line is what goes first: over a mid-grey picture "Ahora suena" and
+   * the search's placeholder all but vanished. So they start near the ink at the
+   * bottom of the slider and arrive at their own grey at the top.
+   */
+  --surface-ink-muted: color-mix(
+    in oklab,
+    var(--color-ink-muted) calc(var(--surface-solidity) * 100%),
+    color-mix(in oklab, var(--color-ink) 84%, transparent)
+  );
+  --surface-ink-faint: color-mix(
+    in oklab,
+    var(--color-ink-faint) calc(var(--surface-solidity) * 100%),
+    color-mix(in oklab, var(--color-ink) 76%, transparent)
+  );
+}
+
+:is(.surface, .surface-tile, .surface-card, .surface-chip, .surface-menu) {
+  --color-ink-muted: var(--surface-ink-muted);
+  --color-ink-faint: var(--surface-ink-faint);
+}
+
+@utility surface {
+  background-color: var(--surface-bg);
+  backdrop-filter: var(--surface-filter);
+  box-shadow: var(--surface-edge), var(--surface-lift);
+  contain: paint;
+}
+
+/*
+ * The same material on a shortcut. No lift: a shadow on a tile in a grid is a smudge.
+ */
+@utility surface-tile {
+  background-color: var(--surface-bg);
+  backdrop-filter: var(--surface-filter);
+  box-shadow: var(--surface-edge);
+  &:hover {
+    background-color: var(--surface-hover);
+  }
+}
+
+/*
+ * The same material on a card in the content: the song lists and Home's cards.
+ *
+ * No edge from here: these keep their `border-white/8`, the hairline a list hangs
+ * on. It has to be there at 6% too, where the edge is still nothing.
+ */
+@utility surface-card {
+  background-color: var(--surface-bg);
+  backdrop-filter: var(--surface-filter);
+}
+
+/*
+ * The same material on a small control that stands on the picture by itself, like
+ * the tabs of "Lo más escuchado". It has the edge of a surface, and not the hover of
+ * a tile: the buttons inside it answer the pointer, not the capsule.
+ */
+@utility surface-chip {
+  background-color: var(--surface-bg);
+  backdrop-filter: var(--surface-filter);
+  box-shadow: var(--surface-edge);
+}
+
+/*
+ * The same material on a desktop menu: the search, the three dots, the sort menu.
+ *
+ * **A menu has to look like the window it opens in.** It had its own darker glass
+ * with a 55% floor, and three rounds of tuning that glass still read as a different
+ * object beside the surfaces. So it takes their tint and follows the slider all the
+ * way down, without a floor.
+ *
+ * Three things differ, and each is because a menu opens over content. The blur stays
+ * at 24px, because the surfaces start with none and a song title behind a menu would
+ * land on its own text. The edge is always there, because the surfaces' edge starts
+ * at nothing. And what is behind is dimmed a little, or a menu over the queue would
+ * be the same grey as the queue.
+ *
+ * The cost is the person's call, like the bottom of the slider on the surfaces: a low
+ * value over a bright picture costs contrast, and moving the slider up is the way
+ * out. The phone's menu keeps `glass-overlay`: there it is a sheet over the songs.
+ */
+@utility surface-menu {
+  background-color: var(--surface-bg);
+  backdrop-filter: blur(24px)
+    saturate(calc(1 + var(--surface-saturate) * min(1, calc(var(--surface-solidity) * 4))))
+    brightness(var(--surface-menu-dim));
+  box-shadow:
+    inset 0 0 0 1px rgb(var(--line-rgb) / 0.1),
+    var(--surface-lift);
+  contain: paint;
+}
+
+/*
+ * The bar's play button, in the four dresses Personalización offers. `data-style`
+ * and not four classes because the panel's previews draw the same button: what
+ * the swatch shows is what the bar gets.
+ *
+ * The accent and the cover are colours nobody vetted — a custom accent or a black
+ * sleeve can be as dark as the bar — so both carry a hairline ring: the button
+ * keeps an edge when its fill does not. The cover's colour arrives inline as
+ * `--tint` and `--on-tint` and fades between songs; until it arrives, the accent.
+ *
+ * The glass is the landing's download key: frosted, with the accent glowing low
+ * under it. Only the standard `backdrop-filter` — see the warning above `glass`.
+ *
+ * In `components` so the buttons' own utilities (their transition, their press
+ * scale) still win over this: an unlayered rule beats every Tailwind class.
+ */
+@layer components {
+.play-key {
+  position: relative;
+  isolation: isolate;
+  background-color: var(--color-ink);
+  color: var(--color-ground);
+  transition:
+    background-color 400ms ease,
+    color 400ms ease;
+}
+.play-key[data-style="accent"],
+.play-key[data-style="cover"] {
+  background-color: var(--tint, var(--color-accent));
+  color: var(--on-tint, var(--color-on-accent));
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.16);
+}
+.play-key[data-style="accent"] {
+  --tint: var(--color-accent);
+  --on-tint: var(--color-on-accent);
+}
+.play-key[data-style="glass"] {
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.16), rgb(255 255 255 / 0.04));
+  color: var(--color-ink);
+  /* The last shadow is the accent rising inside the glass from below: faint at
+     rest, a clear tint under the hand — the colour grows, not the white. */
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.2),
+    inset 0 1px 0 rgb(255 255 255 / 0.4),
+    inset 0 -10px 18px
+    color-mix(in oklab, var(--color-accent) calc(10% + var(--lit, 0) * 35%), transparent);
+  backdrop-filter: blur(16px) saturate(160%);
+  /* The colour warms up slowly and cools at half the time: 700ms in, 350ms
+     out, on an ease-in-out so it neither jumps on nor stops dead. */
+  transition: box-shadow calc(350ms + var(--lit, 0) * 350ms) cubic-bezier(0.45, 0, 0.25, 1);
+}
+.play-key[data-style="glass"]::before {
+  content: "";
+  position: absolute;
+  inset: 30% 0 -24%;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(closest-side, var(--color-accent), transparent);
+  /* Under the hand the light gets more of its colour, not more white: saturate
+     deepens the accent, where brightness washed it toward white. */
+  filter: blur(7px) saturate(calc(1 + var(--lit, 0) * 0.6));
+  opacity: calc(0.8 + var(--lit, 0) * 0.2);
+  /* The light leans toward the hand wherever it is: `--mx` runs from -1 (far
+     left) to 1 (far right), see `followPointer`, and `--follow` is the motion
+     gate. 16% at most: a lean, so the light stays under the button. */
+  transform: translateX(calc(var(--mx, 0) * var(--follow, 0) * 16%))
+    translateY(calc(var(--lit, 0) * -2px)) scale(calc(1 + var(--lit, 0) * 0.2));
+  /* The colour on the same slow warm-up as the glass tint; the movement stays
+     quick, because it also carries the lean toward the mouse and a slow one
+     would trail behind the hand. */
+  transition:
+    opacity calc(350ms + var(--lit, 0) * 350ms) cubic-bezier(0.45, 0, 0.25, 1),
+    filter calc(350ms + var(--lit, 0) * 350ms) cubic-bezier(0.45, 0, 0.25, 1),
+    transform calc(150ms + var(--lit, 0) * 50ms) ease-out;
+}
+
+/*
+ * The button answers the hand in the dress that was chosen, and the play
+ * triangle steps forward. Bone lightens, the accent and the cover light a halo
+ * of their own colour, the glass raises its light and a specular line crosses
+ * its face — the landing's download key. Pause does not step: it is not going
+ * anywhere.
+ *
+ * One switch, `--lit`, and every answer written once as a function of it. A
+ * mouse turns it on while it hovers; a finger, while it presses — a phone has
+ * no hover, and a hover rule there sticks after the tap and leaves the button
+ * lit. In and out at different speeds (200ms in, 150ms out): the hand going in
+ * is deciding, the hand leaving is done. Never with the app's motion off or
+ * the system's reduced motion.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-still]) .play-key {
+    --follow: 1;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    :root:not([data-still]) .play-key:hover {
+      --lit: 1;
+    }
+  }
+  @media (hover: none) {
+    :root:not([data-still]) .play-key:active {
+      --lit: 1;
+    }
+  }
+}
+.play-key[data-style="bone"] {
+  background-color: color-mix(in oklab, var(--color-ink) calc(100% - var(--lit, 0) * 40%), #fff);
+}
+.play-key[data-style="accent"]::after,
+.play-key[data-style="cover"]::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(closest-side, var(--tint, var(--color-accent)), transparent);
+  opacity: calc(var(--lit, 0) * 0.55);
+  transition: opacity calc(150ms + var(--lit, 0) * 50ms) ease-out;
+}
+.play-key[data-style="glass"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 38%, rgb(255 255 255 / 0.3) 50%, transparent 62%)
+    130% 0 / 260% 100% no-repeat;
+  /* The line crosses once on the way in and is put back unseen on the way out. */
+  background-position: calc(130% - var(--lit, 0) * 160%) 0;
+  transition: background-position calc(var(--lit, 0) * 700ms) cubic-bezier(0.23, 1, 0.32, 1);
+}
+.play-glyph {
+  transform: translateX(calc(var(--lit, 0) * 1.5px));
+  transition: transform calc(150ms + var(--lit, 0) * 50ms) ease-out;
+}
+}
+
+/*
+ * **The content's fade and the frost cannot both exist.** The fade is a mask on
+ * `<main>`, and a mask makes its element a backdrop root: a `backdrop-filter` inside
+ * samples only what is inside `<main>`, never the picture behind. So above the bottom
+ * of the slider, which is when there is frost at all, the mask goes. What that costs
+ * is the fade itself: a row is cut flat at the edge of the scroller.
+ *
+ * `!important` because the mask is an inline style, and it is built in `App` from the
+ * scroll position, which has no reason to learn about a slider.
+ */
+:root[data-surface-frost] .content-fade {
+  mask-image: none !important;
+}
+
+/*
+ * The fade that replaces the mask while the surfaces frost (`EdgeFade` in App.tsx):
+ * a strip of the ground at each edge, opaque at the window's side and clear at the
+ * content's. Without frost the mask is still there, and the strips stay out.
+ */
+.edge-fade {
+  display: none;
+}
+
+:root[data-surface-frost] .edge-fade {
+  display: block;
+}
+
+.edge-fade-top {
+  mask-image: linear-gradient(to bottom, #000, transparent);
+}
+
+.edge-fade-bottom {
+  mask-image: linear-gradient(to top, #000, transparent);
+}
+
+/*
+ * How something frosted arrives. Its own opacity, never a parent's: an ancestor
+ * below opacity 1 is a backdrop root, so a section fading in took the blur away
+ * from every tile in it until the fade ended, and the tiles snapped to frosted.
+ */
+@keyframes arrive {
+  from {
+    opacity: 0;
+  }
+}
+
+@utility arrive {
+  animation: arrive 320ms var(--ease-glass) both;
+}
+
+/*
+ * Text that stands on the person's picture, with no surface under it.
+ *
+ * The grey tokens were measured against Night, and a subtitle under a cover or the
+ * note under a heading sit on whatever the person chose: over a bright picture they
+ * disappeared. The opacity slider cannot help, because there is no surface here for
+ * it to act on, and a sheet under the words would be one more floating layer. So the
+ * greys move close to the ink and the text carries a halo of the glass colour, the
+ * way a label stays readable on a desktop wallpaper.
+ *
+ * Only with a picture: over the bloom the tokens already pass, and this would be a
+ * cost with nothing to show for it. Anything with its own ground takes the halo off,
+ * because `text-shadow` inherits and it would smear over a filled button.
+ */
+:root[data-picture] .on-ground {
+  --color-ink-muted: color-mix(in oklab, var(--color-ink) 90%, transparent);
+  --color-ink-faint: color-mix(in oklab, var(--color-ink) 84%, transparent);
+  /* 0.72 and not higher: at 0.86 the line being sung stopped standing out from its neighbours. */
+  --lyric-idle: 0.9;
+  --lyric-near: 0.72;
+  --lyric-far: 0.55;
+  /*
+   * Tight on purpose. A title or a subtitle is usually `truncate`, whose `overflow:
+   * hidden` also cuts the shadow at the edge of the line: an 18px halo ended in a
+   * straight line under the song's name, as a grey box behind the text.
+   */
+  text-shadow:
+    0 1px 2px rgb(var(--glass-rgb) / 0.7),
+    0 0 6px rgb(var(--glass-rgb) / 0.45);
+}
+
+:root[data-picture]
+  .on-ground
+  :is(.surface, .surface-tile, .surface-card, .surface-chip, .glass-control, .bg-accent) {
+  text-shadow: none;
 }
 
 /*
@@ -164,7 +712,7 @@
  * second outline wrapped around one that the fill already draws.
  */
 @utility glass-control {
-  background-color: rgb(255 255 255 / 0.08);
+  background-color: rgb(var(--line-rgb) / 0.08);
   transition:
     background-color 160ms var(--ease-glass),
     transform 160ms var(--ease-glass);
@@ -198,6 +746,73 @@
 }
 
 /*
+ * The line being sung, letter by letter: dim until its turn, then lit and lifted
+ * four pixels, then settled back — lit stays, the lift does not.
+ *
+ * `translate` and not `transform`, and `opacity`, so the movement stays on the
+ * compositor. The light is an opacity on each letter rather than a colour: the
+ * button around it already owns the line's opacity, and the two multiply.
+ *
+ * Under quiet mode or reduced motion the duration collapses and `both` holds the
+ * last frame: each letter simply turns on at its turn, without moving.
+ *
+ * Tuned for smooth over snappy:
+ * - It starts at `--lyric-near`, the opacity the line had one line earlier as a neighbour.
+ *   Starting lower made every line dip darker at the instant it became the one
+ *   being sung, before lighting up — a flicker at each line change.
+ * - 900ms with a 3px lift means five or six letters are in motion at once, so
+ *   the eye reads one wave travelling along the line rather than letters
+ *   popping one after another.
+ * - `ease-in-out` on both halves: the rise and the settle accelerate and slow
+ *   down, with no corner at the top of the lift.
+ */
+@keyframes lyric-letter {
+  0% {
+    opacity: var(--lyric-near);
+    translate: 0 0;
+  }
+  40% {
+    opacity: 1;
+    translate: 0 -3px;
+  }
+  100% {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+@utility lyric-letter {
+  display: inline-block;
+  animation: lyric-letter 900ms ease-in-out both;
+}
+
+/* Pausing the song pauses every letter where it is, mid-lift included. */
+.lyric-sung[data-paused] .lyric-letter {
+  animation-play-state: paused;
+}
+
+/*
+ * The dots of an instrumental break, breathing while that break plays. `scale`
+ * and `opacity` only, so an animation that loops for a whole intro stays on the
+ * compositor and never touches layout.
+ */
+@keyframes lyric-dot {
+  0%,
+  100% {
+    opacity: 0.35;
+    scale: 0.8;
+  }
+  50% {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+@utility lyric-dot {
+  animation: lyric-dot 1.2s var(--ease-glass) infinite;
+}
+
+/*
  * Range inputs.
  *
  * The browser's default range looks like a different app wearing our clothes, so
@@ -221,7 +836,7 @@
   background-image: linear-gradient(
     to right,
     var(--color-ink) 0 var(--fill, 0%),
-    rgb(255 255 255 / 0.16) var(--fill, 0%) 100%
+    rgb(var(--line-rgb) / 0.16) var(--fill, 0%) 100%
   );
 }
 
@@ -248,7 +863,7 @@
 .slider::-moz-range-track {
   height: 4px;
   border-radius: 999px;
-  background-color: rgb(255 255 255 / 0.16);
+  background-color: rgb(var(--line-rgb) / 0.16);
 }
 
 .slider::-moz-range-progress {
@@ -287,16 +902,22 @@
     user-select: none;
   }
 
-  /* Timecodes are data, not prose — they stay selectable and use tabular figures
-     so a countdown never shifts the layout as digits change. */
+  /* Timecodes are data, not prose — they stay selectable and set in DM Mono with
+     tabular figures so a countdown never shifts the layout as digits change. */
   .tabular {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
     font-feature-settings: "tnum";
   }
 
+  /* Titles in Syne, as on the landing; h3 is the uppercase label and stays sans. */
+  h1,
+  h2 {
+    font-family: var(--font-display);
+  }
+
   ::selection {
-    background-color: rgb(110 86 255 / 0.4);
+    background-color: color-mix(in srgb, var(--color-ink) 25%, transparent);
   }
 
   /* Visible focus is required: a glass UI hides default outlines against the blur. */
@@ -344,18 +965,44 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background-color: rgb(255 255 255 / 0.24);
+    background-color: rgb(var(--line-rgb) / 0.24);
     border-radius: 999px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background-color: rgb(255 255 255 / 0.4);
+    background-color: rgb(var(--line-rgb) / 0.4);
   }
 
   /* The arrows are most of the reason this block exists. */
   ::-webkit-scrollbar-button {
     display: none;
   }
+}
+
+/*
+ * The library's cascade: when one of its two shapes (riel or panel) comes in,
+ * its pieces arrive one after another, top to bottom, instead of all at once.
+ *
+ * Each piece says its place with `--i`. The step is short and the wave stops
+ * growing at the twelfth piece, so a long library does not keep the bottom
+ * rows waiting. Opacity and a 6 px rise only: nothing here costs a layout.
+ *
+ * **Leaving is not a cascade.** The shape that goes fades out as one, and its
+ * pieces drop back to zero only after that (the 150 ms delay), invisibly — if
+ * they reset at once the leaving shape would blink out instead of fading.
+ */
+.cascade {
+  transition:
+    opacity 260ms var(--ease-glass),
+    transform 260ms var(--ease-glass);
+  transition-delay: calc(80ms + min(var(--i, 0), 12) * 22ms);
+}
+
+[data-shown="false"] .cascade {
+  opacity: 0;
+  transform: translateY(6px);
+  transition-duration: 0ms;
+  transition-delay: 150ms;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -366,4 +1013,37 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+
+  /* A cascade without motion is a list that appears in pieces for no reason. */
+  .cascade {
+    transition-delay: 0s !important;
+  }
+}
+
+/* The same, chosen in Settings rather than in the system ("Animaciones de la interfaz"). */
+:root[data-still] *,
+:root[data-still] *::before,
+:root[data-still] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+
+:root[data-still] .cascade {
+  transition-delay: 0s !important;
+}
+
+/*
+ * Grain: a fixed film of noise over the ground. It is static on purpose — the
+ * one thing allowed to move under the glass is the pointer light — and it is
+ * painted once as a tile, never animated. Besides the texture, it breaks up the
+ * bands an 8-bit display draws in a soft gradient over black.
+ */
+.grain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.07;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 160px 160px;
 }

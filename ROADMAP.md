@@ -67,12 +67,43 @@ la app a otras plataformas tiene que ser estable en la que ya está.
 
 ---
 
-## 0.6.0 — Estabilidad y pulido
+## 0.6.0 — El jam, y lo que ya funcionaba mejor
 
 La primera versión cuyo objetivo es **que lo que ya existe funcione mejor**, no
 agregar pantallas. Es una mejora y no un parche porque trae cosas que antes no
-existían —un número medido, ajustes que se recuerdan—, pero ninguna es una sección
-nueva.
+existían —el jam, un ajuste que se recuerda, los errores en los dos idiomas—, y
+una de ellas es una sección nueva.
+
+La 0.5.6 nunca se publicó: no hubo tag ni release, y su contenido quedó en esta
+versión. Quien actualiza desde la 0.5.5 ve todo eso junto con lo de acá.
+
+### Lo que ya está
+
+- **El jam.** El botón está arriba a la derecha, junto a los amigos, y abre el panel
+  de actividad de escucha: se puede **empezar un jam**, copiar el **código para
+  compartir**, ver quién está adentro, entrar a uno con un código y terminarlo. El
+  jam es una sesión y no una playlist: tiene dueño, invitados y un código, y no
+  vive en la biblioteca. Las tres puertas —abrir, entrar, cerrar— se midieron
+  contra el servicio con una sesión de verdad; el protocolo está en
+  [`docs/jam.md`](docs/jam.md).
+- **El orden y la vista de las listas se recuerdan.** El orden, su dirección y la
+  vista Compacta o Lista van a `%LOCALAPPDATA%\Starless`, como el resto de los
+  ajustes que sobreviven a un cierre de sesión (ver la trampa de `%APPDATA%` en
+  `AGENTS.md`).
+- **Mensajes de error en los dos idiomas.** Las frases de los códigos de error
+  pasaron de `lib/spotify.ts` a `lib/i18n.ts`, con el inglés escrito para leer
+  natural, y `explain()` contesta en el idioma de la app.
+- **60 fps, medidos.** Con la música sonando todo iba a 30 fps, y en una lista
+  larga cualquier cambio congelaba la ventana entre 300 y 700 milisegundos. El
+  ecualizador de la fila que suena animaba `height` y las barras `width` y `left`;
+  ahora animan escala y desplazamiento. Y la app ya no dibuja mil filas para
+  mostrar unas pocas: `useRowWindow` dibuja las que están cerca de la pantalla.
+  Medido con un contador de cuadros dentro de la app en marcha: 60 fps con la
+  música sonando, ordenando una lista, moviendo el volumen y abriendo la cola.
+  **Lo que no se midió es si el vidrio es el que cuesta**: esa pregunta sigue
+  abierta en la sección de abajo.
+
+### Lo que falta
 
 - **Arranque y memoria medidos.** `PRODUCT.md` promete arrancar en menos de un
   segundo y gastar poca memoria, y hoy son objetivos, no números. Se mide en una
@@ -80,23 +111,13 @@ nueva.
   número va al README. El log ya dice cuánto tarda cada lectura (desde la 0.5.4);
   falta el arranque completo y la memoria mientras reproduce. **Sin un número
   medido antes, no se puede decir que algo de esta versión lo mejoró.**
-- **Animaciones más fluidas.** El presupuesto de `DESIGN.md` es 60 fps, y hoy nadie
-  lo comprueba. Se mide con el perfilador de WebView2 en las transiciones que más
-  se usan —abrir una playlist, la barra que entra con la música, los menús y el
-  panel de cola— y se corrige lo que baje de ese número. Si el vidrio es el que
-  cuesta, `DESIGN.md` ya dice el orden en que se recorta: primero la animación del
-  bloom, después el blur a 16 px.
-- **Recordar el orden y la vista de las listas.** El orden (título, agregado
-  recientemente, artista…), su dirección y la vista Compacta o Lista se pierden al
-  reiniciar. Van a `%LOCALAPPDATA%\Starless`, como el resto de los ajustes que
-  sobreviven a un cierre de sesión (ver la trampa de `%APPDATA%` en `AGENTS.md`).
-- **Mensajes de error en los dos idiomas.** `API_ERRORS` está sólo en español y
-  fuera de `lib/i18n.ts`, así que una persona con la app en inglés lee los errores
-  en español. Es la deuda que `AGENTS.md` ya tiene anotada; el arreglo es moverlos
-  a `i18n.ts` con sus dos idiomas y que `explain()` sepa el idioma.
 - **Ventanas angostas.** La ventana se puede achicar hasta 900 px y a ese ancho
   no hay una respuesta decidida para la barra lateral: si flota siempre o se
   colapsa a íconos. Era una pregunta abierta; esta versión la responde.
+
+Fuera de la app, la página de inicio pasó a ser un sitio propio en `site/`, con su
+propio `package.json` y su propio workflow, y se publica desde `main`. No entra
+en el binario ni en las notas de la app.
 
 ---
 
@@ -206,6 +227,35 @@ el audio pero no manda esos eventos, así que la escucha nunca llega a la cuenta
 cambiar sin aviso, como todo lo que usa librespot. Y si el servicio pide una
 identidad que la sesión no tiene, la respuesta es que no se puede, y este punto
 se cierra en vez de buscar otra identidad (ver la regla 7 de `AGENTS.md`).
+
+### Starless en Android
+
+**El problema.** Starless sólo existe en la computadora. Tauri 2 compila el
+mismo backend y el mismo frontend para Android, así que la app no se reescribe:
+se lleva.
+
+**Lo que hay que investigar, en este orden** —el detalle, con el archivo y la
+línea de cada punto, está en [`docs/android.md`](docs/android.md)—:
+
+1. **Que compile.** La bandeja, `bring_to_front`, el plugin de instancia única
+   y OpenSSL cortan la build para Android.
+2. **Que guarde y descargue.** Las carpetas salen de `dirs`, que no sabe de
+   Android, y la carpeta temporal de librespot es una en la que una app no
+   puede escribir: sin credenciales no hay login, y sin temporal no suena
+   ninguna canción.
+3. **El login.** El navegador no se abre —el crate que lo abre no conoce
+   Android— y el redirect a `127.0.0.1` no se puede cambiar: hay que medir si
+   Android mantiene viva la app mientras la persona está en el navegador.
+4. **El audio y la identidad.** Que una canción y la voz del DJ suenen en el
+   teléfono, y volver a medir las puertas de `spclient`: librespot se presenta
+   distinto en Android, y todo lo de `docs/` se midió desde Windows.
+5. **El segundo plano.** Que la música siga con la pantalla bloqueada, lo que en
+   Android pide un servicio en primer plano escrito en Kotlin.
+
+**El riesgo.** Va antes que la 0.8.0, que es la que saca a la app de Windows, y
+una app inestable en dos plataformas es el doble de trabajo. Por eso entra como
+investigación y no como versión: si el login no sobrevive en Android, este punto
+se cierra. La distribución sería por las releases de GitHub, no por una tienda.
 
 ### Las preguntas abiertas de verdad
 

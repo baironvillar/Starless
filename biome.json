@@ -11,6 +11,8 @@
       "!**/.agent",
       "!**/.claude",
       "!**/.opencode",
+      "!**/.wrangler",
+      "!**/.astro",
       "!**/*.css"
     ]
   },

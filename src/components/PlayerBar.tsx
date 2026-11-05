@@ -1,4 +1,5 @@
 import {
+  ChevronDown,
   ListOrdered,
   Loader2,
   Mic2,
@@ -13,20 +14,25 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { AnimatePresence, animate, motion, useMotionValue } from "motion/react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCoverTint } from "../lib/coverTint";
 import type { StringKey } from "../lib/i18n";
 import {
   coverImage,
   explain,
   formatDuration,
+  isDark,
+  onBeat,
   type PlaybackStatus,
   seekPlayback,
   setVolume,
   type Track,
   togglePlayback,
   trackArtists,
+  useEffectsSettings,
 } from "../lib/spotify";
+import { useMediaSession, usePlayerKeys } from "../lib/usePlayerKeys";
 import { DjArtwork, DjMark } from "./DjArtwork";
 import { SmoothSlider } from "./SmoothSlider";
 
@@ -100,8 +106,22 @@ type PlayerBarProps = {
   onToggleShuffle: () => void;
   repeat: RepeatMode;
   onCycleRepeat: () => void;
+  /**
+   * The phone's two sizes of the same player (DESIGN.md, "The phone").
+   *
+   * **One component, two drawings.** The seek that waits for the hand, the
+   * play button that means "next" while the DJ talks, the media keys and the
+   * media card all live here; a second player component would be a second
+   * answer to each of those questions.
+   */
+  mobile?: boolean;
+  /** The queue, drawn where the full player's artwork was. */
+  queue?: React.ReactNode;
+  /** The lyrics, drawn where the full player's artwork was. */
+  lyrics?: React.ReactNode;
 };
 
+import { useBack } from "../lib/back";
 import { SPRING } from "../lib/motion";
 
 /** librespot's own scale, not ours. The conversion happens once, here. */
@@ -126,6 +146,15 @@ const MAX_VOLUME = 65535;
  * someone who never asked for volume is not a decision it should be making.
  */
 const DEFAULT_UNMUTE = MAX_VOLUME / 2;
+
+/**
+ * Cuánto tiene que estar quieta la mano para que el salto se pida.
+ *
+ * Un salto no es un cambio de valor: es cortar la cola y pedirle la canción
+ * al servidor otra vez. Pedirlo en cada pixel del arrastre es pedir cincuenta
+ * veces lo mismo, y el servidor responde a todas.
+ */
+const SEEK_SETTLE_MS = 120;
 
 /** Feeds the `--fill` custom property the slider recipe paints its track with. */
 function fillStyle(percent: number): React.CSSProperties {
@@ -170,6 +199,9 @@ export function PlayerBar({
   onToggleShuffle,
   repeat,
   onCycleRepeat,
+  mobile = false,
+  queue,
+  lyrics,
 }: PlayerBarProps) {
   const playing = status?.playing ?? false;
   const loading = status?.loading ?? false;
@@ -204,7 +236,58 @@ export function PlayerBar({
 
   const position = status?.positionMs ?? 0;
   const duration = status?.durationMs ?? track?.duration_ms ?? 0;
-  const progress = duration > 0 ? Math.min(1, position / duration) : 0;
+
+  /**
+   * La posición que pidió la mano, mientras el backend no la confirma.
+   *
+   * **El control de posición es nativo y su valor viene del backend**, que lo
+   * actualiza dos veces por segundo: cada actualización lo devuelve a donde
+   * estaba y el pulgar se pelea con el mouse — el control da la impression de
+   * estar pegado y el salto no termina de hacerse. Mientras la mano está en
+   * el control, el control dibuja lo que se le pidió; cuando el backend llega
+   * a esa posición, vuelve a seguir al player.
+   */
+  const [seekTo, setSeekTo] = useState<number | null>(null);
+  const shownPosition = seekTo ?? position;
+  const progress = duration > 0 ? Math.min(1, shownPosition / duration) : 0;
+
+  /** Cuándo se mandó el último salto, para no darlo por confirmado antes de tiempo. */
+  const seekSentAt = useRef(-1);
+  const seekTimer = useRef<number | null>(null);
+
+  /**
+   * Pedir un salto.
+   *
+   * **Un salto por mano, no uno por pixel.** Cada salto descarta la cola y
+   * le pide la canción al servidor otra vez: cincuenta saltos por segundo son
+   * cincuenta viajes, y el último no llega antes que el anterior.
+   */
+  const requestSeek = useCallback((next: number) => {
+    setSeekTo(next);
+    if (seekTimer.current !== null) window.clearTimeout(seekTimer.current);
+    seekTimer.current = window.setTimeout(() => {
+      seekTimer.current = null;
+      seekSentAt.current = performance.now();
+      void seekPlayback(next).catch(() => {});
+    }, SEEK_SETTLE_MS);
+  }, []);
+
+  useEffect(() => {
+    if (seekTo === null) return;
+    // El backend llegó a la posición pedida: el control vuelve a seguir al
+    // player. Antes de que se mande el salto no se cuenta: la posición que
+    // llega mientras la mano todavía está moviéndose es la de antes.
+    if (seekSentAt.current < 0) return;
+    if (Math.abs(position - seekTo) <= 1500) setSeekTo(null);
+  }, [position, seekTo]);
+
+  // Un temporizador que sobrevive al panel escribe en una ventana que ya no
+  // está, y el salto que iba a hacer no lo pidió nadie dos veces.
+  useEffect(() => {
+    return () => {
+      if (seekTimer.current !== null) window.clearTimeout(seekTimer.current);
+    };
+  }, []);
 
   // librespot's own scale, not ours. The conversion happens once, here, so nothing
   // downstream has to know that 65535 is a thing.
@@ -228,6 +311,32 @@ export function PlayerBar({
     void setVolume(muted ? lastAudible.current : 0).catch(() => {});
   }, [muted]);
 
+  // The music's pulse, for the waves on the volume. A motion value and not
+  // state: it changes thirty times a second and must not re-render the bar.
+  // "Suave" halves it, which also keeps it under the kick that sends a wave:
+  // the thumb still breathes with the song, and nothing leaves it.
+  const pulse = useMotionValue(0);
+  const { beat, play: playStyle } = useEffectsSettings();
+  // The play button's dress (see `.play-key` in index.css). The cover's colour
+  // is read only while that dress is on: it costs a fetch per song.
+  const tint = useCoverTint(coverImage(track?.album?.images)?.url, playStyle === "cover");
+  const playKey = {
+    "data-style": playStyle,
+    style: tint
+      ? ({
+          "--tint": tint,
+          "--on-tint": isDark(tint) ? "#edeae3" : "#0b0b0f",
+        } as React.CSSProperties)
+      : undefined,
+  };
+  useEffect(() => {
+    const gain = beat === "soft" ? 0.5 : 1;
+    const unlisten = onBeat((value) => pulse.set(value * gain));
+    return () => {
+      void unlisten?.then((stop) => stop());
+    };
+  }, [pulse, beat]);
+
   const busy = loading;
   /**
    * Whether there is nothing to control.
@@ -245,6 +354,51 @@ export function PlayerBar({
   /** Whether there is a song to ask about. The DJ's voice is not a song. */
   const noSong = !track;
 
+  // **Con el DJ hablando, "reproducir" es "empezá la música".**
+  //
+  // La frase es de la canción que viene, y la está introducing: la música no
+  // empezó porque el DJ habla primero. Apretar play es decir "no la quiero
+  // escuchar", y eso es lo mismo que apretar siguiente. El botón y las teclas
+  // pasan por acá, así que dicen lo mismo.
+  const playPause = () => {
+    if (dj) onNext();
+    else void togglePlayback().catch(() => {});
+  };
+
+  /**
+   * The level the keys last asked for, ahead of the backend's echo.
+   *
+   * The echo is throttled to 100 ms, and a held Ctrl+↑ repeats faster than
+   * that: stepping from `status.volume` would add the step to the same stale
+   * number three times and the volume would climb by one.
+   */
+  const askedVolume = useRef(status?.volume ?? 0);
+  useEffect(() => {
+    askedVolume.current = status?.volume ?? 0;
+  }, [status?.volume]);
+
+  usePlayerKeys({
+    toggle: idle || busy ? null : playPause,
+    playing: playing || !!dj,
+    next: idle ? null : onNext,
+    previous: idle ? null : onPrevious,
+    seekBy:
+      noSong || duration <= 0
+        ? null
+        : (delta) => requestSeek(Math.max(0, Math.min(duration, shownPosition + delta))),
+    volumeBy: (delta) => {
+      const next = Math.round(
+        Math.max(0, Math.min(MAX_VOLUME, askedVolume.current + delta * MAX_VOLUME)),
+      );
+      askedVolume.current = next;
+      void setVolume(next).catch(() => {});
+    },
+    toggleMute,
+    toggleShuffle: idle ? null : onToggleShuffle,
+    cycleRepeat: idle ? null : onCycleRepeat,
+  });
+  useMediaSession(track, dj, playing, t.djSpeaker, loading, position, duration);
+
   /**
    * What is sounding, as a key.
    *
@@ -254,6 +408,388 @@ export function PlayerBar({
    */
   const sounding = dj ? "dj" : (track?.id ?? "none");
 
+  /**
+   * On the phone the app's own volume stays at its maximum.
+   *
+   * **The phone's buttons are the volume.** Two volumes that multiply are a
+   * sound that is quiet for no visible reason, and the phone has no slider to
+   * explain it (DESIGN.md, "The phone"). Only a level that is off is put back:
+   * the echo of the setting itself must not ask again.
+   */
+  useEffect(() => {
+    if (mobile && status && status.volume !== MAX_VOLUME) {
+      void setVolume(MAX_VOLUME).catch(() => {});
+    }
+  }, [mobile, status]);
+
+  const [expanded, setExpanded] = useState(false);
+  useBack(expanded, () => setExpanded(false));
+
+  /**
+   * The song on the phone is a carousel: it follows the finger sideways, leaves
+   * by that side and the next one comes in by the other. The mini and the full
+   * player's artwork share the one value, so the song is in one place.
+   */
+  const slideX = useMotionValue(0);
+  /** A change that was not a swipe still rises into the mini, as on the desktop. */
+  const riseY = useMotionValue(0);
+  const riseOpacity = useMotionValue(1);
+  /** True while a skip that slides is changing the song: that change does not rise. */
+  const sliding = useRef(false);
+  const lastSounding = useRef(sounding);
+  useLayoutEffect(() => {
+    if (lastSounding.current === sounding) return;
+    lastSounding.current = sounding;
+    if (!mobile || sliding.current) return;
+    riseY.jump(12);
+    riseOpacity.jump(0);
+    void animate(riseY, 0, SPRING);
+    void animate(riseOpacity, 1, { duration: 0.2 });
+  }, [sounding, mobile, riseY, riseOpacity]);
+
+  /**
+   * Skips and brings the song in from the side it is heading to. `out` first
+   * throws the one that is sounding off by the other side —a swipe that let
+   * go—; a button has nothing in hand and only brings the next one in.
+   *
+   * The jump comes before the skip on purpose: the new song must never paint
+   * one frame in the middle before it is sent to the side.
+   */
+  const slide = (dir: 1 | -1, out: boolean) => {
+    if (idle) return;
+    const width = window.innerWidth;
+    const skip = () => {
+      sliding.current = true;
+      slideX.jump(dir * width);
+      if (dir === 1) onNext();
+      else onPrevious();
+      void animate(slideX, 0, SPRING);
+      requestAnimationFrame(() => {
+        sliding.current = false;
+      });
+    };
+    if (out) void animate(slideX, -dir * width, { duration: 0.18, ease: "easeIn" }).then(skip);
+    else skip();
+  };
+  /** Sideways past this, or flung, is a skip; less springs back. */
+  const sideways = (dx: number, vx: number) => {
+    if (dx < -60 || vx < -500) slide(1, true);
+    else if (dx > 60 || vx > 500) slide(-1, true);
+    else void animate(slideX, 0, SPRING);
+  };
+
+  /** The mini follows an upward drag a little, as a hint of what it opens. */
+  const miniY = useMotionValue(0);
+  const miniSwipe = useSwipe({
+    claim: (axis, _dx, dy) => (axis === "x" ? !idle : dy < 0),
+    move: (axis, dx, dy) => {
+      if (axis === "x") slideX.set(dx);
+      else miniY.set(Math.min(0, dy) * 0.35);
+    },
+    end: (axis, dx, dy, vx, vy) => {
+      if (axis === "x") return sideways(dx, vx);
+      if (dy < -40 || vy < -500) openFull();
+      void animate(miniY, 0, SPRING);
+    },
+  });
+
+  /**
+   * The full player closes by dragging down from anywhere in its top half:
+   * the strip, the artwork, and the queue or the lyrics **once they are
+   * scrolled to the top**. A list that is not at the top scrolls instead —
+   * a sheet that moved with the list would close every time somebody
+   * scrolled up. The artwork also takes the sideways swipe.
+   */
+  const sheetY = useMotionValue(0);
+  const openFull = () => {
+    sheetY.jump(0);
+    setExpanded(true);
+  };
+  const view = lyricsOpen ? "lyrics" : queueOpen ? "queue" : "art";
+  const fullSwipe = useSwipe({
+    claim: (axis, _dx, dy, target, root) =>
+      axis === "x" ? view === "art" && !idle : dy > 0 && !scrolledAway(target, root),
+    move: (axis, dx, dy) => {
+      if (axis === "x") slideX.set(dx);
+      else sheetY.set(Math.max(0, dy));
+    },
+    end: (axis, dx, dy, vx, vy) => {
+      if (axis === "x") return sideways(dx, vx);
+      if (dy > 120 || vy > 600) setExpanded(false);
+      else void animate(sheetY, 0, SPRING);
+    },
+  });
+
+  if (mobile) {
+    const now = (
+      <div className="min-w-0">
+        {error ? (
+          <p className="flex items-center gap-1.5 truncate text-[13px] font-semibold text-warn-ink">
+            <TriangleAlert className="size-[13px] shrink-0" strokeWidth={2} />
+            <span className="truncate">{t.playbackErrorTitle}</span>
+          </p>
+        ) : dj ? (
+          <>
+            <p className="truncate text-[13.5px] font-semibold">{dj.speaker ?? t.djSpeaker}</p>
+            <p className="truncate text-[12.5px] text-ink-muted">{dj.line ?? t.djSpeaking}</p>
+          </>
+        ) : track ? (
+          <>
+            <p className="truncate text-[13.5px] font-semibold">{track.name}</p>
+            <p className="truncate text-[12.5px] text-ink-muted">{trackArtists(track)}</p>
+          </>
+        ) : null}
+      </div>
+    );
+    const playButton = (size: string, icon: string) => (
+      <motion.button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          playPause();
+        }}
+        disabled={idle || busy}
+        whileTap={{ scale: 0.94 }}
+        transition={SPRING}
+        aria-label={dj ? t.djSkipVoice : playing ? t.pause : t.play}
+        {...playKey}
+        className={`play-key grid ${size} shrink-0 place-items-center rounded-pill disabled:opacity-40`}
+      >
+        {busy ? (
+          <Loader2 className={`${icon} animate-spin`} strokeWidth={2} />
+        ) : playing ? (
+          <Pause className={`${icon} fill-current`} strokeWidth={0} />
+        ) : (
+          <Play className={`play-glyph ${icon} translate-x-px fill-current`} strokeWidth={0} />
+        )}
+      </motion.button>
+    );
+    return (
+      <>
+        {/*
+            The mini player: the song, play/pause and next, floating above the
+            tab bar and arriving with the music like the desktop bar.
+
+            **Swiping it is the same as its buttons.** Up opens the full
+            player —as a tap does—; sideways is the carousel. The song moves
+            inside its own clipped box, so it never slides over the buttons.
+        */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={present ? { opacity: 1, y: 0 } : { opacity: 0, y: 16 }}
+          transition={SPRING}
+          onAnimationComplete={() => {
+            if (!presentRef.current) setGone(true);
+          }}
+          className={`fixed inset-x-3 bottom-[calc(max(12px,env(safe-area-inset-bottom))+72px)] z-20 ${
+            present ? "pointer-events-auto" : "pointer-events-none"
+          } ${gone ? "invisible" : ""}`}
+        >
+          <motion.div
+            ref={miniSwipe}
+            style={{ y: miniY }}
+            onClick={openFull}
+            className="glass flex h-16 touch-none items-center gap-3 rounded-card px-2.5"
+          >
+            <div className="flex min-w-0 flex-1 overflow-hidden">
+              <motion.div
+                style={{ x: slideX, y: riseY, opacity: riseOpacity }}
+                className="flex min-w-0 flex-1 items-center gap-3"
+              >
+                <span className="size-11 shrink-0 overflow-hidden rounded-[9px]">
+                  {dj ? <DjArtwork /> : <Cover track={track} fill />}
+                </span>
+                {now}
+              </motion.div>
+            </div>
+            {playButton("size-10", "size-[16px]")}
+            <motion.button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                slide(1, false);
+              }}
+              disabled={idle}
+              whileTap={{ scale: 0.9 }}
+              transition={SPRING}
+              aria-label={dj ? t.djSkipVoice : t.next}
+              className="grid size-10 shrink-0 place-items-center rounded-pill text-ink-muted disabled:opacity-35"
+            >
+              <SkipForward className="size-[18px] fill-current" strokeWidth={0} />
+            </motion.button>
+          </motion.div>
+        </motion.div>
+
+        {/*
+            The full player. The artwork's place is shared: the queue or the
+            lyrics take it, and the transport stays put underneath, so reading
+            or choosing never costs the controls. Swiping it down closes it.
+        */}
+        <AnimatePresence>
+          {expanded && (
+            <motion.section
+              role="dialog"
+              aria-label={t.nowPlaying}
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={SPRING}
+              className="fixed inset-0 z-40"
+            >
+              <motion.div
+                style={{ y: sheetY }}
+                className="glass-sheet flex h-full flex-col px-5 pt-[max(16px,env(safe-area-inset-top))] pb-[max(20px,env(safe-area-inset-bottom))]"
+              >
+                <div ref={fullSwipe} className="flex min-h-0 flex-1 flex-col">
+                  <div className="flex shrink-0 items-center">
+                    <button
+                      type="button"
+                      onClick={() => setExpanded(false)}
+                      aria-label={t.close}
+                      className="grid size-10 shrink-0 place-items-center rounded-pill text-ink-muted"
+                    >
+                      <ChevronDown className="size-6" strokeWidth={2} />
+                    </button>
+                    <span className="mx-auto h-1 w-10 rounded-pill bg-white/20" aria-hidden />
+                    <span className="size-10 shrink-0" aria-hidden />
+                  </div>
+
+                  <div className="mt-2 min-h-0 flex-1">
+                    {view === "lyrics" ? (
+                      <div className="h-full overflow-y-auto">{lyrics}</div>
+                    ) : view === "queue" ? (
+                      queue
+                    ) : (
+                      <div className="grid h-full place-items-center">
+                        <motion.span
+                          style={{ x: slideX }}
+                          className="aspect-square w-full max-w-[420px] overflow-hidden rounded-card"
+                        >
+                          {dj ? <DjArtwork /> : <Cover track={track} fill />}
+                        </motion.span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-5 shrink-0 overflow-hidden">
+                  <motion.div style={{ x: slideX }}>{now}</motion.div>
+                </div>
+
+                <div className="mt-4 flex shrink-0 items-center gap-2.5">
+                  <span className="tabular w-10 text-right text-[12px] font-medium text-ink-muted">
+                    {formatDuration(position)}
+                  </span>
+                  <input
+                    type="range"
+                    className="slider min-w-0 grow"
+                    min={0}
+                    max={Math.max(duration, 1)}
+                    step={1}
+                    value={Math.min(shownPosition, duration || 0)}
+                    disabled={idle || duration <= 0}
+                    onChange={(e) => requestSeek(Number(e.target.value))}
+                    style={fillStyle(progress * 100)}
+                    aria-label={t.position}
+                  />
+                  <span className="tabular w-10 text-[12px] text-ink-muted">
+                    {formatDuration(duration)}
+                  </span>
+                </div>
+                {error && (
+                  <p className="mt-1 text-center text-[12px] text-warn-ink">{explain(error)}</p>
+                )}
+
+                <div className="mt-4 flex shrink-0 items-center justify-between">
+                  <TransportToggle
+                    on={shuffle}
+                    onClick={onToggleShuffle}
+                    label={shuffle ? t.shuffleOn : t.shuffle}
+                    disabled={idle}
+                  >
+                    <Shuffle className="size-[18px]" strokeWidth={2} />
+                  </TransportToggle>
+                  <motion.button
+                    type="button"
+                    onClick={() => slide(-1, false)}
+                    disabled={idle}
+                    whileTap={{ scale: 0.9 }}
+                    transition={SPRING}
+                    aria-label={t.previous}
+                    className="grid size-12 place-items-center rounded-pill text-ink disabled:opacity-35"
+                  >
+                    <SkipBack className="size-[22px] fill-current" strokeWidth={0} />
+                  </motion.button>
+                  {playButton("size-16", "size-[24px]")}
+                  <motion.button
+                    type="button"
+                    onClick={() => slide(1, false)}
+                    disabled={idle}
+                    whileTap={{ scale: 0.9 }}
+                    transition={SPRING}
+                    aria-label={dj ? t.djSkipVoice : t.next}
+                    className="grid size-12 place-items-center rounded-pill text-ink disabled:opacity-35"
+                  >
+                    <SkipForward className="size-[22px] fill-current" strokeWidth={0} />
+                  </motion.button>
+                  <TransportToggle
+                    on={repeat !== "off"}
+                    onClick={onCycleRepeat}
+                    label={repeatLabel(repeat, t)}
+                    disabled={idle}
+                  >
+                    {repeat === "one" ? (
+                      <Repeat1 className="size-[18px]" strokeWidth={2} />
+                    ) : (
+                      <Repeat className="size-[18px]" strokeWidth={2} />
+                    )}
+                  </TransportToggle>
+                </div>
+
+                <div className="mt-5 flex shrink-0 items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={onToggleQueue}
+                    aria-pressed={queueOpen}
+                    className={`flex items-center gap-2 rounded-pill px-4 py-2.5 text-[13px] font-medium ${
+                      view === "queue" ? "bg-white/12 text-ink" : "text-ink-muted"
+                    }`}
+                  >
+                    <ListOrdered className="size-[17px]" strokeWidth={2} />
+                    {t.queue}
+                  </button>
+                  {onPlayDj && (
+                    <button
+                      type="button"
+                      onClick={onPlayDj}
+                      disabled={djBusy}
+                      aria-label={t.djNext}
+                      className="grid size-10 place-items-center rounded-pill text-ink-muted disabled:opacity-35"
+                    >
+                      <DjMark className="size-[18px]" />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={onToggleLyrics}
+                    disabled={noSong}
+                    aria-pressed={lyricsOpen}
+                    className={`flex items-center gap-2 rounded-pill px-4 py-2.5 text-[13px] font-medium disabled:opacity-35 ${
+                      view === "lyrics" ? "bg-white/12 text-ink" : "text-ink-muted"
+                    }`}
+                  >
+                    <Mic2 className="size-[17px]" strokeWidth={2} />
+                    {t.showLyrics}
+                  </button>
+                </div>
+              </motion.div>
+            </motion.section>
+          )}
+        </AnimatePresence>
+      </>
+    );
+  }
+
   return (
     <motion.footer
       initial={{ opacity: 0, y: 16 }}
@@ -262,7 +798,7 @@ export function PlayerBar({
       onAnimationComplete={() => {
         if (!presentRef.current) setGone(true);
       }}
-      className={`glass absolute inset-x-5 bottom-5 z-20 grid h-[104px] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-x-5 rounded-card px-5 ${
+      className={`surface absolute inset-x-5 bottom-5 z-20 grid h-[104px] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-x-5 rounded-card px-5 ${
         present ? "pointer-events-auto" : "pointer-events-none"
       } ${gone ? "invisible" : ""}`}
     >
@@ -294,7 +830,7 @@ export function PlayerBar({
 
               <div className="min-w-0">
                 {error ? (
-                  <p className="flex items-center gap-1.5 truncate text-[13px] font-semibold text-warn">
+                  <p className="flex items-center gap-1.5 truncate text-[13px] font-semibold text-warn-ink">
                     <TriangleAlert className="size-[13px] shrink-0" strokeWidth={2} />
                     <span className="truncate">{t.playbackErrorTitle}</span>
                   </p>
@@ -357,28 +893,23 @@ export function PlayerBar({
 
           <motion.button
             type="button"
-            onClick={() => {
-              // **Con el DJ hablando, "reproducir" es "empezá la música".**
-              //
-              // La frase es de la canción que viene, y la está introducing: la
-              // música no empezó porque el DJ habla primero. Apretar play es
-              // decir "no la quiero escuchar", y eso es lo mismo que apretar
-              // siguiente.
-              if (dj) onNext();
-              else void togglePlayback().catch(() => {});
-            }}
+            onClick={playPause}
             disabled={idle || busy}
             whileTap={{ scale: 0.94 }}
             transition={SPRING}
             aria-label={dj ? t.djSkipVoice : playing ? t.pause : t.play}
-            className="mx-1 grid size-11 place-items-center rounded-pill bg-ink text-ground transition-transform duration-150 hover:scale-105 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
+            {...playKey}
+            className="play-key mx-1 grid size-11 place-items-center rounded-pill transition-[transform,background-color,color] duration-150 hover:scale-105 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
           >
             {busy ? (
               <Loader2 className="size-[18px] animate-spin" strokeWidth={2} />
             ) : playing ? (
               <Pause className="size-[18px] fill-current" strokeWidth={0} />
             ) : (
-              <Play className="size-[18px] translate-x-px fill-current" strokeWidth={0} />
+              <Play
+                className="play-glyph size-[18px] translate-x-px fill-current"
+                strokeWidth={0}
+              />
             )}
           </motion.button>
 
@@ -419,9 +950,9 @@ export function PlayerBar({
             min={0}
             max={Math.max(duration, 1)}
             step={1}
-            value={Math.min(position, duration || 0)}
+            value={Math.min(shownPosition, duration || 0)}
             disabled={idle || duration <= 0}
-            onChange={(e) => void seekPlayback(Number(e.target.value)).catch(() => {})}
+            onChange={(e) => requestSeek(Number(e.target.value))}
             style={fillStyle(progress * 100)}
             aria-label={t.position}
           />
@@ -432,7 +963,10 @@ export function PlayerBar({
 
         {/* The refusal, in full, where there is room for it. */}
         {error && (
-          <p className="w-full truncate text-center text-[12px] text-warn" title={explain(error)}>
+          <p
+            className="w-full truncate text-center text-[12px] text-warn-ink"
+            title={explain(error)}
+          >
             {explain(error)}
           </p>
         )}
@@ -526,7 +1060,7 @@ export function PlayerBar({
             aria-label={muted ? t.unmute : t.mute}
             title={muted ? t.unmute : t.mute}
             className={`shrink-0 transition-colors duration-200 ${
-              muted ? "text-live" : "text-ink-muted hover:text-ink"
+              muted ? "text-live-ink" : "text-ink-muted hover:text-ink"
             }`}
           >
             {muted ? (
@@ -550,6 +1084,7 @@ export function PlayerBar({
             disabled={idle}
             onChange={(value) => void setVolume(value).catch(() => {})}
             label={t.volume}
+            pulse={muted || beat === "off" ? undefined : pulse}
           />
         </div>
       </div>
@@ -600,7 +1135,7 @@ function TransportToggle({
       title={label}
       aria-pressed={on}
       className={`grid size-9 shrink-0 place-items-center rounded-pill transition-colors duration-200 disabled:pointer-events-none disabled:opacity-35 ${
-        on ? "bg-accent/15 text-accent" : "text-ink-faint hover:bg-white/8 hover:text-ink"
+        on ? "bg-accent/15 text-accent-ink" : "text-ink-faint hover:bg-white/8 hover:text-ink"
       }`}
     >
       {children}
@@ -622,14 +1157,16 @@ function TransportToggle({
  * three buttons that legitimately are pills. Nobody chose a hero shape here;
  * `rounded-pill` got copied down from the controls above it.
  */
-function Cover({ track }: { track: Track | null }) {
+function Cover({ track, fill = false }: { track: Track | null; fill?: boolean }) {
   const cover = coverImage(track?.album?.images);
+  // `fill`: the phone's frames carry their own size and radius.
+  const frame = fill ? "block size-full" : "size-14 shrink-0 rounded-[10px]";
 
   if (!cover) {
-    return <span className="size-14 shrink-0 rounded-[10px] bg-white/6" aria-hidden />;
+    return <span className={`${frame} bg-white/6`} aria-hidden />;
   }
   return (
-    <span className="size-14 shrink-0 overflow-hidden rounded-[10px]">
+    <span className={`${frame} overflow-hidden`}>
       <img src={cover.url} alt="" className="size-full object-cover" />
     </span>
   );
@@ -653,4 +1190,101 @@ function DjAvatar() {
       <DjArtwork />
     </span>
   );
+}
+
+type SwipeAxis = "x" | "y";
+type SwipeHandlers = {
+  /** Asked once, when the finger has moved enough to have a direction. */
+  claim: (
+    axis: SwipeAxis,
+    dx: number,
+    dy: number,
+    target: EventTarget | null,
+    root: HTMLElement,
+  ) => boolean;
+  move: (axis: SwipeAxis, dx: number, dy: number) => void;
+  /** Velocities are in px/s. */
+  end: (axis: SwipeAxis, dx: number, dy: number, vx: number, vy: number) => void;
+};
+
+/**
+ * A swipe on touch events, not pointer events.
+ *
+ * **The full player's lists are why.** A pointer gesture over something that
+ * scrolls belongs to the browser: the moment the finger moves vertically it
+ * sends `pointercancel`, and the sheet never hears the drag. A `touchmove`
+ * keeps arriving, and cancelling the first one —before the browser starts to
+ * scroll— is what takes the gesture from the list when the list is at its top.
+ * A gesture that is not claimed is left alone entirely, so a list that is not
+ * at its top scrolls as always.
+ *
+ * Returns a callback ref; React 19 runs its cleanup when the node goes.
+ */
+function useSwipe(handlers: SwipeHandlers) {
+  const live = useRef(handlers);
+  live.current = handlers;
+  return useCallback((node: HTMLElement | null) => {
+    if (!node) return;
+    let start: { x: number; y: number } | null = null;
+    let axis: SwipeAxis | null = null;
+    let samples: { x: number; y: number; t: number }[] = [];
+
+    const onStart = (event: TouchEvent) => {
+      const touch = event.touches[0];
+      start = event.touches.length === 1 && touch ? { x: touch.clientX, y: touch.clientY } : null;
+      axis = null;
+      samples = [];
+    };
+    const onMove = (event: TouchEvent) => {
+      const touch = event.touches[0];
+      if (!start || !touch) return;
+      const dx = touch.clientX - start.x;
+      const dy = touch.clientY - start.y;
+      if (!axis) {
+        if (Math.hypot(dx, dy) < 8) return;
+        const guess: SwipeAxis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+        if (!event.cancelable || !live.current.claim(guess, dx, dy, event.target, node)) {
+          start = null;
+          return;
+        }
+        axis = guess;
+      }
+      event.preventDefault();
+      samples = [...samples.slice(-4), { x: dx, y: dy, t: event.timeStamp }];
+      live.current.move(axis, dx, dy);
+    };
+    const onEnd = () => {
+      if (start && axis) {
+        const last = samples[samples.length - 1] ?? { x: 0, y: 0, t: 0 };
+        const first = samples[0] ?? last;
+        const dt = Math.max(1, last.t - first.t) / 1000;
+        live.current.end(axis, last.x, last.y, (last.x - first.x) / dt, (last.y - first.y) / dt);
+      }
+      start = null;
+      axis = null;
+    };
+
+    node.addEventListener("touchstart", onStart, { passive: true });
+    node.addEventListener("touchmove", onMove, { passive: false });
+    node.addEventListener("touchend", onEnd);
+    node.addEventListener("touchcancel", onEnd);
+    return () => {
+      node.removeEventListener("touchstart", onStart);
+      node.removeEventListener("touchmove", onMove);
+      node.removeEventListener("touchend", onEnd);
+      node.removeEventListener("touchcancel", onEnd);
+    };
+  }, []);
+}
+
+/** Is the finger on a list that is scrolled down from its top? Then it scrolls. */
+function scrolledAway(target: EventTarget | null, root: HTMLElement) {
+  for (
+    let el = target instanceof Element ? target : null;
+    el && el !== root;
+    el = el.parentElement
+  ) {
+    if (el.scrollTop > 0) return true;
+  }
+  return false;
 }

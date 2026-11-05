@@ -2,7 +2,6 @@ import {
   ArrowDown,
   ArrowUp,
   Check,
-  Heart,
   List,
   Menu,
   Pause,
@@ -21,10 +20,14 @@ import {
   type Artist,
   coverImage,
   formatRuntime,
+  PLAYLIST_ORDERS,
   type Playlist,
+  type PlaylistOrder,
   type Track,
+  type TrackListPrefs,
   trackArtists,
 } from "../lib/spotify";
+import { LikedCover } from "./LikedCover";
 import { MenuPanel } from "./MenuPanel";
 import { PlaylistDetailsDialog } from "./PlaylistDetailsDialog";
 import { PlaylistMenu } from "./PlaylistMenu";
@@ -100,6 +103,8 @@ type PlaylistScreenProps = {
   onAddToQueue: (track: Track) => void;
   /** The row's extras: open the new-playlist dialog with this song pending. */
   onNewPlaylist: (track: Track) => void;
+  /** The row's extras: put the song in the jam's shared queue. */
+  onAddToJam?: (track: Track) => void;
   /**
    * The playlist's own three dots: the whole list goes into the queue.
    *
@@ -109,11 +114,13 @@ type PlaylistScreenProps = {
    * another playlist.
    */
   onAddListToQueue: (tracks: Track[]) => void;
+  /**
+   * The order, its direction and the view, held by `App` so they outlive this
+   * screen and a restart: they are how the person reads every playlist.
+   */
+  prefs: TrackListPrefs;
+  onPrefsChange: (prefs: TrackListPrefs) => void;
 };
-
-type PlaylistOrder = "custom" | "title" | "added" | "artist" | "album";
-
-const ORDERS: PlaylistOrder[] = ["custom", "title", "added", "artist", "album"];
 
 const ORDER_LABEL: Record<PlaylistOrder, StringKey> = {
   custom: "orderCustom",
@@ -202,22 +209,22 @@ export function PlaylistScreen({
   onOpenAlbum,
   onAddToQueue,
   onNewPlaylist,
+  onAddToJam,
   onAddListToQueue,
+  prefs,
+  onPrefsChange,
 }: PlaylistScreenProps) {
   const [query, setQuery] = useState("");
-  const [order, setOrder] = useState<PlaylistOrder>("custom");
-  const [descending, setDescending] = useState(false);
-  const [view, setView] = useState<TrackListView>("list");
+  const { order, descending, view } = prefs;
 
   // The same order again flips it; a new one starts the way it reads naturally.
-  const pickOrder = (next: PlaylistOrder) => {
-    if (next === order) {
-      setDescending((value) => !value);
-    } else {
-      setOrder(next);
-      setDescending(STARTS_DESCENDING[next]);
-    }
-  };
+  const pickOrder = (next: PlaylistOrder) =>
+    onPrefsChange({
+      ...prefs,
+      order: next,
+      descending: next === order ? !descending : STARTS_DESCENDING[next],
+    });
+  const setView = (next: TrackListView) => onPrefsChange({ ...prefs, view: next });
   // El diálogo de los detalles vive acá y no en el menú: el menú se cierra al
   // abrirlo, y un diálogo que se cierra con el menú que lo abrió no se abre
   // nunca.
@@ -322,16 +329,18 @@ export function PlaylistScreen({
 
   return (
     <div className="pb-4">
-      <motion.header
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={SPRING}
-        className="flex flex-col gap-6 pb-6 sm:flex-row sm:items-end sm:gap-7"
-      >
-        {playlist ? <PlaylistArtwork playlist={playlist} tracks={tracks} /> : <LikedArtwork />}
+      {/* The heading and its controls are one row for a right-click: it opens the playlist's menu. */}
+      <div data-menu-row="">
+        <motion.header
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={SPRING}
+          className="flex flex-col gap-6 pb-6 sm:flex-row sm:items-end sm:gap-7"
+        >
+          {playlist ? <PlaylistArtwork playlist={playlist} tracks={tracks} /> : <LikedArtwork />}
 
-        <div className="min-w-0 flex-1">
-          {/*
+          <div className="min-w-0 flex-1">
+            {/*
             Shown only when the data says so.
 
             **La visibilidad sí se puede leer, y no desde la playlist.** La
@@ -345,36 +354,36 @@ export function PlaylistScreen({
             con `public` en `false` porque no es una playlist de nadie, y
             llamarle "privada" sería mentira.
           */}
-          {playlist && (playlist.collaborative || (mine && !playlist.is_public)) && (
-            <p className="mb-2 text-[13px] font-medium text-ink-muted">
-              {playlist.collaborative ? t.playlistCollaborative : t.playlistPrivate}
-            </p>
-          )}
+            {playlist && (playlist.collaborative || (mine && !playlist.is_public)) && (
+              <p className="mb-2 text-[13px] font-medium text-ink-muted">
+                {playlist.collaborative ? t.playlistCollaborative : t.playlistPrivate}
+              </p>
+            )}
 
-          <h1 className="line-clamp-2 text-[30px] leading-[1.12] font-semibold tracking-tight sm:text-[38px] lg:text-[44px]">
-            {playlist?.name ?? t.likedSongs}
-          </h1>
+            <h1 className="line-clamp-2 text-[30px] leading-[1.12] font-semibold tracking-tight sm:text-[38px] lg:text-[44px]">
+              {playlist?.name ?? t.likedSongs}
+            </h1>
 
-          <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-ink-muted">
-            {ownerAvatar ? (
-              <img
-                src={ownerAvatar.url}
-                alt=""
-                className="size-6 shrink-0 rounded-pill object-cover"
-              />
-            ) : ownerName ? (
-              <span
-                className="grid size-6 shrink-0 place-items-center rounded-pill bg-white/12 text-[11px] font-semibold text-ink"
-                aria-hidden
-              >
-                {ownerName.slice(0, 1).toUpperCase()}
-              </span>
-            ) : null}
+            <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-ink-muted">
+              {ownerAvatar ? (
+                <img
+                  src={ownerAvatar.url}
+                  alt=""
+                  className="size-6 shrink-0 rounded-pill object-cover"
+                />
+              ) : ownerName ? (
+                <span
+                  className="grid size-6 shrink-0 place-items-center rounded-pill bg-white/12 text-[11px] font-semibold text-ink"
+                  aria-hidden
+                >
+                  {ownerName.slice(0, 1).toUpperCase()}
+                </span>
+              ) : null}
 
-            {ownerName && <span className="font-semibold text-ink">{ownerName}</span>}
-            {ownerName && !loading && <span aria-hidden>•</span>}
+              {ownerName && <span className="font-semibold text-ink">{ownerName}</span>}
+              {ownerName && !loading && <span aria-hidden>•</span>}
 
-            {/*
+              {/*
               "Cargando…" instead of a count, and not only because the count would
               be zero.
 
@@ -385,20 +394,20 @@ export function PlaylistScreen({
               under a list full of songs. "Cargando…" is the true sentence while
               the answer is on its way.
             */}
-            {loading ? (
-              <span>{t.loading}</span>
-            ) : (
-              <span className="tabular">
-                {tracks.length} {t.songs}
-                {tracks.length > 0 && <>, {formatRuntime(tracks, lang)}</>}
-              </span>
-            )}
+              {loading ? (
+                <span>{t.loading}</span>
+              ) : (
+                <span className="tabular">
+                  {tracks.length} {t.songs}
+                  {tracks.length > 0 && <>, {formatRuntime(tracks, lang)}</>}
+                </span>
+              )}
+            </div>
           </div>
-        </div>
-      </motion.header>
+        </motion.header>
 
-      <div className="mb-4 flex flex-wrap items-center gap-5">
-        {/*
+        <div className="mb-4 flex flex-wrap items-center gap-5">
+          {/*
           One button with three meanings, and the roundness is what makes it one
           target: it is a Play, a Resume or a Pause depending on what the player
           is already doing with this playlist, and swapping between two buttons
@@ -408,26 +417,26 @@ export function PlaylistScreen({
           All three are the caller's business — see `onPlayPause`. This screen
           knows what it is showing; the player knows what is playing.
         */}
-        <motion.button
-          type="button"
-          onClick={() => {
-            if (first) onPlayPause(visible);
-          }}
-          disabled={!first}
-          aria-label={playing ? t.pause : t.playAll}
-          title={playing ? t.pause : t.playAll}
-          whileTap={{ scale: 0.94 }}
-          transition={SPRING}
-          className="grid size-14 shrink-0 place-items-center rounded-pill bg-accent text-on-accent transition-opacity duration-200 disabled:opacity-40"
-        >
-          {playing ? (
-            <Pause className="size-6 fill-current" strokeWidth={0} />
-          ) : (
-            <Play className="size-6 translate-x-[1px] fill-current" strokeWidth={0} />
-          )}
-        </motion.button>
+          <motion.button
+            type="button"
+            onClick={() => {
+              if (first) onPlayPause(visible);
+            }}
+            disabled={!first}
+            aria-label={playing ? t.pause : t.playAll}
+            title={playing ? t.pause : t.playAll}
+            whileTap={{ scale: 0.94 }}
+            transition={SPRING}
+            className="grid size-14 shrink-0 place-items-center rounded-pill bg-accent text-on-accent transition-opacity duration-200 disabled:opacity-40"
+          >
+            {playing ? (
+              <Pause className="size-6 fill-current" strokeWidth={0} />
+            ) : (
+              <Play className="size-6 translate-x-[1px] fill-current" strokeWidth={0} />
+            )}
+          </motion.button>
 
-        {/*
+          {/*
           Shuffle sets the mode and starts nothing.
 
           **This button does not play.** It used to: pressing it started the first
@@ -443,23 +452,23 @@ export function PlaylistScreen({
           finds nothing is turn the mode back off. Switching the mode mid-song is
           a normal thing to do and stays available.
         */}
-        <motion.button
-          type="button"
-          onClick={onToggleShuffle}
-          disabled={tracks.length === 0}
-          aria-label={shuffle ? t.shuffleOff : t.shuffleOn}
-          title={shuffle ? t.shuffleOff : t.shuffleOn}
-          aria-pressed={shuffle}
-          whileTap={{ scale: 0.94 }}
-          transition={SPRING}
-          className={`grid size-9 place-items-center rounded-pill transition-colors duration-200 disabled:opacity-40 ${
-            shuffle ? "text-accent" : "text-ink-muted hover:text-ink"
-          }`}
-        >
-          <Shuffle className="size-5" strokeWidth={2} />
-        </motion.button>
+          <motion.button
+            type="button"
+            onClick={onToggleShuffle}
+            disabled={tracks.length === 0}
+            aria-label={shuffle ? t.shuffleOff : t.shuffleOn}
+            title={shuffle ? t.shuffleOff : t.shuffleOn}
+            aria-pressed={shuffle}
+            whileTap={{ scale: 0.94 }}
+            transition={SPRING}
+            className={`grid size-9 place-items-center rounded-pill transition-colors duration-200 disabled:opacity-40 ${
+              shuffle ? "text-accent-ink" : "text-ink-muted hover:text-ink"
+            }`}
+          >
+            <Shuffle className="size-5" strokeWidth={2} />
+          </motion.button>
 
-        {/*
+          {/*
           The three dots of the playlist, right after the other two controls.
 
           **Es un control más, no un botón más en la fila.** Lo que hace —mandar
@@ -471,27 +480,28 @@ export function PlaylistScreen({
           tiene, y una fila de botones que no hacen nada es peor que una fila
           de tres que sí.
         */}
-        {playlist && (
-          <PlaylistMenu
-            t={t}
-            playlist={playlist}
-            tracks={tracks}
-            mine={mine}
-            onAddToQueue={onAddListToQueue}
-            onEditDetails={() => setDetailsOpen(true)}
-          />
-        )}
+          {playlist && (
+            <PlaylistMenu
+              t={t}
+              playlist={playlist}
+              tracks={tracks}
+              mine={mine}
+              onAddToQueue={onAddListToQueue}
+              onEditDetails={() => setDetailsOpen(true)}
+            />
+          )}
 
-        <div className="ml-auto flex items-center gap-2">
-          <SearchField t={t} value={query} onChange={setQuery} onClose={() => setQuery("")} />
-          <OrderMenu
-            t={t}
-            order={order}
-            descending={descending}
-            onOrderChange={pickOrder}
-            view={view}
-            onViewChange={setView}
-          />
+          <div className="ml-auto flex items-center gap-2">
+            <SearchField t={t} value={query} onChange={setQuery} onClose={() => setQuery("")} />
+            <OrderMenu
+              t={t}
+              order={order}
+              descending={descending}
+              onOrderChange={pickOrder}
+              view={view}
+              onViewChange={setView}
+            />
+          </div>
         </div>
       </div>
 
@@ -518,6 +528,7 @@ export function PlaylistScreen({
             onOpenAlbum={onOpenAlbum}
             onAddToQueue={onAddToQueue}
             onNewPlaylist={onNewPlaylist}
+            onAddToJam={onAddToJam}
           />
         )}
         loading={loading}
@@ -548,16 +559,16 @@ export function PlaylistScreen({
 }
 
 /**
- * Liked Songs' face: the accent square with the heart, at the playlist's size.
+ * Liked Songs' face: `LikedCover`, at the playlist's size.
  *
- * The same square the rail already draws for it. Spotify sends no cover for
+ * The same drawing the rail already shows for it. Spotify sends no cover for
  * Liked Songs, and a mosaic of its first four songs would make it look like one
  * more playlist — which is the one thing the rail took care that it is not.
  */
 function LikedArtwork() {
   return (
-    <span className="grid size-[180px] shrink-0 place-items-center rounded-[14px] bg-accent text-on-accent shadow-lg lg:size-[232px]">
-      <Heart className="size-16 fill-current lg:size-20" strokeWidth={2} />
+    <span className="size-[180px] shrink-0 overflow-hidden rounded-[14px] shadow-lg lg:size-[232px]">
+      <LikedCover />
     </span>
   );
 }
@@ -742,7 +753,7 @@ function OrderMenu({ t, order, descending, onOrderChange, view, onViewChange }: 
         width={MENU_PX}
       >
         <MenuHeading>{t.sortBy}</MenuHeading>
-        {ORDERS.map((option) => {
+        {PLAYLIST_ORDERS.map((option) => {
           const current = option === order;
           return (
             <button
@@ -757,7 +768,7 @@ function OrderMenu({ t, order, descending, onOrderChange, view, onViewChange }: 
               }
               onClick={() => onOrderChange(option)}
               className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] transition-colors duration-150 ${
-                current ? "font-medium text-accent" : "hover:bg-white/6"
+                current ? "font-medium text-accent-ink" : "hover:bg-white/6"
               }`}
             >
               <span className="min-w-0 flex-1">{t[ORDER_LABEL[option]]}</span>
@@ -780,7 +791,7 @@ function OrderMenu({ t, order, descending, onOrderChange, view, onViewChange }: 
               aria-selected={current}
               onClick={() => onViewChange(option)}
               className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] transition-colors duration-150 ${
-                current ? "font-medium text-accent" : "hover:bg-white/6"
+                current ? "font-medium text-accent-ink" : "hover:bg-white/6"
               }`}
             >
               <Icon className="size-4 shrink-0" strokeWidth={2} aria-hidden />

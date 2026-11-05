@@ -45,8 +45,8 @@ prueba de que esto se cumple: una build de release **no se puede** hacer sin esa
 clave, y esa clave hay que pedirla.
 
 **`bun run app` lleva `--config src-tauri/tauri.dev.conf.json`**, que sólo cambia
-`bundle.icon` para usar `icons-dev/`. El ícono de desarrollo es el mismo dibujo con
-los dos colores al revés —fondo lima, estrella oscura— y existe por una razón
+`bundle.icon` para usar `icons-dev/`. El ícono de desarrollo es el mismo dibujo en
+su versión clara —fondo Hueso, marca en grises invertidos— y existe por una razón
 concreta: dos copias con el mismo nombre en la misma máquina son la forma más
 rápida de depurar el proceso equivocado. `scripts/logo.ts` escribe los invertidos
 **en otra carpeta**, nunca encima de `icons/`: pisar los de la release dejaría la
@@ -70,12 +70,20 @@ src-tauri/src/
   models.rs               las formas que el frontend ve
   playback.rs             el player de librespot y el volumen
   voice.rs                la voz del DJ: el sink propio y el audio de la narración
+  media_keys.rs           las teclas multimedia y la tarjeta de medios de Windows
+  tray.rs                 el ícono de la bandeja y su menú
+  startup.rs              "Iniciar con Windows": el valor en la clave Run
   report.rs               detección de crash, limpiado y envío
   settings.rs             lo que sobrevive a un reinicio
   logging.rs              el log local con rotación
+relay/                    el Worker que recibe los reportes y crea los issues
+site/                     la landing en Astro; su texto vive en site/src/i18n (i18next)
 .agent/                   configuración de agentes (Claude Code y OpenCode)
 docs/updates.md           cómo se publica una versión
 docs/escribir-playlists.md el protocolo para crear una playlist, y cómo se supo
+docs/jam.md               el protocolo de la sesión compartida, y cómo se supo
+docs/android.md           llevar la app a Android: lo que hay que medir antes
+docs/landing-i18n.md      los idiomas de la landing: dónde vive cada texto y cómo se agrega
 ```
 
 **Antes de tocar la creación de playlists, lee `docs/escribir-playlists.md`.** Es
@@ -93,6 +101,30 @@ salen de una captura:
   que no pasen de `2^127`. Se hace con `SpotifyId::from_raw(..).to_base62()`, que
   ya está en la dependencia y lo resuelve bien. Escribirlo a mano al revés fue lo
   que hizo que esto pareciera imposible durante horas.
+
+**Antes de tocar el jam, lee `docs/jam.md`.** El jam es la sesión compartida, y
+**no es una playlist**: es otro servicio, con otro nombre, y el nombre no lo
+dice. `jam` no aparece en ninguna ruta; el servicio es **`social-connect`**. Lo
+que está medido y lo que falta está en ese documento; tres hechos que no están
+en ningún proto ni en ninguna issue:
+
+- **Abrir una sesión de jam es un `GET`, y la crea.** El camino es
+  `GET /social-connect/v2/sessions/current_or_new?activate=false` sobre
+  `spclient.wg.spotify.com`, y "current_or_new" es literal: si no hay sesión,
+  la abre —con su token de join y su dueño—. Unirse es un `POST` **con cuerpo**
+  contra `/social-connect/v2/sessions/join/<token>`, y cerrarla es un `DELETE`
+  contra `/social-connect/v2/sessions/<session_id>`.
+- **La cola del jam es una lista, y se lee en protobuf.** La URI es
+  `spotify:list:jam-list:<session_id>` —con el id de la sesión, no con el
+  token— y la puerta es `POST /playlist/spotify.list.v1.ListReadService/GetLists`,
+  que contesta `application/x-protobuf` aunque le mandes JSON, y que exige
+  `requested_fields` o se queja en inglés.
+- **El jam no viene en librespot.** Ni el servicio, ni el proto
+  (`social_connect_v2.proto`, que vive en el `Spotify.dll` del cliente de
+  escritorio), ni el pubsub por el que llegan los cambios de la sesión: el
+  `dealer` de librespot no tiene pubsub. El protocolo se sacó de los strings y
+  de los descriptores del cliente de escritorio —con `scripts/proto-dump.ts`—, y
+  no de adivinar: un `405` es la diferencia entre un camino real y uno inventado.
 
 ## Reglas que no se rompen
 
@@ -272,19 +304,30 @@ salen de una captura:
   "Actualizar": no es una versión más nueva, es otra build.
 - **GitHub devuelve 422 si le pasás una etiqueta que el repositorio no tiene**, y
   eso perdería el reporte entero. `report.rs` reintenta sin etiqueta por eso.
-- **Dos copias abiertas a la vez se hacen ver como un crash.** El marcador es un
-  archivo, no un proceso: la instalada y la de `cargo run` comparten
-  `%LOCALAPPDATA%\Starless\session.marker`, así que la segunda que arranca mueve el
-  marcador vivo a `last-crash.marker` y declara que la primera murió. Al prólogo
-  aparecer, el aviso ofrece mandar el registro a un issue de GitHub — por un crash
-  que no existió.
+- **Un marcador que sobrevive no es un crash: un crash es lo que dejó escrito su
+  fallo.** `TerminateProcess` no corre ni una línea dentro del proceso que mata,
+  así que el Administrador de tareas, `taskkill`, un apagado o un corte de luz
+  dejan `session.marker` y nada más, y **no hay forma de distinguirlos entre sí**.
+  El aviso salía por el marcador con un reloj encima —más de 60 segundos de
+  sesión era "un crash"—, así que terminar la tarea de una app en uso pedía un
+  reporte de un fallo que no existió, y además dejaba `last-crash.marker` tragándose
+  el crash real siguiente. Ahora `settle_previous_session` exige el marcador **y**
+  el archivo de fallo, que lo escriben el hook de panic y, para lo que el hook no
+  ve —un access violation, un stack overflow—, el filtro de excepciones de Windows
+  (`install_native_crash_filter`). **El precio:** un cuelgue que la persona mata a
+  mano no se reporta, porque por fuera es idéntico a matar una app sana; y
+  `__fastfail` —el `abort` de Rust— no pasa por el filtro.
+- **Dos copias abiertas a la vez se pisan el marcador.** El marcador es un archivo,
+  no un proceso: la instalada y la de `cargo run` comparten
+  `%LOCALAPPDATA%\Starless\session.marker`, así que la segunda que arranca cree que
+  la primera murió.
   Y lo peor no es el aviso: dos sesiones de la misma cuenta se pelean las claves de
   audio, y la que pierde le pasa sus bytes a la otra. En vivo, el 17 de octubre:
   `An existing connection was forcibly closed by the remote host` y de ahí a seis
   pistas quemadas en catorce segundos, todas reportadas como canciones que Spotify
   no entregaba. `tauri-plugin-single-instance` lo cierra, y está registrado
   **primero** en el builder, antes que todo lo que puede fallar en `setup`. Si lo
-  sacás alguna vez, vuelven juntos el aviso de crash falso y la corrupción de audio.
+  sacás alguna vez, vuelve la corrupción de audio.
 - **Una pista que no suena no siempre es una pista que no existe.** librespot no
   reconecta solo: su keep-alive marca la sesión inválida y para, con un
   `TODO: Optionally reconnect` donde iría el reconectar. Después de eso toda pista
@@ -728,6 +771,43 @@ salen de una captura:
   La otra candidate, `/inspiredby-mix/v2/seed_to_playlist/spotify:track:<id>`,
   devuelve una playlist editorial y no la radio: no sirve. La sonda es
   `STARLESS_SP_RADIO=1`.
+- **Las letras no se traducen, y no por falta de ganas: hoy no hay de dónde.**
+  La idea era traducir sólo las canciones en otra escritura (coreano, japonés,
+  chino…) y mostrar la traducción chica, entre paréntesis, debajo de cada línea.
+  Se descartaron los traductores de terceros (Google, DeepL) porque mandarían
+  cada letra a otra empresa sin un clic, y eso rompe la regla 2. Lo que queda,
+  medido el 5 de noviembre de 2026:
+  - **Spotify tiene el campo y lo manda vacío.** `/color-lyrics/v2/track/<id>`
+    trae `language` (`"ko"`), `translationLanguages`, `alternatives` y
+    `capStatus`, y librespot sólo lee las líneas. En cuatro canciones coreanas
+    `translationLanguages` vino `[]` y `alternatives` vacío, con
+    `Accept-Language: es`/`en`, con el query del reproductor web y con siete
+    nombres de parámetro inventados (`translationLanguage`, `translation`,
+    `targetLanguage`, `language`…). Una lista vacía dice "no hay traducción",
+    no "la pediste mal".
+  - **En el cliente oficial es un experimento apagado.** El `xpui.spa` de la
+    1.2.x trae los textos (`web-player.lyrics.translate`,
+    `web-player.lyrics.translation.not_available`) y la bandera `enableLyricsTranslations` con
+    `CONTROL | SYSTEM_LANGUAGE | ALL_LANGUAGES`, por defecto **`CONTROL`**. Su
+    JavaScript no lee nunca `translationLanguages` ni `alternatives`; en el
+    `Spotify.dll` sólo aparece `translation_language` dentro de
+    `playback_settings.ContentSettings`, un ajuste por contenido, sin la
+    petición que trae el texto traducido.
+  - **WebView2 trae la API `Translator` y no trae los modelos.** En Edge 156,
+    `Translator` existe pero `availability()` contesta `unavailable` para todo
+    par —`en→es` incluido— y `create()` tira `NotSupportedError`.
+    `LanguageDetector` sí contesta `downloadable`. Es la puerta local y sin
+    terceros, y está cerrada del lado de Microsoft, no del nuestro.
+  La sonda es `STARLESS_SP_LYRICS=1`: cada vez que se abren unas letras pide la
+  misma canción de varias formas y escribe en el log **la forma** de la
+  respuesta —idioma, campos, cuántas alternativas, cuánto alfabeto latino tiene
+  cada una— y **nunca el texto**, para no copiar letras a un archivo. Con eso se
+  comprueba en un minuto si Spotify abrió la función. El otro camino local, un
+  modelo de traducción propio en Rust (los de Firefox Translations pesan 15–40
+  MB por par), **se dejó de lado a propósito**: es la única salida que no
+  depende de nadie, y también la que más pesa sobre el arranque y la memoria,
+  las dos promesas de la app. La función vuelve cuando Spotify o WebView2
+  abran la suya.
 - **La cola no existe hasta que el usuario la crea.** El panel de cola y la
   estación del DJ son dos preguntas distintas, y el panel las confundía: el "A
   continuación" caía a `visibleTracks` —lo que se ve en pantalla— cuando todavía
@@ -752,13 +832,6 @@ salen de una captura:
   versión en Ajustes; una de `main` no trae ninguna de las dos. Preguntarle a
   GitHub sería peor: la respuesta dependería de que la máquina tenga conexión,
   y el canal no cambia con la red.
-- **`API_ERRORS` está en español y fuera de `i18n.ts`.** Veinte mensajes de error
-  de usuario en un solo idioma, en el archivo que la regla 5 excluye. Los dos
-  códigos que Rust emite y que no estaban en el mapa —`no_session` y `bad_id`—
-  se agregaron con el trabajo de playlists, así que ya no se muestran crudos;
-  lo que queda es que `explain()` no sabe el idioma. Es deuda conocida, está
-  anotada en el skill; cuando la toques, el movimiento natural es llevarla a
-  `i18n.ts` con sus dos idiomas.
 - **Un panel flotante no es de la fila que tapa, aunque el portal lo haga hijo
   de ella.** `MenuPanel` se dibuja con `createPortal` al `body`, pero en el
   árbol de **React** sigue siendo hijo de la fila de la canción, y los eventos
@@ -777,6 +850,246 @@ salen de una captura:
 - **La barra de arriba es zona de arrastre.** Con `decorations: false` no hay
   título del sistema, así que la ventana se mueve desde ahí y los controles
   llevan `data-tauri-drag-region="false"`.
+- **Un control dibujado no sigue al mouse si su valor viene de atrás.** El
+  slider dibujado —`SmoothSlider`— se veía perfecto y se arrastraba **muy
+  desfasado**, y eran dos latencias sumadas: dibujaba **el valor que el
+  backend había reportado**, que para el volumen tarda lo que tarda un comando,
+  una escritura a disco y un evento; y animaba la posición **con el spring de
+  la app**, que es un atraso que **crece con la velocidad de la mano** —a la
+  velocidad de un arrastre real, el pulgar quedaba a un buen tramo del cursor—.
+  Encima, el `input` estaba atado al valor lento, así que React **volvía a
+  tirar del arrastre** hacia el número viejo después de cada evento.
+  **Un control que el mouse maneja tiene que dibujar lo que el mouse pide, en
+  el mismo cuadro**: el número pedido, el `input` atado a ese número, y la
+  posición **sin animar mientras el puntero está abajo**. El spring es para los
+  valores que llegan solos —una tecla, un valor que vuelve del backend— y para
+  el pulgar que crece bajo la mano. El `<input type="range">` nativo que esto
+  reemplazaba seguía al mouse exacto: esa es la vara.
+- **Un control que manda el backend se pelea con el mouse, sea dibujado o
+  nativo.** El control de posición es un `<input type="range">` nativo y su
+  valor viene del backend, que lo actualiza dos veces por segundo: cada
+  actualización lo mandaba de vuelta a donde estaba y **el pulgar se peleaba
+  con el mouse** —el control parecía pegado y el salto no terminaba de
+  hacerse. Mientras la mano está en el control, el control dibuja lo que se
+  le pidió; cuando el backend llega a esa posición, vuelve a seguir al
+  player. Y **un salto por mano, no uno por pixel**: cada salto descarta la
+  cola y le pide la canción al servidor otra vez, así que cincuenta saltos por
+  segundo son cincuenta viajes y el último no llega antes que el anterior.
+- **Un salto tiene que descartar la cola en la que aterriza.** Lo que estaba
+  en la cola es el audio del lugar de antes: si sigue ahí, suena encima de la
+  posición nueva, **el control del player vuelve a la posición vieja** —que
+  es lo que hace que saltar no parezca funcionar— y la posición que se oye
+  tarda lo que la cola tarda en vaciarse. La cola se descarta con una rampa
+  corta y no de golpe: un corte seco se oye como un chasquido.
+- **El orden de las preguntas del botón de play es el botón de play.** `toggle`
+  preguntaba *"¿estoy sonando?"* antes que *"¿el player tiene una pista?"*, y
+  la segunda es la que importa: `Player::play` y `Player::pause` sólo hacen
+  algo desde `Paused` o `Loading`; desde `Stopped` o `EndOfTrack` librespot
+  contesta con un error y silencio. Un clic que caía justo cuando terminaba la
+  canción recibía un `pause()` sobre un player que ya había terminado —
+  `Player::pause called from invalid state: EndOfTrack` en el log—, el app se
+  ponía "sonando" igual y **el clic siguiente pedía pausar un player que
+  nunca estuvo sonando**. Tres clics, tres rechazos, y en la pantalla no
+  cambiaba nada. **Y un estado que el app cambia solo es un estado que la
+  webview no oye**: `toggle` movía `s.playing` y no lo empujaba, así que la
+  idea del app de qué estaba sonando se iba de la idea de la pantalla. Ahora
+  el estado se empuja después del comando, como hace `play_track`.
+- **Un valor que cambia en cada evento de puntero no puede empujar el estado
+  entero.** El volumen cambia cincuenta veces por segundo y cada una empujaba
+  el estado **completo** a la webview, donde cae en el estado del componente
+  raíz y **re-renderiza la app entera**. El hilo del webview pasa entonces a
+  ocuparse de la app en vez del puntero que pregunta, y el pulgar queda
+  atrás: **el slider que debía seguir la mano era lo que hacía tarde la
+  mano**. El pulgar no necesita el eco —sabe lo que pidió—, así que el eco del
+  volumen sale a ritmo de persona (100 ms) y lo demás sigue saliendo al
+  instante. Y **el disco va después del sonido**: la atenuación es un átomo
+  que la mixer de librespot lee en cada buffer, así que el archivo de ajustes
+  se escribe después de aplicar el volumen, no antes — antes ponía una
+  lectura y una escritura del archivo entero entre la mano y el sonido.
+- **El audio que espera en la cola lleva el volumen viejo.** El sink de esta
+  app deja **26 paquetes en cola** —casi 700 ms de música— y esa cola estaba
+  en el medio entre la mano y el sonido de dos maneras distintas. La
+  atenuación la hacía el mixer de librespot **antes** de encolar el paquete:
+  lo que ya estaba esperando llevaba el volumen con el que se decodificó, así
+  que mover el control se oía recién cuando la cola se vaciaba —y en los
+  últimos segundos de una canción, donde el crossfade deja crecer la cola
+  para guardar el final entero, tardaba **segundos**. **El volumen se aplica
+  cuando la muestra sale de la cola, no cuando entra**: el player entrega el
+  audio sin tocar y el sink atenúa muestra por muestra. Y **pausar el player
+  no es callar la música**: el player dejó de pedir audio, pero lo que ya
+  estaba en la cola siguió sonando en el mixer, así que la pausa tardaba lo
+  que la cola tardaba en vaciarse. La cola se apaga con una rampa corta y
+  **se congela** —congelada y no descartada, para que al volver a play la
+  canción siga donde estaba y no salte lo que pasó en la pausa.
+- **Una mezcla tiene que mantener la potencia, o se oyen dos canciones.**
+  Con 12 s de crossfade, la canción nueva subía de cero a uno a lo largo de
+  los doce segundos y la vieja se oía entera: el oído escucha la que está
+  más fuerte, así que la segunda no se oía hasta que la primera había
+  terminado. Y al revés: hacerlas llegar a una las dos al principio se oye
+  el doble y la mezcla suena a dos canciones encima. Lo que hace Spotify es
+  **la vieja baja de una y la nueva sube con la potencia que queda**: la suma
+  de las potencias de las dos es siempre la misma, así que la transición no
+  se oye más fuerte que una canción sola. Y la que entra **arranca desde su
+  principio**: el adelanto de la mitad del ajuste saltaba los primeros
+  segundos de cada canción.
+  Y el fundido se aplica con `set_volume` del sink, que **sí** alcanza al
+  audio que ya está en cola —rodio refresca el volumen cada cinco
+  milisegundos mientras reproduce—, pero con unos dieciséis milisegundos de
+  retraso: el test `the_fade_reaches_the_audio_that_is_already_queued` lo fija
+  con un mixer sin dispositivo.
+- **La posición que ve la webview es la del decoder, y la cola la hace ir por
+  delante.** En los últimos segundos de una canción el decoder deja de frenarse
+  y deja el final entero en la cola —con un crossfade de doce segundos, doce
+  segundos—, así que la posición que manda va doce segundos por delante de lo
+  que se oye: la barra llegaba al final de la canción cuando la siguiente ya
+  estaba sonando, y el crossfade no acortaba nada. **Lo que se muestra
+  es lo que se oye**: la posición menos el audio que quedó en la cola, y la
+  duración menos los segundos del crossfade —con doce segundos, una canción de
+  tres minutos veintiuno dura tres minutos nueve—. Y el backend tiene **dos
+  duraciones**: la que se muestra, que es la corta, y la real, que es contra la
+  que se mide la ventana del final. Pasarle la corta al player hace que la
+  cola del final crezca el doble.
+- **Un control que escribe una variable CSS global en cada paso del arrastre
+  repinta media ventana.** El slider de opacidad de los menús —en
+  Personalización— era el único rango que quedaba en el `<input type="range">`
+  nativo, así que el pulgar ya seguía al mouse exacto: **lo que lo volvía
+  lento era otra cosa**. Cada paso del arrastre escribía la variable en la
+  raíz, y **toda superficie de vidrio de la app la lee** —el panel de Ajustes,
+  la cola, los popovers—: media ventana se repintaba por evento de puntero, y
+  el valor además se guardaba en disco por paso. Un arrastre que repinta
+  media ventana en cada evento *se siente* como un control que no te sigue.
+  **Lo que se aplica a la ventana entera no se aplica por evento de puntero**:
+  el número, el pulgar y la leyenda contestan a velocidad de puntero —la leyenda
+  es un degradado de 46×28 y puede permitírselo— y la ventana unas 15 veces por
+  segundo (`useLiveCommit`), con el disco recién cuando la mano se detiene. La
+  leyenda tiene su propia variable (`--legend-alpha`) por eso: si leyera la de
+  los menús, no podría contestar antes que ellos.
+- **Un slider de Personalización que aparta el panel no puede sacar el control
+  del panel.** Un hijo no puede ser más opaco que su padre, así que el panel no
+  se puede desvanecer dejando el slider encendido, y desmontar el `input` corta
+  el arrastre. `PeekSlider` deja el real debajo, invisible y con el arrastre, y
+  dibuja encima una copia en un portal con la pista en los mismos píxeles. Un
+  slider nuevo cuyo efecto se ve en la ventana va con `PeekSlider`, no con
+  `SmoothSlider` pelado; un interruptor o una lista lleva `compare` en su `Row`.
+  **Y `ComparePill` mueve el control, no lo copia:** algunos guardan su propio
+  estado, como `ThemeSelect`, y dos copias dejarían de coincidir al primer cambio.
+- **Una puerta que se abre no es un corte, y un login en curso no es una
+  restauración.** La pantalla de inicio de sesión desaparecía en un fotograma
+  cuando llegaba la sesión: la app estaba y la tarjeta no, sin ninguna
+  transición. Ahora la puerta se desvanece sobre la app que ya está debajo, y
+  los dos son un movimiento solo. Y el techo de la restauración se reinicia
+  cuando la persona aprieta el botón, así que la condición de "restaurando"
+  tiene que **excluir el login en curso**: sin eso la tarjeta desaparecía bajo
+  los dedos y el botón se iba antes de que la sesión estuviera. El botón, además,
+  sólo se apagaba —sin spinner y sin decir qué estaba esperando—, y el handshake
+  con Spotify puede fallar solo: tiene un techo, o el botón queda apagado
+  para siempre y la pantalla no tiene salida.
+- **La vista de atrás de la puerta sobrevive al cierre de sesión, y no tiene por
+  qué.** `AuthGate` desmonta sus hijos cuando se cierra, pero el estado que
+  decide qué muestran vive **arriba** del gate, en `App`: `settingsOpen` seguía
+  en `true` después de cerrar sesión desde el panel de Ajustes, así que al
+  volver a entrar el panel aparecía entero sobre la app — la pantalla de la
+  sesión anterior encima de la nueva. El que lo arregla es el dueño del estado,
+  así que el gate avisa (`onSignedOut`) y `App` lo devuelve a su primer valor.
+  Lo que se devuelve es **lo de la cuenta** (dónde estabas, qué estaba abierto,
+  la cola); lo que se queda es **lo de la persona** (el idioma, el orden de la
+  estantería, el vidrio): una preferencia no se la lleva cerrar sesión.
+- **Un menú de escritorio es una superficie, y el texto sobre la imagen no tiene
+  ninguna.** Con vidrio oscuro propio, la búsqueda y los tres puntos se veían como
+  otro objeto en la ventana por más que se ajustara: ahora son `surface-menu`, con el
+  tinte de las superficies y sin piso, y lo que cuestan en contraste sobre una imagen
+  clara está medido en `DESIGN.md`. El menú del teléfono, los diálogos y las hojas
+  siguen en `glass-overlay` y `glass-sheet`. Lo que va directo sobre la imagen —subtítulos,
+  notas, letras— no responde al slider de opacidad porque no hay nada sobre lo que
+  actúe: lo resuelve `.on-ground` en `<main>`, con `data-picture` en la raíz. El halo
+  se hereda, así que **un control relleno nuevo dentro de `<main>` tiene que entrar
+  en la lista que lo apaga**, o el halo se le corre sobre el relleno. **Y el halo es
+  corto a propósito:** `truncate` también recorta la sombra, y uno de 18 px terminaba
+  en una línea recta debajo del título de las letras. Y las opacidades
+  de las letras salen de `--lyric-*`: una opacidad fija en una línea vuelve a
+  desaparecer sobre una imagen clara.
+- **`surface` no es `glass`, y la diferencia es lo que hay detrás.** `surface` es el
+  material de las barras, la cola y los accesos, y al 6% no desenfoca nada. Eso
+  sólo es seguro porque en el escritorio el contenido se detiene donde ellas
+  empiezan. **El fundido de `<main>` y el esmerilado no pueden estar juntos:** la
+  máscara del fundido es un *backdrop root*, y un `backdrop-filter` ahí adentro
+  —los accesos, las listas de canciones— nunca llega al fondo de la persona. Por
+  eso, por encima del 6%, `data-surface-frost` en la raíz le saca la máscara a
+  `<main>`. Sin ese atributo, la lista se ve nítida con las barras esmeriladas.
+  **Sin máscara el contenido quedaba cortado en recto** bajo la barra de arriba y
+  sobre el reproductor: el fundido ahora lo pinta `EdgeFade`, dos franjas del suelo
+  dibujado otra vez, hermanas de `<main>` y no padres. **Por la misma razón, nada
+  que contenga una superficie puede entrar con un fundido de opacidad**: un padre
+  por debajo de 1 también es un *backdrop root*, y al volver a Inicio los accesos se
+  veían sin esmerilar hasta que el fundido terminaba. El contenedor sube con `y` y
+  la superficie se desvanece sola, con `arrive`.
+  **Lo que flota encima de contenido se queda en `glass`**: la barra de pestañas y
+  el minirreproductor del teléfono, la tarjeta de inicio de sesión, los diálogos.
+  Pasar uno de esos a `surface` pone las filas que pasan por debajo en los mismos
+  píxeles que su propio texto. Por eso hay **un solo número** (`--surface-alpha`,
+  de 6 a 100) y las hojas y los diálogos lo siguen desde 55: `--menu-alpha` es
+  `max(0.55, --surface-alpha)`. **Los menús de escritorio no tienen ese piso:**
+  `surface-menu` evita el choque de textos con 24 px de desenfoque fijos, no con opacidad.
+- **Traer la ventana al frente se pide desde Rust, y en Windows el foco tiene
+  precio.** Son tres cosas y las tres importan: `tao::set_focus` **no hace
+  nada** si la ventana está minimizada (hay que `unminimize()` antes);
+  `SetForegroundWindow` se le **niega** a un proceso que no tiene el foreground
+  —que durante el login lo tiene el browser— y `tao` lo resuelve con el truco
+  de la tecla ALT; y el webview **no puede** hacerlo, porque
+  `capabilities/default.json` no le da `set-focus`, `show` ni `unminimize`. El
+  backend ya tenía el handle y el patrón, así que el login avisa desde
+  `auth.rs` y `lib.rs` levanta la ventana. **El momento es el callback de
+  OAuth**, que es cuando el browser muestra "Listo. Vuelve a Starless.": desde
+  ahí en adelante el browser es lo que la persona está mirando, y dejarla
+  esperando es dejarla atrás.
+- **El relay es el código que archiva los reportes, y la CI no corría sus
+  tests.** `relay/` se deploya a Cloudflare y es el único que sabe crear el
+  issue: un bug ahí no rompe la app, **pierde el reporte**. Y la app contesta a
+  eso abriendo el navegador, así que el síntoma es una app más lenta y no un
+  relay roto —justo el fallo que nadie va a reportar. Los tests de `report.ts`
+  existían, los de `index.ts` —el que crea el issue, agrupa los crashes
+  repetidos y corta por el límite de la hora— no: eran el camino sin probar.
+  Ahora `bun run test` corre en la CI, en cada push y en cada PR: los del
+  relay y los de la app.
+- **Una canción agregada a la cola con nada sonando era la cola entera.**
+  `onAddToQueue` armaba `[track]` cuando no había cola: la lista de la pantalla
+  se caía de la cola en ese momento, y **después de esa canción no había nada**.
+  Lo que pasó en vivo fue peor de lo que se veía: la canción terminó, la app no
+  encontró nada detrás y **arrancó la radio** —el log mostró `radio: arrancó con
+  50 canciones`—, así que la app seguía con música y lo que había seguido era
+  otra cosa. Ahora la cola es la lista de la pantalla **más** lo que el usuario
+  le puso, y la regla vive en `src/lib/queue.ts`, que tiene tests.
+- **Poner una canción en la cola es ponerla en un lugar, y ese lugar es el de
+  después de la que está sonando.** No es "agregar al final": una canción que
+  el usuario está esperando al final de una cola de treinta queda esperando
+  media hora. Y **reemplaza la copia que ya estaba**: la canción salió de la
+  pantalla, así que si la cola ya la tenía, la copia vieja sale y la nueva queda
+  en el lugar de al lado. Las dos cosas se notaron en vivo, en este orden: la
+  canción quedaba al final, y después quedaba **dos veces** en el panel. La cola
+  decía una cosa y el panel mostraba otra, dos veces.
+  **Y la canción que está sonando no se agrega ni se saca**: es el cursor, y
+  sin cursor no hay dónde insertar nada.
+- **Una variable de Actions que no existe llega como cadena vacía, y
+  `option_env!` no la distingue de una que existe y está vacía.**
+  `STARLESS_REPORT_RELAY` se pasa al build desde una variable del repositorio:
+  si no existe, el workflow la pasa igual y el binario recibe `Some("")`, que
+  no es lo mismo que `None`. La app posteaba entonces a `/report` —una URL
+  sin host— y culpaba al relay de no contestar, cuando lo que pasa es que no
+  hay relay. **Toda build local tiene esa forma**, y toda build hecha antes
+  de que la variable existiera también. La dirección se chequea donde se usa,
+  no donde se lee.
+- **Una animación que no es `transform` ni `opacity` cuesta el layout entero, y
+  una lista larga lo multiplica.** Medido en la app con un contador de cuadros: el
+  ecualizador de la fila que suena animaba `height` en un bucle infinito, y
+  mientras hubiera música la app iba a 30 fps; la barra de progreso animaba
+  `width` y `left` en cada tic. Ahora son `scaleY`, `scaleX` y `x`. Y una lista
+  de mil canciones dibujaba las mil filas en cada render de `App` —el volumen,
+  la posición, un menú—: 300 a 700 ms con la ventana congelada. `useRowWindow`
+  dibuja sólo las filas cerca de la pantalla y lo hace dentro del mismo evento
+  de scroll (`flushSync`): diferido al cuadro siguiente, un scroll rápido le
+  ganaba y la lista se veía llenarse de a poco. **Si animas algo, que sea un
+  transform; si agregas una lista que puede ser larga, pásala por
+  `useRowWindow`.**
 - **`.agent/` es la copia canónica** de la configuración de agentes. Los shims de
   `.claude/` y `.opencode/` que apuntaban ahí se borraron; para recuperar el
   skill en esas herramientas, `git revert 96cf93c`.

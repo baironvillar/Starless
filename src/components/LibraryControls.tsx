@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { StringKey } from "../lib/i18n";
 import { SPRING } from "../lib/motion";
-import { LIBRARY_SORTS, type LibrarySort, type LibraryView } from "../lib/spotify";
+import { LIBRARY_SORTS, type LibrarySort, type LibraryView, useHomeStats } from "../lib/spotify";
 
 /** The label each order is announced with, in both languages. */
 const SORT_LABEL: Record<LibrarySort, StringKey> = {
@@ -12,6 +12,7 @@ const SORT_LABEL: Record<LibrarySort, StringKey> = {
   "name-desc": "sortNameDesc",
   creator: "sortCreator",
   tracks: "sortTracks",
+  recent: "sortRecent",
 };
 
 /** Wide enough for "Nombre, de A a Z" in Spanish, which is the longer of the two. */
@@ -64,7 +65,7 @@ type LibrarySortMenuProps = {
 /**
  * The order control, and it lives on the library rail because that is the library.
  *
- * The menu is a **portal**, and that is not decoration. It is a `glass-overlay`
+ * The menu is a **portal**, and that is not decoration. It is a `surface-menu`
  * surface, and the rail is already glass: drawn inside it, the menu would be a glass
  * surface nested in a glass surface, which DESIGN.md forbids because every level
  * multiplies the blur and compounds the contrast loss. It would also be clipped —
@@ -77,6 +78,9 @@ export function LibrarySortMenu({ t, sort, onSortChange, className = "" }: Libra
   const [at, setAt] = useState<{ top: number; left: number } | null>(null);
   const anchor = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
+  // "Recently played" reads the local history; with nothing in it, it says so
+  // instead of passing off the A–Z it falls back to as an order.
+  const noHistory = useHomeStats().data?.has_history === false;
 
   const close = () => setOpen(false);
   useDismiss(open, close, anchor, menu);
@@ -131,7 +135,7 @@ export function LibrarySortMenu({ t, sort, onSortChange, className = "" }: Libra
               // SearchMenu lost its `-translate-x-1/2` for the same reason: a
               // composited layer between the backdrop and the thing that samples
               // it is what took the blur out of the packaged build.
-              className="glass-overlay fixed z-50 origin-top-right overflow-hidden rounded-card py-1.5"
+              className="surface-menu fixed z-50 origin-top-right overflow-hidden rounded-card py-1.5"
             >
               {LIBRARY_SORTS.map((option) => {
                 const active = option === sort;
@@ -149,10 +153,17 @@ export function LibrarySortMenu({ t, sort, onSortChange, className = "" }: Libra
                       active ? "bg-white/10" : "hover:bg-white/6"
                     }`}
                   >
-                    <span className="min-w-0 flex-1">{t[SORT_LABEL[option]]}</span>
+                    <span className="min-w-0 flex-1">
+                      {t[SORT_LABEL[option]]}
+                      {option === "recent" && noHistory && (
+                        <span className="mt-0.5 block text-[11.5px] leading-snug text-ink-faint">
+                          {t.sortRecentEmpty}
+                        </span>
+                      )}
+                    </span>
                     <Check
                       className={`size-3.5 shrink-0 transition-opacity duration-150 ${
-                        active ? "text-accent opacity-100" : "opacity-0"
+                        active ? "text-accent-ink opacity-100" : "opacity-0"
                       }`}
                       strokeWidth={2.5}
                     />
