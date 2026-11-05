@@ -991,11 +991,61 @@ function isTheme(value: unknown): value is Theme {
   return (THEMES as readonly unknown[]).includes(value);
 }
 
+/**
+ * Where the last press landed, so a theme picked with the hand grows out of the
+ * hand. A press older than a moment is not the one that changed the theme —
+ * Windows switching under "system" is not a press at all — and then the circle
+ * grows from the middle of the window.
+ */
+let lastPress: { x: number; y: number; at: number } | null = null;
+let watchingPresses = false;
+
 function paintTheme(): void {
   const light =
     currentTheme === "light" ||
     (currentTheme === "system" && window.matchMedia(SYSTEM_LIGHT).matches);
-  document.documentElement.dataset.theme = light ? "light" : "dark";
+  const next = light ? "light" : "dark";
+  const root = document.documentElement;
+  if (root.dataset.theme === next) return;
+  // The first paint is not a change, and with motion off a change is a cut.
+  const still =
+    root.dataset.theme === undefined ||
+    root.hasAttribute("data-still") ||
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+    typeof document.startViewTransition !== "function";
+  if (still) {
+    root.dataset.theme = next;
+    return;
+  }
+  /*
+   * The whole window changes colour at once, so it is not animated element by
+   * element — hundreds of tokens and every glass surface would repaint each
+   * frame. The browser photographs the old window, paints the new one, and the
+   * new photo is revealed as a circle that grows until it covers the corners.
+   */
+  const press = lastPress && performance.now() - lastPress.at < 1500 ? lastPress : null;
+  const x = press?.x ?? window.innerWidth / 2;
+  const y = press?.y ?? window.innerHeight / 2;
+  const reach = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y));
+  const change = document.startViewTransition(() => {
+    root.dataset.theme = next;
+  });
+  change.ready
+    .then(() =>
+      root.animate(
+        {
+          clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${reach}px at ${x}px ${y}px)`],
+        },
+        {
+          duration: 560,
+          easing: "cubic-bezier(0.65, 0, 0.35, 1)",
+          pseudoElement: "::view-transition-new(root)",
+        },
+      ),
+    )
+    .catch(() => {
+      // A transition that could not start still applied the theme.
+    });
 }
 
 /**
@@ -1004,6 +1054,16 @@ function paintTheme(): void {
  */
 export function applyTheme(next: Theme): void {
   currentTheme = next;
+  if (!watchingPresses) {
+    watchingPresses = true;
+    window.addEventListener(
+      "pointerdown",
+      (event) => {
+        lastPress = { x: event.clientX, y: event.clientY, at: performance.now() };
+      },
+      { capture: true, passive: true },
+    );
+  }
   try {
     window.localStorage.setItem(THEME_KEY, next);
   } catch {

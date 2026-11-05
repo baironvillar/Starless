@@ -60,6 +60,7 @@ export const CHANGELOG: ChangelogEntry[] = [
             "El orden y la vista de las listas se recuerdan. El orden —personalizado, título, agregado recientemente, artista o álbum—, su dirección y la vista —Lista o Compacta— se guardan en %LOCALAPPDATA%\\Starless y sobreviven al cierre de sesión y al reinicio. Antes se perdían al cambiar de lista, y la app siempre arrancaba en el orden por defecto.",
             "Los reportes ya no llevan un token dentro de la app. Para mandar un reporte de crash o un feedback, Starless ahora habla con un relay propio en vez de usar la API de GitHub con una clave escrita en el binario: esa clave salía de la máquina de cada copia instalada. Ahora la copia no lleva ninguna. El relay abre el issue y devuelve el enlace, avisa cuando el mismo crash ya había sido reportado y suma el tuyo, y dice cuándo se pasó el límite de la hora.",
             "El feedback dice de qué se trata. El formulario de Ajustes → Diagnóstico pregunta ahora si lo que se está contando es un problema, una idea u otra cosa, y el tema viaja con el reporte.",
+            "El cambio de tema se anima. Al pasar de oscuro a claro, o al revés, el tema nuevo crece como un círculo desde donde tocaste hasta cubrir la ventana; si el cambio viene de Windows, sale del centro. Con el movimiento apagado, el cambio es instantáneo.",
           ],
         },
         {
@@ -101,6 +102,7 @@ export const CHANGELOG: ChangelogEntry[] = [
             "The order and the view of the lists are remembered. The order —custom, title, recently added, artist or album—, its direction and the view —List or Compact— are saved in %LOCALAPPDATA%\\Starless and survive a sign-out and a restart. They used to be lost when you moved to another list, and the app always started on the default order.",
             "The reports no longer carry a token inside the app. To send a crash report or a piece of feedback, Starless now talks to a relay of its own instead of using the GitHub API with a key written into the binary: that key left the machine of every installed copy. Now the copy carries none. The relay opens the issue and hands back the link, says when the same crash was already reported and adds yours to it, and says when the hourly limit was reached.",
             "The feedback says what it is about. The form in Settings → Diagnostics now asks whether what you are telling us is a problem, an idea or something else, and the topic travels with the report.",
+            "Switching theme is animated. Going from dark to light or back, the new theme grows as a circle from where you clicked until it covers the window; when Windows changes it, it grows from the centre. With motion off, the change is instant.",
           ],
         },
         {
