@@ -198,7 +198,8 @@ Circles and capsules echo the speaker: the pool, the player's round bead, the ca
 - **Hover / Focus:** the ember rises and grows (opacity to 85%, scale 1.05, 320–420ms ease-out) and follows the pointer across the key (`--mx`); a white specular line crosses the face over 800ms (`::after`); the arrow drops 2px; the border warms; the pool's energy surges. Pressing scales to 0.97 over 160ms. Focus is a 2px frost outline offset 3px. Reduced motion: no transitions, no beat.
 
 ### Navigation
-- **Style:** a top line of 14px mute links, 26px apart, with the grey mark, the wordmark and the version (DM Mono) at left. Hover shifts to frost over 200ms. On phones only the last link remains.
+- **Style:** a top line of 14px mute links, 26px apart, with the grey mark, the wordmark and the version (DM Mono) at left. Hover shifts to frost over 200ms. On phones only the last link (GitHub) and the language switch remain.
+- **Language:** English is the page; Spanish rides beside each text in `data-es` (and `data-es-label`, `data-track-es`). The switch is "EN / ES" in DM Mono, the language being read in frost. Changing it dissolves the words (`filter: blur(4px) opacity(0)`, 180ms out, 280ms back in) and nothing else: the pool, the glass and the layout stay. It is a filter because the scroll timelines own the opacity of half those elements. The choice is remembered in `localStorage`; reduced motion swaps instantly.
 
 ### Feature rows
 - **Style:** an ordered list of four-column rows (number, title, line, version) at 20px vertical padding between hairlines. Hover lifts the row to frost at 4% over 200ms. An upcoming item carries "Próxima" in frost in place of a version.
@@ -251,7 +252,6 @@ Circles and capsules echo the speaker: the pool, the player's round bead, the ca
 - **Don't** let a decoration repaint the page while it is read: no scaled SVG stroke, no giant path re-stroked over the whole document, nothing that leaves a frame unpainted.
 
 <!-- OPEN ITEMS (not part of the system):
-- Fonts load from Google Fonts; the Astro build could self-host Syne, DM Sans and DM Mono.
 Direction: .impeccable/surfaces/index-html.md, seed:493bf2d1c9f053b5 -->
 
 ## Player drop
