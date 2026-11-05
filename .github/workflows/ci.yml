@@ -138,7 +138,24 @@ jobs:
             echo "No hay commits nuevos que mirar."
             exit 0
           fi
+          # Cuatro commits que ya están en `develop` y rompen la regla: dos asuntos
+          # largos y dos versiones que GitHub mergeó con el número del PR
+          # (`0.6.0 #48`, `0.5.6 #33`). Reescribirlos sería reescribir `develop`
+          # para todos, y sin esta lista el PR de `develop` a `main` no podía pasar
+          # nunca. Es una lista de hashes y no una regla más floja: un commit nuevo
+          # con el mismo asunto se sigue rechazando. No se le agrega nada sin
+          # anotar por qué.
+          ya_estaban="
+            bba32c237ec8bbf08a72af3cb861111785d59709
+            3f8dbded854c9f9132fbda2234d8ba2518448077
+            7d5e30d52de0b5b908eb7748b915b847b1a0a198
+            d05376a0ff632146005f8f65960563d3356e0234
+          "
           for sha in $shas; do
+            if printf '%s\n' $ya_estaban | grep -qx "$sha"; then
+              echo "skipping $sha — ya estaba en develop: $(git log -1 --format=%s "$sha")"
+              continue
+            fi
             echo "checking $sha — $(git log -1 --format=%s "$sha")"
             # El `exit` va explícito porque dentro de un `for` el fallo depende
             # de que el shell venga con `-e`, y este bloque se puede correr a
