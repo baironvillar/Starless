@@ -1,5 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ChevronLeft, Search, Settings } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -348,6 +349,8 @@ export default function App() {
    */
   const [queueOpen, setQueueOpen] = useState(!MOBILE);
   const [lyricsOpen, setLyricsOpen] = useState(false);
+  /** The lyrics over the whole screen. Only means something while they are open. */
+  const [cinema, setCinema] = useState(false);
   const [activeItem, setActiveItem] = useState("liked");
   /**
    * On the phone, whether the Biblioteca tab shows the list or the playlist
@@ -2435,6 +2438,67 @@ export default function App() {
   const coverGround =
     !MOBILE && (effect.cover === "always" || (effect.cover === "lyrics" && lyricsInMain));
   const groundUrl = (coverGround && coverUrl) || background.url;
+  const cinemaOn = cinema && lyricsInMain;
+
+  // Closing the lyrics, from anywhere, ends the cinema mode with them.
+  useEffect(() => {
+    if (!lyricsInMain) setCinema(false);
+  }, [lyricsInMain]);
+
+  // The window follows the mode. Asked of Tauri directly: the capability grants
+  // only `set-fullscreen`, and a refusal leaves the mode drawn in a window.
+  useEffect(() => {
+    if (MOBILE) return;
+    try {
+      void getCurrentWindow()
+        .setFullscreen(cinemaOn)
+        .catch(() => {});
+    } catch {
+      // `bun run dev` has no Tauri window to ask.
+    }
+  }, [cinemaOn]);
+
+  // F toggles the mode while the lyrics are open, Esc leaves it. Never while
+  // typing: an "f" in the search field is a letter, not a command.
+  useEffect(() => {
+    if (!lyricsInMain) return;
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, [contenteditable='true']")) return;
+      if (event.key === "Escape") setCinema(false);
+      else if (
+        (event.key === "f" || event.key === "F") &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey
+      ) {
+        setCinema((on) => !on);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lyricsInMain]);
+
+  const desktopLyrics = {
+    t,
+    lyrics: lyrics.data,
+    loading: lyrics.isLoading,
+    error: lyrics.error ? explain(lyrics.error) : null,
+    positionMs: status?.positionMs ?? 0,
+    playing: status?.playing ?? false,
+    title: loadedTrack?.name ?? "",
+    artists: loadedTrack ? trackArtists(loadedTrack) : "",
+    trackId: lyricsTrackId,
+    coverUrl,
+    coverSide: effect.coverSide,
+    onSwapSide: () => {
+      const next = effect.coverSide === "left" ? "right" : "left";
+      applyEffects({ ...effect, coverSide: next });
+      void setEffect("coverSide", next).catch(() => {});
+    },
+    onCinema: () => setCinema((on) => !on),
+    onClose: closeLyrics,
+  };
   const playlistView = !lyricsInMain && !showResults && !isHome && !isLiked && !detail;
   const playlistScreen = playlistView && selected !== undefined;
   // Liked Songs is drawn by the same screen, so it shares the big button too.
@@ -2965,25 +3029,7 @@ export default function App() {
               lyrics are only worth reading with the transport right there — which
               it always is, on the player bar.
             */
-            <LyricsPanel
-              t={t}
-              lyrics={lyrics.data}
-              loading={lyrics.isLoading}
-              error={lyrics.error ? explain(lyrics.error) : null}
-              positionMs={status?.positionMs ?? 0}
-              playing={status?.playing ?? false}
-              title={loadedTrack?.name ?? ""}
-              artists={loadedTrack ? trackArtists(loadedTrack) : ""}
-              trackId={lyricsTrackId}
-              coverUrl={coverUrl}
-              coverSide={effect.coverSide}
-              onSwapSide={() => {
-                const next = effect.coverSide === "left" ? "right" : "left";
-                applyEffects({ ...effect, coverSide: next });
-                void setEffect("coverSide", next).catch(() => {});
-              }}
-              onClose={closeLyrics}
-            />
+            <LyricsPanel {...desktopLyrics} />
           ) : showResults ? (
             results ? (
               <SearchScreen
@@ -3256,6 +3302,42 @@ export default function App() {
               onClose={() => setSettingsOpen(false)}
               onLangChange={setLang}
             />
+          )}
+        </AnimatePresence>
+
+        {/*
+          The cinema mode: the same lyrics panel over the whole window, the
+          window itself full screen, and the cover blurred behind it whatever
+          the background setting says — it is the look the mode exists for. It
+          sits over the app rather than rearranging it, so leaving it lands
+          exactly where the person was.
+        */}
+        <AnimatePresence>
+          {cinemaOn && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.4 }}
+              className="fixed inset-0 z-[60] overflow-hidden bg-ground px-[6vw] py-[6vh]"
+            >
+              {coverUrl && (
+                <div aria-hidden="true" className="pointer-events-none absolute inset-0">
+                  <div
+                    className="absolute inset-0 bg-cover bg-center"
+                    style={{
+                      backgroundImage: `url(${coverUrl})`,
+                      filter: `blur(${BACKGROUND_BLUR_PX * 1.5}px)`,
+                      scale: 1.15,
+                    }}
+                  />
+                  <div className="absolute inset-0 bg-ground opacity-55" />
+                </div>
+              )}
+              <div className="relative h-full">
+                <LyricsPanel {...desktopLyrics} cinema />
+              </div>
+            </motion.div>
           )}
         </AnimatePresence>
       </AuthGate>
