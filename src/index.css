@@ -199,6 +199,17 @@
 }
 
 /*
+ * A theme change is revealed as a circle (`paintTheme`), not crossfaded: the
+ * browser's default fade would show both windows at half strength on top of
+ * the circle. The new window sits whole over the old one and its clip grows.
+ */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+/*
  * Floating glass.
  *
  * **Do not add `-webkit-backdrop-filter` next to these.** Tailwind v4 minifies with
