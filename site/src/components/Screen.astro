@@ -99,12 +99,12 @@ const TITLE_BARS = [150, 96, 176, 124, 84];
           <span class="m-div" />
           <span class="m-pill">
             <Fragment set:html={icon("library", 16)} />
-            <span>Tu biblioteca</span>
+            <span data-es="Tu biblioteca">Your library</span>
           </span>
         </div>
         <div class="m-search">
           <Fragment set:html={icon("search", 16)} />
-          <span>Buscar canciones</span>
+          <span data-es="Buscar canciones">Search songs</span>
         </div>
         <div class="m-top-r">
           <span class="m-icbtn"><Fragment set:html={icon("users", 17)} /></span>
@@ -124,7 +124,7 @@ const TITLE_BARS = [150, 96, 176, 124, 84];
       <>
         <aside class="m-panel">
           <div class="m-panel-h">
-            <span class="m-panel-t">Tu biblioteca</span>
+            <span class="m-panel-t" data-es="Tu biblioteca">Your library</span>
             <span class="m-icbtn"><Fragment set:html={icon("panel", 16)} /></span>
           </div>
           <div class="m-panel-c">
@@ -135,7 +135,7 @@ const TITLE_BARS = [150, 96, 176, 124, 84];
           <div class="m-tiles">
             <div class="m-tile">
               <span class="m-cover m-cover-liked"><Fragment set:html={likedCover} /></span>
-              <span class="m-cap">Canciones que te gustan</span>
+              <span class="m-cap" data-es="Canciones que te gustan">Liked Songs</span>
             </div>
             {Array.from({ length: TILES }).map((_, i) => (
               <div class="m-tile">
@@ -150,7 +150,7 @@ const TITLE_BARS = [150, 96, 176, 124, 84];
         </aside>
 
         <div class="m-main m-main-panel">
-          <h1 class="m-h1">Inicio</h1>
+          <h1 class="m-h1" data-es="Inicio">Home</h1>
           <p class="m-sub">24 playlists</p>
           <div class="m-shelf">
             {Array.from({ length: SHELF }).map((_, i) => (
@@ -191,7 +191,7 @@ const TITLE_BARS = [150, 96, 176, 124, 84];
                 <span class="m-ava" />
                 <span class="m-bar m-bar-sm" style="width:calc(110 * var(--u))" />
                 <span class="m-dot" />
-                <span class="m-meta-t">24 canciones · 1 h 12 min</span>
+                <span class="m-meta-t" data-es="24 canciones · 1 h 12 min">24 songs · 1 h 12 min</span>
               </div>
             </div>
           </div>
@@ -202,7 +202,7 @@ const TITLE_BARS = [150, 96, 176, 124, 84];
             <span class="m-icbtn"><Fragment set:html={icon("more", 20)} /></span>
             <span class="m-pl-right">
               <span class="m-icbtn"><Fragment set:html={icon("search", 16)} /></span>
-              <span class="m-order">Orden personalizado</span>
+              <span class="m-order" data-es="Orden personalizado">Custom order</span>
               <span class="m-icbtn"><Fragment set:html={icon("list", 16)} /></span>
             </span>
           </div>
@@ -211,9 +211,9 @@ const TITLE_BARS = [150, 96, 176, 124, 84];
             <div class="m-thead">
               <span>#</span>
               <span />
-              <span>TÍTULO</span>
-              <span>ÁLBUM</span>
-              <span>FECHA DE ADICIÓN</span>
+              <span data-es="TÍTULO">TITLE</span>
+              <span data-es="ÁLBUM">ALBUM</span>
+              <span data-es="FECHA DE ADICIÓN">DATE ADDED</span>
               <span class="m-tright"><Fragment set:html={icon("clock", 14)} /></span>
             </div>
             {Array.from({ length: TRACKS }).map((_, i) => (
@@ -247,11 +247,11 @@ const TITLE_BARS = [150, 96, 176, 124, 84];
     variant === "queue" && (
       <aside class="m-queue">
         <div class="m-q-h">
-          <span class="m-q-t">Cola de reproducción</span>
+          <span class="m-q-t" data-es="Cola de reproducción">Play queue</span>
           <span class="m-icbtn"><Fragment set:html={icon("users", 16)} /></span>
           <span class="m-icbtn"><Fragment set:html={icon("close", 16)} /></span>
         </div>
-        <p class="m-q-eyebrow">AHORA SUENA</p>
+        <p class="m-q-eyebrow" data-es="AHORA SUENA">NOW PLAYING</p>
         <div class="m-q-now">
           <span class={`m-cover m-cov-sm m-cv2`} />
           <span class="m-tmain">
@@ -259,7 +259,7 @@ const TITLE_BARS = [150, 96, 176, 124, 84];
             <span class="m-bar m-bar-sm" style="width:calc(78 * var(--u))" />
           </span>
         </div>
-        <p class="m-q-eyebrow">A CONTINUACIÓN</p>
+        <p class="m-q-eyebrow" data-es="A CONTINUACIÓN">NEXT UP</p>
         {Array.from({ length: QUEUED }).map((_, i) => (
           <div class="m-q-row">
             <span class="m-tnum">{i + 1}</span>
@@ -288,19 +288,19 @@ const TITLE_BARS = [150, 96, 176, 124, 84];
         </div>
         <div class="m-sheet">
           <nav class="m-sheet-nav">
-            <h2 class="m-sheet-h">Ajustes</h2>
-            <p class="m-sheet-sub">Audio, cuenta y diagnóstico.</p>
+            <h2 class="m-sheet-h" data-es="Ajustes">Settings</h2>
+            <p class="m-sheet-sub" data-es="Audio, cuenta y diagnóstico.">Audio, account and diagnostics.</p>
             <span class="m-navitem">General</span>
             <span class="m-navitem">Audio</span>
-            <span class="m-navitem">Cuenta</span>
-            <span class="m-navitem m-navitem-on">Personalización</span>
-            <span class="m-navitem">Diagnóstico</span>
+            <span class="m-navitem" data-es="Cuenta">Account</span>
+            <span class="m-navitem m-navitem-on" data-es="Personalización">Customisation</span>
+            <span class="m-navitem" data-es="Diagnóstico">Diagnostics</span>
           </nav>
           <div class="m-sheet-body">
             <div class="m-card-row">
               <div>
-                <p class="m-row-t">Opacidad de los menús</p>
-                <p class="m-row-d">Qué tan sólidos se ven los menús.</p>
+                <p class="m-row-t" data-es="Opacidad de los menús">Menu opacity</p>
+                <p class="m-row-d" data-es="Qué tan sólidos se ven los menús.">How solid the menus look.</p>
               </div>
               <div class="m-slider">
                 <span class="m-slider-n">55%</span>
@@ -310,8 +310,8 @@ const TITLE_BARS = [150, 96, 176, 124, 84];
             </div>
             <div class="m-card-row">
               <div>
-                <p class="m-row-t">Color de acento</p>
-                <p class="m-row-d">El color que marca las acciones.</p>
+                <p class="m-row-t" data-es="Color de acento">Main colour</p>
+                <p class="m-row-d" data-es="El color que marca las acciones.">The colour that marks actions.</p>
               </div>
               <div class="m-swatches">
                 <span class="m-sw" style="background:#d7e24a" />
