@@ -31,7 +31,6 @@
 
 use std::fs;
 use std::path::PathBuf;
-use std::time::{Duration, SystemTime};
 
 use regex::Regex;
 use serde::Serialize;
@@ -84,36 +83,80 @@ fn reported_panic_path() -> Option<PathBuf> {
     panic_path().map(|p| p.with_extension("crash.txt"))
 }
 
+/// The four files that say how the previous session ended.
+///
+/// Gathered so the decision can be tested against a scratch directory: the real
+/// ones live in the same folder as the person's log and settings.
+struct SessionFiles {
+    live: PathBuf,
+    panic: PathBuf,
+    crash: PathBuf,
+    reported: PathBuf,
+}
+
+impl SessionFiles {
+    fn locate() -> Option<Self> {
+        Some(Self {
+            live: marker_path()?,
+            panic: panic_path()?,
+            crash: crash_marker_path()?,
+            reported: reported_panic_path()?,
+        })
+    }
+
+    /// A crash waiting for an answer: the marker and the failure, together.
+    fn crash_is_pending(&self) -> bool {
+        self.crash.exists() && self.reported.exists()
+    }
+}
+
+/// Decide what the previous session left behind, before this one writes over it.
+///
+/// **A crash is what wrote its own failure down.** The marker alone only says the
+/// session did not close, and most sessions that do not close did not crash: the
+/// task manager, `taskkill`, Windows shutting down, a power cut. `TerminateProcess`
+/// runs no code in the process it ends, so a kill can never leave anything more
+/// than the marker, and a crash always leaves the panic hook's or the exception
+/// filter's file. That difference is the whole test. It used to be a clock, and a
+/// session killed after a minute of use asked for a report about a crash that
+/// never happened.
+///
+/// A rename rather than a copy, so a crash can never be counted twice.
+fn settle_previous_session(files: &SessionFiles) {
+    // A marker with no failure next to it is what older versions left after a
+    // kill. It would otherwise sit here for good, and the check below would read
+    // it as a prompt still pending and swallow the next real crash.
+    if files.crash.exists() && !files.reported.exists() {
+        let _ = fs::remove_file(&files.crash);
+    }
+
+    let died = files.live.exists();
+    let wrote_failure = files.panic.exists();
+    if died && wrote_failure && !files.crash.exists() {
+        let _ = fs::rename(&files.panic, &files.reported);
+        let _ = fs::rename(&files.live, &files.crash);
+        return;
+    }
+
+    // Everything else has nothing to report: a kill, or a failure file from a
+    // session that went on to close properly, which would otherwise be blamed
+    // on whichever later session happened to get killed.
+    let _ = fs::remove_file(&files.panic);
+    let _ = fs::remove_file(&files.live);
+}
+
 /// Record that a session is running.
 ///
-/// If the previous run's marker is still lying around it was moved to
-/// `last-crash.marker` first, which is what `previous_session_crashed` reads. A
-/// rename rather than a copy, so a crash can never be counted twice.
+/// If the previous run crashed, its evidence was moved aside first, which is what
+/// `previous_session_crashed` reads.
 pub fn mark_session_start() {
-    let Some(live) = marker_path() else { return };
-    if let Some(parent) = live.parent() {
+    let Some(files) = SessionFiles::locate() else { return };
+    if let Some(parent) = files.live.parent() {
         let _ = fs::create_dir_all(parent);
     }
+    settle_previous_session(&files);
 
-    // A panic file survives too, and it belongs to the run that is being reported
-    // on — so it moves with the marker.
-    if live.exists()
-        && let Some(crash) = crash_marker_path()
-    {
-        if crash.exists() {
-            // Already reported on and never acknowledged. Don't resurrect it.
-            let _ = fs::remove_file(&live);
-        } else {
-            if let Some(panic) = reported_panic_path()
-                && let Some(source) = panic_path()
-            {
-                let _ = fs::rename(&source, &panic);
-            }
-            let _ = fs::rename(&live, &crash);
-        }
-    }
-
-    if let Err(e) = fs::write(&live, crate::version_line()) {
+    if let Err(e) = fs::write(&files.live, crate::version_line()) {
         log::warn!("no se pudo escribir el marcador de sesión: {e}");
     }
 }
@@ -125,65 +168,20 @@ pub fn mark_session_end() {
     }
 }
 
-/// How long the previous session has to have lived before its death is worth
-/// interrupting somebody about.
-///
-/// A marker on its own cannot tell a crash from a kill, and most kills are not
-/// crashes: the updater handing the process to the installer, Windows going
-/// down, a task manager, a second copy of the app being closed by hand. All of
-/// them leave the marker behind, and all of them used to open with a dialog
-/// about a crash that never happened.
-///
-/// What separates them from a real one is time. A crash is something the app did
-/// while someone was using it. A session that was over in seconds is a session
-/// that never started — and if it really was a panic, the panic wrote its own
-/// file and `counts_as_crash` says so regardless of the clock.
-const MIN_SESSION_BEFORE_CRASH: Duration = Duration::from_secs(60);
-
-/// The decision behind [`previous_session_crashed`], kept apart from the disk so
-/// it can be tested without a session, a panic or a machine.
-fn counts_as_crash(ran_for: Option<Duration>, panicked: bool) -> bool {
-    if panicked {
-        return true;
-    }
-    match ran_for {
-        // An unreadable mtime is not evidence either way. Report it: the cost of a
-        // false alarm is one dismissed dialog, the cost of a silence is a bug nobody
-        // ever hears about.
-        None => true,
-        Some(ran_for) => ran_for >= MIN_SESSION_BEFORE_CRASH,
-    }
-}
-
-/// `true` when the previous run left its marker behind and lived long enough for
-/// its death to be a crash rather than a kill.
+/// `true` when the previous run crashed and nobody has answered for it yet.
 ///
 /// Readable at any point in this run's life, including from the frontend, because
 /// `mark_session_start` moved the evidence out of the way rather than overwriting
 /// it.
 ///
 /// **Never on a phone.** Android ends a process when it wants to —swiped away
-/// from the recents, short on memory— and `RunEvent::Exit` does not come, so
-/// the marker would turn every launch into a crash report about a crash that
-/// did not happen. See `docs/android.md`.
+/// from the recents, short on memory— and `RunEvent::Exit` does not come. See
+/// `docs/android.md`.
 pub fn previous_session_crashed() -> bool {
     if cfg!(mobile) {
         return false;
     }
-    let Some(crash) = crash_marker_path() else {
-        return false;
-    };
-    if !crash.exists() {
-        return false;
-    }
-    // A rename keeps the original mtime, which is when the session started — so
-    // the age of this file is how long the previous session lasted.
-    let ran_for = fs::metadata(&crash)
-        .and_then(|m| m.modified())
-        .ok()
-        .and_then(|started| SystemTime::now().duration_since(started).ok());
-    let panicked = reported_panic_path().is_some_and(|p| p.exists());
-    counts_as_crash(ran_for, panicked)
+    SessionFiles::locate().is_some_and(|files| files.crash_is_pending())
 }
 
 // ---------------------------------------------------------------------------
@@ -198,6 +196,11 @@ pub fn previous_session_crashed() -> bool {
 /// **Only a panic on the main thread is written down.** The others are logged
 /// and nothing more: see the note inside.
 pub fn install_panic_hook() {
+    #[cfg(windows)]
+    if let Some(path) = panic_path() {
+        install_native_crash_filter(path);
+    }
+
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let location = info
@@ -242,6 +245,67 @@ fn payload_text(payload: &(dyn std::any::Any + Send)) -> String {
         s.clone()
     } else {
         "payload no textual".into()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The native crash
+// ---------------------------------------------------------------------------
+
+/// Where the filter writes. Set once, before it can run: a crashing process is
+/// the worst place to go asking the system where its folders are.
+#[cfg(windows)]
+static NATIVE_CRASH_FILE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+/// Whatever filter was there before this one, to hand the exception on to.
+#[cfg(windows)]
+static PREVIOUS_FILTER: std::sync::OnceLock<
+    windows::Win32::System::Diagnostics::Debug::LPTOP_LEVEL_EXCEPTION_FILTER,
+> = std::sync::OnceLock::new();
+
+/// Make an unhandled native exception write its failure down, like a panic does.
+///
+/// **The panic hook does not see these**, and they are real crashes: an access
+/// violation or a stack overflow in the audio stack or in a native dependency
+/// takes the process with no Rust panic involved. Now that a crash has to leave
+/// evidence, without this they would all go quiet.
+#[cfg(windows)]
+fn install_native_crash_filter(path: PathBuf) {
+    use windows::Win32::System::Diagnostics::Debug::SetUnhandledExceptionFilter;
+
+    let _ = NATIVE_CRASH_FILE.set(path);
+    // SAFETY: the filter is a plain function that lives as long as the process.
+    let previous = unsafe { SetUnhandledExceptionFilter(Some(on_unhandled_exception)) };
+    let _ = PREVIOUS_FILTER.set(previous);
+}
+
+/// Best effort by definition: the process is already lost, and if this write
+/// fails too the result is the same death with one report fewer.
+#[cfg(windows)]
+unsafe extern "system" fn on_unhandled_exception(
+    info: *const windows::Win32::System::Diagnostics::Debug::EXCEPTION_POINTERS,
+) -> i32 {
+    /// Not handled here: Windows keeps going with what it does for a crash.
+    const EXCEPTION_CONTINUE_SEARCH: i32 = 0;
+
+    // SAFETY: Windows hands the filter valid pointers; `as_ref` covers null.
+    let code = unsafe {
+        info.as_ref()
+            .and_then(|pointers| pointers.ExceptionRecord.as_ref())
+            .map(|record| record.ExceptionCode.0)
+    };
+    if let Some(path) = NATIVE_CRASH_FILE.get() {
+        let text = match code {
+            Some(code) => format!("excepción nativa 0x{code:08X}\n"),
+            None => "excepción nativa de código desconocido\n".to_string(),
+        };
+        let _ = fs::write(path, text);
+    }
+
+    match PREVIOUS_FILTER.get().copied().flatten() {
+        // SAFETY: it is the filter Windows had installed, called as Windows would.
+        Some(previous) => unsafe { previous(info) },
+        None => EXCEPTION_CONTINUE_SEARCH,
     }
 }
 
@@ -782,8 +846,8 @@ pub fn acknowledge() {
 /// Development builds only — the command in `lib.rs` refuses in a release. Two
 /// details make this work the way the real thing does:
 ///
-/// * The marker needs no doctored timestamp. `counts_as_crash` counts a panic
-///   however briefly the session lasted, so writing the panic is enough.
+/// * A crash is the marker and the failure together, so it plants both: either
+///   one alone is not a crash, and `settle_previous_session` clears it.
 /// * The text is written to the *live* name and then renamed, exactly like
 ///   `mark_session_start` does. Writing the moved-aside name directly would
 ///   leave the live file behind, and a later launch would promote it to a crash
@@ -958,23 +1022,122 @@ called unwrap on None
         assert_eq!(Kind::from_topic("¿?"), Kind::Feedback);
     }
 
+    /// A scratch copy of the four files, so these tests never touch the real
+    /// folder, where a running copy of the app keeps its own.
+    fn scratch_files(name: &str) -> SessionFiles {
+        let dir = std::env::temp_dir()
+            .join(format!("starless-report-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("debe poder crear la carpeta de prueba");
+        SessionFiles {
+            live: dir.join("session.marker"),
+            panic: dir.join("last-panic.txt"),
+            crash: dir.join("last-crash.marker"),
+            reported: dir.join("last-panic.crash.txt"),
+        }
+    }
+
+    /// What ending a task leaves: the marker and nothing else, however long the
+    /// session had been running. This is the prompt that should never appear.
     #[test]
-    fn a_session_that_died_at_once_is_not_a_crash() {
-        assert!(!counts_as_crash(Some(Duration::from_secs(2)), false));
-        assert!(!counts_as_crash(Some(Duration::from_millis(200)), false));
+    fn a_killed_session_is_not_a_crash() {
+        let files = scratch_files("kill");
+        fs::write(&files.live, "0").unwrap();
+
+        settle_previous_session(&files);
+
+        assert!(!files.crash_is_pending());
+        assert!(!files.crash.exists());
+        assert!(!files.live.exists());
     }
 
     #[test]
-    fn a_session_that_lived_is_a_crash() {
-        assert!(counts_as_crash(Some(Duration::from_secs(60)), false));
-        assert!(counts_as_crash(Some(Duration::from_secs(3 * 3600)), false));
+    fn a_session_that_wrote_its_failure_is_a_crash() {
+        let files = scratch_files("panic");
+        fs::write(&files.live, "0").unwrap();
+        fs::write(&files.panic, "panic en x").unwrap();
+
+        settle_previous_session(&files);
+
+        assert!(files.crash_is_pending());
+        assert_eq!(fs::read_to_string(&files.reported).unwrap(), "panic en x");
     }
 
-    /// A panic says so in its own file, and that outranks the clock: a real panic
-    /// during startup is exactly the bug this prompt exists for.
+    /// A panic the app survived, then a proper close. The file must not stay
+    /// around to turn a later kill into a report about this old panic.
     #[test]
-    fn a_panic_counts_however_fast_it_happened() {
-        assert!(counts_as_crash(Some(Duration::from_millis(10)), true));
+    fn a_failure_from_a_session_that_closed_is_forgotten() {
+        let files = scratch_files("closed");
+        fs::write(&files.panic, "panic en x").unwrap();
+
+        settle_previous_session(&files);
+
+        assert!(!files.panic.exists());
+        fs::write(&files.live, "0").unwrap();
+        settle_previous_session(&files);
+        assert!(!files.crash_is_pending());
+    }
+
+    /// Older versions left this marker behind after a kill. Read as a prompt still
+    /// pending, it would have swallowed the next real crash.
+    #[test]
+    fn a_marker_left_by_a_kill_does_not_swallow_the_next_crash() {
+        let files = scratch_files("legacy");
+        fs::write(&files.crash, "0").unwrap();
+        fs::write(&files.live, "0").unwrap();
+        fs::write(&files.panic, "panic en x").unwrap();
+
+        settle_previous_session(&files);
+
+        assert!(files.crash_is_pending());
+    }
+
+    /// Somebody who has not answered yet and then ends a task still gets asked.
+    #[test]
+    fn a_kill_does_not_clear_a_crash_nobody_answered() {
+        let files = scratch_files("pending");
+        fs::write(&files.crash, "0").unwrap();
+        fs::write(&files.reported, "panic en x").unwrap();
+        fs::write(&files.live, "0").unwrap();
+
+        settle_previous_session(&files);
+
+        assert!(files.crash_is_pending());
+    }
+
+    /// The real thing, in a process of its own: the test binary runs itself, the
+    /// child raises an exception nobody handles and dies of it, and the file has
+    /// to be there afterwards.
+    #[cfg(windows)]
+    #[test]
+    fn a_native_crash_writes_its_failure_down() {
+        use windows::Win32::System::Diagnostics::Debug::{
+            RaiseException, SEM_FAILCRITICALERRORS, SEM_NOGPFAULTERRORBOX, SetErrorMode,
+        };
+        const CHILD: &str = "STARLESS_NATIVE_CRASH_TEST_FILE";
+
+        if let Some(path) = std::env::var_os(CHILD) {
+            install_native_crash_filter(PathBuf::from(path));
+            // SAFETY: both end the way this process is meant to end. The error
+            // mode only keeps Windows from opening a dialog about it.
+            unsafe {
+                SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
+                RaiseException(0xE000_0001, 0, None);
+            }
+            unreachable!("la excepción no volvió de RaiseException");
+        }
+
+        let file = scratch_files("native").panic;
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "report::tests::a_native_crash_writes_its_failure_down"])
+            .env(CHILD, &file)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .expect("debe poder arrancar el proceso hijo");
+
+        assert!(!status.success());
+        assert!(fs::read_to_string(&file).unwrap().contains("0xE0000001"));
     }
 
     /// The panic file has exactly one name, and every side agrees on it.
@@ -991,13 +1154,6 @@ called unwrap on None
             .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
             .expect("debe haber una carpeta local");
         assert_eq!(name, "last-panic.crash.txt");
-    }
-
-    /// An unreadable timestamp is not evidence either way. Reporting costs one
-    /// dismissed dialog; staying quiet costs a bug nobody ever hears about.
-    #[test]
-    fn an_unreadable_timestamp_is_treated_as_a_crash() {
-        assert!(counts_as_crash(None, false));
     }
 
     const REAL_LINES: &str = "\
