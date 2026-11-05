@@ -16,11 +16,13 @@ import {
 } from "lucide-react";
 import { AnimatePresence, animate, motion, useMotionValue } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCoverTint } from "../lib/coverTint";
 import type { StringKey } from "../lib/i18n";
 import {
   coverImage,
   explain,
   formatDuration,
+  isDark,
   onBeat,
   type PlaybackStatus,
   seekPlayback,
@@ -314,7 +316,19 @@ export function PlayerBar({
   // "Suave" halves it, which also keeps it under the kick that sends a wave:
   // the thumb still breathes with the song, and nothing leaves it.
   const pulse = useMotionValue(0);
-  const { beat } = useEffectsSettings();
+  const { beat, play: playStyle } = useEffectsSettings();
+  // The play button's dress (see `.play-key` in index.css). The cover's colour
+  // is read only while that dress is on: it costs a fetch per song.
+  const tint = useCoverTint(coverImage(track?.album?.images)?.url, playStyle === "cover");
+  const playKey = {
+    "data-style": playStyle,
+    style: tint
+      ? ({
+          "--tint": tint,
+          "--on-tint": isDark(tint) ? "#edeae3" : "#0b0b0f",
+        } as React.CSSProperties)
+      : undefined,
+  };
   useEffect(() => {
     const gain = beat === "soft" ? 0.5 : 1;
     const unlisten = onBeat((value) => pulse.set(value * gain));
@@ -538,14 +552,15 @@ export function PlayerBar({
         whileTap={{ scale: 0.94 }}
         transition={SPRING}
         aria-label={dj ? t.djSkipVoice : playing ? t.pause : t.play}
-        className={`grid ${size} shrink-0 place-items-center rounded-pill bg-ink text-ground disabled:opacity-40`}
+        {...playKey}
+        className={`play-key grid ${size} shrink-0 place-items-center rounded-pill disabled:opacity-40`}
       >
         {busy ? (
           <Loader2 className={`${icon} animate-spin`} strokeWidth={2} />
         ) : playing ? (
           <Pause className={`${icon} fill-current`} strokeWidth={0} />
         ) : (
-          <Play className={`${icon} translate-x-px fill-current`} strokeWidth={0} />
+          <Play className={`play-glyph ${icon} translate-x-px fill-current`} strokeWidth={0} />
         )}
       </motion.button>
     );
@@ -883,14 +898,18 @@ export function PlayerBar({
             whileTap={{ scale: 0.94 }}
             transition={SPRING}
             aria-label={dj ? t.djSkipVoice : playing ? t.pause : t.play}
-            className="mx-1 grid size-11 place-items-center rounded-pill bg-ink text-ground transition-transform duration-150 hover:scale-105 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
+            {...playKey}
+            className="play-key mx-1 grid size-11 place-items-center rounded-pill transition-[transform,background-color,color] duration-150 hover:scale-105 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
           >
             {busy ? (
               <Loader2 className="size-[18px] animate-spin" strokeWidth={2} />
             ) : playing ? (
               <Pause className="size-[18px] fill-current" strokeWidth={0} />
             ) : (
-              <Play className="size-[18px] translate-x-px fill-current" strokeWidth={0} />
+              <Play
+                className="play-glyph size-[18px] translate-x-px fill-current"
+                strokeWidth={0}
+              />
             )}
           </motion.button>
 

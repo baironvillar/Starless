@@ -886,6 +886,7 @@ export const EFFECTS = {
   grain: ["off", "on"],
   cover: ["off", "lyrics", "always"],
   coverSide: ["left", "right"],
+  play: ["bone", "accent", "cover", "glass"],
 } as const;
 
 export type EffectName = keyof typeof EFFECTS;
@@ -902,6 +903,7 @@ export const EFFECTS_DEFAULT: Effects = {
   grain: "off",
   cover: "off",
   coverSide: "left",
+  play: "bone",
 };
 
 /**
@@ -1230,7 +1232,7 @@ function mixToward(hex: string, amount: number): string {
  * chrome, and put a 2.6:1 Bone label on Ember — the default since the new
  * identity — where Void gives 6.3:1.
  */
-function isDark(hex: string): boolean {
+export function isDark(hex: string): boolean {
   const [r, g, b] = [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16) / 255);
   const linear = [r, g, b].map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
   return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2] < 0.17;
