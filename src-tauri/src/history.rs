@@ -174,6 +174,10 @@ pub struct HomeStats {
     /// Days in a row, up to today, with at least one play. Yesterday still counts
     /// as "in a row" until today ends, so a streak does not break at breakfast.
     pub streak_days: u32,
+    /// When each source was last heard, by its id (a playlist's, or `liked`), in
+    /// milliseconds since the epoch. The library's "recently played" order reads
+    /// it: the one date a playlist has, and it is this machine's, not Spotify's.
+    pub last_played: HashMap<String, i64>,
 }
 
 /// Compute Home from the file. `tz_offset_min` is JavaScript's `getTimezoneOffset()`.
@@ -211,6 +215,10 @@ fn compute(plays: &[Play], now: i64, tz_offset_min: i32) -> HomeStats {
     let mut days = std::collections::BTreeSet::new();
 
     for play in plays {
+        if let Some(context) = &play.context {
+            let last = stats.last_played.entry(context.id.clone()).or_insert(play.at);
+            *last = (*last).max(play.at);
+        }
         let day = local_day(play.at, tz_offset_min);
         days.insert(day);
         if (monday..=today).contains(&day) {
@@ -344,6 +352,21 @@ mod tests {
         let stats = compute(&plays, MONDAY + 4, 0);
         let order: Vec<_> = stats.recent.iter().map(|p| p.track_id.as_str()).collect();
         assert_eq!(order, ["d", "c", "b"]);
+    }
+
+    #[test]
+    fn last_played_is_the_latest_play_of_each_source() {
+        let plays = [
+            play("a", "x", MONDAY, Some("p1")),
+            play("b", "x", MONDAY + 5, Some("p2")),
+            play("c", "x", MONDAY + 9, Some("p1")),
+            play("d", "x", MONDAY + 7, None),
+        ];
+        let stats = compute(&plays, MONDAY + 10, 0);
+        assert_eq!(stats.last_played.get("p1"), Some(&(MONDAY + 9)));
+        assert_eq!(stats.last_played.get("p2"), Some(&(MONDAY + 5)));
+        // A song played on its own belongs to no playlist.
+        assert_eq!(stats.last_played.len(), 2);
     }
 
     #[test]

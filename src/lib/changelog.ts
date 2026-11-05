@@ -63,6 +63,7 @@ export const CHANGELOG: ChangelogEntry[] = [
             "El feedback dice de qué se trata. El formulario de Ajustes → Diagnóstico pregunta ahora si lo que se está contando es un problema, una idea u otra cosa, y el tema viaja con el reporte.",
             "El clic derecho abre el menú de lo que tocas. Sobre una canción abre su menú justo donde está el mouse; sobre una playlist —en la barra lateral, en Inicio o en su encabezado— abre el de la playlist. En el resto de la app ya no aparece el menú del navegador, que ofrecía recargar la página; en los campos de texto se mantiene el de copiar y pegar.",
             "El cambio de tema se anima. Al pasar de oscuro a claro, o al revés, el tema nuevo crece como un círculo desde donde tocaste hasta cubrir la ventana; si el cambio viene de Windows, sale del centro. Con el movimiento apagado, el cambio es instantáneo.",
+            "La biblioteca se puede ordenar por reproducido recientemente. Es un quinto orden junto a los de nombre, creador y cantidad de canciones: primero las playlists que escuchaste hace menos, después las que nunca sonaron, por nombre. Se arma con el historial local de Starless —lo que escuchas en esta app, en este equipo—, así que no ve lo que escuchas en otros clientes.",
           ],
         },
         {
@@ -107,6 +108,7 @@ export const CHANGELOG: ChangelogEntry[] = [
             "The feedback says what it is about. The form in Settings → Diagnostics now asks whether what you are telling us is a problem, an idea or something else, and the topic travels with the report.",
             "Right-click opens the menu of what you click. On a song it opens its menu right at the mouse; on a playlist —in the sidebar, on Home or on its heading— it opens the playlist's. Elsewhere the browser's menu, which offered to reload the page, no longer appears; text fields keep copy and paste.",
             "Switching theme is animated. Going from dark to light or back, the new theme grows as a circle from where you clicked until it covers the window; when Windows changes it, it grows from the centre. With motion off, the change is instant.",
+            "The library can be sorted by recently played. It is a fifth order beside name, creator and song count: the playlists you heard most recently first, then the ones that never played, by name. It is built from Starless's local history —what you play in this app, on this machine— so it does not see what you play in other clients.",
           ],
         },
         {

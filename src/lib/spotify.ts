@@ -693,6 +693,8 @@ export type HomeStats = {
   week_minutes: number[];
   today_index: number;
   streak_days: number;
+  /** When each source (a playlist's id, or `liked`) was last heard, in ms since the epoch. */
+  last_played: Record<string, number>;
 };
 
 /** Under this a song was skipped, and `history.rs` drops it too. */
@@ -706,6 +708,7 @@ const EMPTY_STATS: HomeStats = {
   week_minutes: [0, 0, 0, 0, 0, 0, 0],
   today_index: (new Date().getDay() + 6) % 7,
   streak_days: 0,
+  last_played: {},
 };
 
 export const historyKey = ["home-stats"] as const;
@@ -1301,19 +1304,23 @@ export function isDark(hex: string): boolean {
 }
 
 /**
- * How the library is ordered, and why there are exactly these four.
+ * How the library is ordered, and why there are exactly these five.
  *
- * **There is no "recently added" and no "last played", and that is not an omission.**
- * A playlist carries an id, a name, its images, the owner's display name and a track
- * count — see `models.rs`. Not one of those is a date. An order called "recent" built
- * on that would be the order in which the list happened to arrive wearing the label
- * of a fact this app does not have, which is worse than not offering it: the user
- * trusts the label. Spotify's own "Recently added" is a server-side order over a
- * field this session cannot see.
+ * **There is no "recently added", and that is not an omission.** A playlist
+ * carries an id, a name, its images, the owner's display name and a track count —
+ * see `models.rs`. Not one of those is a date. An order called "recently added"
+ * built on that would be the order in which the list happened to arrive wearing
+ * the label of a fact this app does not have, which is worse than not offering
+ * it: the user trusts the label. Spotify's own is a server-side order over a field
+ * this session cannot see.
  *
- * So the orders are the four the data can answer honestly.
+ * **"Recently played" is the exception, because the date is ours.** The local
+ * history (`history.rs`) stamps every song heard in Starless with its time and
+ * the playlist it came from, so the last time a playlist sounded *here* is a
+ * fact this app does have. It is only this machine's listening, never Spotify's,
+ * and a playlist that never sounded here goes after the rest, by name.
  */
-export const LIBRARY_SORTS = ["name-asc", "name-desc", "creator", "tracks"] as const;
+export const LIBRARY_SORTS = ["name-asc", "name-desc", "creator", "tracks", "recent"] as const;
 export type LibrarySort = (typeof LIBRARY_SORTS)[number];
 
 /** Which of the two ways of looking at the shelf is on. */
@@ -1369,10 +1376,28 @@ const byName = new Intl.Collator(undefined, { numeric: true, sensitivity: "base"
  * array coming out of React Query is the cache's own — sorting it would reorder the
  * cached value under every other screen that reads it.
  */
-export function sortPlaylists(playlists: Playlist[], sort: LibrarySort): Playlist[] {
+export function sortPlaylists(
+  playlists: Playlist[],
+  sort: LibrarySort,
+  lastPlayed: Record<string, number> = {},
+): Playlist[] {
   const sorted = [...playlists];
 
   switch (sort) {
+    case "recent":
+      sorted.sort((a, b) => {
+        const left = lastPlayed[a.id];
+        const right = lastPlayed[b.id];
+        // Never heard here is not "a long time ago": it goes after every
+        // playlist that was, and those keep their A–Z among themselves.
+        if (left === undefined || right === undefined) {
+          if (left !== right) return left === undefined ? 1 : -1;
+          return byName.compare(a.name, b.name);
+        }
+        return right - left || byName.compare(a.name, b.name);
+      });
+      break;
+
     case "name-desc":
       sorted.sort((a, b) => byName.compare(b.name, a.name));
       break;
