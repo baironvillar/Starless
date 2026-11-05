@@ -153,7 +153,7 @@ export function LibrarySidebar({
       // both means the gap is the same 20 px on every frame, and `data-still`
       // stops both at once.
       style={{ width: collapsed ? RAIL_PX : PANEL_PX }}
-      className={`glass pointer-events-auto absolute top-[104px] ${barPresent ? "bottom-[144px]" : "bottom-5"} left-5 z-20 flex flex-col overflow-hidden rounded-card transition-[width,bottom] duration-300 ease-[var(--ease-glass)]`}
+      className={`surface pointer-events-auto absolute top-[104px] ${barPresent ? "bottom-[144px]" : "bottom-5"} left-5 z-20 flex flex-col overflow-hidden rounded-card transition-[width,bottom] duration-300 ease-[var(--ease-glass)]`}
     >
       {/*
         Both shapes are always there, one over the other, and only their

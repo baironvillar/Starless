@@ -179,7 +179,7 @@ export function TopBar({
         animate={{ opacity: 1, y: 0 }}
         transition={SPRING}
         onBlur={onBlur}
-        className="glass pointer-events-auto absolute inset-x-5 top-5 z-20 grid h-16 grid-cols-[1fr_auto_1fr] items-center gap-4 rounded-card px-4"
+        className="surface pointer-events-auto absolute inset-x-5 top-5 z-20 grid h-16 grid-cols-[1fr_auto_1fr] items-center gap-4 rounded-card px-4"
         // With `decorations: false` there is no title bar left, so this row is
         // what moves the window. `"deep"` rather than bare so the whole bar
         // drags, not only the few pixels that are the bar itself and nothing

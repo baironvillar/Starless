@@ -44,14 +44,14 @@ pub struct Settings {
     #[serde(default)]
     pub volume: Option<u16>,
 
-    /// How opaque the menus are, as a percentage.
+    /// How opaque the surfaces are, as a percentage: the bars, the queue, the
+    /// shortcuts on Home, and the menus from 55% up.
     ///
-    /// The user's own glass. It exists because `glass-overlay` cannot promise to
-    /// stay readable on its own: the blur it leans on is not rendered in the
-    /// packaged build, and how much translucency someone is willing to trade for
-    /// depth is their call, not the design system's.
+    /// A field of its own and not the old `menu_opacity` renamed: that number
+    /// meant the menus only, and its default of 55 read here would turn the bars
+    /// dark for everyone who never asked for it.
     #[serde(default)]
-    pub menu_opacity: Option<u8>,
+    pub surface_opacity: Option<u8>,
 
     /// How many seconds two songs overlap when one ends on its own; 0 is off.
     ///
@@ -166,19 +166,17 @@ fn update(change: impl FnOnce(&mut Settings)) {
     }
 }
 
-/// How opaque the menus are when nobody has said otherwise.
+/// How opaque the surfaces are when nobody has said otherwise.
 ///
-/// Translucent, at the bottom of the range: this is the glass DESIGN.md is written
-/// around, and it was solid only while the packaged build shipped a dead blur — at
-/// 55% with nothing blurring it you could read the library straight through the
-/// settings panel. Now that the blur is back, the translucent surface is the safe
-/// one again, and the slider goes up from here for whoever wants it solid.
-pub const DEFAULT_MENU_OPACITY: u8 = 55;
+/// Frosted, with the picture still reading through it: the whole window is one
+/// material without anyone having to ask for it. Mirrors `SURFACE_OPACITY_DEFAULT`
+/// in `spotify.ts` and `--surface-alpha` in `index.css`.
+pub const DEFAULT_SURFACE_OPACITY: u8 = 32;
 
-/// The ends of the slider. The floor is where the blur stops turning what is
-/// behind a menu into a smear and starts letting it back into being text.
-pub const MENU_OPACITY_MIN: u8 = 55;
-pub const MENU_OPACITY_MAX: u8 = 100;
+/// The ends of the slider. The floor has to match `--surface-alpha` in
+/// `index.css`, which measures everything from it.
+pub const SURFACE_OPACITY_MIN: u8 = 6;
+pub const SURFACE_OPACITY_MAX: u8 = 100;
 
 /// Read the settings, or the defaults.
 ///
@@ -219,14 +217,14 @@ pub fn save_volume(volume: u16) {
     update(|settings| settings.volume = Some(volume));
 }
 
-/// Remember how opaque the menus should be. Clamped on the way in, because this
+/// Remember how opaque the surfaces should be. Clamped on the way in, because this
 /// value ends up in a CSS colour and a slider is only a suggestion.
-pub fn save_menu_opacity(opacity: u8) {
-    let opacity = opacity.clamp(MENU_OPACITY_MIN, MENU_OPACITY_MAX);
-    if load().menu_opacity == Some(opacity) {
+pub fn save_surface_opacity(opacity: u8) {
+    let opacity = opacity.clamp(SURFACE_OPACITY_MIN, SURFACE_OPACITY_MAX);
+    if load().surface_opacity == Some(opacity) {
         return;
     }
-    update(|settings| settings.menu_opacity = Some(opacity));
+    update(|settings| settings.surface_opacity = Some(opacity));
 }
 
 /// Remember the crossfade. Clamped on the way in, like the opacity: a slider
@@ -470,11 +468,11 @@ pub fn saved_volume() -> Option<u16> {
 }
 
 /// The chosen menu opacity, already clamped, or the default.
-pub fn saved_menu_opacity() -> u8 {
+pub fn saved_surface_opacity() -> u8 {
     load()
-        .menu_opacity
-        .unwrap_or(DEFAULT_MENU_OPACITY)
-        .clamp(MENU_OPACITY_MIN, MENU_OPACITY_MAX)
+        .surface_opacity
+        .unwrap_or(DEFAULT_SURFACE_OPACITY)
+        .clamp(SURFACE_OPACITY_MIN, SURFACE_OPACITY_MAX)
 }
 
 /// The darkest the picture can be drawn. Not 100: a black picture is the

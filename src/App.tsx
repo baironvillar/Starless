@@ -42,7 +42,7 @@ import {
   addToPlaylist,
   applyAccentColor,
   applyEffects,
-  applyMenuOpacity,
+  applySurfaceOpacity,
   applyTheme,
   createPlaylist as createPlaylistCall,
   DEFAULT_TRACK_LIST_PREFS,
@@ -69,7 +69,6 @@ import {
   listCount,
   loadBackground,
   MIN_LISTENED_MS,
-  menuOpacity,
   onDjVoice,
   onPlaybackStatus,
   PLAYLIST_STALE_MS,
@@ -91,6 +90,7 @@ import {
   setTrackOrder,
   setTrackView,
   sortPlaylists,
+  surfaceOpacity,
   type Track,
   type TrackListPrefs,
   togglePlayback,
@@ -656,9 +656,9 @@ export default function App() {
   // can appear before any of this screen's own buttons are reachable.
   useEffect(() => {
     let alive = true;
-    void menuOpacity()
+    void surfaceOpacity()
       .then((value) => {
-        if (alive) applyMenuOpacity(value);
+        if (alive) applySurfaceOpacity(value);
       })
       // Swallowed on purpose: a read that fails leaves the CSS default standing,
       // which is the opaque menu. Nothing here is worth an unhandled rejection in
@@ -2927,7 +2927,7 @@ export default function App() {
           className={
             MOBILE
               ? `fixed inset-x-3 top-[max(12px,env(safe-area-inset-top))] ${barPresent ? "bottom-[calc(max(12px,env(safe-area-inset-bottom))+144px)]" : "bottom-[calc(max(12px,env(safe-area-inset-bottom))+72px)]"} overflow-x-hidden overflow-y-auto transition-[bottom] duration-300 ease-[var(--ease-glass)]`
-              : `absolute top-[104px] ${barPresent ? "bottom-[144px]" : "bottom-5"} overflow-x-hidden overflow-y-auto pr-3 transition-[left,right,bottom] duration-300 ease-[var(--ease-glass)] ${
+              : `content-fade absolute top-[104px] ${barPresent ? "bottom-[144px]" : "bottom-5"} overflow-x-hidden overflow-y-auto pr-3 transition-[left,right,bottom] duration-300 ease-[var(--ease-glass)] ${
                   libraryOpen ? (railOnly ? "left-[112px]" : "left-[280px]") : "left-9"
                 } ${queueOpen ? "right-[280px]" : "right-9"}`
           }
@@ -3045,7 +3045,7 @@ export default function App() {
                 onAddToJam={onAddToJam}
               />
             ) : (
-              <p className="rounded-card border border-white/8 bg-white/4 px-5 py-6 text-center text-[13px] text-ink-faint">
+              <p className="surface-card rounded-card border border-white/8 px-5 py-6 text-center text-[13px] text-ink-faint">
                 {resultsLoading ? t.searching : (screenError ?? t.searchNoResults)}
               </p>
             )

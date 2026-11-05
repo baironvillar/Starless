@@ -108,7 +108,7 @@ export function PlaylistTrackList({
   }`;
 
   return (
-    <div className="overflow-hidden rounded-card border border-white/8 bg-white/4">
+    <div className="surface-card overflow-hidden rounded-card border border-white/8">
       <div
         className={`grid items-center gap-4 border-b border-white/8 px-4 py-2.5 ${MOBILE ? "hidden" : ""}`}
         style={{ gridTemplateColumns: columns }}

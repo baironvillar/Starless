@@ -940,7 +940,7 @@ en ningún proto ni en ninguna issue:
   repinta media ventana.** El slider de opacidad de los menús —en
   Personalización— era el único rango que quedaba en el `<input type="range">`
   nativo, así que el pulgar ya seguía al mouse exacto: **lo que lo volvía
-  lento era otra cosa**. Cada paso del arrastre escribía `--menu-alpha` en la
+  lento era otra cosa**. Cada paso del arrastre escribía la variable en la
   raíz, y **toda superficie de vidrio de la app la lee** —el panel de Ajustes,
   la cola, los popovers—: media ventana se repintaba por evento de puntero, y
   el valor además se guardaba en disco por paso. Un arrastre que repinta
@@ -972,6 +972,20 @@ en ningún proto ni en ninguna issue:
   Lo que se devuelve es **lo de la cuenta** (dónde estabas, qué estaba abierto,
   la cola); lo que se queda es **lo de la persona** (el idioma, el orden de la
   estantería, el vidrio): una preferencia no se la lleva cerrar sesión.
+- **`surface` no es `glass`, y la diferencia es lo que hay detrás.** `surface` es el
+  material de las barras, la cola y los accesos, y al 6% no desenfoca nada. Eso
+  sólo es seguro porque en el escritorio el contenido se detiene donde ellas
+  empiezan. **El fundido de `<main>` y el esmerilado no pueden estar juntos:** la
+  máscara del fundido es un *backdrop root*, y un `backdrop-filter` ahí adentro
+  —los accesos, las listas de canciones— nunca llega al fondo de la persona. Por
+  eso, por encima del 6%, `data-surface-frost` en la raíz le saca la máscara a
+  `<main>`. Sin ese atributo, la lista se ve nítida con las barras esmeriladas.
+  **Lo que flota encima de contenido se queda en `glass`**: la barra de pestañas y
+  el minirreproductor del teléfono, la tarjeta de inicio de sesión, los menús.
+  Pasar uno de esos a `surface` pone las filas que pasan por debajo en los mismos
+  píxeles que su propio texto. Por eso hay **un solo número** (`--surface-alpha`,
+  de 6 a 100) y los menús lo siguen desde 55: `--menu-alpha` es
+  `max(0.55, --surface-alpha)`. El piso de los menús no es una preferencia.
 - **Traer la ventana al frente se pide desde Rust, y en Windows el foco tiene
   precio.** Son tres cosas y las tres importan: `tao::set_focus` **no hace
   nada** si la ventana está minimizada (hay que `unminimize()` antes);

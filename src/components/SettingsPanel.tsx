@@ -42,7 +42,7 @@ import {
   applyAccentColor,
   applyBackgroundLook,
   applyEffects,
-  applyMenuOpacity,
+  applySurfaceOpacity,
   applyTheme,
   audioQuality,
   BACKGROUND_DIM_MAX,
@@ -58,12 +58,11 @@ import {
   explain,
   historyEnabled,
   historyKey,
-  MENU_OPACITY_DEFAULT,
-  MENU_OPACITY_MAX,
-  MENU_OPACITY_MIN,
-  menuOpacity,
   normalisation,
   pickBackground,
+  SURFACE_OPACITY_DEFAULT,
+  SURFACE_OPACITY_MAX,
+  SURFACE_OPACITY_MIN,
   saveBackgroundLook,
   theme as savedTheme,
   setAccentColor,
@@ -72,12 +71,13 @@ import {
   setCrossfadeSeconds,
   setEffect,
   setHistoryEnabled,
-  setMenuOpacity,
   setNormalisation,
   setStartWithWindows,
+  setSurfaceOpacity,
   setTheme,
   signOut,
   startWithWindows,
+  surfaceOpacity,
   type Theme,
   type Account as UserAccount,
   useBackground,
@@ -1054,11 +1054,11 @@ function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart })
 
   useEffect(() => {
     let alive = true;
-    void menuOpacity()
+    void surfaceOpacity()
       .then((value) => {
         if (alive) {
           setOpacity(value);
-          applyMenuOpacity(value);
+          applySurfaceOpacity(value);
         }
       })
       .catch(() => {
@@ -1066,7 +1066,7 @@ function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart })
         // slider *is* this section, and a slider that never leaves `…` reads as
         // "this does nothing" rather than "the read failed" — which is exactly
         // what happened under plain `vite`, where nothing answers `invoke`.
-        if (alive) setOpacity(MENU_OPACITY_DEFAULT);
+        if (alive) setOpacity(SURFACE_OPACITY_DEFAULT);
       });
     return () => {
       alive = false;
@@ -1085,8 +1085,8 @@ function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart })
    * Two answers, on purpose.
    *
    * **The number, the thumb and the legend answer while the hand moves; the
-   * menus wait.** The applied value is `--menu-alpha`, and every glass surface
-   * in the app reads it — the settings sheet itself, the queue, the popovers.
+   * surfaces wait.** The applied value is `--surface-alpha`, and every surface
+   * in the app reads it — the bars, the queue, the settings sheet, the popovers.
    * Moving it repaints all of them, so a drag that moves it repaints half the
    * window on every pointer event. That is what made this control feel heavy,
    * and a faster repaint is not the fix.
@@ -1100,8 +1100,8 @@ function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart })
     if (commitTimer.current !== null) window.clearTimeout(commitTimer.current);
     commitTimer.current = window.setTimeout(() => {
       commitTimer.current = null;
-      applyMenuOpacity(value);
-      void setMenuOpacity(value).catch(() => {});
+      applySurfaceOpacity(value);
+      void setSurfaceOpacity(value).catch(() => {});
     }, OPACITY_COMMIT_MS);
   };
 
@@ -1333,43 +1333,42 @@ function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart })
             thing they are the ends of.
         */}
         <Group span>
-          <Row label={t.menuOpacity} hint={t.menuOpacityHint}>
+          <Row label={t.surfaceOpacity} hint={t.surfaceOpacityHint}>
             <span className="flex items-center gap-3">
               <span className="min-w-[74px] text-right text-[12px] text-ink-faint tabular">
                 {opacity === null ? "…" : `${opacity}%`}
               </span>
               <span className="flex flex-col gap-1.5">
                 <SmoothSlider
-                  value={opacity ?? MENU_OPACITY_DEFAULT}
-                  min={MENU_OPACITY_MIN}
-                  max={MENU_OPACITY_MAX}
-                  step={5}
+                  value={opacity ?? SURFACE_OPACITY_DEFAULT}
+                  min={SURFACE_OPACITY_MIN}
+                  max={SURFACE_OPACITY_MAX}
+                  step={1}
                   disabled={opacity === null}
                   onChange={change}
-                  label={t.menuOpacity}
+                  label={t.surfaceOpacity}
                   className="w-[180px]"
                 />
                 <span className="flex justify-between text-[11.5px] text-ink-faint">
-                  <span>{t.menuOpacitySolid}</span>
-                  <span>{t.menuOpacityGlass}</span>
+                  <span>{t.surfaceOpacityClear}</span>
+                  <span>{t.surfaceOpacitySolid}</span>
                 </span>
               </span>
               {/*
                 The swatch is what makes this control legible while it is being
-                dragged. Every surface that actually reads the value is a popover
-                sitting outside the panel, and this one is an opaque sheet — so
-                without a legend right here the thumb moves and nothing answers.
+                dragged. The surfaces that read the value are behind this sheet,
+                so without a legend right here the thumb moves and nothing answers.
 
                 It reads its own alpha, not the one the menus read: the legend is
                 a gradient over a 46x28 box and can answer at pointer speed, while
-                `--menu-alpha` only moves once the hand stops.
+                `--surface-alpha` only moves once the hand stops.
               */}
               <span
                 aria-hidden="true"
-                className="menu-legend"
+                className="surface-legend"
                 style={
                   {
-                    "--legend-alpha": (opacity ?? MENU_OPACITY_DEFAULT) / 100,
+                    "--legend-alpha": (opacity ?? SURFACE_OPACITY_DEFAULT) / 100,
                   } as CSSProperties
                 }
               />

@@ -1825,14 +1825,14 @@ fn set_start_with_windows(on: bool) -> bool {
 
 /// How opaque the menus are, as a percentage. The default is opaque, not 55%.
 #[tauri::command]
-fn menu_opacity() -> u8 {
-    settings::saved_menu_opacity()
+fn surface_opacity() -> u8 {
+    settings::saved_surface_opacity()
 }
 
 /// Remember it. Clamped in `settings`, because the value lands in a CSS colour.
 #[tauri::command]
-fn set_menu_opacity(opacity: u8) {
-    settings::save_menu_opacity(opacity);
+fn set_surface_opacity(opacity: u8) {
+    settings::save_surface_opacity(opacity);
 }
 
 // --- Listening history (on this machine only) ------------------------------
@@ -2222,8 +2222,8 @@ pub fn run() {
             set_close_to_tray,
             start_with_windows,
             set_start_with_windows,
-            menu_opacity,
-            set_menu_opacity,
+            surface_opacity,
+            set_surface_opacity,
             crossfade_seconds,
             set_crossfade_seconds,
             record_play,
