@@ -1154,6 +1154,28 @@ export async function setAccentColor(color: string): Promise<void> {
 }
 
 /**
+ * Everything under Settings → Customisation back to what ships, the picture too.
+ *
+ * **One command and not one call per setting.** Each save reads and rewrites
+ * `settings.json`, so a row of them can overwrite each other; and it is the backend
+ * that knows which fields are customisation. Nothing is drawn until it answers: a
+ * reset that failed must not look like one that worked.
+ */
+export async function resetCustomisation(): Promise<void> {
+  if (hasBackend()) {
+    await invoke<void>("reset_customisation");
+  } else {
+    window.localStorage.removeItem(EFFECTS_KEY);
+    window.localStorage.removeItem(ACCENT_KEY);
+  }
+  applyTheme("dark");
+  applyAccentColor(null);
+  applySurfaceOpacity(SURFACE_OPACITY_DEFAULT);
+  applyEffects(EFFECTS_DEFAULT);
+  setBackgroundState(BACKGROUND_DEFAULT);
+}
+
+/**
  * Three variables, because one colour cannot stay one hex when it has to work
  * as a fill *and* as the label on top of that fill.
  *

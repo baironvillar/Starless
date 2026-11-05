@@ -60,6 +60,7 @@ import {
   historyKey,
   normalisation,
   pickBackground,
+  resetCustomisation,
   SURFACE_OPACITY_DEFAULT,
   SURFACE_OPACITY_MAX,
   SURFACE_OPACITY_MIN,
@@ -1051,6 +1052,11 @@ function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart })
   const [opacity, setOpacity] = useState<number | null>(null);
   const [accent, setAccent] = useState<string | null>(null);
   const commitTimer = useRef<number | null>(null);
+  const [resetStep, setResetStep] = useState<"idle" | "confirm" | "busy">("idle");
+  const [resetError, setResetError] = useState<string | null>(null);
+  // The controls under this key keep their own copy of what they show (the theme,
+  // the look of the picture), so after a reset they are drawn again and read it back.
+  const [resets, setResets] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -1103,6 +1109,26 @@ function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart })
       applySurfaceOpacity(value);
       void setSurfaceOpacity(value).catch(() => {});
     }, OPACITY_COMMIT_MS);
+  };
+
+  /**
+   * Two clicks, because this one takes something back: the picture is a file the
+   * person would have to go and find again. A write still waiting on the slider
+   * is cancelled first, or it would land on top of the reset.
+   */
+  const reset = () => {
+    if (commitTimer.current !== null) window.clearTimeout(commitTimer.current);
+    commitTimer.current = null;
+    setResetError(null);
+    setResetStep("busy");
+    void resetCustomisation()
+      .then(() => {
+        setOpacity(SURFACE_OPACITY_DEFAULT);
+        setAccent(null);
+        setResets((count) => count + 1);
+      })
+      .catch((e) => setResetError(explain(e)))
+      .finally(() => setResetStep("idle"));
   };
 
   // Same answer for the same reason: the panel is the preview of its own choice.
@@ -1392,7 +1418,7 @@ function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart })
 
   return (
     <div className="max-w-[1120px]">
-      <div className="not-has-[.setting-row]:hidden">
+      <div key={resets} className="not-has-[.setting-row]:hidden">
         {searching ? (
           CUSTOM_PARTS.map((part) => (
             <section key={part} className="not-has-[.setting-row]:hidden mb-8 last:mb-0">
@@ -1405,6 +1431,53 @@ function Custom({ t, part }: { t: Record<StringKey, string>; part: CustomPart })
         ) : (
           <div className="grid items-start gap-5 lg:grid-cols-2">{cards(part)}</div>
         )}
+      </div>
+      {/* Under the parts and not in one of them: it answers for all three. */}
+      <div className="mt-5">
+        <Group>
+          <Row
+            label={t.resetCustomisation}
+            hint={
+              resetError ??
+              (resetStep === "idle" ? t.resetCustomisationHint : t.resetCustomisationWarning)
+            }
+          >
+            <span className="flex items-center gap-2">
+              {resetStep === "idle" ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResetError(null);
+                    setResetStep("confirm");
+                  }}
+                  className="rounded-pill border border-white/14 bg-white/6 px-4 py-2 text-[13px] font-medium transition-colors duration-200 hover:bg-white/10"
+                >
+                  {t.resetCustomisationAction}
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    disabled={resetStep === "busy"}
+                    onClick={() => setResetStep("idle")}
+                    className="h-9 rounded-pill px-3 text-[13px] font-medium text-ink-muted transition-colors duration-200 hover:bg-white/10 hover:text-ink disabled:opacity-50"
+                  >
+                    {t.resetCustomisationCancel}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={resetStep === "busy"}
+                    onClick={reset}
+                    className="flex items-center gap-2 rounded-pill bg-accent px-4 py-2 text-[13px] font-semibold text-on-accent transition-opacity duration-200 disabled:opacity-50"
+                  >
+                    {resetStep === "busy" && <Loader2 className="size-4 animate-spin" />}
+                    {t.resetCustomisationConfirm}
+                  </button>
+                </>
+              )}
+            </span>
+          </Row>
+        </Group>
       </div>
     </div>
   );

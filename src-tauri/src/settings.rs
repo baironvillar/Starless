@@ -132,6 +132,26 @@ pub struct Settings {
     pub background_blur: Option<u8>,
 }
 
+/// Back to what ships: everything under Settings → Customisation, and nothing else.
+///
+/// **A new setting in that section has to be added here,** or the button that
+/// promises all of them quietly stops being true. The volume, the audio and the
+/// order of the library are how this person listens and reads, not how the app
+/// looks, so they stay. The picture is a file and not a field: the command that
+/// calls this removes it.
+fn clear_customisation(settings: &mut Settings) {
+    settings.theme = None;
+    settings.accent = None;
+    settings.surface_opacity = None;
+    settings.effects.clear();
+    settings.background_dim = None;
+    settings.background_blur = None;
+}
+
+pub fn reset_customisation() {
+    update(clear_customisation);
+}
+
 /// Low, normal and high: 96, 160 and 320 kbps.
 pub const AUDIO_QUALITIES: [&str; 3] = ["low", "normal", "high"];
 
@@ -575,9 +595,38 @@ pub fn saved_crossfade_seconds() -> u8 {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_hex_color, known_or_default, DEFAULT_LIBRARY_SORT, DEFAULT_TRACK_ORDER, EFFECTS,
-        LIBRARY_SORTS, LIBRARY_VIEWS, TRACK_ORDERS,
+        clear_customisation, is_hex_color, known_or_default, Settings, DEFAULT_LIBRARY_SORT,
+        DEFAULT_TRACK_ORDER, EFFECTS, LIBRARY_SORTS, LIBRARY_VIEWS, TRACK_ORDERS,
     };
+
+    /// The reset takes back how the app looks and leaves how the person listens.
+    #[test]
+    fn the_reset_only_takes_back_the_customisation() {
+        let mut settings = Settings {
+            theme: Some("light".into()),
+            accent: Some("#112233".into()),
+            surface_opacity: Some(80),
+            background_dim: Some(10),
+            background_blur: Some(90),
+            volume: Some(1234),
+            audio_quality: Some("low".into()),
+            library_sort: Some("name-desc".into()),
+            ..Default::default()
+        };
+        settings.effects.insert("grain".into(), "on".into());
+
+        clear_customisation(&mut settings);
+
+        assert!(settings.theme.is_none());
+        assert!(settings.accent.is_none());
+        assert!(settings.surface_opacity.is_none());
+        assert!(settings.effects.is_empty());
+        assert!(settings.background_dim.is_none());
+        assert!(settings.background_blur.is_none());
+        assert_eq!(settings.volume, Some(1234));
+        assert_eq!(settings.audio_quality.as_deref(), Some("low"));
+        assert_eq!(settings.library_sort.as_deref(), Some("name-desc"));
+    }
 
     /// The frontend reads the first value as the shipped one and switches on the
     /// rest, so every effect needs one, and no two effects can share a name.
