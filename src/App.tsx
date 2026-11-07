@@ -23,6 +23,7 @@ import { PlaylistScreen } from "./components/PlaylistScreen";
 import { QueuePanel } from "./components/QueuePanel";
 import { SearchScreen } from "./components/SearchScreen";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { SoloistDialog } from "./components/SoloistDialog";
 import { TopBar } from "./components/TopBar";
 import { TrackList } from "./components/TrackList";
 import { UpdateAlert } from "./components/UpdateAlert";
@@ -46,6 +47,7 @@ import {
   applyEffects,
   applySurfaceOpacity,
   applyTheme,
+  audioKeysRefused,
   type Background,
   createPlaylist as createPlaylistCall,
   DEFAULT_TRACK_LIST_PREFS,
@@ -73,8 +75,10 @@ import {
   listCount,
   loadBackground,
   MIN_LISTENED_MS,
+  onAudioKeys,
   onDjVoice,
   onPlaybackStatus,
+  onSoloistStatus,
   PLAYLIST_STALE_MS,
   type PlaybackStatus,
   type PlayContext,
@@ -86,6 +90,7 @@ import {
   radioStart,
   recordPlay,
   SESSION_ERRORS,
+  type SoloistStatus,
   theme as savedTheme,
   setEffect,
   setErrorLanguage,
@@ -93,6 +98,8 @@ import {
   setLibraryView,
   setTrackOrder,
   setTrackView,
+  soloistRemove,
+  soloistStatus,
   sortPlaylists,
   surfaceOpacity,
   type Track,
@@ -500,6 +507,59 @@ export default function App() {
    * → Diagnostics is one door to it; the sign-in screen is the other.
    */
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  /**
+   * Whether Spotify refuses this account its audio keys (`keycheck.rs`), and
+   * where Spotify Soloist —the way out— stands (`soloist.rs`).
+   *
+   * **Up here and not in a screen**, because three places read them: the
+   * warning that opens by itself after sign-in, the player that hits the
+   * refusal, and the Settings row.
+   */
+  const [keysRefused, setKeysRefused] = useState<boolean | null>(null);
+  const [soloist, setSoloist] = useState<SoloistStatus | null>(null);
+  const [soloistDialog, setSoloistDialog] = useState<"intro" | "steps" | null>(null);
+  /**
+   * "Not now" holds for the session: the warning does not come back on every
+   * render, only when the person presses play and meets the refusal again.
+   */
+  const soloistDismissed = useRef(false);
+
+  useEffect(() => {
+    let alive = true;
+    void audioKeysRefused()
+      .then((value) => {
+        if (alive) setKeysRefused(value);
+      })
+      .catch(() => {});
+    void soloistStatus()
+      .then((value) => {
+        if (alive && value) setSoloist(value);
+      })
+      .catch(() => {});
+    const offKeys = onAudioKeys((value) => {
+      setKeysRefused(value);
+      // A new account gets its own warning.
+      if (value === null) soloistDismissed.current = false;
+    });
+    const offSoloist = onSoloistStatus(setSoloist);
+    return () => {
+      alive = false;
+      void offKeys?.then((off) => off());
+      void offSoloist?.then((off) => off());
+    };
+  }, []);
+
+  /**
+   * **Said once, right after sign-in, while the person is still looking at the
+   * library** —not after they press play and watch nothing happen. Only when
+   * Soloist is not set up yet: an account that already set it up plays through
+   * it from the start, and the backend starts it by itself.
+   */
+  useEffect(() => {
+    if (keysRefused !== true || !soloist || soloistDismissed.current) return;
+    if (soloist.installed && soloist.has_key) return;
+    setSoloistDialog((current) => current ?? "intro");
+  }, [keysRefused, soloist]);
   /**
    * Where the "a page about something" surface is pointed, or `null`.
    *
@@ -1199,6 +1259,11 @@ export default function App() {
     const unlisten = onPlaybackStatus((next) => {
       heard = true;
       setStatus(next);
+      // Play met the refusal: the warning comes back, even after "not now".
+      // It is the one moment the person is asking for exactly what it offers.
+      if (next.error === "keys_refused") {
+        setSoloistDialog((current) => current ?? "intro");
+      }
     });
     // The listener is async, so the cleanup has to wait for it — returning a
     // promise from the effect would leave a dangling subscription behind.
@@ -3449,6 +3514,18 @@ export default function App() {
               onOpenFeedback={() => setFeedbackOpen(true)}
               onClose={() => setSettingsOpen(false)}
               onLangChange={setLang}
+              soloist={
+                keysRefused || soloist?.installed || soloist?.has_key
+                  ? {
+                      status: soloist,
+                      onSetup: () => setSoloistDialog("steps"),
+                      onRemove: () =>
+                        void soloistRemove()
+                          .then(setSoloist)
+                          .catch(() => {}),
+                    }
+                  : null
+              }
             />
           )}
         </AnimatePresence>
@@ -3519,6 +3596,19 @@ export default function App() {
           once someone signs in — and a notice that is not mounted yet cannot mark
           the Settings button the notice is pointing at. */}
       {!isMobile() && <UpdateAlert t={t} />}
+
+      {/* Spotify Soloist, the way out for an account whose keys are refused. */}
+      <SoloistDialog
+        t={t}
+        open={soloistDialog !== null}
+        mode={soloistDialog ?? "intro"}
+        status={soloist}
+        onSetup={() => setSoloistDialog("steps")}
+        onClose={() => {
+          soloistDismissed.current = true;
+          setSoloistDialog(null);
+        }}
+      />
     </div>
   );
 }

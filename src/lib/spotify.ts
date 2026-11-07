@@ -489,6 +489,71 @@ export function onPlaybackStatus(handler: (status: PlaybackStatus) => void): Pro
 }
 
 /**
+ * Whether Spotify refuses this account its audio keys: `true`, `false`, or
+ * `null` while it is not known (`keycheck.rs`).
+ *
+ * Asked once on mount and then heard as an event, because the check runs right
+ * after the session comes up and may finish before or after the window asks.
+ */
+export async function audioKeysRefused(): Promise<boolean | null> {
+  if (!hasBackend()) return null;
+  return invoke<boolean | null>("audio_keys_refused");
+}
+
+export function onAudioKeys(
+  handler: (refused: boolean | null) => void,
+): Promise<UnlistenFn> | null {
+  if (!hasBackend()) return null;
+  return listen<boolean | null>("playback://keys", (event) => handler(event.payload));
+}
+
+/**
+ * Spotify Soloist, the way out for an account whose keys are refused
+ * (`soloist.rs`, `docs/soloist.md`).
+ *
+ * **There is no key in here, ever.** The key goes to the backend once, through
+ * `soloistSetKey`, and what comes back is only whether there is one.
+ */
+export type SoloistStatus = {
+  installed: boolean;
+  version: string | null;
+  expires_in_days: number | null;
+  has_key: boolean;
+  running: boolean;
+  paired: boolean;
+  device_name: string;
+  error: string | null;
+};
+
+export async function soloistStatus(): Promise<SoloistStatus | null> {
+  if (!hasBackend()) return null;
+  return invoke<SoloistStatus>("soloist_status");
+}
+
+export function onSoloistStatus(
+  handler: (status: SoloistStatus) => void,
+): Promise<UnlistenFn> | null {
+  if (!hasBackend()) return null;
+  return listen<SoloistStatus>("soloist://status", (event) => handler(event.payload));
+}
+
+export async function soloistDownload(): Promise<SoloistStatus> {
+  return invoke<SoloistStatus>("soloist_download");
+}
+
+export async function soloistSetKey(key: string): Promise<SoloistStatus> {
+  return invoke<SoloistStatus>("soloist_set_key", { key });
+}
+
+export async function soloistStart(): Promise<SoloistStatus> {
+  return invoke<SoloistStatus>("soloist_start");
+}
+
+export async function soloistRemove(): Promise<SoloistStatus> {
+  return invoke<SoloistStatus>("soloist_remove");
+}
+
+/**
  * Subscribe to the DJ's voice.
  *
  * The event says that the DJ stopped talking —whether it was heard to the end
@@ -1899,6 +1964,12 @@ export const SESSION_ERRORS = new Set([
   "reconnecting",
   "audio_stalled",
   "audio_device_failed",
+  // Spotify refuses this account every key (`keycheck.rs`): every song fails
+  // the same way, so skipping would burn the queue blaming songs that are fine.
+  "keys_refused",
+  // Soloist went away under a song: the song is fine, the player is not.
+  "soloist_stopped",
+  "soloist_expired",
 ]);
 
 declare global {

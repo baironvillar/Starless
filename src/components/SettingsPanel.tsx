@@ -69,6 +69,7 @@ import {
   normalisation,
   pickBackground,
   resetCustomisation,
+  type SoloistStatus,
   SURFACE_OPACITY_DEFAULT,
   SURFACE_OPACITY_MAX,
   SURFACE_OPACITY_MIN,
@@ -130,6 +131,17 @@ type SettingsPanelProps = {
   onOpenFeedback: () => void;
   onClose: () => void;
   onLangChange: (lang: Lang) => void;
+  /**
+   * Spotify Soloist, when this account needs it or already has it set up
+   * (`docs/soloist.md`). `null` for everyone else, who never sees the row.
+   */
+  soloist?: SoloistSettings | null;
+};
+
+type SoloistSettings = {
+  status: SoloistStatus | null;
+  onSetup: () => void;
+  onRemove: () => void;
 };
 
 /**
@@ -559,6 +571,7 @@ export function SettingsPanel({
   onOpenFeedback,
   onClose,
   onLangChange,
+  soloist = null,
 }: SettingsPanelProps) {
   const [section, setSection] = useState<Section>("sectionGeneral");
   /**
@@ -805,7 +818,7 @@ export function SettingsPanel({
                 {section === "sectionGeneral" && (
                   <General t={t} lang={lang} onLangChange={onLangChange} />
                 )}
-                {section === "sectionAudio" && <Audio t={t} />}
+                {section === "sectionAudio" && <Audio t={t} soloist={soloist} />}
                 {section === "sectionAccount" && <Account t={t} account={account} />}
                 {section === "sectionCustom" && <Custom t={t} part={customPart} />}
                 {section === "sectionDiagnostics" && (
@@ -1126,7 +1139,13 @@ function Updates({ t }: { t: Record<StringKey, string> }) {
   );
 }
 
-function Audio({ t }: { t: Record<StringKey, string> }) {
+function Audio({
+  t,
+  soloist = null,
+}: {
+  t: Record<StringKey, string>;
+  soloist?: SoloistSettings | null;
+}) {
   const [crossfade, setCrossfade] = useState<number | null>(null);
 
   useEffect(() => {
@@ -1187,6 +1206,7 @@ function Audio({ t }: { t: Record<StringKey, string> }) {
 
   return (
     <div className="max-w-[620px]">
+      {soloist && <SoloistRow t={t} soloist={soloist} />}
       <Group>
         <Row label={t.audioQuality} hint={t.audioQualityHint}>
           <Select
@@ -2387,6 +2407,49 @@ function ChangelogGroup({ title, items }: { title: string; items: string[] }) {
  * `span` is for the card whose control is wider than half a column: it crosses
  * both columns instead of being squeezed into one.
  */
+/**
+ * Where Spotify Soloist stands, in one line, with the two things a person may
+ * want to do about it. **One health line and no more**: the setup lives in its
+ * own sheet, and this row is how a person who closed it finds it again.
+ */
+function SoloistRow({ t, soloist }: { t: Record<StringKey, string>; soloist: SoloistSettings }) {
+  const status = soloist.status;
+  const ready = status?.installed && status.has_key;
+  const days = String(status?.expires_in_days ?? "—");
+  const line =
+    status?.running && status.paired
+      ? t.soloistSettingsActive.replace("{days}", days)
+      : ready
+        ? t.soloistSettingsIdle
+        : t.soloistSettingsMissing;
+  return (
+    <div className="mb-4">
+      <Group>
+        <Row label={t.soloistSettingsTitle} hint={line}>
+          <span className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={soloist.onSetup}
+              className="h-8 rounded-pill bg-white/10 px-3 text-[13px] font-medium transition-colors duration-200 hover:bg-white/16"
+            >
+              {t.soloistSettingsSetup}
+            </button>
+            {ready && (
+              <button
+                type="button"
+                onClick={soloist.onRemove}
+                className="h-8 rounded-pill px-3 text-[13px] font-medium text-ink-muted transition-colors duration-200 hover:bg-white/8 hover:text-ink"
+              >
+                {t.soloistRemove}
+              </button>
+            )}
+          </span>
+        </Row>
+      </Group>
+    </div>
+  );
+}
+
 function Group({ children, span }: { children: React.ReactNode; span?: boolean }) {
   return (
     <div

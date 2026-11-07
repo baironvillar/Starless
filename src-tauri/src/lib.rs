@@ -15,6 +15,8 @@ mod background;
 mod beat;
 mod crossfade;
 mod history;
+mod keycheck;
+mod keyprobe;
 // Named `selftest`, never `diagnostic`: the `diagnostic` crate provides the
 // `#[diagnostic::on_unimplemented]` attribute that `#[tauri::command]` expands
 // to, and a local module of the same name shadows it at the crate root — which
@@ -27,6 +29,7 @@ mod playback;
 mod report;
 mod selftest;
 mod settings;
+mod soloist;
 mod spclient;
 mod startup;
 #[cfg(desktop)]
@@ -796,6 +799,13 @@ pub struct AuthStatus {
     pub detail: Option<String>,
 }
 
+/// Whether Spotify refuses this account its audio keys: `true`, `false`, or
+/// `null` while it is not known. See `keycheck.rs`.
+#[tauri::command]
+fn audio_keys_refused(state: State<keycheck::KeyCheckState>) -> Option<bool> {
+    state.refused()
+}
+
 #[tauri::command]
 fn auth_status(session_state: State<SessionState>) -> AuthStatus {
     let guard = match session_state.0.lock() {
@@ -920,6 +930,9 @@ async fn begin_login(
     }
 
     log::info!("login completo: session={}", status.signed_in);
+    // The new account gets its own verdict: the one before was about somebody
+    // else's keys.
+    keycheck::spawn(&app);
     Ok(status)
 }
 
@@ -938,6 +951,9 @@ fn sign_out(
         }
     }
     auth::forget_credentials()?;
+    keycheck::clear(&app);
+    // The key and the Connect pairing were the account's.
+    soloist::forget(&app);
 
     // Announce it. The webview used to find out by reloading the whole window, and
     // that reload is exactly what left stale library queries behind: it fired once
@@ -1668,7 +1684,13 @@ async fn update_playlist_details(
 /// The player's live state. Polled by the UI rather than pushed for volume and
 /// transport; only track and position changes are emitted, as `player://status`.
 #[tauri::command]
-fn player_status(state: State<PlaybackState>) -> PlaybackStatus {
+fn player_status(
+    state: State<PlaybackState>,
+    soloist_state: State<soloist::SoloistState>,
+) -> PlaybackStatus {
+    if soloist_state.active() {
+        return soloist_state.playback_status();
+    }
     state.status()
 }
 
@@ -1684,6 +1706,12 @@ async fn play_track(
     // sentido seguir diciendo se corta. Va antes de todo lo demás, y antes de
     // la espera: la frase está de más aunque la canción tarde en arrancar.
     voice::stop();
+
+    // **With Soloist playing, the song goes to Soloist** (`soloist.rs`): this
+    // account's keys are refused, and librespot's player does not exist.
+    if app.state::<soloist::SoloistState>().active() {
+        return soloist::play(&app, &track_id, position_ms.unwrap_or(0));
+    }
 
     // **The wait happens here and not on the main thread.** A click that arrives
     // before the handshake used to fail with "not signed in" —a lie, the user
@@ -1747,17 +1775,76 @@ async fn play_track(
 
 #[tauri::command]
 fn toggle_playback(app: tauri::AppHandle, state: State<PlaybackState>) -> Result<(), String> {
+    if app.state::<soloist::SoloistState>().active() {
+        return soloist::toggle(&app);
+    }
     playback::toggle(&app, &state)
 }
 
 #[tauri::command]
-fn seek_playback(state: State<PlaybackState>, position_ms: u32) -> Result<(), String> {
+fn seek_playback(app: AppHandle, state: State<PlaybackState>, position_ms: u32) -> Result<(), String> {
+    if app.state::<soloist::SoloistState>().active() {
+        return soloist::seek(&app, position_ms);
+    }
     playback::seek(&state, position_ms)
 }
 
 #[tauri::command]
-fn set_volume(state: State<PlaybackState>, volume: u16) {
+fn set_volume(app: AppHandle, state: State<PlaybackState>, volume: u16) {
+    if app.state::<soloist::SoloistState>().active() {
+        soloist::set_volume(&app, volume);
+        return;
+    }
     playback::set_volume(&state, volume);
+}
+
+// --- Spotify Soloist: the way out for an account whose keys are refused --------
+//
+// Everything here is offered only after `keycheck` found the account refused.
+// See `soloist.rs` and `docs/soloist.md`.
+
+/// What the setup sheet shows. Never carries the key.
+#[tauri::command]
+fn soloist_status(state: State<soloist::SoloistState>) -> soloist::SoloistStatus {
+    state.status()
+}
+
+/// Download Spotify's build, check its signature, put it in place.
+#[tauri::command]
+async fn soloist_download(app: AppHandle) -> Result<soloist::SoloistStatus, String> {
+    let owned = app.clone();
+    tauri::async_runtime::spawn_blocking(move || soloist::download(&owned))
+        .await
+        .map_err(|_| "command_failed".to_string())??;
+    Ok(app.state::<soloist::SoloistState>().status())
+}
+
+/// Take the person's key, store it, and prove it by starting Soloist with it.
+/// The key comes in here once and never goes back to the webview.
+#[tauri::command]
+async fn soloist_set_key(app: AppHandle, key: String) -> Result<soloist::SoloistStatus, String> {
+    let owned = app.clone();
+    tauri::async_runtime::spawn_blocking(move || soloist::set_key(&owned, &key))
+        .await
+        .map_err(|_| "command_failed".to_string())??;
+    Ok(app.state::<soloist::SoloistState>().status())
+}
+
+/// Start Soloist with what is already stored.
+#[tauri::command]
+async fn soloist_start(app: AppHandle) -> Result<soloist::SoloistStatus, String> {
+    let owned = app.clone();
+    tauri::async_runtime::spawn_blocking(move || soloist::start(&owned))
+        .await
+        .map_err(|_| "command_failed".to_string())??;
+    Ok(app.state::<soloist::SoloistState>().status())
+}
+
+/// Stop Soloist and forget the key and the pairing. The binary stays.
+#[tauri::command]
+fn soloist_remove(app: AppHandle) -> soloist::SoloistStatus {
+    soloist::forget(&app);
+    app.state::<soloist::SoloistState>().status()
 }
 
 /// What Windows shows on its media card, and whether the media keys answer.
@@ -2030,6 +2117,8 @@ pub fn run() {
         .manage(PlaybackState::default())
         .manage(DjState::default())
         .manage(RadioState::default())
+        .manage(keycheck::KeyCheckState::default())
+        .manage(soloist::SoloistState::default())
         .setup(|app| {
             // Before the log and the crash marker: on a phone they have no
             // folder until the app says where its sandbox is. See `paths`.
@@ -2077,6 +2166,9 @@ pub fn run() {
                             *guard = Some(session);
                         }
                     }
+                    // Whether Spotify hands this account its audio keys, known
+                    // before the first click (`keycheck.rs`).
+                    keycheck::spawn(&restore);
                 }
             });
 
@@ -2189,6 +2281,11 @@ pub fn run() {
             if spclient::jam_requested() {
                 spclient::run_jam_probe(handle.clone());
             }
+            // ¿Spotify niega la clave a la cuenta o al archivo? Ver `keyprobe`.
+            #[cfg(debug_assertions)]
+            if keyprobe::requested() {
+                keyprobe::run(handle.clone());
+            }
             if selftest::requested() {
                 selftest::run(handle);
             }
@@ -2196,6 +2293,12 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             auth_status,
+            audio_keys_refused,
+            soloist_status,
+            soloist_download,
+            soloist_set_key,
+            soloist_start,
+            soloist_remove,
             begin_login,
             sign_out,
             account,
@@ -2285,6 +2388,8 @@ pub fn run() {
     // prevented, so clearing the marker there would mark a crash as a clean exit.
     app.run(|_handle, event| {
         if matches!(event, tauri::RunEvent::Exit) {
+            // Soloist is a process of ours: it does not outlive the app.
+            soloist::stop(_handle);
             report::mark_session_end();
         }
     });

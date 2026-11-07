@@ -74,6 +74,8 @@ src-tauri/src/
   tray.rs                 el ícono de la bandeja y su menú
   startup.rs              "Iniciar con Windows": el valor en la clave Run
   report.rs               detección de crash, limpiado y envío
+  keycheck.rs             si Spotify le niega las claves de audio a la cuenta, preguntado al entrar
+  soloist.rs              Spotify Soloist para esas cuentas: descarga, clave, proceso y WebSocket
   settings.rs             lo que sobrevive a un reinicio
   logging.rs              el log local con rotación
 relay/                    el Worker que recibe los reportes y crea los issues
@@ -85,6 +87,7 @@ docs/jam.md               el protocolo de la sesión compartida, y cómo se supo
 docs/android.md           llevar la app a Android: lo que hay que medir antes
 docs/landing-i18n.md      los idiomas de la landing: dónde vive cada texto y cómo se agrega
 docs/landing-hosting.md   dónde se publica la landing (Vercel y Pages) y por qué cambia el `base`
+docs/soloist.md           la salida de emergencia para las cuentas sin claves: el plan con Soloist
 ```
 
 **Antes de tocar la creación de playlists, lee `docs/escribir-playlists.md`.** Es
@@ -156,6 +159,17 @@ en ningún proto ni en ninguna issue:
    permisos**: no hay una segunda identidad que pedir, y la única que hay no puede
    leer la biblioteca. Lo que se quita de la app al migrar se quita de verdad —
    `webapi.rs` y `token.rs` no existen, y no hay donde volver.
+   **La única excepción es la clave de Spotify Soloist**, decidida el 7 de
+   noviembre de 2026 ([`docs/soloist.md`](docs/soloist.md)). No es una segunda
+   identidad para leer: no toca la biblioteca ni reemplaza la sesión, sólo deja
+   que suene la cuenta a la que Spotify le niega las claves de audio. Por eso
+   tiene tres límites que no se aflojan: **se pide sólo a esa cuenta**, después
+   de comprobar que Spotify le niega las claves, y nunca a quien suena por
+   librespot; **es de la persona**, la genera ella en su panel y la app no
+   trae ni comparte una; y **no vuelve al webview**: entra una vez al backend,
+   se guarda en el Administrador de credenciales de Windows, y el frontend sólo
+   recibe "hay clave" o "no hay". Si alguna vez la clave de Soloist sirve para
+   algo más que reproducir, esta excepción deja de aplicar.
 
 8. **El asunto de un commit es `tipo(scope):` en inglés; el de una versión es la
    versión sola.** `fix(player): keep stale rows from painting the previous
@@ -371,6 +385,46 @@ en ningún proto ni en ninguna issue:
   `STARLESS_KILL_SESSION=1` la corta a propósito ocho segundos después de abrir
   la app (sólo en debug, como las sondas). Con la sesión muerta, un clic tiene
   que levantar la sesión nueva y poner la canción.
+- **Un `error audio key 0 1` con la sesión sana es Spotify negándole la clave a
+  la cuenta, y no hay formato que la salve.** Medido el 6 de noviembre de 2026
+  con una cuenta Premium (issue #104) que conecta, lee la biblioteca y no suena:
+  la sonda `STARLESS_SP_KEYS=1` (`keyprobe.rs`) pidió la clave de **los cuatro
+  formatos** —AAC_24 y OGG 96/160/320— de cinco canciones, por el mismo canal
+  que usa librespot, y volvieron **0 de 20**. La cuenta que sí suena, en la
+  misma máquina, con la misma build y el mismo client id, tiene los mismos
+  atributos (`type=premium`, `streaming=1`). Tampoco es el login: restaurada
+  desde la credencial guardada (`auth_type` 1) falla igual que recién logueada
+  con el token de OAuth. Es librespot #1649, abierto desde enero de 2026 y
+  repetido en todo cliente basado en librespot y en go-librespot. **Lo que
+  queda descartado:** otro formato, otra forma de login, otra cuenta del mismo
+  plan. **Lo que no se hace:** sacar la clave por el camino del cliente oficial
+  (PlayPlay o Widevine) es saltarse su DRM. Y hacer que suene el Spotify oficial
+  por Connect contradice para qué existe la app.
+- **Soloist toca librespot en una lista cerrada de lugares, y la lista vive
+  acá.** Casi todas las cuentas suenan por librespot y nunca ven Soloist; un
+  cambio en Soloist que se filtra a ese camino rompe a todas para arreglar a
+  unas pocas. Los puntos de contacto, todos en `lib.rs` salvo uno:
+  - **El desvío** al principio de `play_track`, `toggle_playback`,
+    `seek_playback`, `set_volume` y `player_status`: `if soloist.active()`.
+    `active()` exige corriendo **y** emparejado; el test
+    `a_soloist_that_is_not_paired_never_takes_the_playback` lo fija.
+  - **La comprobación de claves** (`keycheck::spawn`) en las dos puertas por
+    donde entra una sesión —la restauración y el login— y `keycheck::clear` al
+    cerrar sesión. **Corre para todas las cuentas**, así que un falso "bloqueada"
+    es el error más caro: sólo cuenta `AudioKeyError::AesKey`, porque librespot
+    archiva también `NotConnected` e `IoError` como `Unavailable`. Los tests de
+    `keycheck.rs` lo fijan, `a_dead_connection_is_not_a_refusal` primero.
+  - **Una rama en `playback.rs`** (el `Unavailable` del player): con la cuenta
+    bloqueada, el código es `keys_refused` y no `track_unavailable`. Pregunta
+    **después** de `is_invalid`, así que una conexión caída sigue siendo
+    `reconnecting`.
+  - **`soloist::forget` al cerrar sesión y `soloist::stop` al salir.** No hacen
+    nada si Soloist no corre.
+  - **En el frontend**, tres códigos en `SESSION_ERRORS` que una cuenta sana no
+    recibe nunca.
+  **Un punto de contacto nuevo se agrega a esta lista con su motivo**, o no va.
+  Y antes de un PR que toque cualquiera de ellos, la prueba con una cuenta que
+  suena, en [`reference/verificar.md`](.agent/skills/starless/reference/verificar.md).
 - **Dos `Cache` de librespot sobre el mismo directorio no se pisan**, pero el
   archivo de credenciales se escribe entero (`File::create`): la sesión que se
   acaba de conectar es la única que escribe, y la muerta no vuelve a escribir.
