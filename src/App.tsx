@@ -34,6 +34,7 @@ import {
   queueWithAdded,
   queueWithListAdded,
   rowPlace,
+  unshuffledQueue,
   upNextTracks,
 } from "./lib/queue";
 import {
@@ -156,6 +157,15 @@ type Queue = {
    * radio could not be seeded at all.
    */
   context: RadioContext | null;
+  /**
+   * The order the queue had before shuffle reordered it, while shuffle is on.
+   *
+   * **It lives in the queue and not beside it**, so a queue that replaces this
+   * one takes it away: playing another playlist under shuffle must not "restore"
+   * the order of the playlist before it. `unshuffledQueue` reads it when the
+   * switch goes off.
+   */
+  original?: Track[];
 };
 
 /**
@@ -938,8 +948,14 @@ export default function App() {
    * it is the rule applied to a list that is not the library. Playing something
    * from a search result has to make *those songs* the queue; otherwise "next"
    * jumps back into a playlist the user left twenty screens ago, which is exactly
-   * the drift described above. It is cleared whenever the user navigates somewhere
-   * that defines its own list.
+   * the drift described above.
+   *
+   * **It is not cleared by navigating.** It used to be: opening another playlist
+   * without playing it emptied the queue, and the song that was sounding was
+   * left with nothing behind it — the panel went blank and "next" walked into a
+   * playlist the user was only looking at. Opening is reading; the queue changes
+   * when the user plays something, which is what replaces it (`playFrom`,
+   * `playShuffled`). Only signing out clears it (`resetView`).
    *
    * **The override carries the DJ's line with it.** The line belongs to the
    * queue that brought it —it is what the DJ says before its own mix— so it
@@ -1330,6 +1346,8 @@ export default function App() {
       advancedRef.current = null;
       setLoadedTrack(track);
       setQueueOverride(shuffleFrom(tracks, track.id), context);
+      // El orden de la lista queda guardado: apagar el aleatorio lo devuelve.
+      setQueue((current) => (current ? { ...current, original: tracks } : current));
       // **La canción que empieza queda adelante.** El orden nuevo la pone
       // primero, y el lugar en la cola tiene que decir lo mismo.
       asked.current = track.id;
@@ -1681,6 +1699,9 @@ export default function App() {
               tracks: [...current.tracks, ...mix.tracks],
               source: "radio",
               context,
+              // La lista terminó y lo que sigue es la radio: ya no hay un orden
+              // de la lista al que volver si se apaga el aleatorio.
+              original: undefined,
             };
           });
           // **La primera parecida arranca en el lugar siguiente al de la
@@ -2021,19 +2042,46 @@ export default function App() {
    * turning it on produces an order that stays, which is what the panel can show
    * and what "shuffle" means in every client that has a queue panel.
    *
-   * Turning it *off* deliberately leaves the order alone. Restoring the original
-   * order would jump the song that is playing to wherever it sits in the list,
-   * which is an audible change nobody asked for.
+   * **Turning it off brings the order back.** It used to leave the shuffled order
+   * standing, on the reasoning that restoring it would make the song that is
+   * playing jump. It does not: the song keeps sounding, and only its place in the
+   * list changes, to the one it has in the playlist — so what comes next is what
+   * came after it there. Leaving the order shuffled made the switch a one-way
+   * door: off looked exactly like on, and on again only drew another order.
+   *
+   * **With nothing playing the switch only sets the mode.** There is no queue to
+   * reorder yet, and building one here put a shuffled run of the screen under
+   * "next up" that nobody had started — and that then stayed when the user
+   * opened another playlist. Pressing play under shuffle (`playShuffled`) is
+   * what decides the order.
    */
   const onToggleShuffle = useCallback(() => {
     const turningOn = !shuffle;
     setShuffle(turningOn);
-    if (!turningOn || visibleTracks.length < 2) return;
-    setQueueOverride(shuffleFrom(visibleTracks, status?.trackId ?? loadedTrack?.id ?? null));
+    const at = queueAtRef.current;
+    if (at < 0 || !queue) return;
+    if (!turningOn) {
+      if (!queue.original) return;
+      const edit = unshuffledQueue(queue.tracks, queue.original, at);
+      setQueue({ ...queue, tracks: edit.tracks, original: undefined });
+      moveTo(edit.at);
+      return;
+    }
+    if (queue.tracks.length < 2) return;
+    // **La cola cambia de orden, no de dueño.** El contexto de la radio, las
+    // frases del DJ y de dónde vino la canción siguen siendo los mismos: por eso
+    // no pasa por `setQueueOverride`, que es la puerta de una cola nueva.
+    const current = queue.tracks[at];
+    const rest = [...queue.tracks.slice(0, at), ...queue.tracks.slice(at + 1)];
+    setQueue({
+      ...queue,
+      tracks: current ? [current, ...shuffleFrom(rest)] : shuffleFrom(rest),
+      original: queue.tracks,
+    });
     // **El orden nuevo deja la canción que suena adelante**, así que el lugar
     // en la cola también es el primero.
     moveTo(0);
-  }, [shuffle, visibleTracks, status?.trackId, loadedTrack, setQueueOverride, moveTo]);
+  }, [shuffle, queue, moveTo]);
 
   /**
    * Ask once at startup whether there is a newer Starless.
@@ -2458,9 +2506,8 @@ export default function App() {
       }
       setActiveItem(id);
       setActive("navLibrary");
-      // A library list is its own queue again: the songs played from a
-      // search have nothing to do with the playlist they just opened.
-      setQueueOverride(null);
+      // **Opening a playlist is not playing it**, so the queue stays: see
+      // `visibleTracks`. It changes when a song of this playlist is played.
       setLyricsOpen(false);
       // Leaving an artist behind here would strand it: this click is
       // navigation, and the artist page is the thing it navigates away
@@ -2468,7 +2515,7 @@ export default function App() {
       setDetail(null);
       leaveResults();
     },
-    [orderedPlaylists, onPlayDj, setQueueOverride, leaveResults],
+    [orderedPlaylists, onPlayDj, leaveResults],
   );
 
   /**
@@ -2722,6 +2769,9 @@ export default function App() {
         lines: queue?.lines ?? {},
         source: queue?.source ?? "list",
         context: queue?.context ?? null,
+        // Lo agregado con el aleatorio puesto sobrevive a apagarlo: `unshuffledQueue`
+        // lo deja después de la que suena.
+        original: queue?.original,
       });
       moveTo(edit.at);
     },
@@ -2749,6 +2799,9 @@ export default function App() {
         lines: queue?.lines ?? {},
         source: queue?.source ?? "list",
         context: queue?.context ?? null,
+        // Lo agregado con el aleatorio puesto sobrevive a apagarlo: `unshuffledQueue`
+        // lo deja después de la que suena.
+        original: queue?.original,
       });
       moveTo(edit.at);
     },
@@ -3152,14 +3205,12 @@ export default function App() {
               onOpenLiked={() => {
                 setActiveItem("liked");
                 setActive("navLibrary");
-                setQueueOverride(null);
                 setLyricsOpen(false);
                 setDetail(null);
               }}
               onOpenPlaylist={(playlist) => {
                 setActiveItem(playlist.id);
                 setActive("navLibrary");
-                setQueueOverride(null);
                 setLyricsOpen(false);
                 setDetail(null);
               }}
@@ -3292,9 +3343,9 @@ export default function App() {
               loadingId={loadingId}
               failedId={failedId}
               // This list defines the queue, and it has to say so *here* as well
-              // as when the playlist was opened. `queueOverride` is only cleared
-              // on navigation, so playing a song inside the playlist already on
-              // screen used to leave the previous queue standing — open a shuffled
+              // and not only when the playlist was opened: opening one leaves the
+              // queue alone, so playing a song inside the playlist on screen is
+              // what replaces it. Before, it left the previous queue standing — open a shuffled
               // run from Home, click a song in "LoL", and the songs after it came
               // from the old list. The drift the queue design exists to prevent.
               onPlay={(track) => playFrom(libraryTracks, track, playlistContext)}

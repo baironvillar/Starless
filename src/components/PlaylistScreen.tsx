@@ -461,8 +461,19 @@ export function PlaylistScreen({
             aria-pressed={shuffle}
             whileTap={{ scale: 0.94 }}
             transition={SPRING}
+            /*
+              **The switch carries its own ground.** It sat bare on the person's
+              picture, and an icon is an SVG: the halo `.on-ground` gives text does
+              not reach it. Over a white picture with the glass turned low, a muted
+              grey stroke was barely there, and an accent stroke on white read as
+              neither on nor off. Off is the menu material with ink and a shadow
+              under the stroke; on is the accent filled, which reads at a glance
+              over any picture because its label colour is measured against it.
+            */
             className={`grid size-9 place-items-center rounded-pill transition-colors duration-200 disabled:opacity-40 ${
-              shuffle ? "text-accent-ink" : "text-ink-muted hover:text-ink"
+              shuffle
+                ? "bg-accent text-on-accent"
+                : "surface-menu text-ink [&>svg]:drop-shadow-[0_1px_1.5px_rgb(var(--glass-rgb)/0.6)]"
             }`}
           >
             <Shuffle className="size-5" strokeWidth={2} />
