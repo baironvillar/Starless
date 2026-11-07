@@ -669,15 +669,17 @@ fn bare_id(value: &str) -> String {
 
 /// The id and duration of a playback `item`.
 ///
-/// **The duration is nested, measured on Soloist 1.3.10.51:** the item is
-/// `{"uri": "spotify:track:…", "entity_type": "track", "decorations": {…},
-/// "playback": {"duration_ms": 242573}}`. Reading it at the top level, as a
-/// first guess did, left the bar at 0:00 with the position running.
+/// **The duration is inside `decorations`, measured on Soloist 1.3.10.51**
+/// from the raw WebSocket frame: the item's own keys are only `uri`,
+/// `entity_type` and `decorations`, and the duration sits next to the name and
+/// the cover — `item.decorations.playback.duration_ms`. Two guesses before this
+/// one (the top level, then `item.playback`) left the bar at 0:00 with the
+/// position running; the diagnostic lines in `handle_event` are what found it.
 fn read_item(item: &Value) -> (Option<String>, Option<u32>) {
     let id = item.get("uri").and_then(Value::as_str).map(bare_id);
     let duration = item
-        .pointer("/playback/duration_ms")
-        .or_else(|| item.get("duration_ms"))
+        .pointer("/decorations/playback/duration_ms")
+        .or_else(|| item.pointer("/playback/duration_ms"))
         .and_then(Value::as_u64)
         .map(|ms| ms as u32);
     (id, duration)
@@ -686,6 +688,16 @@ fn read_item(item: &Value) -> (Option<String>, Option<u32>) {
 fn handle_event(app: &AppHandle, event: &Value) {
     let Some(state) = app.try_state::<SoloistState>() else { return };
     let kind = event.get("type").and_then(Value::as_str).unwrap_or("");
+    // One line per song change: the id and the duration Starless read from
+    // it, never the name or anything else from the item. It is what found
+    // where Soloist keeps the duration (`read_item`), and what will say so if
+    // a new build moves it again.
+    if kind == "track_changed" {
+        if let Some(item) = event.get("item") {
+            let (id, duration) = read_item(item);
+            log::info!("soloist: suena {} ({:?} ms)", id.as_deref().unwrap_or("?"), duration);
+        }
+    }
     match kind {
         "auth_state" => {
             let paired = event.get("logged_in").and_then(Value::as_bool).unwrap_or(false);
@@ -732,11 +744,27 @@ fn handle_event(app: &AppHandle, event: &Value) {
                     }
                 }
             });
+            // **The duration comes with the full snapshot, not with the change.**
+            // Measured live: a song started from Starless left the bar at 0:00
+            // with the position running, because Soloist does not send a
+            // `playback_state` when a song starts — only the change events. So
+            // the snapshot is asked for every time the song changes.
+            let _ = send(app, json!({"type": "command", "command": "get_state"}));
             push_playback(app);
         }
         "playback_changed" => {
             if let Some(status) = event.get("status").and_then(Value::as_str) {
-                state.with(|inner| apply_status(&mut inner.playback, status));
+                let missing = state
+                    .with(|inner| {
+                        apply_status(&mut inner.playback, status);
+                        inner.playback.duration_ms == 0
+                    })
+                    .unwrap_or(false);
+                // The same song played again fires no `track_changed`, so a
+                // song that starts without a duration asks for the snapshot too.
+                if status == "playing" && missing {
+                    let _ = send(app, json!({"type": "command", "command": "get_state"}));
+                }
                 push_playback(app);
             }
         }
@@ -1094,13 +1122,18 @@ mod tests {
 
     #[test]
     fn the_duration_is_read_where_soloist_puts_it() {
-        // The item as Soloist 1.3.10.51 sends it, trimmed.
+        // The item as Soloist 1.3.10.51 sends it over the WebSocket, trimmed:
+        // the duration is a sibling of the name and the cover.
         let item = serde_json::json!({
-            "uri": "spotify:track:0fea68AdmYNygeTGI4RC18",
+            "uri": "spotify:track:7en0831Kv3C7qDh1kXhM9U",
             "entity_type": "track",
-            "playback": {"duration_ms": 242573, "content_ratings": []}
+            "decorations": {
+                "identity": {"name": "…"},
+                "creators": [],
+                "playback": {"duration_ms": 254000, "content_ratings": []}
+            }
         });
-        assert_eq!(read_item(&item), (Some("0fea68AdmYNygeTGI4RC18".to_string()), Some(242573)));
+        assert_eq!(read_item(&item), (Some("7en0831Kv3C7qDh1kXhM9U".to_string()), Some(254000)));
     }
 
     #[test]
