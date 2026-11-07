@@ -74,6 +74,8 @@ src-tauri/src/
   tray.rs                 el ícono de la bandeja y su menú
   startup.rs              "Iniciar con Windows": el valor en la clave Run
   report.rs               detección de crash, limpiado y envío
+  keycheck.rs             si Spotify le niega las claves de audio a la cuenta, preguntado al entrar
+  soloist.rs              Spotify Soloist para esas cuentas: descarga, clave, proceso y WebSocket
   settings.rs             lo que sobrevive a un reinicio
   logging.rs              el log local con rotación
 relay/                    el Worker que recibe los reportes y crea los issues
@@ -398,6 +400,31 @@ en ningún proto ni en ninguna issue:
   plan. **Lo que no se hace:** sacar la clave por el camino del cliente oficial
   (PlayPlay o Widevine) es saltarse su DRM. Y hacer que suene el Spotify oficial
   por Connect contradice para qué existe la app.
+- **Soloist toca librespot en una lista cerrada de lugares, y la lista vive
+  acá.** Casi todas las cuentas suenan por librespot y nunca ven Soloist; un
+  cambio en Soloist que se filtra a ese camino rompe a todas para arreglar a
+  unas pocas. Los puntos de contacto, todos en `lib.rs` salvo uno:
+  - **El desvío** al principio de `play_track`, `toggle_playback`,
+    `seek_playback`, `set_volume` y `player_status`: `if soloist.active()`.
+    `active()` exige corriendo **y** emparejado; el test
+    `a_soloist_that_is_not_paired_never_takes_the_playback` lo fija.
+  - **La comprobación de claves** (`keycheck::spawn`) en las dos puertas por
+    donde entra una sesión —la restauración y el login— y `keycheck::clear` al
+    cerrar sesión. **Corre para todas las cuentas**, así que un falso "bloqueada"
+    es el error más caro: sólo cuenta `AudioKeyError::AesKey`, porque librespot
+    archiva también `NotConnected` e `IoError` como `Unavailable`. Los tests de
+    `keycheck.rs` lo fijan, `a_dead_connection_is_not_a_refusal` primero.
+  - **Una rama en `playback.rs`** (el `Unavailable` del player): con la cuenta
+    bloqueada, el código es `keys_refused` y no `track_unavailable`. Pregunta
+    **después** de `is_invalid`, así que una conexión caída sigue siendo
+    `reconnecting`.
+  - **`soloist::forget` al cerrar sesión y `soloist::stop` al salir.** No hacen
+    nada si Soloist no corre.
+  - **En el frontend**, tres códigos en `SESSION_ERRORS` que una cuenta sana no
+    recibe nunca.
+  **Un punto de contacto nuevo se agrega a esta lista con su motivo**, o no va.
+  Y antes de un PR que toque cualquiera de ellos, la prueba con una cuenta que
+  suena, en [`reference/verificar.md`](.agent/skills/starless/reference/verificar.md).
 - **Dos `Cache` de librespot sobre el mismo directorio no se pisan**, pero el
   archivo de credenciales se escribe entero (`File::create`): la sesión que se
   acaba de conectar es la única que escribe, y la muerta no vuelve a escribir.

@@ -505,6 +505,50 @@ export const strings = {
     windowMaximize: "Maximizar",
     windowRestore: "Restaurar",
     windowClose: "Cerrar",
+    // Spotify Soloist: the way out for an account whose audio keys are refused
+    // (`docs/soloist.md`). The person reading this already pressed play and got
+    // nothing, so the first sentence clears them and the app before anything else.
+    keysRefusedTitle: "Spotify no entrega el audio de esta cuenta a Starless",
+    keysRefusedBody:
+      "No es tu suscripción ni la app: Spotify bloquea a algunas cuentas Premium en reproductores no oficiales. Puedes seguir escuchando con Spotify Soloist, el reproductor liviano de Spotify, y Starless lo maneja por ti.",
+    keysRefusedSetup: "Configurar Soloist",
+    keysRefusedLater: "Ahora no",
+    soloistTitle: "Escuchar con Spotify Soloist",
+    soloistIntro:
+      "Tres pasos, una sola vez. Después Starless lo arranca, lo mantiene al día y lo cierra contigo.",
+    soloistStep1Title: "Descargar Soloist",
+    soloistStep1Body:
+      "Se baja de los servidores de Spotify, y Starless comprueba que esté firmado por Spotify antes de usarlo.",
+    soloistDownload: "Descargar",
+    soloistDownloading: "Descargando…",
+    soloistDownloaded: "Versión {version} · vence en {days} días",
+    soloistDownloadedNoVersion: "Descargado · vence en {days} días",
+    soloistDownloadsPage: "Página de descargas de Spotify",
+    soloistStep2Title: "Tu clave personal",
+    soloistStep2Body:
+      "Spotify pide que cada persona genere la suya. Abre la página, entra con esta misma cuenta, genera la clave y cópiala.",
+    soloistOpenKeyPage: "Abrir la página de la clave",
+    soloistKeyPlaceholder: "Pega tu clave aquí",
+    soloistKeyCheck: "Comprobar",
+    soloistKeyChecking: "Comprobando con Spotify…",
+    soloistKeyOk: "Clave aceptada",
+    soloistKeyPrivate:
+      "La clave se guarda en el Administrador de credenciales de Windows y no sale de esta computadora.",
+    soloistStep3Title: "Emparejar una vez",
+    soloistStep3Body:
+      "Abre Spotify en tu celular, conectado al mismo Wi-Fi que esta computadora, pon cualquier canción y elige este dispositivo en la lista:",
+    soloistWaiting: "Esperando a que lo elijas…",
+    soloistWaitingLong:
+      "Todavía no llega. Comprueba que el celular y la computadora estén en la misma red: un Wi-Fi de invitados o de oficina suele aislar los dispositivos.",
+    soloistPaired: "Emparejado",
+    soloistDone: "Listo. Starless reproduce con Spotify Soloist.",
+    soloistClose: "Cerrar",
+    soloistSettingsTitle: "Spotify Soloist",
+    soloistSettingsActive: "Reproduciendo con Soloist · vence en {days} días",
+    soloistSettingsIdle: "Configurado, pero no está corriendo",
+    soloistSettingsMissing: "Esta cuenta necesita Soloist para sonar",
+    soloistSettingsSetup: "Configurar",
+    soloistRemove: "Quitar",
   },
   en: {
     searchPlaceholder: "Songs",
@@ -984,6 +1028,47 @@ export const strings = {
     windowMaximize: "Maximise",
     windowRestore: "Restore",
     windowClose: "Close",
+    keysRefusedTitle: "Spotify won't send this account's audio to Starless",
+    keysRefusedBody:
+      "It isn't your subscription or the app: Spotify blocks some Premium accounts in unofficial players. You can keep listening with Spotify Soloist, Spotify's lightweight player, and Starless runs it for you.",
+    keysRefusedSetup: "Set up Soloist",
+    keysRefusedLater: "Not now",
+    soloistTitle: "Listen with Spotify Soloist",
+    soloistIntro:
+      "Three steps, once. After that Starless starts it, keeps it up to date and closes it with you.",
+    soloistStep1Title: "Download Soloist",
+    soloistStep1Body:
+      "It comes from Spotify's servers, and Starless checks that Spotify signed it before using it.",
+    soloistDownload: "Download",
+    soloistDownloading: "Downloading…",
+    soloistDownloaded: "Version {version} · expires in {days} days",
+    soloistDownloadedNoVersion: "Downloaded · expires in {days} days",
+    soloistDownloadsPage: "Spotify's downloads page",
+    soloistStep2Title: "Your personal key",
+    soloistStep2Body:
+      "Spotify asks everyone to make their own. Open the page, sign in with this same account, generate the key and copy it.",
+    soloistOpenKeyPage: "Open the key page",
+    soloistKeyPlaceholder: "Paste your key here",
+    soloistKeyCheck: "Check",
+    soloistKeyChecking: "Checking with Spotify…",
+    soloistKeyOk: "Key accepted",
+    soloistKeyPrivate:
+      "The key is kept in Windows Credential Manager and never leaves this computer.",
+    soloistStep3Title: "Pair it once",
+    soloistStep3Body:
+      "Open Spotify on your phone, on the same Wi-Fi as this computer, play any song and pick this device from the list:",
+    soloistWaiting: "Waiting for you to pick it…",
+    soloistWaitingLong:
+      "Nothing yet. Make sure the phone and the computer are on the same network: guest and office Wi-Fi often keep devices apart.",
+    soloistPaired: "Paired",
+    soloistDone: "Done. Starless now plays through Spotify Soloist.",
+    soloistClose: "Close",
+    soloistSettingsTitle: "Spotify Soloist",
+    soloistSettingsActive: "Playing through Soloist · expires in {days} days",
+    soloistSettingsIdle: "Set up, but not running",
+    soloistSettingsMissing: "This account needs Soloist to play",
+    soloistSettingsSetup: "Set up",
+    soloistRemove: "Remove",
   },
 } satisfies Record<Lang, Record<string, string>>;
 
@@ -1084,6 +1169,24 @@ const errorsEs = {
   // the raw code on screen. They are the two the playlist commands can answer.
   bad_id: "Ese identificador no es válido.",
   no_session: "La sesión no está lista. Inténtalo de nuevo.",
+  // Spotify Soloist and the refused keys (`keycheck.rs`, `soloist.rs`).
+  keys_refused: "Spotify no entrega el audio de esta cuenta. Configura Soloist para escuchar.",
+  soloist_download_failed:
+    "No se pudo descargar Soloist de Spotify. Revisa la conexión y prueba otra vez.",
+  soloist_bad_archive: "Lo que bajó de Spotify no es el archivo que se esperaba.",
+  soloist_unsigned:
+    "El archivo descargado no está firmado por Spotify, así que Starless no lo usa.",
+  soloist_key_invalid: "Eso no parece una clave. Pégala tal como la copiaste.",
+  soloist_key_refused:
+    "Spotify rechazó esa clave. Comprueba que la generaste con esta misma cuenta.",
+  soloist_key_store_failed: "Windows no dejó guardar la clave.",
+  soloist_start_failed: "Soloist no arrancó.",
+  soloist_expired: "Esta versión de Soloist venció. Descarga la nueva.",
+  soloist_stopped: "Soloist se cerró. Ábrelo de nuevo desde Ajustes.",
+  soloist_not_installed: "Soloist todavía no está descargado.",
+  soloist_no_key: "Falta tu clave de Soloist.",
+  soloist_no_dir: "No hay dónde guardar Soloist en esta computadora.",
+  soloist_unsupported: "Soloist todavía no está disponible en este sistema.",
 };
 
 /**
@@ -1128,5 +1231,21 @@ export const errors: Record<Lang, Record<keyof typeof errorsEs, string>> = {
     empty_name: "The playlist needs a name.",
     bad_id: "That identifier isn't valid.",
     no_session: "The session isn't ready. Try again.",
+    keys_refused: "Spotify won't send this account's audio. Set up Soloist to listen.",
+    soloist_download_failed:
+      "Couldn't download Soloist from Spotify. Check the connection and try again.",
+    soloist_bad_archive: "What came from Spotify isn't the file that was expected.",
+    soloist_unsigned: "The downloaded file isn't signed by Spotify, so Starless won't use it.",
+    soloist_key_invalid: "That doesn't look like a key. Paste it exactly as you copied it.",
+    soloist_key_refused:
+      "Spotify refused that key. Make sure you generated it with this same account.",
+    soloist_key_store_failed: "Windows wouldn't store the key.",
+    soloist_start_failed: "Soloist didn't start.",
+    soloist_expired: "This Soloist version has expired. Download the new one.",
+    soloist_stopped: "Soloist closed. Start it again from Settings.",
+    soloist_not_installed: "Soloist isn't downloaded yet.",
+    soloist_no_key: "Your Soloist key is missing.",
+    soloist_no_dir: "There's nowhere to keep Soloist on this computer.",
+    soloist_unsupported: "Soloist isn't available on this system yet.",
   },
 };
