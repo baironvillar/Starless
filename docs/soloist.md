@@ -171,8 +171,9 @@ pisar con lo que dice su cola.
 ## Lo que se pierde con Soloist, dicho de frente
 
 - **La voz del DJ**: sale por el sink propio de Starless (`voice.rs`), que con
-  Soloist no existe. Opciones: abrir un stream propio sólo mientras Soloist está
-  en pausa, o apagar la voz y dejar el DJ como lista. **Hay que decidir.**
+  Soloist no existe. **Decidido: se adapta a Soloist, pero en un arreglo
+  posterior.** La primera versión de Soloist sale con el DJ como lista, sin voz,
+  y la voz vuelve cuando se adapte (ver el punto 2 de abajo).
 - **El crossfade, la normalización y la calidad**: Soloist no tiene opciones
   para eso.
 - **Lo que necesita el audio**: cualquier cosa que lea las muestras (`beat.rs`)
@@ -187,7 +188,14 @@ pisar con lo que dice su cola.
    excepción**, y la regla en `AGENTS.md` ya la escribe con sus tres límites:
    la clave se pide sólo a la cuenta a la que Spotify le niega las claves, es de
    la persona (la app no trae ni comparte una), y nunca vuelve al webview.
-2. **La voz del DJ con Soloist**: stream propio en las pausas, o sin voz.
+2. ~~**La voz del DJ con Soloist.**~~ **Decidido el 7 de noviembre de 2026:
+   la voz se adapta a Soloist, pero no en la primera versión.** Soloist sale con
+   el DJ como lista, y la voz es un arreglo aparte que viene después: no frena
+   el resto del plan. El camino más corto sigue siendo el que ya estaba sobre
+   la mesa —un stream propio de Starless que se abre sólo mientras Soloist está
+   en pausa, que es justo cuando el DJ habla—, pero se decide y se mide en ese
+   arreglo, no ahora. Mientras tanto, con Soloist el DJ no dice nada, y la app
+   no finge que lo va a decir: la frase no se muestra como si fuera a sonar.
 3. **Si la comprobación del login pide una clave real.** Es un pedido más a
    Spotify por arranque, desde la cuenta de la persona. Es lo mismo que hace un
    play, pero hecho sin un clic.
