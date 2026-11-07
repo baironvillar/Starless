@@ -15,6 +15,7 @@ mod background;
 mod beat;
 mod crossfade;
 mod history;
+mod keyprobe;
 // Named `selftest`, never `diagnostic`: the `diagnostic` crate provides the
 // `#[diagnostic::on_unimplemented]` attribute that `#[tauri::command]` expands
 // to, and a local module of the same name shadows it at the crate root — which
@@ -2188,6 +2189,11 @@ pub fn run() {
             #[cfg(debug_assertions)]
             if spclient::jam_requested() {
                 spclient::run_jam_probe(handle.clone());
+            }
+            // ¿Spotify niega la clave a la cuenta o al archivo? Ver `keyprobe`.
+            #[cfg(debug_assertions)]
+            if keyprobe::requested() {
+                keyprobe::run(handle.clone());
             }
             if selftest::requested() {
                 selftest::run(handle);
