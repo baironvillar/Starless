@@ -713,6 +713,23 @@ fn forward_events(app: AppHandle, player: Arc<Player>, generation: u32) {
                         // it is a connection that has to be rebuilt. The track
                         // that failed goes back on when it is up.
                         schedule_reconnect(&app, track_id, state.status().real_duration_ms);
+                    } else if app
+                        .try_state::<crate::keycheck::KeyCheckState>()
+                        .and_then(|state| state.refused())
+                        == Some(true)
+                    {
+                        // **Not the song: the account.** Spotify refuses this
+                        // account every key (`keycheck.rs`), so every song fails
+                        // the same way, and skipping would burn the whole queue
+                        // reporting songs as broken. The code says what is true,
+                        // and the frontend does not skip on it (`SESSION_ERRORS`).
+                        log::error!("[keys_refused] {track_id}: Spotify le niega la clave a la cuenta");
+                        player.stop();
+                        state.mutate(|s| {
+                            s.playing = false;
+                            s.loading = false;
+                            s.error = Some("keys_refused".into());
+                        });
                     } else {
                         log::error!("[track_unavailable] {track_id}");
                         state.mutate(|s| {

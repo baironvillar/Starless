@@ -1,7 +1,35 @@
 # Soloist: la salida de emergencia para las cuentas sin claves
 
-Plan, no implementación. Escrito el 7 de noviembre de 2026, después de la issue
-#104. Lo que dice "medido" se midió; lo que dice "hay que medir" todavía no.
+Escrito el 7 de noviembre de 2026, después de la issue #104. Lo que dice
+"medido" se midió; lo que dice "hay que medir" todavía no.
+
+## Estado
+
+**Implementado** en `feat/soloist-fallback`, sin probar todavía contra un
+Soloist real:
+
+- `keycheck.rs`: pide **una** clave al conectar la sesión (en la restauración y
+  en el login) y emite `playback://keys`. Sólo una negativa cuenta; un timeout o
+  una biblioteca vacía dejan el veredicto en `null`. Con la cuenta bloqueada, un
+  `Unavailable` de librespot se reporta como `keys_refused` y no como
+  `track_unavailable`, y el frontend no salta de canción (`SESSION_ERRORS`).
+- `soloist.rs`: la descarga desde el CDN de Spotify con la firma de Authenticode
+  comprobada **antes de ejecutar nada** (el firmante tiene que empezar por
+  "Spotify"), la clave en el Administrador de credenciales, el proceso con
+  `--ws 127.0.0.1:0`, y el cliente WebSocket que traduce los eventos al mismo
+  `PlaybackStatus` que el frontend ya lee. Los comandos `play_track`,
+  `toggle_playback`, `seek_playback`, `set_volume` y `player_status` se desvían a
+  Soloist cuando está corriendo y emparejado.
+- `SoloistDialog.tsx`: el aviso y la hoja de tres pasos; una fila en Ajustes →
+  Audio.
+
+**Supuesto, a confirmar con la primera prueba real** (está marcado en el código):
+
+- Una clave rechazada hace salir a Soloist con `1` antes de abrir el WebSocket.
+- El `item` de `playback_state` trae `uri` y `duration_ms`.
+- El final de una canción se ve como `track_changed` a otra o como `idle`.
+- `--version` trae una fecha `YYYY-MM-DD`; si no, la caducidad se cuenta desde la
+  descarga, que sólo puede hacerla parecer más tarde de lo que es.
 
 ## Por qué existe
 

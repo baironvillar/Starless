@@ -73,6 +73,11 @@ dirs = "6"
 # when no signing token is compiled in.
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json"] }
 urlencoding = "2"
+# Spotify Soloist (`soloist.rs`): unpacking Spotify's build and talking to its
+# local WebSocket. Both are already in the tree —`zip` through the updater,
+# `tungstenite` through librespot's dealer— so naming them costs no new crates.
+zip = { version = "4", default-features = false, features = ["deflate"] }
+tungstenite = { version = "0.28", default-features = false, features = ["handshake"] }
 # Scrubbing a log before it leaves the machine. Already in the tree through Tauri,
 # so naming it directly costs no extra build time.
 regex = "1"
@@ -92,6 +97,12 @@ windows = { version = "0.62", features = [
     "Media",
     "Media_Playback",
     "Storage_Streams",
+    "Win32_Foundation",
+    "Win32_Security_Credentials",
+    "Win32_Security_Cryptography",
+    "Win32_Security_Cryptography_Catalog",
+    "Win32_Security_Cryptography_Sip",
+    "Win32_Security_WinTrust",
     "Win32_System_Diagnostics_Debug",
     "Win32_System_Kernel",
     "Win32_System_Registry",
