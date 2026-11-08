@@ -104,6 +104,7 @@ import {
   pendingVersion,
   prereleaseState,
   prereleaseVersion,
+  refreshUpdateIfStale,
   subscribePrerelease,
   subscribeUpdate,
   updateState,
@@ -1057,6 +1058,12 @@ function General({
  */
 function Updates({ t }: { t: Record<StringKey, string> }) {
   const state = useSyncExternalStore(subscribeUpdate, updateState, updateState);
+  // Opening Settings is the moment someone looks at this row, so it is the
+  // moment the answer has to be current: an answer from days ago offered the
+  // door back to the old public release after a newer one was out.
+  useEffect(() => {
+    refreshUpdateIfStale();
+  }, []);
   const update = installableUpdate(state);
   const version = pendingVersion(state);
   const simulated = state.status === "simulated";
