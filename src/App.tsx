@@ -2162,7 +2162,16 @@ export default function App() {
     // date", which is the silence `AGENTS.md` warns about.
     if (isMobile()) return;
     const id = setTimeout(() => void checkForUpdate(), 2500);
-    return () => clearTimeout(id);
+    // **And again every few hours, quietly.** The app lives in the tray for
+    // days, so a check made only at launch goes stale: a release published
+    // while it was open never reached the badge, and the Settings row kept
+    // offering whatever it found that morning. One small request every six
+    // hours downloads nothing and does not change the rule above.
+    const every = setInterval(() => void checkForUpdate({ quiet: true }), 6 * 60 * 60 * 1000);
+    return () => {
+      clearTimeout(id);
+      clearInterval(every);
+    };
   }, []);
 
   const mainRef = useRef<HTMLElement | null>(null);
