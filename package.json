@@ -42,7 +42,7 @@
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
-    "@baironvillar/star": "github:baironvillar/star#d7ab65cf8d83",
+    "@baironvillar/star": "github:baironvillar/star#v0.5.0",
     "@biomejs/biome": "^2.5.15",
     "@tauri-apps/cli": "^2",
     "@types/react": "^19.1.8",
