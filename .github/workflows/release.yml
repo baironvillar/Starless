@@ -30,54 +30,16 @@ jobs:
   # package.json: lint, tipos, tests y `cargo test`). En Windows y con Rust,
   # porque `cargo test` compila el crate de la app.
   verify:
-    uses: baironvillar/star/.github/workflows/verify.yml@v0.5.0
+    uses: baironvillar/star/.github/workflows/verify.yml@v0.5.1
     with:
       runs-on: windows-latest
       rust: true
 
-  # **El MSI no acepta el número de una beta.** WiX sólo admite una versión
-  # numérica (`mayor.menor.parche.build`), y `0.7.0-beta.1` hace fallar el
-  # empaquetado después de diez minutos de compilar: le pasó a la primera
-  # beta hecha con star. Tauri deja darle al MSI su propio número
-  # (`bundle.windows.wix.version`), así que una beta lleva el número de la
-  # versión con la beta como cuarto campo: `0.7.0-beta.1` → `0.7.0.1`. El
-  # número de la app, el del tag y el de `latest.json` siguen siendo
-  # `0.7.0-beta.1`: esto sólo toca el instalador. Windows compara los tres
-  # primeros campos, así que dos betas y la final son "la misma versión" para
-  # el MSI; con `allowDowngrades` (que Tauri trae en `true`) se instalan igual.
-  #
-  # Este job arma también el resto de los `args` de una beta —el ícono de
-  # desarrollo— porque una expresión de Actions no puede partir un texto.
-  installer:
-    needs: verify
-    runs-on: ubuntu-latest
-    outputs:
-      args: ${{ steps.args.outputs.args }}
-    steps:
-      - id: args
-        env:
-          VERSION: ${{ needs.verify.outputs.version }}
-        run: |
-          base="${VERSION%%-*}"
-          if [ "$base" = "$VERSION" ]; then
-            echo "args=" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          beta="${VERSION##*.}"
-          case "$beta" in
-            ''|*[!0-9]*)
-              echo "::error::${VERSION}: el MSI necesita que la beta termine en un número"
-              exit 1
-              ;;
-          esac
-          config="{\"bundle\":{\"windows\":{\"wix\":{\"version\":\"${base}.${beta}\"}}}}"
-          echo "args=--config src-tauri/tauri.dev.conf.json --config '${config}'" >> "$GITHUB_OUTPUT"
-
   release:
-    needs: [verify, installer]
+    needs: verify
     permissions:
       contents: write
-    uses: baironvillar/star/.github/workflows/tauri-release.yml@v0.5.0
+    uses: baironvillar/star/.github/workflows/tauri-release.yml@v0.5.1
     with:
       version: ${{ needs.verify.outputs.version }}
       # Sólo Windows: el bundle es `msi`, y Starless no se publica para Linux.
@@ -89,9 +51,11 @@ jobs:
       asset-name-pattern: "[name]_[version]_x64[ext]"
       # Una beta (0.7.0-beta.1) es una prerelease, que la app instalada no ve.
       # Lleva el ícono de desarrollo, el mismo que usa `bun run app`, para que
-      # una beta instalada no se vea igual que la app de verdad. Y lleva el
-      # número del MSI que arma el job `installer`.
-      args: ${{ needs.installer.outputs.args }}
+      # una beta instalada no se vea igual que la app de verdad. El número que
+      # acepta el MSI (`0.7.0-beta.1` → `0.7.0.1`, porque WiX sólo admite
+      # versiones numéricas) lo agrega star desde la 0.5.1: le pasó a la
+      # primera beta, que falló al empaquetar.
+      args: ${{ needs.verify.outputs.prerelease == 'true' && '--config src-tauri/tauri.dev.conf.json' || '' }}
       # - STARLESS_CHANNEL: lo que la app muestra al lado de la versión en
       #   Ajustes. Sale del sufijo de la versión, igual que la prerelease.
       # - STARLESS_REPORT_RELAY: la dirección del relay (`relay/`). No es un
@@ -101,14 +65,7 @@ jobs:
       #   pública es la misma build que está corriendo. Ver `BUILD_COMMIT` en
       #   `src-tauri/src/lib.rs`. Es el del commit y no el del tag anotado:
       #   star lo pela.
-      #
-      # **`|-` y no `|`.** Con `|` el valor termina en un salto de línea, y el
-      # paso de star que copia estas líneas a `GITHUB_ENV` lee una última línea
-      # vacía: su `[ -n "$line" ] && …` devuelve 1, el bucle sale con 1 y,
-      # con `-e -o pipefail`, el paso entero falla antes de compilar. Le pasó al
-      # primer tag hecho con star, el v0.7.0: la release quedó en borrador sin
-      # instalador ni `latest.json`.
-      build-env: |-
+      build-env: |
         STARLESS_CHANNEL=${{ needs.verify.outputs.prerelease == 'true' && 'develop' || 'release' }}
         STARLESS_REPORT_RELAY=${{ vars.STARLESS_REPORT_RELAY }}
         STARLESS_COMMIT=${{ needs.verify.outputs.commit }}
