@@ -1076,6 +1076,17 @@ function Updates({ t }: { t: Record<StringKey, string> }) {
   const sameNumber = update ? update.version === update.currentVersion : false;
   const backHint = sameNumber ? t.updateGoBackSame : t.updateGoBack;
   const backLabel = sameNumber ? t.updateGoBackSameShort : t.updateGoBackShort;
+  // **An update on screen is an answer, and an answer can be old or wrong.**
+  // With one showing, the "check" button was not drawn, so a row stuck on the
+  // door back to 0.5.5 after 0.6.0 came out had no way to be asked again: the
+  // only path to the new release went through installing the old one. The
+  // check is the quiet one on purpose —it keeps the offer on screen until
+  // there is a newer answer, and a request that fails does not wipe it.
+  const [rechecking, setRechecking] = useState(false);
+  const recheck = () => {
+    setRechecking(true);
+    void checkForUpdate({ quiet: true }).finally(() => setRechecking(false));
+  };
 
   return (
     <div className="mt-5">
@@ -1112,6 +1123,26 @@ function Updates({ t }: { t: Record<StringKey, string> }) {
               >
                 <Download className="size-4" strokeWidth={2} />
                 {goingBack ? backLabel.replace("{version}", version ?? "") : t.updateInstall}
+              </button>
+            )}
+
+            {/* Not while the update waits to install: a quiet check leaves a
+                download that already finished alone, so the button would spin
+                and change nothing. */}
+            {update && (state.status === "available" || state.status === "installFailed") && (
+              <button
+                type="button"
+                onClick={recheck}
+                disabled={rechecking}
+                aria-label={t.updateCheck}
+                title={t.updateCheck}
+                className="flex size-10 shrink-0 items-center justify-center rounded-pill border border-white/14 bg-white/6 transition-colors duration-200 hover:bg-white/10 disabled:opacity-50"
+              >
+                {rechecking ? (
+                  <Loader2 className="size-4 animate-spin" strokeWidth={2} />
+                ) : (
+                  <RefreshCw className="size-4" strokeWidth={2} />
+                )}
               </button>
             )}
 
