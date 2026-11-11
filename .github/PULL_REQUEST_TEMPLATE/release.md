@@ -19,9 +19,9 @@
 ## Checklist
 
 - [ ] The branch is `release/<version>`, cut from `develop`
-- [ ] `bun run version:bump patch|minor|major` was run and the three manifests agree (`bun run version`)
+- [ ] This PR was opened by `bun run release <level>`, and the four manifests agree (`bun run version`)
 - [ ] CHANGELOG.md has the section `## [<version>]`
 - [ ] `src/lib/changelog.ts` has the entry for this version, in both languages
-- [ ] The notes carry the date of the release: the header of `CHANGELOG.md` and the `date` of `src/lib/changelog.ts`. The bump does not write it, and the app keeps saying the version is not out until it is there
-- [ ] The title of this pull request is the version and nothing else
+- [ ] The `date` of the entry in `src/lib/changelog.ts` is today. star writes the date in `CHANGELOG.md`, not in the app's copy, and the app keeps saying the version is not out until it is there
+- [ ] The title of this pull request is the version and nothing else; it is merged with `bun run release finish`, not with GitHub's button
 - [ ] Everything that should go out in this release is already merged into `develop`
