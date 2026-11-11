@@ -62,7 +62,14 @@ jobs:
       #   pública es la misma build que está corriendo. Ver `BUILD_COMMIT` en
       #   `src-tauri/src/lib.rs`. Es el del commit y no el del tag anotado:
       #   star lo pela.
-      build-env: |
+      #
+      # **`|-` y no `|`.** Con `|` el valor termina en un salto de línea, y el
+      # paso de star que copia estas líneas a `GITHUB_ENV` lee una última línea
+      # vacía: su `[ -n "$line" ] && …` devuelve 1, el bucle sale con 1 y,
+      # con `-e -o pipefail`, el paso entero falla antes de compilar. Le pasó al
+      # primer tag hecho con star, el v0.7.0: la release quedó en borrador sin
+      # instalador ni `latest.json`.
+      build-env: |-
         STARLESS_CHANNEL=${{ needs.verify.outputs.prerelease == 'true' && 'develop' || 'release' }}
         STARLESS_REPORT_RELAY=${{ vars.STARLESS_REPORT_RELAY }}
         STARLESS_COMMIT=${{ needs.verify.outputs.commit }}
