@@ -116,29 +116,23 @@ cd Starless
 bun install
 ```
 
-### El paso que casi nadie espera
+### La llave del actualizador
 
-`bun run app:build` **falla a propósito** la primera vez, y no es un bug:
+Para desarrollar no hace falta: `bun run app` no firma nada.
 
-```
-Error: updater `pubkey` is not a valid public key
-```
-
-La configuración trae `"pubkey": "PENDIENTE: bun run updater:pubkey"`. Un
-actualizador sin llave pública no verifica nada, y el build prefiere no
-compilar antes que compilar inseguro. Genera tu par de llaves una vez:
+`bun run app:build` sí: firma el instalador para el actualizador, y para eso
+necesita la llave privada en `TAURI_SIGNING_PRIVATE_KEY`. Esa llave es del
+dueño del repositorio y no está en él. En un fork que vaya a publicar sus
+propias versiones, deja `"pubkey": ""` en `src-tauri/tauri.conf.json` y corre:
 
 ```bash
-bun run updater:key        # te pide una contraseña
-bun run updater:pubkey     # copia la pública a src-tauri/tauri.conf.json
+bunx star init updater
 ```
 
-Tu llave privada queda en `.secrets/`, que está en `.gitignore`. Si publicas
-versiones, esa llave es la que firma cada actualización: **guárdala fuera del
-repositorio** y no la regeneres, porque una llave nueva deja sin poder
-actualizarse a todas las instalaciones que ya tienen la pública vieja.
-
-Después de eso, `bun run app` levanta la app en modo desarrollo.
+Genera tu llave, deja un respaldo en `~/.star/keys/`, fuera del repositorio,
+la sube como secreto de tu repo y escribe la pública. **No la regeneres
+después:** una llave nueva deja sin poder actualizarse a todas las
+instalaciones que ya tienen la pública vieja.
 
 ### Comandos
 
@@ -150,13 +144,14 @@ Después de eso, `bun run app` levanta la app en modo desarrollo.
 | `bun run lint` | Biome: lint y formato en modo lectura |
 | `bun run lint:fix` | Lo mismo, escribiendo las correcciones |
 | `bun run typecheck` | `tsc --noEmit` |
-| `bun run version` | La versión y si los tres manifiestos coinciden |
-| `bun run version:bump patch` | Sube la versión en los tres manifiestos |
+| `bun run version` | La versión y si los cuatro manifiestos coinciden |
+| `bun run release minor` | Prepara una versión: rama, PR y notas (ver `docs/updates.md`) |
+| `bun run doctor` | Qué falta o está mal para publicar |
 | `bun run design:detect` | Detector de diseño de Impeccable sobre `src/` |
 
-La versión vive en un solo lugar, `src-tauri/tauri.conf.json`. El script la
-propaga a `Cargo.toml` y `package.json` y falla si discrepan, así que un PR que
-cambie la versión en un solo archivo se ve en el CI.
+La versión vive en cuatro manifiestos (`package.json`, `tauri.conf.json`,
+`Cargo.toml` y `Cargo.lock`) y la mueve [star](https://github.com/baironvillar/star)
+en los cuatro a la vez. Un PR que la cambie en un solo archivo se ve en el CI.
 
 ### Estructura
 
@@ -186,8 +181,8 @@ reciente, así que no hay servidor propio que mantener.
 El detalle completo, incluida la firma y por qué no es opcional, está en
 [`docs/updates.md`](docs/updates.md).
 
-Publicar es `bun run version:bump patch` en una rama `release/<versión>`, un PR
-a `develop`, y empujar el tag sobre el commit mergeado. La CI compila en Windows, firma, arma el `latest.json` y deja la
+Publicar es `bun run release minor` desde `develop`, que abre el PR de la
+versión, y `bun run release finish` cuando el CI pasa, que la mergea y empuja el tag. La CI compila en Windows, firma, arma el `latest.json` y deja la
 release en borrador; sólo falta darle a *Publish release*.
 
 ### Advertencias honestas
@@ -319,29 +314,23 @@ cd Starless
 bun install
 ```
 
-### The step nobody expects
+### The updater key
 
-`bun run app:build` **fails on purpose** the first time, and it is not a bug:
+You do not need it to develop: `bun run app` signs nothing.
 
-```
-Error: updater `pubkey` is not a valid public key
-```
-
-The config ships `"pubkey": "PENDIENTE: bun run updater:pubkey"`. An updater
-with no public key verifies nothing, and the build would rather not compile than
-compile insecure. Generate your keypair once:
+`bun run app:build` does: it signs the installer for the updater, and for that
+it needs the private key in `TAURI_SIGNING_PRIVATE_KEY`. That key belongs to
+the owner of the repository and is not in it. In a fork that will publish its
+own versions, leave `"pubkey": ""` in `src-tauri/tauri.conf.json` and run:
 
 ```bash
-bun run updater:key        # asks you for a password
-bun run updater:pubkey     # copies the public half into src-tauri/tauri.conf.json
+bunx star init updater
 ```
 
-Your private key lands in `.secrets/`, which is git-ignored. If you ship
-releases, that key is what signs every update: **keep it outside the
-repository** and never regenerate it, because a new key leaves every install
-that already trusts the old public half unable to update.
-
-After that, `bun run app` starts the app in development mode.
+It generates your key, keeps a backup in `~/.star/keys/`, outside the
+repository, uploads it as a secret of your repo and writes the public half.
+**Never regenerate it afterwards:** a new key leaves every install that
+already trusts the old public half unable to update.
 
 ### Commands
 
@@ -353,13 +342,15 @@ After that, `bun run app` starts the app in development mode.
 | `bun run lint` | Biome: lint and format, read-only |
 | `bun run lint:fix` | Same, writing the fixes |
 | `bun run typecheck` | `tsc --noEmit` |
-| `bun run version` | The version, and whether all three manifests agree |
-| `bun run version:bump patch` | Bumps the version in all three manifests |
+| `bun run version` | The version, and whether all four manifests agree |
+| `bun run release minor` | Prepares a version: branch, PR and notes (see `docs/updates.md`) |
+| `bun run doctor` | What is missing or wrong before publishing |
 | `bun run design:detect` | Impeccable design detector over `src/` |
 
-The version lives in one place, `src-tauri/tauri.conf.json`. The script
-propagates it to `Cargo.toml` and `package.json` and fails when they disagree,
-so a PR that bumps one file and forgets the others shows up in CI.
+The version lives in four manifests (`package.json`, `tauri.conf.json`,
+`Cargo.toml` and `Cargo.lock`) and [star](https://github.com/baironvillar/star)
+moves all four at once. A PR that bumps one file and forgets the others shows
+up in CI.
 
 ### Layout
 
@@ -390,8 +381,8 @@ so there is no server of our own to maintain.
 The full detail, including the signature and why it is not optional, is in
 [`docs/updates.md`](docs/updates.md).
 
-Publishing is `bun run version:bump patch` on a `release/<version>` branch, a
-PR into `develop`, and pushing the tag on the merged commit. CI builds on Windows, signs, writes `latest.json` and
+Publishing is `bun run release minor` from `develop`, which opens the version
+PR, and `bun run release finish` once CI passes, which merges it and pushes the tag. CI builds on Windows, signs, writes `latest.json` and
 leaves the release as a draft; all that is left is clicking *Publish release*.
 
 ### Honest warnings

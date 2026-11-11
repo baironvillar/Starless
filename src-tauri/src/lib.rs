@@ -77,7 +77,7 @@ use models::{
 
 /// The version a report carries, read from the compiled-in crate metadata.
 ///
-/// `Cargo.toml` is one of the three manifests `scripts/version.ts` keeps in step,
+/// `Cargo.toml` is one of the four manifests star keeps in step (`bun run version`),
 /// and CI fails the build if they drift, so this is the version that actually
 /// shipped — the same number `tauri.conf.json` compiled into the binary.
 pub fn version_line() -> String {

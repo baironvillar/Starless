@@ -35,9 +35,8 @@ constraints the code has to respect.
 git clone https://github.com/baironvillar/Starless.git
 cd Starless
 bun install
-bun run updater:key        # sólo para compilar: ver README
-bun run updater:pubkey
-bun run app
+bun run hooks:install
+bun run app                # el instalador necesita la llave: ver README
 ```
 
 ## Antes de abrir un PR
@@ -165,67 +164,55 @@ quietly undo it.
 
 ### Publishing a version
 
-The version bump goes through a branch and a PR like any other change:
+A version goes through a branch and a PR like any other change, and
+[star](https://github.com/baironvillar/star) does both halves:
 
 ```bash
-git switch develop && git pull origin develop
-git switch -c release/0.5.5
-bun run version:bump patch          # the three manifests, together
-git commit -am "0.5.5"              # the subject is the version and nothing else
-git push -u origin release/0.5.5
-gh pr create --base develop --title "0.5.5"
+git switch develop && git pull
+bun run release minor     # gate, release/<version>, bump, commit, push and PR
+bun run release finish    # once CI passes: squash as the bare version, tag
 ```
 
-**The bump asks before it writes.** `bun run version:bump` is the command that
-decides what a person with the app installed downloads, so it refuses to run
-unless the repository is in order, and then asks before it moves the number:
+**It asks before it writes.** It refuses to run unless the repository is in
+order, and then asks before it moves the number:
 
-- the three manifests agree, and have no uncommitted changes;
-- the branch is `release/<version>` — the version it is about to become;
-- the tag `v<version>` does not exist yet;
-- `CHANGELOG.md` has the section `## [<version>]`, and `src/lib/changelog.ts`
-  has the entry for it, in both languages.
+- on `develop`, up to date with `origin`, with no changes outside the changelog;
+- the four manifests agree;
+- the tag `v<version>` and the branch `release/<version>` do not exist yet;
+- `CHANGELOG.md` has notes, under `## [Sin publicar]` or `## [<version>]`.
 
-Each of those is a way the release goes out wrong, and each is cheaper to catch
-here than in the app installed on somebody's machine. The notes are written
-**before** the bump, not after: the release workflow stops without them, and it
-stops after the tag is already pushed.
+It runs the gate (`"star": { "gate" }` in `package.json`: lint, typecheck,
+tests and `cargo test --lib`) before asking. The entry in
+`src/lib/changelog.ts`, in both languages, is still written by hand: star does
+not know about it.
 
-Without a level, the script asks which one it is —patch, minor or major— and
-explains what each one means. The number is never decided by the diff: it is a
-statement about the product (see [ROADMAP.md](ROADMAP.md#cómo-se-numeran-las-versiones)).
-There is a terminal to ask on, so the answer is the one that gets written;
-`--yes` is the way to say "I already checked" where there is none.
+Without a level, it asks which one it is —patch, minor or major— and explains
+what each one means. The number is never decided by the diff: it is a statement
+about the product (see [ROADMAP.md](ROADMAP.md#cómo-se-numeran-las-versiones)).
+A beta is the same with a suffix: `bun run release minor --beta`.
 
-GitHub adds the PR number to a squash commit title (`0.5.5 (#42)`). For a
-`fix(...)` subject that is harmless, but the version commit has to say the
-version and nothing else, so delete the ` (#42)` in the merge dialog before
-confirming. After the merge, the tag goes on the commit that landed on
-`develop`:
+`release finish` merges the PR itself so the subject is the bare version: a
+squash from GitHub's button adds ` (#42)`, and the release workflow refuses
+that commit. The tag goes on the commit that landed on `develop`, and pushing
+it starts the release workflow.
 
-```bash
-git switch develop && git pull origin develop
-git tag v0.5.5
-git push origin v0.5.5              # this starts the release workflow
-```
-
-To make it public, open a PR from `develop` into `main` titled with the bare
-version and merge it with *Create a merge commit*, editing the merge commit
-title to `0.5.5`. That PR is never squashed: `main` has to contain the same
-commits as `develop`, or the release workflow cannot prove a tag reached the
-public line.
+To bring the version to `main`, open a PR from `develop` into `main` titled
+with the bare version and merge it with *Create a merge commit*, editing the
+merge commit title to the version. That PR is never squashed: `main` has to
+contain the same commits as `develop`.
 
 ```bash
-gh pr create --base main --head develop --title "0.5.5"
+gh pr create --base main --head develop --title "0.7.0"
 ```
 
 ### What enforces this
 
-- **The `pre-push` hook** (`.githooks/pre-push`) refuses a push to `develop`
-  or `main` and a branch name that does not follow the convention. It turns on
-  with the same `bun run hooks:install` as the commit-message hook.
-- **The `Branch name` CI job** runs the same file on every pull request, and
-  also checks that a PR into `main` comes from `develop`.
+- **The `pre-push` hook** refuses a push to `develop` or `main` and a branch
+  name that does not follow the convention. It turns on with the same
+  `bun run hooks:install` as the commit-message hook.
+- **The `Branch name` CI job** runs the same rule on every pull request
+  (`star lint branch`), and also checks that a PR goes into `develop`, or into
+  `main` from `develop`.
 - **Branch protection on GitHub** is what makes the rule impossible to skip,
   since a hook lives in a clone and `--no-verify` bypasses it. A repository
   admin sets it once, in *Settings → Branches → Add branch ruleset*, for
@@ -284,9 +271,10 @@ por un PR titulado `0.4.0`; el PR de `develop` a `main` lleva el mismo título y
 el merge commit, también. Los pasos están en
 [Publishing a version](#publishing-a-version).
 
-La regla está escrita una sola vez, en `.githooks/commit-msg`, y corre en los tres
-sitios donde puede correr: el hook local, un job de CI y un paso del workflow de
-release. Se instala una vez por clon:
+La regla está escrita una sola vez, en [star](https://github.com/baironvillar/star),
+y corre en los tres sitios donde puede correr: el hook local (`.githooks/` es una
+línea que llama a star), un job de CI y el workflow de release. Se instala una
+vez por clon:
 
 ```bash
 bun run hooks:install
@@ -321,10 +309,11 @@ Cómo se despliega el relay, y por qué existe, está en
 
 ## Reglas que no son negociables
 
-**La versión vive en un solo lugar.** `src-tauri/tauri.conf.json` es la fuente.
-`scripts/version.ts` la propaga a `Cargo.toml` y `package.json`, y falla si
-discrepan. Si tocas la versión, usa `bun run version:bump patch`; si tocas un
-solo manifiesto a mano, el CI lo va a marcar.
+**La versión la mueve star, en los cuatro manifiestos a la vez.**
+`package.json`, `src-tauri/tauri.conf.json`, `Cargo.toml` y `Cargo.lock`. Una
+versión sale con `bun run release minor` y `bun run release finish` (ver
+[`docs/updates.md`](docs/updates.md)); si tocas un solo manifiesto a mano, el
+CI lo va a marcar.
 
 **Toda cadena pasa por el mapa de traducción.** Español e inglés se escriben
 juntos, y se redactan para que los dos lean de forma natural en vez de traducir uno del

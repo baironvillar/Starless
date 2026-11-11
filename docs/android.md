@@ -453,8 +453,8 @@ decide en `DESIGN.md`, no acá.
   publicar el primer APK: otro nombre es otra app, y quien la tenga instalada no
   recibe la actualización.
 - **La versión no cambia de lugar.** Tauri deriva el `versionCode` de Android de
-  la versión de `tauri.conf.json`, así que `scripts/version.ts` sigue siendo la
-  única fuente y no hay un cuarto manifiesto.
+  la versión de `tauri.conf.json`, que star mueve junto con los otros
+  manifiestos, así que no hay uno más que mantener.
 - **Los íconos.** `scripts/logo.ts` escribe `icons/` e `icons-dev/`. Android
   los quiere como mipmaps dentro de `gen/android/app/src/main/res/`, y la
   distinción entre el ícono de desarrollo y el de la release (`AGENTS.md`)

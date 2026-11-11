@@ -13,7 +13,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
-    "hooks:install": "git config core.hooksPath .githooks",
+    "hooks:install": "bunx star init hooks",
     "design:detect": "impeccable detect src/",
     "logo": "bun run scripts/logo.ts",
     "logo:icons": "bun run scripts/logo.ts --icons",
@@ -23,15 +23,11 @@
     "relay:test": "bun test relay",
     "test": "bun test",
     "relay:deploy": "bunx wrangler deploy --config relay/wrangler.toml",
-    "version": "bun run scripts/version.ts get",
-    "version:bump": "bun run scripts/version.ts bump",
-    "version:set": "bun run scripts/version.ts set",
-    "updater:key": "bun run scripts/updater.ts key",
-    "updater:pubkey": "bun run scripts/updater.ts pubkey",
-    "updater:manifest": "bun run scripts/updater.ts manifest",
-    "releases:notes": "bun run scripts/releases.ts notes",
-    "releases:check": "bun run scripts/releases.ts check",
-    "releases:sync": "bun run scripts/releases.ts sync"
+    "version": "bunx star version",
+    "version:set": "bunx star version set",
+    "release": "bunx star release",
+    "release:notes": "bunx star notes",
+    "doctor": "bunx star doctor"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
@@ -46,6 +42,7 @@
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
+    "@baironvillar/star": "github:baironvillar/star#v0.5.0",
     "@biomejs/biome": "^2.5.15",
     "@tauri-apps/cli": "^2",
     "@types/react": "^19.1.8",
@@ -53,5 +50,13 @@
     "@vitejs/plugin-react": "^6.0.2",
     "typescript": "~6.0.3",
     "vite": "^8.0.16"
+  },
+  "star": {
+    "gate": [
+      "bun run lint",
+      "bun run typecheck",
+      "bun run test",
+      "cargo test --lib --manifest-path src-tauri/Cargo.toml"
+    ]
   }
 }

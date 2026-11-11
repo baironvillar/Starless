@@ -24,7 +24,7 @@ bun run typecheck    # tsc --noEmit
 bun run version      # los tres manifiestos tienen que coincidir
 bun run logo         # regenera el ícono y public/starless.svg
 bun run logo:invert  # el mismo ícono con los colores invertidos, a icons-dev/
-bun run hooks:install  # una vez por clon: git config core.hooksPath .githooks
+bun run hooks:install  # una vez por clon: star init hooks
 
 cd src-tauri
 cargo check
@@ -142,14 +142,17 @@ en ningún proto ni en ninguna issue:
 4. **Premium o nada.** Es una restricción de librespot, no una decisión.
 5. **Todo texto pasa por `lib/i18n.ts`**, en los dos idiomas a la vez, escritos
    para que ambos lean natural y no como traducción.
-6. **La versión vive en `src-tauri/tauri.conf.json`.** `scripts/version.ts` la
-   propaga a los otros dos manifiestos y falla si discrepan. No la edites a mano.
-   **Y el bump no se corre a ciegas:** `bun run version:bump` comprueba que los
-   tres manifiestos coincidan, que la rama sea `release/<versión>`, que el tag
-   esté libre y que las notas estén escritas —en `CHANGELOG.md` y en
-   `src/lib/changelog.ts`— y después pregunta. Si tocás el versionado, tocá esas
-   dos cosas de las notas: la release de GitHub y la que la app muestra en
-   Diagnóstico son el mismo texto escrito dos veces.
+6. **La versión vive en cuatro manifiestos y la mueve
+   [star](https://github.com/baironvillar/star).** `package.json`,
+   `src-tauri/tauri.conf.json`, `Cargo.toml` y `Cargo.lock` dicen lo mismo;
+   `bun run version` falla si discrepan. No la edites a mano: una versión sale
+   con `bun run release minor` desde `develop` (rama `release/<versión>`, PR) y
+   `bun run release finish` (merge y tag). star revisa que la rama, el tag y las
+   notas estén en orden y pregunta. **Las notas se escriben dos veces**, en
+   `CHANGELOG.md` (bajo `## [Sin publicar]`) y en `src/lib/changelog.ts`: la
+   release de GitHub y la que la app muestra en Diagnóstico son el mismo texto.
+   Una beta lleva sufijo (`0.7.0-beta.1`) y sale como prerelease. Ver
+   [`docs/updates.md`](docs/updates.md).
 7. **La biblioteca se lee por la sesión, no por la Web API.** Spotify no publica
    protocolo para la Web API, y desde febrero de 2026 una app registrada que la
    use queda limitada a **cinco personas en una lista**: las demás reciben `403`
@@ -177,8 +180,9 @@ en ningún proto ni en ninguna issue:
    merge a `main`. Los tipos y el alcance están en
    [`CONTRIBUTING.md`](CONTRIBUTING.md#los-mensajes-de-commit--commit-messages); el
    cuerpo es libre y es donde va el porqué, y también va en inglés.
-   La regla vive en `.githooks/commit-msg`, la instala `bun run hooks:install` y
-   el CI la cobra igual: `--no-verify` la esquiva en esta máquina y no después.
+   La regla vive en star: `.githooks/commit-msg` es una línea que la llama, la
+   instala `bun run hooks:install` y el CI la cobra igual (`star lint`):
+   `--no-verify` la esquiva en esta máquina y no después.
    **El motivo no es la estética:** GitHub titula la corrida de un tag con el
    asunto del commit etiquetado y no con el nombre del workflow, así que un
    asunto de tres líneas es el nombre que queda al lado de cada release.
@@ -192,7 +196,8 @@ en ningún proto ni en ninguna issue:
    messages, PR titles and descriptions are all written in English; only
    user-facing text lives in two languages, in `lib/i18n.ts`. The full workflow
    is in [`CONTRIBUTING.md`](CONTRIBUTING.md#branches-and-pull-requests);
-   `.githooks/pre-push` and the `Branch name` CI job enforce it.
+   The `pre-push` hook and the `Branch name` CI job enforce it, both with
+   star's rule.
 
 ## Convenciones
 
@@ -732,7 +737,9 @@ en ningún proto ni en ninguna issue:
     su tag (`3a66d42`) no llegó a `main`, y su binario dice "prerelease" con la
     release marcada como pública. `bun run releases:check` lo dice, porque la
     pregunta "¿el tag llegó a `main`?" es la del paso `canal` del workflow.
-    La salida es publicar desde `main`.
+    La salida es publicar desde `main`. **Después:** el canal pasó a
+    decidirlo el sufijo de la versión (`0.7.0-beta.1`), no la rama del tag;
+    `releases:check` lo reemplazó `star release check`. Ver `docs/updates.md`.
   - **La frase del DJ es una sorpresa, y la lista es el spoiler.**
     Con el DJ sonando, el panel de cola **no muestra "A continuación"**: la
     lista de lo que viene es justamente lo que spoils la sorpresa, y la frase

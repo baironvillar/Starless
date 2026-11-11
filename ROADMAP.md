@@ -34,7 +34,7 @@ Tres reglas que acompañan al número:
 3. **El tag manda sobre el changelog, nunca al revés.** El workflow se niega a
    publicar si `v0.4.0` y `tauri.conf.json` no dicen lo mismo.
 
-`bun run version:bump patch|minor|major` mueve el número en los tres manifiestos.
+`bun run release patch|minor|major` mueve el número en los cuatro manifiestos.
 No decide *cuál* de los tres corresponde: eso lo decide qué cambió.
 
 ---
