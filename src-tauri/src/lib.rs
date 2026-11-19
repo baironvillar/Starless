@@ -2026,8 +2026,18 @@ async fn set_playlist_preference(
     account: String,
     id: String,
     preference: library_organisation::Preference,
-) -> Result<(), String> {
+) -> Result<std::collections::BTreeMap<String, library_organisation::Preference>, String> {
     tauri::async_runtime::spawn_blocking(move || library_organisation::save(&account, &id, preference))
+        .await
+        .map_err(|_| "command_failed".to_string())?
+}
+
+#[tauri::command]
+async fn set_pinned_order(
+    account: String,
+    ids: Vec<String>,
+) -> Result<std::collections::BTreeMap<String, library_organisation::Preference>, String> {
+    tauri::async_runtime::spawn_blocking(move || library_organisation::reorder(&account, ids))
         .await
         .map_err(|_| "command_failed".to_string())?
 }
@@ -2373,6 +2383,7 @@ pub fn run() {
             set_library_sort,
             library_organisation,
             set_playlist_preference,
+            set_pinned_order,
             library_view,
             set_library_view,
             track_order,

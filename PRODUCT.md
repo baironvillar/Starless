@@ -91,6 +91,7 @@ Withdrawing it needs withdrawing the promise. Analytics is still off the table; 
 ### Library organisation stays local
 
 Pinning and archiving playlists are per-account preferences on this device.
+Pins have their own saved order, independent of the library's chosen sort.
 They never modify the remote library or leave the machine. Archiving hides a
 playlist from Starless's shelves without removing it from an existing play queue;
 the person can restore it from Archived playlists on Home or the phone's Library.

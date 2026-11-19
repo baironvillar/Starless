@@ -1,25 +1,22 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  type LibraryOrganisation,
+  type PlaylistPreference,
+  pinnedIds,
+} from "./libraryOrganisationModel";
 import {
   keys,
   libraryOrganisation,
-  type Playlist,
+  setPinnedOrder,
   setPlaylistPreference,
   useAccount,
 } from "./spotify";
 
-export type PlaylistPreference = { pinned: boolean; archived: boolean };
-export type LibraryOrganisation = Record<string, PlaylistPreference>;
+export type { LibraryOrganisation, PlaylistPreference } from "./libraryOrganisationModel";
+export { organisedPlaylists, pinnedIds } from "./libraryOrganisationModel";
+
 const EMPTY: LibraryOrganisation = {};
 const DEFAULT: PlaylistPreference = { pinned: false, archived: false };
-
-/** Stable partition: the chosen library order still applies inside each group. */
-export function organisedPlaylists(playlists: Playlist[], preferences: LibraryOrganisation) {
-  const visible = playlists.filter((playlist) => !preferences[playlist.id]?.archived);
-  return [
-    ...visible.filter((playlist) => preferences[playlist.id]?.pinned),
-    ...visible.filter((playlist) => !preferences[playlist.id]?.pinned),
-  ];
-}
 
 export function useLibraryOrganisation() {
   const accountQuery = useAccount();
@@ -36,25 +33,38 @@ export function useLibraryOrganisation() {
     },
   });
   const mutation = useMutation({
-    mutationFn: async ({ id, preference }: { id: string; preference: PlaylistPreference }) => {
+    mutationKey: key,
+    scope: { id: `library-organisation:${account}` },
+    mutationFn: async (
+      change: { id: string; preference: PlaylistPreference } | { order: string[] },
+    ) => {
       if (!account) throw new Error("no_session");
-      await setPlaylistPreference(account, id, preference);
-      return { account, id, preference };
+      const preferences =
+        "order" in change
+          ? await setPinnedOrder(account, change.order)
+          : await setPlaylistPreference(account, change.id, change.preference);
+      return { account, preferences };
     },
-    onSuccess: ({ account, id, preference }) => {
+    onSuccess: ({ account, preferences }) => {
       // A save may finish after sign-out: never apply it to the new account.
-      client.setQueryData<LibraryOrganisation>(keys.libraryOrganisation(account), (old) => ({
-        ...old,
-        [id]: preference,
-      }));
+      client.setQueryData<LibraryOrganisation>(keys.libraryOrganisation(account), preferences);
     },
   });
   return {
     preferences: query.data ?? EMPTY,
     ready: !!account && query.isSuccess,
     error: accountQuery.error ?? query.error ?? mutation.error,
-    busy: mutation.isPending,
+    busy: useIsMutating({ mutationKey: key }) > 0,
     preference: (id: string) => query.data?.[id] ?? DEFAULT,
     change: mutation.mutate,
+    move: async (id: string, target: string) => {
+      const ids = pinnedIds(query.data ?? EMPTY);
+      const from = ids.indexOf(id);
+      const to = ids.indexOf(target);
+      if (from < 0 || to < 0 || from === to) return;
+      ids.splice(from, 1);
+      ids.splice(to, 0, id);
+      await mutation.mutateAsync({ order: ids });
+    },
   };
 }

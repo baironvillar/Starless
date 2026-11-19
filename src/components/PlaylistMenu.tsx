@@ -2,6 +2,8 @@ import {
   Archive,
   ArchiveRestore,
   Check,
+  ChevronDown,
+  ChevronUp,
   Link2,
   ListPlus,
   MoreHorizontal,
@@ -13,8 +15,15 @@ import { useEffect, useRef, useState } from "react";
 import { copyText } from "../lib/clipboard";
 import { type MenuPoint, PLAYLIST_MENU, useMenuAt } from "../lib/contextMenu";
 import type { StringKey } from "../lib/i18n";
-import { useLibraryOrganisation } from "../lib/libraryOrganisation";
-import { explain, isDjCard, type Playlist, type Track, usePlaylistTracks } from "../lib/spotify";
+import { pinnedIds, useLibraryOrganisation } from "../lib/libraryOrganisation";
+import {
+  explain,
+  isDjCard,
+  type Playlist,
+  type Track,
+  usePlaylists,
+  usePlaylistTracks,
+} from "../lib/spotify";
 import { MenuItem, MenuPanel } from "./MenuPanel";
 
 type PlaylistMenuProps = {
@@ -91,6 +100,12 @@ export function PlaylistMenu({
   const headless = at !== undefined;
   const organisation = useLibraryOrganisation();
   const preference = organisation.preference(playlist.id);
+  const available = usePlaylists().data ?? [];
+  const pins = pinnedIds(organisation.preferences).filter(
+    (id) =>
+      !organisation.preference(id).archived && available.some((playlist) => playlist.id === id),
+  );
+  const pinIndex = pins.indexOf(playlist.id);
   const [ownOpen, setOpen] = useState(false);
   const open = headless ? at !== null : ownOpen;
   const [copied, setCopied] = useState<"idle" | "done" | "failed">("idle");
@@ -174,10 +189,13 @@ export function PlaylistMenu({
               icon={preference.pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
               onSelect={() => {
                 if (!organisation.busy)
-                  organisation.change({
-                    id: playlist.id,
-                    preference: { ...preference, pinned: !preference.pinned },
-                  });
+                  organisation.change(
+                    {
+                      id: playlist.id,
+                      preference: { ...preference, pinned: !preference.pinned },
+                    },
+                    { onSuccess: close },
+                  );
               }}
             />
             <MenuItem
@@ -191,12 +209,41 @@ export function PlaylistMenu({
               }
               onSelect={() => {
                 if (!organisation.busy)
-                  organisation.change({
-                    id: playlist.id,
-                    preference: { ...preference, archived: !preference.archived },
-                  });
+                  organisation.change(
+                    {
+                      id: playlist.id,
+                      preference: { ...preference, archived: !preference.archived },
+                    },
+                    { onSuccess: close },
+                  );
               }}
             />
+            {preference.pinned && pinIndex > 0 && (
+              <MenuItem
+                label={t.movePinnedUp}
+                icon={<ChevronUp className="size-4" />}
+                onSelect={() => {
+                  if (!organisation.busy)
+                    void organisation
+                      .move(playlist.id, pins[pinIndex - 1])
+                      .then(close)
+                      .catch(() => {});
+                }}
+              />
+            )}
+            {preference.pinned && pinIndex >= 0 && pinIndex < pins.length - 1 && (
+              <MenuItem
+                label={t.movePinnedDown}
+                icon={<ChevronDown className="size-4" />}
+                onSelect={() => {
+                  if (!organisation.busy)
+                    void organisation
+                      .move(playlist.id, pins[pinIndex + 1])
+                      .then(close)
+                      .catch(() => {});
+                }}
+              />
+            )}
           </>
         )}
         {organisation.error && (

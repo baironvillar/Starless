@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { organisedPlaylists } from "./libraryOrganisation";
 import type { Playlist } from "./spotify";
-import { libraryOrganisation, setPlaylistPreference } from "./spotify";
+import { libraryOrganisation, setPinnedOrder, setPlaylistPreference } from "./spotify";
 
 const playlist = (id: string): Playlist => ({
   id,
@@ -29,25 +29,42 @@ describe("local library organisation", () => {
     try {
       const preference = { pinned: true, archived: true };
       await setPlaylistPreference("first", "shared", preference);
-      expect(await libraryOrganisation("first")).toEqual({ shared: preference });
+      expect(await libraryOrganisation("first")).toEqual({
+        shared: { ...preference, position: 0 },
+      });
       expect(await libraryOrganisation("second")).toEqual({});
       await setPlaylistPreference("first", "shared", { ...preference, archived: false });
       expect((await libraryOrganisation("first")).shared).toEqual({
         pinned: true,
         archived: false,
+        position: 0,
       });
+      await setPlaylistPreference("first", "another", { pinned: true, archived: false });
+      await setPinnedOrder("first", ["another", "shared"]);
+      const reloaded = await libraryOrganisation("first");
+      expect(reloaded.another.position).toBe(0);
+      expect(reloaded.shared.position).toBe(1);
+      expect(await libraryOrganisation("second")).toEqual({});
+      await expect(setPinnedOrder("first", ["another", "another"])).rejects.toThrow();
+      expect(await libraryOrganisation("first")).toEqual(reloaded);
     } finally {
       if (original) Object.defineProperty(globalThis, "localStorage", original);
       else Reflect.deleteProperty(globalThis, "localStorage");
     }
   });
-  test("pinning preserves the selected sort inside both groups without mutating the cache", () => {
+  test("pins keep their saved order when the rest of the library changes sort", () => {
     const original = ["a", "b", "c", "d"].map(playlist);
     const result = organisedPlaylists(original, {
-      b: { pinned: true, archived: false },
-      d: { pinned: true, archived: false },
+      b: { pinned: true, archived: false, position: 1 },
+      d: { pinned: true, archived: false, position: 0 },
     });
-    expect(result.map((item) => item.id)).toEqual(["b", "d", "a", "c"]);
+    expect(result.map((item) => item.id)).toEqual(["d", "b", "a", "c"]);
+    expect(
+      organisedPlaylists([...original].reverse(), {
+        b: { pinned: true, archived: false, position: 1 },
+        d: { pinned: true, archived: false, position: 0 },
+      }).map((item) => item.id),
+    ).toEqual(["d", "b", "c", "a"]);
     expect(original.map((item) => item.id)).toEqual(["a", "b", "c", "d"]);
   });
 
@@ -59,6 +76,19 @@ describe("local library organisation", () => {
     expect(
       organisedPlaylists(original, { b: { pinned: true, archived: false } }).map((item) => item.id),
     ).toEqual(["b", "a"]);
+  });
+
+  test("legacy pins without positions stay stable across shelf sorts", () => {
+    const preferences = {
+      b: { pinned: true, archived: false },
+      a: { pinned: true, archived: false },
+    };
+    expect(
+      organisedPlaylists([playlist("b"), playlist("a")], preferences).map((item) => item.id),
+    ).toEqual(["a", "b"]);
+    expect(
+      organisedPlaylists([playlist("a"), playlist("b")], preferences).map((item) => item.id),
+    ).toEqual(["a", "b"]);
   });
 
   test("preferences for absent playlists never introduce stale entries", () => {
