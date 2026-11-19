@@ -30,7 +30,7 @@ jobs:
   # package.json: lint, tipos, tests y `cargo test`). En Windows y con Rust,
   # porque `cargo test` compila el crate de la app.
   verify:
-    uses: baironvillar/star/.github/workflows/verify.yml@v0.5.1
+    uses: baironvillar/star/.github/workflows/verify.yml@v0.6.0
     with:
       runs-on: windows-latest
       rust: true
@@ -39,7 +39,7 @@ jobs:
     needs: verify
     permissions:
       contents: write
-    uses: baironvillar/star/.github/workflows/tauri-release.yml@v0.5.1
+    uses: baironvillar/star/.github/workflows/tauri-release.yml@v0.6.0
     with:
       version: ${{ needs.verify.outputs.version }}
       # Sólo Windows: el bundle es `msi`, y Starless no se publica para Linux.
