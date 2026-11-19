@@ -16,6 +16,7 @@ import { DjArtwork } from "./DjArtwork";
 import { LibrarySortMenu, LibraryViewToggle } from "./LibraryControls";
 import { LikedCover } from "./LikedCover";
 import { PlaylistTile } from "./PlaylistTile";
+import { SidebarPlayButton } from "./SidebarPlayButton";
 
 /** Two widths, and the space each one claims from the content area. */
 const RAIL_PX = 72;
@@ -61,6 +62,9 @@ type LibrarySidebarProps = {
   view: LibraryView;
   onViewChange: (view: LibraryView) => void;
   onSelect: (id: string) => void;
+  onPlay: (id: string) => void;
+  playingRequest?: string | null;
+  playError?: string | null;
   /** Called on approach, so the list is already loaded by the time it is opened. */
   onPrefetch?: (playlistId: string) => void;
   /**
@@ -116,6 +120,9 @@ export function LibrarySidebar({
   view,
   onViewChange,
   onSelect,
+  onPlay,
+  playingRequest,
+  playError,
   onPrefetch,
   onNewPlaylist,
 }: LibrarySidebarProps) {
@@ -273,6 +280,15 @@ export function LibrarySidebar({
                     )}
                   </p>
                 )}
+                {playError && (
+                  <p role="alert" title={playError} className="px-2 py-2 text-[12px] text-warn-ink">
+                    {collapsed ? (
+                      <TriangleAlert className="size-4" aria-label={playError} />
+                    ) : (
+                      playError
+                    )}
+                  </p>
+                )}
                 <div
                   style={at(0)}
                   className={`cascade flex items-center gap-2 ${collapsed ? "w-full justify-center" : ""}`}
@@ -407,7 +423,7 @@ export function LibrarySidebar({
                       <div
                         key={playlist.id}
                         style={at(4 + index)}
-                        className={`cascade rounded-[12px] ${organisation.preference(playlist.id).pinned ? "cursor-grab active:cursor-grabbing" : ""} ${dropPin === playlist.id ? "ring-2 ring-accent" : ""}`}
+                        className={`cascade group/sidebar relative rounded-[12px] ${organisation.preference(playlist.id).pinned ? "cursor-grab active:cursor-grabbing" : ""} ${dropPin === playlist.id ? "ring-2 ring-accent" : ""}`}
                         {...pinDrag(playlist.id)}
                         // A right-click opens its menu (lib/contextMenu.ts). Not the DJ's: no songs to queue.
                         data-playlist-id={isDjCard(playlist) ? undefined : playlist.id}
@@ -432,6 +448,14 @@ export function LibrarySidebar({
                               : undefined
                           }
                         />
+                        {!isDjCard(playlist) && playlist.tracks?.total !== 0 && (
+                          <SidebarPlayButton
+                            label={`${t.play} — ${playlist.name}`}
+                            busy={playingRequest === playlist.id}
+                            onPlay={() => onPlay(playlist.id)}
+                            className="top-2 right-2"
+                          />
+                        )}
                       </div>
                     ))}
                   </div>
@@ -526,7 +550,7 @@ export function LibrarySidebar({
                       <div
                         key={playlist.id}
                         style={at(4 + index)}
-                        className={`cascade w-full rounded-[14px] ${organisation.preference(playlist.id).pinned ? "cursor-grab active:cursor-grabbing" : ""} ${dropPin === playlist.id ? "ring-2 ring-accent" : ""}`}
+                        className={`cascade group/sidebar relative w-full rounded-[14px] ${organisation.preference(playlist.id).pinned ? "cursor-grab active:cursor-grabbing" : ""} ${dropPin === playlist.id ? "ring-2 ring-accent" : ""}`}
                         {...pinDrag(playlist.id)}
                         data-playlist-id={isDjCard(playlist) ? undefined : playlist.id}
                       >
@@ -537,7 +561,7 @@ export function LibrarySidebar({
                           onFocus={() => warm?.()}
                           title={playlist.name}
                           className={`relative flex w-full shrink-0 items-center rounded-[14px] text-left transition-colors duration-200 ${
-                            collapsed ? "justify-center py-1" : "gap-3 px-2 py-2"
+                            collapsed ? "justify-center py-1" : "gap-3 py-2 pr-11 pl-2"
                           } ${selected ? "bg-white/12" : "hover:bg-white/6"}`}
                         >
                           {mark(selected)}
@@ -579,6 +603,18 @@ export function LibrarySidebar({
                             />
                           )}
                         </button>
+                        {!isDjCard(playlist) && playlist.tracks?.total !== 0 && (
+                          <SidebarPlayButton
+                            label={`${t.play} — ${playlist.name}`}
+                            busy={playingRequest === playlist.id}
+                            onPlay={() => onPlay(playlist.id)}
+                            className={
+                              collapsed
+                                ? "top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
+                                : "top-1/2 right-2 -translate-y-1/2"
+                            }
+                          />
+                        )}
                       </div>
                     );
                   })}

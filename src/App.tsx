@@ -1,5 +1,4 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ChevronLeft, Search, Settings } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
@@ -78,11 +77,11 @@ import {
   onDjVoice,
   onPlaybackStatus,
   onSoloistStatus,
-  PLAYLIST_STALE_MS,
   type PlaybackStatus,
   type PlayContext,
   type Playlist,
   playerStatus,
+  playlistTracksQuery,
   playTrack,
   type RadioContext,
   radioMore,
@@ -1195,8 +1194,14 @@ export default function App() {
    */
   const closeLyrics = useCallback(() => setLyricsOpen(false), []);
 
+  const [sidebarPending, setSidebarPending] = useState<{ id: string; request: number } | null>(
+    null,
+  );
+  const [sidebarError, setSidebarError] = useState<string | null>(null);
+
   const onPlay = useCallback(
     (track: Track, at?: number) => {
+      setSidebarError(null);
       // A deliberate choice clears the advance guard. Without this, replaying the
       // same track by hand would still carry the previous "already handled this
       // ending" mark, and the next finish would be silently ignored.
@@ -1264,6 +1269,7 @@ export default function App() {
    */
   const playShuffled = useCallback(
     (tracks: Track[], track: Track, context: RadioContext | null = null) => {
+      setSidebarError(null);
       advancedRef.current = null;
       setLoadedTrack(track);
       setQueueOverride(shuffleFrom(tracks, track.id), context);
@@ -2163,6 +2169,8 @@ export default function App() {
    */
   const onPlayDj = useCallback(
     async (playlist: Playlist) => {
+      intent.current += 1;
+      setSidebarError(null);
       setDjUnavailable(false);
       setDjBusy(true);
       try {
@@ -2316,6 +2324,33 @@ export default function App() {
     [shuffle, playFrom, playShuffled, playlistContext],
   );
 
+  const onPlayFromSidebar = useCallback(
+    async (id: string) => {
+      const request = ++intent.current;
+      setSidebarPending({ id, request });
+      setSidebarError(null);
+      try {
+        // Share the prefetched list, but carry the clicked playlist's context:
+        // the screen can still be showing an entirely different playlist.
+        const tracks = await queryClient.fetchQuery(playlistTracksQuery(id));
+        if (request !== intent.current) return;
+        if (tracks.length === 0) {
+          setSidebarError(t.emptyList);
+          return;
+        }
+        const context: RadioContext = { kind: "playlist", id };
+        if (shuffle)
+          playShuffled(tracks, tracks[Math.floor(Math.random() * tracks.length)], context);
+        else playFrom(tracks, tracks[0], context);
+      } catch (error) {
+        if (request === intent.current) setSidebarError(explain(error));
+      } finally {
+        setSidebarPending((current) => (current?.request === request ? null : current));
+      }
+    },
+    [queryClient, shuffle, playShuffled, playFrom, t.emptyList],
+  );
+
   /**
    * Everything about the search field, the dropdown and the results screen.
    *
@@ -2398,11 +2433,7 @@ export default function App() {
       if (prefetchTimer.current !== null) clearTimeout(prefetchTimer.current);
       prefetchTimer.current = setTimeout(() => {
         prefetchTimer.current = null;
-        void queryClient.prefetchQuery({
-          queryKey: keys.playlistTracks(playlistId),
-          queryFn: () => invoke<Track[]>("playlist_tracks", { playlistId }),
-          staleTime: PLAYLIST_STALE_MS,
-        });
+        void queryClient.prefetchQuery(playlistTracksQuery(playlistId));
       }, PREFETCH_REST_MS);
     },
     [queryClient],
@@ -2821,6 +2852,9 @@ export default function App() {
    * take preferences away.
    */
   const resetView = useCallback(() => {
+    intent.current += 1;
+    setSidebarPending(null);
+    setSidebarError(null);
     setSettingsOpen(false);
     setLyricsOpen(false);
     setDetail(null);
@@ -2897,6 +2931,9 @@ export default function App() {
               onPrefetch={onPrefetchPlaylist}
               onNewPlaylist={() => openNaming()}
               onSelect={onSelectFromRail}
+              onPlay={(id) => void onPlayFromSidebar(id)}
+              playingRequest={sidebarPending?.request === intent.current ? sidebarPending.id : null}
+              playError={sidebarError}
             />
           )}
         </AnimatePresence>
