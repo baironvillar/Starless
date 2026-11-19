@@ -127,8 +127,9 @@ export function HomeScreen({
 
   // Quick tiles: the saved songs, the DJ, then the lists heard last, then the rail's order.
   const quickIds: string[] = [];
-  for (const playlist of yours) {
-    if (organisation.preference(playlist.id).pinned) quickIds.push(playlist.id);
+  for (const playlist of playlists) {
+    if (!isDjCard(playlist) && organisation.preference(playlist.id).pinned)
+      quickIds.push(playlist.id);
   }
   for (const play of stats?.recent ?? []) {
     const id = play.context?.id;

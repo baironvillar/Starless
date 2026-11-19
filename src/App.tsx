@@ -954,11 +954,21 @@ export default function App() {
   const organisation = useLibraryOrganisation();
   const orderedPlaylists = useMemo(
     () =>
-      organisedPlaylists(
-        sortPlaylists(playlists.data ?? [], sortOrder, lastPlayed),
-        organisation.preferences,
-      ),
-    [playlists.data, sortOrder, lastPlayed, organisation.preferences],
+      // Do not flash archived playlists while the account's local choices load.
+      !organisation.ready && !organisation.error
+        ? []
+        : organisedPlaylists(
+            sortPlaylists(playlists.data ?? [], sortOrder, lastPlayed),
+            organisation.preferences,
+          ),
+    [
+      playlists.data,
+      sortOrder,
+      lastPlayed,
+      organisation.preferences,
+      organisation.ready,
+      organisation.error,
+    ],
   );
 
   /**

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { organisedPlaylists } from "./libraryOrganisation";
 import type { Playlist } from "./spotify";
+import { libraryOrganisation, setPlaylistPreference } from "./spotify";
 
 const playlist = (id: string): Playlist => ({
   id,
@@ -15,6 +16,31 @@ const playlist = (id: string): Playlist => ({
 });
 
 describe("local library organisation", () => {
+  test("the browser fallback persists changes without crossing account boundaries", async () => {
+    const original = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    const values = new Map<string, string>();
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value),
+      },
+    });
+    try {
+      const preference = { pinned: true, archived: true };
+      await setPlaylistPreference("first", "shared", preference);
+      expect(await libraryOrganisation("first")).toEqual({ shared: preference });
+      expect(await libraryOrganisation("second")).toEqual({});
+      await setPlaylistPreference("first", "shared", { ...preference, archived: false });
+      expect((await libraryOrganisation("first")).shared).toEqual({
+        pinned: true,
+        archived: false,
+      });
+    } finally {
+      if (original) Object.defineProperty(globalThis, "localStorage", original);
+      else Reflect.deleteProperty(globalThis, "localStorage");
+    }
+  });
   test("pinning preserves the selected sort inside both groups without mutating the cache", () => {
     const original = ["a", "b", "c", "d"].map(playlist);
     const result = organisedPlaylists(original, {
