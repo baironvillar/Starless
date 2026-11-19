@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useMemo, useSyncExternalStore } from "react";
@@ -1806,18 +1806,45 @@ export function useLyrics(trackId: string | null) {
   });
 }
 
-export function useAccount() {
-  return useQuery({
+function accountQuery(client: QueryClient) {
+  return {
     queryKey: keys.account,
-    queryFn: () => invoke<Account>("account"),
+    queryFn: async () => {
+      const account = await invoke<Account>("account");
+      // Publish the account only after its local preferences are cached. The
+      // shelves can then render their first response without an extra empty frame.
+      await client
+        .fetchQuery({
+          queryKey: keys.libraryOrganisation(account.id),
+          queryFn: () => libraryOrganisation(account.id),
+          staleTime: Infinity,
+          retry: false,
+        })
+        .catch(() => {});
+      return account;
+    },
     staleTime: 5 * 60_000,
-  });
+  };
+}
+
+export function useAccount() {
+  const client = useQueryClient();
+  return useQuery(accountQuery(client));
 }
 
 export function usePlaylists() {
+  const client = useQueryClient();
   return useQuery({
     queryKey: keys.playlists,
-    queryFn: () => invoke<Playlist[]>("my_playlists"),
+    queryFn: async () => {
+      // Keep network reads parallel, but never publish playlists before the
+      // account's archived choices are known. Refetches keep their existing data.
+      const [playlists] = await Promise.all([
+        invoke<Playlist[]>("my_playlists"),
+        client.ensureQueryData(accountQuery(client)),
+      ]);
+      return playlists;
+    },
     staleTime: 5 * 60_000,
   });
 }

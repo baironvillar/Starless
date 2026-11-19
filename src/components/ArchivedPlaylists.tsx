@@ -4,12 +4,19 @@ import type { StringKey } from "../lib/i18n";
 import { useLibraryOrganisation } from "../lib/libraryOrganisation";
 import { explain, usePlaylists } from "../lib/spotify";
 
-/** Always reachable, even when the last visible playlist has been archived. */
+/** Reachable even when every playlist is archived; absent when there are none. */
 export function ArchivedPlaylists({ t }: { t: Record<StringKey, string> }) {
   const [open, setOpen] = useState(false);
   const organisation = useLibraryOrganisation();
   const playlists = usePlaylists().data ?? [];
   const archived = playlists.filter((playlist) => organisation.preferences[playlist.id]?.archived);
+  if (archived.length === 0) {
+    return organisation.error ? (
+      <p role="alert" className="px-3 py-2 text-[12px] text-warn-ink">
+        {explain(organisation.error)}
+      </p>
+    ) : null;
+  }
   return (
     <div className="my-2 text-[12px]">
       <button

@@ -27,6 +27,7 @@ export function useLibraryOrganisation() {
     queryKey: key,
     enabled: account !== null,
     staleTime: Infinity,
+    retry: false,
     queryFn: async (): Promise<LibraryOrganisation> => {
       if (!account) return EMPTY;
       return libraryOrganisation(account);

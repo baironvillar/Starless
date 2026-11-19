@@ -284,8 +284,8 @@ The playlist menu offers pin/unpin and archive/restore for actual playlists,
 including ones owned by someone else. The DJ card is not a playlist.
 
 Archived playlists are hidden from all regular shelves and quick-access tiles.
-Home and the phone's Library keep an Archived playlists disclosure even when
-every playlist is archived. Its rows name each playlist and offer a labelled
+Home and the phone's Library show an Archived playlists disclosure only when
+there are archived entries, including when every playlist is archived. Its rows name each playlist and offer a labelled
 restore button. Restoring preserves its pinned state. Archiving does not navigate
 away from an already open playlist or stop music.
 
