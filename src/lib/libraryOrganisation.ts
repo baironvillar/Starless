@@ -22,7 +22,8 @@ export function organisedPlaylists(playlists: Playlist[], preferences: LibraryOr
 }
 
 export function useLibraryOrganisation() {
-  const account = useAccount().data?.id ?? null;
+  const accountQuery = useAccount();
+  const account = accountQuery.data?.id ?? null;
   const client = useQueryClient();
   const key = keys.libraryOrganisation(account);
   const query = useQuery({
@@ -51,7 +52,7 @@ export function useLibraryOrganisation() {
   return {
     preferences: query.data ?? EMPTY,
     ready: !!account && query.isSuccess,
-    error: query.error ?? mutation.error,
+    error: accountQuery.error ?? query.error ?? mutation.error,
     busy: mutation.isPending,
     preference: (id: string) => query.data?.[id] ?? DEFAULT,
     change: mutation.mutate,

@@ -20,7 +20,10 @@ type Accounts = BTreeMap<String, Library>;
 
 fn path() -> Result<std::path::PathBuf, String> {
     crate::settings::settings_path()
-        .and_then(|path| path.parent().map(|parent| parent.join("library-organisation.json")))
+        .and_then(|path| {
+            path.parent()
+                .map(|parent| parent.join("library-organisation.json"))
+        })
         .ok_or_else(|| "command_failed".to_string())
 }
 
@@ -115,6 +118,9 @@ mod tests {
         let file = TestFile::new();
         std::fs::write(&file.0, b"broken").expect("fixture");
         assert!(save_at(&file.0, "first", &"1".repeat(22), Preference::default()).is_err());
-        assert_eq!(std::fs::read(&file.0).expect("unchanged fixture"), b"broken");
+        assert_eq!(
+            std::fs::read(&file.0).expect("unchanged fixture"),
+            b"broken"
+        );
     }
 }
