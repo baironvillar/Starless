@@ -68,9 +68,8 @@ type PlaylistTrackListProps = {
  * instead of borrowing a date from somewhere else, which is the failure mode this
  * column is most able to produce and the one a sort by "date added" would punish.
  *
- * The number is the affordance, and it changes colour rather than moving: the row
- * that is sounding has its number, its title and its equalizer mark in the live
- * accent, so the eye finds the row it is listening to without the row moving.
+ * The equalizer replaces the number while the song sounds. Keeping the number's
+ * slot in the grid prevents the title from moving when playback changes rows.
  */
 export function PlaylistTrackList({
   tracks,
@@ -212,7 +211,7 @@ export function PlaylistTrackList({
                         : isPlaying
                           ? "text-accent-ink"
                           : "text-ink-faint group-hover:opacity-0"
-                    } ${isLoading && !isPlaying ? "opacity-0" : ""}`}
+                    } ${isPlaying || isLoading ? "opacity-0" : ""}`}
                   >
                     {index + 1}
                   </span>
