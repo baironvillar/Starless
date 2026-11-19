@@ -2,7 +2,7 @@ name: release
 
 # Publicar es un tag, no una serie de pasos a mano. Lo común a cualquier app
 # (verificar el tag, crear la release en borrador, compilar y firmar con
-# tauri-action, revisar `latest.json`) viene de star. Acá queda lo de Starless:
+# tauri-action, revisar `latest.json`) viene de star. Acá queda lo de Star Music:
 # el canal, el relay de reportes, el commit dentro de la build, el ícono de
 # desarrollo en las betas y el nombre limpio del instalador. Ver
 # `docs/updates.md`.
@@ -30,7 +30,7 @@ jobs:
   # package.json: lint, tipos, tests y `cargo test`). En Windows y con Rust,
   # porque `cargo test` compila el crate de la app.
   verify:
-    uses: baironvillar/star/.github/workflows/verify.yml@v0.6.0
+    uses: Starless-org/Star/.github/workflows/verify.yml@v0.6.0
     with:
       runs-on: windows-latest
       rust: true
@@ -39,13 +39,13 @@ jobs:
     needs: verify
     permissions:
       contents: write
-    uses: baironvillar/star/.github/workflows/tauri-release.yml@v0.6.0
+    uses: Starless-org/Star/.github/workflows/tauri-release.yml@v0.6.0
     with:
       version: ${{ needs.verify.outputs.version }}
-      # Sólo Windows: el bundle es `msi`, y Starless no se publica para Linux.
+      # Sólo Windows: el bundle es `msi`, y Star Music no se publica para Linux.
       platforms: windows
-      title: Starless v${{ needs.verify.outputs.version }}
-      # El bundler localiza el MSI (`Starless_0.6.0_x64_en-US.msi`) y el idioma
+      title: Star Music v${{ needs.verify.outputs.version }}
+      # El bundler localiza el MSI (`StarMusic_0.6.0_x64_en-US.msi`) y el idioma
       # no se puede sacar de la configuración: se saca del nombre al subirlo.
       # La firma cubre el contenido, no el nombre.
       asset-name-pattern: "[name]_[version]_x64[ext]"
@@ -56,19 +56,19 @@ jobs:
       # versiones numéricas) lo agrega star desde la 0.5.1: le pasó a la
       # primera beta, que falló al empaquetar.
       args: ${{ needs.verify.outputs.prerelease == 'true' && '--config src-tauri/tauri.dev.conf.json' || '' }}
-      # - STARLESS_CHANNEL: lo que la app muestra al lado de la versión en
+      # - STAR_MUSIC_CHANNEL: lo que la app muestra al lado de la versión en
       #   Ajustes. Sale del sufijo de la versión, igual que la prerelease.
-      # - STARLESS_REPORT_RELAY: la dirección del relay (`relay/`). No es un
+      # - STAR_MUSIC_REPORT_RELAY: la dirección del relay (`relay/`). No es un
       #   secreto: es una variable del repositorio. Sin ella, el botón de
       #   reportar abre el navegador.
-      # - STARLESS_COMMIT: el commit del tag, para que la app sepa si la release
+      # - STAR_MUSIC_COMMIT: el commit del tag, para que la app sepa si la release
       #   pública es la misma build que está corriendo. Ver `BUILD_COMMIT` en
       #   `src-tauri/src/lib.rs`. Es el del commit y no el del tag anotado:
       #   star lo pela.
       build-env: |
-        STARLESS_CHANNEL=${{ needs.verify.outputs.prerelease == 'true' && 'develop' || 'release' }}
-        STARLESS_REPORT_RELAY=${{ vars.STARLESS_REPORT_RELAY }}
-        STARLESS_COMMIT=${{ needs.verify.outputs.commit }}
+        STAR_MUSIC_CHANNEL=${{ needs.verify.outputs.prerelease == 'true' && 'develop' || 'release' }}
+        STAR_MUSIC_REPORT_RELAY=${{ vars.STAR_MUSIC_REPORT_RELAY }}
+        STAR_MUSIC_COMMIT=${{ needs.verify.outputs.commit }}
     secrets:
       # La misma llave de siempre: la pública va dentro de cada instalador que
       # ya está dando vueltas, y una llave nueva los dejaría sin actualizarse.

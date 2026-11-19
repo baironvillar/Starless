@@ -2,7 +2,7 @@
 //!
 //! ## How a crash is noticed
 //!
-//! Starless cannot catch its own death, so it does not try. It writes a marker
+//! Star Music cannot catch its own death, so it does not try. It writes a marker
 //! file when the process starts and deletes it when the process ends normally —
 //! through the window's close, through sign-out, through the user quitting. If the
 //! marker is still there the next time the app opens, the previous run ended some
@@ -36,8 +36,8 @@ use regex::Regex;
 use serde::Serialize;
 
 /// The repository issues are filed against, and the labels that make them findable.
-const REPO_OWNER: &str = "baironvillar";
-const REPO_NAME: &str = "Starless";
+const REPO_OWNER: &str = "Starless-org";
+const REPO_NAME: &str = "StarMusic";
 const CRASH_LABEL: &str = "crash";
 const FEEDBACK_LABEL: &str = "feedback";
 
@@ -57,7 +57,7 @@ const LOG_TAIL_BYTES: usize = 48 * 1024;
 // ---------------------------------------------------------------------------
 
 fn local_dir() -> Option<PathBuf> {
-    crate::paths::data_local_dir().map(|base| base.join("Starless"))
+    crate::paths::data_local_dir().map(|base| base.join(crate::paths::APP_DIR))
 }
 
 fn marker_path() -> Option<PathBuf> {
@@ -482,7 +482,7 @@ fn truncate(text: &str) -> String {
 ///
 /// `option_env!` rather than a runtime read: the value has to be inside the binary
 /// that ships, and the release workflow sets it from a repository variable.
-const RELAY: Option<&str> = option_env!("STARLESS_REPORT_RELAY");
+const RELAY: Option<&str> = option_env!("STAR_MUSIC_REPORT_RELAY");
 
 /// The address to report to, or `None` when this build has nowhere to report.
 ///
@@ -664,7 +664,7 @@ pub fn build(
         out.push_str("\n```\n");
     }
 
-    out.push_str("\n<!-- Enviado desde Starless. El log va recortado y sin datos personales. -->\n");
+    out.push_str("\n<!-- Enviado desde Star Music. El log va recortado y sin datos personales. -->\n");
     scrub_with(&out, account)
 }
 
@@ -736,7 +736,7 @@ fn submit_to(
     let endpoint = format!("{}/report", relay.trim_end_matches('/'));
     let response = match client
         .post(&endpoint)
-        .header("User-Agent", format!("starless/{version}"))
+        .header("User-Agent", format!("star-music/{version}"))
         .json(&payload)
         .send()
     {
@@ -886,7 +886,7 @@ pub fn simulate_crash() -> Result<(), String> {
 /// it is public.
 ///
 /// These fixtures are lines this app has actually written, not invented ones —
-/// the wording is librespot's and Starless's, and the scrubber is only worth
+/// the wording is librespot's and Star Music's, and the scrubber is only worth
 /// testing against those.
 #[cfg(test)]
 mod tests {
@@ -938,7 +938,7 @@ mod tests {
     /// and a `400` is a report that is lost.
     ///
     /// ```text
-    /// STARLESS_REPORT_RELAY=https://… cargo test --lib -- --ignored the_relay
+    /// STAR_MUSIC_REPORT_RELAY=https://… cargo test --lib -- --ignored the_relay
     /// ```
     ///
     /// The issue it opens is a real one: it is the report, and it is closed
@@ -946,8 +946,8 @@ mod tests {
     #[test]
     #[ignore = "habla con el relay desplegado y abre un issue"]
     fn the_relay_accepts_what_the_app_sends() {
-        let Ok(address) = std::env::var("STARLESS_REPORT_RELAY") else {
-            panic!("STARLESS_REPORT_RELAY no está: apuntá al relay que esté desplegado");
+        let Ok(address) = std::env::var("STAR_MUSIC_REPORT_RELAY") else {
+            panic!("STAR_MUSIC_REPORT_RELAY no está: apuntá al relay que esté desplegado");
         };
         let outcome = submit_to(
             Some(address.as_str()),
@@ -1026,7 +1026,7 @@ called unwrap on None
     /// folder, where a running copy of the app keeps its own.
     fn scratch_files(name: &str) -> SessionFiles {
         let dir = std::env::temp_dir()
-            .join(format!("starless-report-{name}-{}", std::process::id()));
+            .join(format!("star-music-report-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("debe poder crear la carpeta de prueba");
         SessionFiles {
@@ -1114,7 +1114,7 @@ called unwrap on None
         use windows::Win32::System::Diagnostics::Debug::{
             RaiseException, SEM_FAILCRITICALERRORS, SEM_NOGPFAULTERRORBOX, SetErrorMode,
         };
-        const CHILD: &str = "STARLESS_NATIVE_CRASH_TEST_FILE";
+        const CHILD: &str = "STAR_MUSIC_NATIVE_CRASH_TEST_FILE";
 
         if let Some(path) = std::env::var_os(CHILD) {
             install_native_crash_filter(PathBuf::from(path));
@@ -1158,11 +1158,11 @@ called unwrap on None
 
     const REAL_LINES: &str = "\
 [2026-10-17T00:23:58.326Z INFO  librespot_core::session] Authenticated as 't_jitzol' !
-[2026-10-17T00:23:57.220Z INFO  starless_lib::logging] log abierto en C:\\Users\\bairo\\AppData\\Local\\Starless\\starless.log
-[2026-10-17T00:24:05.287Z INFO  starless_lib::webapi] webapi: 200 /me/tracks?limit=50
+[2026-10-17T00:23:57.220Z INFO  star_music_lib::logging] log abierto en C:\\Users\\bairo\\AppData\\Local\\Star Music\\star-music.log
+[2026-10-17T00:24:05.287Z INFO  star_music_lib::webapi] webapi: 200 /me/tracks?limit=50
 [2026-10-17T00:23:57.249Z INFO  librespot_playback::audio_backend::rodio] Using audio device: SteelSeries Sonar
 [2026-10-17T00:21:11.522Z INFO  librespot_playback::player] Loading <Chanel> with Spotify URI <spotify:track:6Nle9hKrkL1wQpwNfEkxjh>
-[2026-10-17T00:34:48.200Z INFO  starless_lib] login completo: session=true web_token=true";
+[2026-10-17T00:34:48.200Z INFO  star_music_lib] login completo: session=true web_token=true";
 
     #[test]
     fn removes_the_spotify_account_name() {
@@ -1273,7 +1273,7 @@ called unwrap on None
         let body: String = (0..3_000)
             .map(|i| format!("[{i}] línea del log con acentos: contraseña\n"))
             .collect();
-        let url = browser_url(Kind::Feedback, "Feedback desde Starless 0.3.0", &body);
+        let url = browser_url(Kind::Feedback, "Feedback desde Star Music 0.3.0", &body);
 
         assert!(
             url.len() < 6_000,
@@ -1380,7 +1380,7 @@ called unwrap on None
 
 #[test]
     fn settings_round_trip_through_the_file() {
-        let dir = std::env::temp_dir().join("starless-settings-test");
+        let dir = std::env::temp_dir().join("star-music-settings-test");
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
 

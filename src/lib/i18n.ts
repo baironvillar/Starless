@@ -15,11 +15,12 @@ export const strings = {
     movePinnedDown: "Mover fijada hacia abajo",
     reorderPinnedHint: "Arrastra para ordenar las fijadas, o usa Alt + ↑ / ↓.",
     unpinPlaylist: "Desfijar playlist",
-    archivePlaylist: "Archivar en Starless",
+    archivePlaylist: "Archivar en Star Music",
     restorePlaylist: "Restaurar playlist",
     archivedPlaylists: "Playlists archivadas",
     noArchivedPlaylists: "No tienes playlists archivadas.",
-    archiveLocalHint: "Solo se ocultan en Starless, en este dispositivo. Puedes restaurarlas aquí.",
+    archiveLocalHint:
+      "Solo se ocultan en Star Music, en este dispositivo. Puedes restaurarlas aquí.",
     pinnedPlaylist: "Playlist fijada",
     searchPlaceholder: "Buscar canciones",
     clearSearch: "Limpiar búsqueda",
@@ -40,12 +41,12 @@ export const strings = {
     // La ficha del artista. El encabezado no dice "Populares" ni "Discografía"
     // porque ninguna de las dos cosas se puede calcular acá — el listado es lo
     // que esta app encuentra para ese nombre, y se dice eso.
-    artistSongsFound: "Lo que Starless encuentra",
+    artistSongsFound: "Lo que Star Music encuentra",
     artistSongsNone: "No se encontraron canciones de este artista.",
     // El álbum, con el mismo trato que el artista: se busca por nombre y se
     // filtra por id, así que el encabezado no puede prometer un catálogo entero.
     albumKind: "Álbum",
-    albumSongsFound: "Lo que Starless encuentra",
+    albumSongsFound: "Lo que Star Music encuentra",
     albumSongsNone: "No se encontraron canciones de este álbum.",
     back: "Volver",
     columnAlbum: "Álbum",
@@ -109,7 +110,7 @@ export const strings = {
     sortCreator: "Por creador",
     sortTracks: "Por cantidad de canciones",
     sortRecent: "Reproducido recientemente",
-    sortRecentEmpty: "Se arma con lo que escuchas en Starless.",
+    sortRecentEmpty: "Se arma con lo que escuchas en Star Music.",
     viewGrid: "Cuadrícula",
     viewList: "Lista",
     newPlaylistName: "Nombre",
@@ -226,7 +227,7 @@ export const strings = {
     authKicker: "Cliente de escritorio",
     authTitle: "Tu música, en tu escritorio",
     authBody:
-      "Conéctate con tu cuenta de Spotify. Starless no ve tu contraseña y no envía telemetría.",
+      "Conéctate con tu cuenta de Spotify. Star Music no ve tu contraseña y no envía telemetría.",
     authConnect: "Conectar con Spotify",
     authReport: "¿Algo no anda? Cuéntanos qué pasó.",
     feedbackEmpty: "Cuéntanos qué pasó, o adjunta el log para que el reporte sirva de algo.",
@@ -237,7 +238,7 @@ export const strings = {
       "Se necesita Premium. Sin Premium, Spotify no entrega audio aunque la cuenta sea válida.",
     authPrivate: "Tu sesión se queda en este equipo. Ni credenciales ni historial salen de aquí.",
     authMissingClient:
-      "Falta el Client ID de Spotify. Registra una app en developer.spotify.com y define la variable STARLESS_SPOTIFY_CLIENT_ID antes de iniciar Starless.",
+      "Falta el Client ID de Spotify. Registra una app en developer.spotify.com y define la variable STAR_MUSIC_SPOTIFY_CLIENT_ID antes de iniciar Star Music.",
     authCancelled: "Cancelaste el inicio de sesión.",
     authOAuthFailed: "No se pudo completar el inicio de sesión con Spotify.",
     authBusy: "La sesión está ocupada. Inténtalo de nuevo.",
@@ -379,14 +380,14 @@ export const strings = {
 
     audioQuality: "Calidad de audio",
     audioQualityHint:
-      "Más calidad significa más datos y algo menos de batería. Se aplica la próxima vez que abras Starless.",
+      "Más calidad significa más datos y algo menos de batería. Se aplica la próxima vez que abras Star Music.",
     qualityLow: "Baja",
     qualityNormal: "Normal",
     qualityHigh: "Alta",
 
     normalisation: "Normalizar volumen",
     normalisationHint:
-      "Iguala el volumen entre canciones para que no te sorprendan los picos. Se aplica la próxima vez que abras Starless.",
+      "Iguala el volumen entre canciones para que no te sorprendan los picos. Se aplica la próxima vez que abras Star Music.",
     crossfade: "Transición entre canciones",
     crossfadeHint:
       "Cuando una canción termina sola, la siguiente empieza esos segundos antes y las dos se mezclan.",
@@ -394,11 +395,11 @@ export const strings = {
     crossfadeSeconds: "{n} s",
 
     startWithWindows: "Iniciar con Windows",
-    startWithWindowsHint: "Starless se abre minimizado a la bandeja al arrancar el sistema.",
+    startWithWindowsHint: "Star Music se abre minimizado a la bandeja al arrancar el sistema.",
     closeToTray: "Al cerrar, seguir en la bandeja",
     closeToTrayHint:
       "La X esconde la ventana y la música sigue. Para salir, usa Salir en el ícono de la bandeja.",
-    trayShow: "Mostrar Starless",
+    trayShow: "Mostrar Star Music",
     trayQuit: "Salir",
 
     signedInAs: "Sesión iniciada como",
@@ -415,10 +416,10 @@ export const strings = {
 
     // Updates
     updatesTitle: "Actualizaciones",
-    updatesHint: "Starless se comprueba solo al abrir. Nada se descarga hasta que lo pidas.",
+    updatesHint: "Star Music se comprueba solo al abrir. Nada se descarga hasta que lo pidas.",
     updateCheck: "Buscar actualizaciones",
     updateCurrent: "Estás al día",
-    updateAvailable: "Hay una versión más nueva: {version}. Se instalará al cerrar Starless.",
+    updateAvailable: "Hay una versión más nueva: {version}. Se instalará al cerrar Star Music.",
     updateInstall: "Actualizar",
     updateDownloading: "Descargando…",
     updateGoBack:
@@ -434,7 +435,7 @@ export const strings = {
     prereleaseChecking: "Buscando…",
     prereleaseNone: "No hay prerelease",
     prereleaseSame: "Ya estás corriendo la {version} de develop.",
-    prereleaseAvailable: "Hay una {version} de develop lista. Se instalará al cerrar Starless.",
+    prereleaseAvailable: "Hay una {version} de develop lista. Se instalará al cerrar Star Music.",
     prereleaseInstall: "Instalar la prerelease",
     prereleaseError:
       "No se pudo preguntar a GitHub. Es un problema de conexión, no de la copia instalada.",
@@ -478,7 +479,7 @@ export const strings = {
 
     // A session that ended without being closed
     crashKicker: "La sesión anterior falló",
-    crashTitle: "Starless no se cerró bien",
+    crashTitle: "Star Music no se cerró bien",
     crashBody:
       "La app falló y se cerró sola. Si quieres, mandamos el registro para encontrar qué pasó.",
     crashShowDetail: "Ver qué se enviaría",
@@ -487,7 +488,7 @@ export const strings = {
     crashSend: "Enviar el registro",
     crashSending: "Enviando…",
     crashDismiss: "Ahora no",
-    crashPrivacy: "No se envía nada hasta que aprietes el botón. Starless no reporta uso.",
+    crashPrivacy: "No se envía nada hasta que aprietes el botón. Star Music no reporta uso.",
     crashSent: "Reporte creado:",
     crashSentDuplicate: "Ya lo habían reportado; sumamos el tuyo:",
     reportRateLimited: "Llegaste al límite de reportes por hora. Prueba de nuevo más tarde.",
@@ -507,7 +508,7 @@ export const strings = {
     feedbackPlaceholder: "¿Qué pasó, o qué te gustaría que pasara?",
     feedbackAttachLog: "Adjuntar el registro",
     feedbackAttachLogHint:
-      "Se envía la última parte de starless.log, sin tu nombre de cuenta ni identificadores. Apagado por defecto.",
+      "Se envía la última parte de star-music.log, sin tu nombre de cuenta ni identificadores. Apagado por defecto.",
     feedbackShowDetail: "Ver qué se enviaría",
     feedbackSend: "Enviar feedback",
 
@@ -519,17 +520,17 @@ export const strings = {
     // Spotify Soloist: the way out for an account whose audio keys are refused
     // (`docs/soloist.md`). The person reading this already pressed play and got
     // nothing, so the first sentence clears them and the app before anything else.
-    keysRefusedTitle: "Spotify no entrega el audio de esta cuenta a Starless",
+    keysRefusedTitle: "Spotify no entrega el audio de esta cuenta a Star Music",
     keysRefusedBody:
-      "No es tu suscripción ni la app: Spotify bloquea a algunas cuentas Premium en reproductores no oficiales. Puedes seguir escuchando con Spotify Soloist, el reproductor liviano de Spotify, y Starless lo maneja por ti.",
+      "No es tu suscripción ni la app: Spotify bloquea a algunas cuentas Premium en reproductores no oficiales. Puedes seguir escuchando con Spotify Soloist, el reproductor liviano de Spotify, y Star Music lo maneja por ti.",
     keysRefusedSetup: "Configurar Soloist",
     keysRefusedLater: "Ahora no",
     soloistTitle: "Escuchar con Spotify Soloist",
     soloistIntro:
-      "Tres pasos, una sola vez. Después Starless lo arranca, lo mantiene al día y lo cierra contigo.",
+      "Tres pasos, una sola vez. Después Star Music lo arranca, lo mantiene al día y lo cierra contigo.",
     soloistStep1Title: "Descargar Soloist",
     soloistStep1Body:
-      "Se baja de los servidores de Spotify, y Starless comprueba que esté firmado por Spotify antes de usarlo.",
+      "Se baja de los servidores de Spotify, y Star Music comprueba que esté firmado por Spotify antes de usarlo.",
     soloistDownload: "Descargar",
     soloistDownloading: "Descargando…",
     soloistDownloaded: "Versión {version} · vence en {days} días",
@@ -552,7 +553,7 @@ export const strings = {
     soloistWaitingLong:
       "Todavía no llega. Comprueba que el celular y la computadora estén en la misma red: un Wi-Fi de invitados o de oficina suele aislar los dispositivos.",
     soloistPaired: "Emparejado",
-    soloistDone: "Listo. Starless reproduce con Spotify Soloist.",
+    soloistDone: "Listo. Star Music reproduce con Spotify Soloist.",
     soloistClose: "Cerrar",
     soloistSettingsTitle: "Spotify Soloist",
     soloistSettingsActive: "Reproduciendo con Soloist · vence en {days} días",
@@ -567,11 +568,11 @@ export const strings = {
     movePinnedDown: "Move pinned playlist down",
     reorderPinnedHint: "Drag to arrange pinned playlists, or use Alt + ↑ / ↓.",
     unpinPlaylist: "Unpin playlist",
-    archivePlaylist: "Archive in Starless",
+    archivePlaylist: "Archive in Star Music",
     restorePlaylist: "Restore playlist",
     archivedPlaylists: "Archived playlists",
     noArchivedPlaylists: "You haven't archived any playlists.",
-    archiveLocalHint: "Hidden only in Starless on this device. Restore them here at any time.",
+    archiveLocalHint: "Hidden only in Star Music on this device. Restore them here at any time.",
     pinnedPlaylist: "Pinned playlist",
     searchPlaceholder: "Songs",
     clearSearch: "Clear search",
@@ -591,10 +592,10 @@ export const strings = {
     // The artist's page. The heading says neither "Popular" nor "Discography",
     // because neither can be computed here — the list is what this app finds for
     // that name, and it says so.
-    artistSongsFound: "What Starless finds",
+    artistSongsFound: "What Star Music finds",
     artistSongsNone: "No songs were found for this artist.",
     albumKind: "Album",
-    albumSongsFound: "What Starless finds",
+    albumSongsFound: "What Star Music finds",
     albumSongsNone: "No songs were found for this album.",
     back: "Back",
     columnAlbum: "Album",
@@ -658,7 +659,7 @@ export const strings = {
     sortCreator: "By creator",
     sortTracks: "By song count",
     sortRecent: "Recently played",
-    sortRecentEmpty: "Built from what you play in Starless.",
+    sortRecentEmpty: "Built from what you play in Star Music.",
     viewGrid: "Grid",
     viewList: "List",
     newPlaylistName: "Name",
@@ -774,7 +775,7 @@ export const strings = {
     authKicker: "Desktop client",
     authTitle: "Your music, on your desktop",
     authBody:
-      "Connect your Spotify account. Starless never sees your password and sends no telemetry.",
+      "Connect your Spotify account. Star Music never sees your password and sends no telemetry.",
     authConnect: "Connect with Spotify",
     authReport: "Something not working? Tell us what happened.",
     feedbackEmpty: "Tell us what happened, or attach the log so the report is worth reading.",
@@ -785,7 +786,7 @@ export const strings = {
       "Premium is required. Without it, Spotify delivers no audio even when the account is valid.",
     authPrivate: "Your session stays on this machine. Neither credentials nor history leave it.",
     authMissingClient:
-      "Spotify Client ID missing. Register an app at developer.spotify.com and set the STARLESS_SPOTIFY_CLIENT_ID environment variable before starting Starless.",
+      "Spotify Client ID missing. Register an app at developer.spotify.com and set the STAR_MUSIC_SPOTIFY_CLIENT_ID environment variable before starting Star Music.",
     authCancelled: "You cancelled the sign-in.",
     authOAuthFailed: "Could not complete sign-in with Spotify.",
     authBusy: "The session is busy. Try again.",
@@ -925,14 +926,14 @@ export const strings = {
 
     audioQuality: "Audio quality",
     audioQualityHint:
-      "Higher quality uses more data and a little more battery. Takes effect the next time you open Starless.",
+      "Higher quality uses more data and a little more battery. Takes effect the next time you open Star Music.",
     qualityLow: "Low",
     qualityNormal: "Normal",
     qualityHigh: "High",
 
     normalisation: "Normalise volume",
     normalisationHint:
-      "Levels the volume across songs so no track jumps out at you. Takes effect the next time you open Starless.",
+      "Levels the volume across songs so no track jumps out at you. Takes effect the next time you open Star Music.",
     crossfade: "Crossfade",
     crossfadeHint:
       "When a song ends on its own, the next one starts that many seconds early and the two blend.",
@@ -940,11 +941,11 @@ export const strings = {
     crossfadeSeconds: "{n} s",
 
     startWithWindows: "Start with Windows",
-    startWithWindowsHint: "Starless opens minimised to the tray when the system starts.",
+    startWithWindowsHint: "Star Music opens minimised to the tray when the system starts.",
     closeToTray: "Keep running in the tray when closed",
     closeToTrayHint:
       "The X hides the window and the music keeps going. To leave, use Quit on the tray icon.",
-    trayShow: "Show Starless",
+    trayShow: "Show Star Music",
     trayQuit: "Quit",
 
     signedInAs: "Signed in as",
@@ -960,10 +961,10 @@ export const strings = {
     publicBadge: "public",
 
     updatesTitle: "Updates",
-    updatesHint: "Starless checks on its own when it opens. Nothing downloads until you ask.",
+    updatesHint: "Star Music checks on its own when it opens. Nothing downloads until you ask.",
     updateCheck: "Check for updates",
     updateCurrent: "You're up to date",
-    updateAvailable: "A newer version is out: {version}. It installs when Starless closes.",
+    updateAvailable: "A newer version is out: {version}. It installs when Star Music closes.",
     updateInstall: "Update",
     updateDownloading: "Downloading…",
     updateGoBack:
@@ -981,7 +982,7 @@ export const strings = {
     prereleaseNone: "No prerelease",
     prereleaseSame: "You are already running the {version} from develop.",
     prereleaseAvailable:
-      "There is a {version} from develop ready. It installs when Starless closes.",
+      "There is a {version} from develop ready. It installs when Star Music closes.",
     prereleaseInstall: "Install the prerelease",
     prereleaseError:
       "GitHub could not be reached. That is a connection problem, not a problem with the copy you have installed.",
@@ -1012,7 +1013,7 @@ export const strings = {
 
     // A session that ended without being closed
     crashKicker: "The last session failed",
-    crashTitle: "Starless did not close cleanly",
+    crashTitle: "Star Music did not close cleanly",
     crashBody:
       "The app failed and shut itself down. If you want, we can send the log to find out what happened.",
     crashShowDetail: "See what would be sent",
@@ -1021,7 +1022,7 @@ export const strings = {
     crashSend: "Send the log",
     crashSending: "Sending…",
     crashDismiss: "Not now",
-    crashPrivacy: "Nothing is sent until you press the button. Starless reports no usage.",
+    crashPrivacy: "Nothing is sent until you press the button. Star Music reports no usage.",
     crashSent: "Report created:",
     crashSentDuplicate: "Already reported; we added yours:",
     reportRateLimited: "You reached the limit of reports per hour. Try again later.",
@@ -1041,7 +1042,7 @@ export const strings = {
     feedbackPlaceholder: "What happened, or what you would like to happen?",
     feedbackAttachLog: "Attach the log",
     feedbackAttachLogHint:
-      "Sends the tail of starless.log, with your account name and any identifiers already removed. Off by default.",
+      "Sends the tail of star-music.log, with your account name and any identifiers already removed. Off by default.",
     feedbackShowDetail: "See what would be sent",
     feedbackSend: "Send feedback",
 
@@ -1050,17 +1051,17 @@ export const strings = {
     windowMaximize: "Maximise",
     windowRestore: "Restore",
     windowClose: "Close",
-    keysRefusedTitle: "Spotify won't send this account's audio to Starless",
+    keysRefusedTitle: "Spotify won't send this account's audio to Star Music",
     keysRefusedBody:
-      "It isn't your subscription or the app: Spotify blocks some Premium accounts in unofficial players. You can keep listening with Spotify Soloist, Spotify's lightweight player, and Starless runs it for you.",
+      "It isn't your subscription or the app: Spotify blocks some Premium accounts in unofficial players. You can keep listening with Spotify Soloist, Spotify's lightweight player, and Star Music runs it for you.",
     keysRefusedSetup: "Set up Soloist",
     keysRefusedLater: "Not now",
     soloistTitle: "Listen with Spotify Soloist",
     soloistIntro:
-      "Three steps, once. After that Starless starts it, keeps it up to date and closes it with you.",
+      "Three steps, once. After that Star Music starts it, keeps it up to date and closes it with you.",
     soloistStep1Title: "Download Soloist",
     soloistStep1Body:
-      "It comes from Spotify's servers, and Starless checks that Spotify signed it before using it.",
+      "It comes from Spotify's servers, and Star Music checks that Spotify signed it before using it.",
     soloistDownload: "Download",
     soloistDownloading: "Downloading…",
     soloistDownloaded: "Version {version} · expires in {days} days",
@@ -1083,7 +1084,7 @@ export const strings = {
     soloistWaitingLong:
       "Nothing yet. Make sure the phone and the computer are on the same network: guest and office Wi-Fi often keep devices apart.",
     soloistPaired: "Paired",
-    soloistDone: "Done. Starless now plays through Spotify Soloist.",
+    soloistDone: "Done. Star Music now plays through Spotify Soloist.",
     soloistClose: "Close",
     soloistSettingsTitle: "Spotify Soloist",
     soloistSettingsActive: "Playing through Soloist · expires in {days} days",
@@ -1114,7 +1115,8 @@ const errorsEs = {
   // teniendo problemas" is the wrong sentence for someone whose router just
   // rebooted: it sends them off to look for a problem they do not have, in a
   // service they cannot go and check.
-  service_unavailable: "No se pudo llegar a Spotify en este momento. Starless sigue reintentando.",
+  service_unavailable:
+    "No se pudo llegar a Spotify en este momento. Star Music sigue reintentando.",
   not_signed_in: "Primero hay que iniciar sesión.",
   login_expired: "La sesión venció. Vuelve a entrar.",
   network_failed: "No se pudo hablar con Spotify.",
@@ -1158,7 +1160,7 @@ const errorsEs = {
   // on its own, and this is what is left when that does not work: the
   // connection is gone and it could not be brought back.
   connection_lost:
-    "Se perdió la conexión con Spotify y no se pudo volver. Cierra y abre Starless para seguir escuchando.",
+    "Se perdió la conexión con Spotify y no se pudo volver. Cierra y abre Star Music para seguir escuchando.",
   // Not a failure yet. The session died and the app is going to build it again
   // — the same credentials, a new connection — and the track that failed goes
   // back on when it is up. Saying "it was lost" here would be a lie about a
@@ -1197,7 +1199,7 @@ const errorsEs = {
     "No se pudo descargar Soloist de Spotify. Revisa la conexión y prueba otra vez.",
   soloist_bad_archive: "Lo que bajó de Spotify no es el archivo que se esperaba.",
   soloist_unsigned:
-    "El archivo descargado no está firmado por Spotify, así que Starless no lo usa.",
+    "El archivo descargado no está firmado por Spotify, así que Star Music no lo usa.",
   soloist_key_invalid: "Eso no parece una clave. Pégala tal como la copiaste.",
   soloist_key_refused:
     "Spotify rechazó esa clave. Comprueba que la generaste con esta misma cuenta.",
@@ -1224,7 +1226,7 @@ export const errors: Record<Lang, Record<keyof typeof errorsEs, string>> = {
     unauthorised: "Your session expired. Sign in again.",
     forbidden: "Spotify doesn't serve this playlist's contents to an app in development.",
     rate_limited: "Spotify is limiting requests. Give it a moment.",
-    service_unavailable: "Couldn't reach Spotify right now. Starless keeps trying.",
+    service_unavailable: "Couldn't reach Spotify right now. Star Music keeps trying.",
     not_signed_in: "You need to sign in first.",
     login_expired: "Your session expired. Sign in again.",
     network_failed: "Couldn't talk to Spotify.",
@@ -1240,7 +1242,7 @@ export const errors: Record<Lang, Record<keyof typeof errorsEs, string>> = {
     audio_stalled: "The audio got stuck. Reopening the output device…",
     track_unavailable: "This song couldn't be played.",
     connection_lost:
-      "The connection to Spotify was lost and couldn't be brought back. Close and reopen Starless to keep listening.",
+      "The connection to Spotify was lost and couldn't be brought back. Close and reopen Star Music to keep listening.",
     reconnecting: "The connection to Spotify was lost. Reconnecting…",
     bad_track_id: "That song doesn't have a valid identifier.",
     no_lyrics: "This song has no lyrics.",
@@ -1257,7 +1259,7 @@ export const errors: Record<Lang, Record<keyof typeof errorsEs, string>> = {
     soloist_download_failed:
       "Couldn't download Soloist from Spotify. Check the connection and try again.",
     soloist_bad_archive: "What came from Spotify isn't the file that was expected.",
-    soloist_unsigned: "The downloaded file isn't signed by Spotify, so Starless won't use it.",
+    soloist_unsigned: "The downloaded file isn't signed by Spotify, so Star Music won't use it.",
     soloist_key_invalid: "That doesn't look like a key. Paste it exactly as you copied it.",
     soloist_key_refused:
       "Spotify refused that key. Make sure you generated it with this same account.",

@@ -1,6 +1,6 @@
 //! The picture the person puts behind the glass.
 //!
-//! **One file in `%LOCALAPPDATA%\Starless`, beside the settings, and for the same
+//! **One file in `%LOCALAPPDATA%\Star Music`, beside the settings, and for the same
 //! reason.** Sign-out runs `remove_dir_all` over the credential directory; a
 //! wallpaper describes the person at this machine, not the account, and losing it
 //! every time someone signs out would be the same bug the log already paid for.

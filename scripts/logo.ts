@@ -1,12 +1,12 @@
 /**
- * Starless's logo, drawn from nothing but maths.
+ * Star Music's logo, drawn from nothing but maths.
  *
  * "Wave over equalizer": a ring, eight bars that fade from light grey to almost
  * black — the sound going out into silence — and a sine wave that draws an S over
- * them. No stars anywhere: the name is *Starless* and the mark keeps its word.
+ * them. No stars anywhere: the name is *Star Music* and the mark keeps its word.
  * The logo is grey only; the Ember accent lives in the interface, not in the mark.
  *
- *   bun run logo          writes public/starless*.svg (and site/public), and every app icon
+ *   bun run logo          writes public/star-music*.svg (and site/public), and every app icon
  *   bun run logo:icons    just the app icons
  *   bun run logo:invert   the development mark (light plate), into icons-dev/
  *   bun run logo:android  the Android launcher icon, as adaptive layers, into gen/android
@@ -114,8 +114,8 @@ const WAVE_SPECULAR_POINTS = flatten(waveSegments(-1.6));
 // ---------------------------------------------------------------------------
 
 function svg(body: string, defs = ""): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="512" height="512" role="img" aria-label="Starless">
-  <title>Starless</title>${defs ? `\n  <defs>\n${defs}\n  </defs>` : ""}
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="512" height="512" role="img" aria-label="Star Music">
+  <title>Star Music</title>${defs ? `\n  <defs>\n${defs}\n  </defs>` : ""}
 ${body}
 </svg>
 `;
@@ -515,7 +515,7 @@ function paintGlass(canvas: Canvas, place: Place): void {
 /**
  * The app icon at one size.
  *
- * From 64px up it is brand-kit/starless-app-icon.svg: a glass plate over blurred
+ * From 64px up it is brand-kit/star-music-app-icon.svg: a glass plate over blurred
  * grey light with the glass mark on top. Below that the filters blur into
  * nothing, so it is the flat grey mark on a plain Night plate — the halo the wave
  * cuts is Night too, so the cut reads as clean. The development build is the
@@ -910,12 +910,12 @@ if (only !== "--icons") {
   // The favicon and anything under 64px take the flat grey; the glass is for the
   // places with room for it. The development page gets the light mark.
   const marks: [string, string][] = invert
-    ? [["starless-dev.svg", flatMark(true)]]
+    ? [["star-music-dev.svg", flatMark(true)]]
     : [
-        ["starless.svg", flatMark(false)],
-        ["starless-glass.svg", glassMark()],
-        ["starless-light.svg", flatMark(true)],
-        ["starless-mono.svg", monoMark()],
+        ["star-music.svg", flatMark(false)],
+        ["star-music-glass.svg", glassMark()],
+        ["star-music-light.svg", flatMark(true)],
+        ["star-music-mono.svg", monoMark()],
       ];
   const dirs = invert ? [PUBLIC] : [PUBLIC, SITE_PUBLIC];
   for (const dir of dirs) mkdirSync(dir, { recursive: true });

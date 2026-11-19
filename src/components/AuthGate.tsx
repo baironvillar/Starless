@@ -67,7 +67,7 @@ const HANDSHAKE_LIMIT = 20;
 /**
  * The door.
  *
- * Starless is a client for a service you did not build, so it has to ask before
+ * Star Music is a client for a service you did not build, so it has to ask before
  * it can be anything. This screen exists to make that one ask feel like part of
  * the app rather than a form someone stapled on: same glass, same type scale,
  * same accent, same motion budget.
@@ -349,7 +349,7 @@ export function AuthGate({
                 transition={SPRING_GATE}
                 className="glass flex w-full max-w-[460px] flex-col items-center gap-6 rounded-card px-9 py-10 text-center"
               >
-                <img src="/starless-glass.svg" alt="" className="size-16" draggable={false} />
+                <img src="/star-music-glass.svg" alt="" className="size-16" draggable={false} />
 
                 <div>
                   <p className="text-[12px] font-semibold tracking-wide uppercase text-ink-faint">
@@ -451,7 +451,7 @@ function Restoring({ t }: { t: Record<StringKey, string> }) {
     <motion.img
       role="status"
       aria-label={t.loading}
-      src="/starless-glass.svg"
+      src="/star-music-glass.svg"
       draggable={false}
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}

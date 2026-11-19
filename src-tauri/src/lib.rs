@@ -1,4 +1,4 @@
-// The Tauri side of Starless.
+// The Tauri side of Star Music.
 //
 // Rule that shapes this whole file: **the webview never holds a credential.** It
 // asks whether a session exists and gets a boolean and a display name. Tokens,
@@ -24,6 +24,7 @@ mod library_organisation;
 // breaks every command in this file with an error that points nowhere useful.
 mod logging;
 mod media_keys;
+mod migrate;
 mod models;
 mod paths;
 mod playback;
@@ -243,7 +244,7 @@ fn is_our_manifest(url: &tauri::Url) -> bool {
     url.host_str() == Some("github.com")
         && url
             .path()
-            .starts_with("/baironvillar/Starless/releases/download/")
+            .starts_with("/Starless-org/StarMusic/releases/download/")
 }
 
 #[derive(serde::Deserialize)]
@@ -276,7 +277,7 @@ struct GithubAsset {
 /// perfectly reachable.
 fn github_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
-        .user_agent(concat!("starless/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("star-music/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|e| e.to_string())
 }
@@ -292,7 +293,7 @@ fn github_client() -> Result<reqwest::Client, String> {
 /// It is `None` in a build made without a checkout and without the variable
 /// set. That is not a failure: it means the app cannot tell the two apart, and
 /// it keeps the door open — which is what it did before this existed.
-const BUILD_COMMIT: Option<&str> = option_env!("STARLESS_COMMIT");
+const BUILD_COMMIT: Option<&str> = option_env!("STAR_MUSIC_COMMIT");
 
 /// The commit of the newest public release.
 ///
@@ -305,7 +306,7 @@ const BUILD_COMMIT: Option<&str> = option_env!("STARLESS_COMMIT");
 /// is not a build: comparing it with a sha would say "different" for every
 /// release, and the loop would come back every time.
 async fn public_release_commit(client: &reqwest::Client) -> Result<Option<String>, String> {
-    const REPO: &str = "baironvillar/Starless";
+    const REPO: &str = "Starless-org/StarMusic";
 
     let response = client
         .get(format!("https://api.github.com/repos/{REPO}/releases/latest"))
@@ -386,7 +387,7 @@ fn is_spent_budget(status: reqwest::StatusCode, remaining: Option<&str>) -> bool
 async fn find_prerelease_manifest(
     client: &reqwest::Client,
 ) -> Result<Option<tauri::Url>, String> {
-    const REPO: &str = "baironvillar/Starless";
+    const REPO: &str = "Starless-org/StarMusic";
 
     let response = client
         .get(format!("https://api.github.com/repos/{REPO}/tags?per_page=10"))
@@ -716,7 +717,7 @@ async fn ready_session(app: &AppHandle) -> Result<Session, String> {
     })
     .await
     .map_err(|e| {
-        eprintln!("Starless [command_failed]: {e}");
+        eprintln!("Star Music [command_failed]: {e}");
         "command_failed".to_string()
     })?
 }
@@ -871,7 +872,7 @@ async fn begin_login(
     session_state: State<'_, SessionState>,
 ) -> Result<AuthStatus, String> {
     // The browser takes the foreground for the approval, and the person is
-    // looking at it when it answers "Listo. Vuelve a Starless." — so the window
+    // looking at it when it answers "Listo. Vuelve a Star Music." — so the window
     // comes back by itself the moment the browser is done, instead of waiting
     // to be clicked.
     let window = app.clone();
@@ -1012,7 +1013,7 @@ macro_rules! spclient_command {
             })
             .await
             .map_err(|e| {
-                eprintln!("Starless [command_failed]: {e}");
+                eprintln!("Star Music [command_failed]: {e}");
                 "command_failed".to_string()
             })?;
 
@@ -1058,7 +1059,7 @@ async fn jam_start(app: AppHandle) -> Result<JamSession, String> {
     tauri::async_runtime::spawn_blocking(move || spclient::jam_session(&session, true))
         .await
         .map_err(|e| {
-            eprintln!("Starless [command_failed]: {e}");
+            eprintln!("Star Music [command_failed]: {e}");
             "command_failed".to_string()
         })?
 }
@@ -1071,7 +1072,7 @@ async fn jam_join(app: AppHandle, token: String) -> Result<JamSession, String> {
     tauri::async_runtime::spawn_blocking(move || spclient::jam_join(&session, &token))
         .await
         .map_err(|e| {
-            eprintln!("Starless [command_failed]: {e}");
+            eprintln!("Star Music [command_failed]: {e}");
             "command_failed".to_string()
         })?
 }
@@ -1092,7 +1093,7 @@ async fn jam_status(app: AppHandle) -> Result<JamSession, String> {
     tauri::async_runtime::spawn_blocking(move || spclient::jam_session(&session, false))
         .await
         .map_err(|e| {
-            eprintln!("Starless [command_failed]: {e}");
+            eprintln!("Star Music [command_failed]: {e}");
             "command_failed".to_string()
         })?
 }
@@ -1108,7 +1109,7 @@ async fn jam_queue(app: AppHandle, session_id: String) -> Result<Vec<Track>, Str
     tauri::async_runtime::spawn_blocking(move || spclient::jam_queue(&session, &session_id))
         .await
         .map_err(|e| {
-            eprintln!("Starless [command_failed]: {e}");
+            eprintln!("Star Music [command_failed]: {e}");
             "command_failed".to_string()
         })?
 }
@@ -1143,7 +1144,7 @@ async fn jam_leave(app: AppHandle, session_id: String, is_owner: bool) -> Result
     })
     .await
     .map_err(|e| {
-        eprintln!("Starless [command_failed]: {e}");
+        eprintln!("Star Music [command_failed]: {e}");
         "command_failed".to_string()
     })?
 }
@@ -1170,7 +1171,7 @@ async fn jam_add_to_queue(
     })
     .await
     .map_err(|e| {
-        eprintln!("Starless [command_failed]: {e}");
+        eprintln!("Star Music [command_failed]: {e}");
         "command_failed".to_string()
     })?
 }
@@ -1219,7 +1220,7 @@ async fn dj_mix(
     })
     .await
     .map_err(|e| {
-        eprintln!("Starless [command_failed]: {e}");
+        eprintln!("Star Music [command_failed]: {e}");
         "command_failed".to_string()
     })??;
 
@@ -1488,7 +1489,7 @@ async fn dj_more(
     let page = tauri::async_runtime::spawn_blocking(move || spclient::station_page(&for_page, &path))
         .await
         .map_err(|e| {
-            eprintln!("Starless [command_failed]: {e}");
+            eprintln!("Star Music [command_failed]: {e}");
             "command_failed".to_string()
         })??;
 
@@ -1545,7 +1546,7 @@ async fn radio_start(
     })
     .await
     .map_err(|e| {
-        eprintln!("Starless [command_failed]: {e}");
+        eprintln!("Star Music [command_failed]: {e}");
         "command_failed".to_string()
     })??;
 
@@ -1590,7 +1591,7 @@ async fn radio_more(
     let page = tauri::async_runtime::spawn_blocking(move || spclient::station_page(&for_page, &path))
         .await
         .map_err(|e| {
-            eprintln!("Starless [command_failed]: {e}");
+            eprintln!("Star Music [command_failed]: {e}");
             "command_failed".to_string()
         })??;
 
@@ -1670,7 +1671,7 @@ async fn update_playlist_details(
         // de ventana se pierde, y un comando que muere sin dejar rastro es un
         // comando que parece colgado.
         log::error!("spclient: update_playlist_details.command_failed: {e}");
-        eprintln!("Starless [command_failed]: {e}");
+        eprintln!("Star Music [command_failed]: {e}");
         "command_failed".to_string()
     })?;
 
@@ -1769,7 +1770,7 @@ async fn play_track(
     })
     .await
     .map_err(|e| {
-        eprintln!("Starless [command_failed]: {e}");
+        eprintln!("Star Music [command_failed]: {e}");
         "command_failed".to_string()
     })?
 }
@@ -2100,6 +2101,11 @@ async fn reset_customisation() -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let context = tauri::generate_context!();
+    // **Before anything reads a path, and before the window exists.** The
+    // folders, the WebView2 storage and the Soloist key still carry the
+    // Starless name on a machine that just updated; once something has created
+    // the new folder, the old one stops being moved. See `migrate`.
+    let migrated = migrate::run(&context.config().identifier);
     // Before any window exists: the taskbar reads the id when the window is
     // created, and the media card reads it when the session opens.
     media_keys::claim_app_id(&context.config().identifier);
@@ -2126,7 +2132,7 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_opener::init());
     // The updater only downloads and verifies; *when* it runs is decided by the
     // UI. An app that plays music must not install over itself mid-track, so
-    // Starless asks instead — see `update.rs`. A phone's updates are the
+    // Star Music asks instead — see `update.rs`. A phone's updates are the
     // system's.
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
@@ -2150,19 +2156,22 @@ pub fn run() {
         .manage(RadioState::default())
         .manage(keycheck::KeyCheckState::default())
         .manage(soloist::SoloistState::default())
-        .setup(|app| {
+        .setup(move |app| {
             // Before the log and the crash marker: on a phone they have no
             // folder until the app says where its sandbox is. See `paths`.
             #[cfg(mobile)]
             paths::init(app.handle());
 
-            // librespot narrates every refusal through `log`, and Starless is a
+            // librespot narrates every refusal through `log`, and Star Music is a
             // windowed app with no console to narrate into. Both halves matter:
             // without a logger a refusal is invisible, and without a file it is
             // invisible to the user and to us. See `logging`.
             //
             // `RUST_LOG` still wins, e.g. `RUST_LOG=librespot=debug bun run app`.
             logging::init();
+            for note in &migrated {
+                log::info!("{note}");
+            }
 
             // Order matters here, and it is the whole design. The marker from the
             // previous run is *moved aside* rather than overwritten, so the question
@@ -2453,7 +2462,7 @@ mod tests {
         // against. The download itself is the plugin's, and it is the same one
         // the stable channel uses.
         let response = reqwest::blocking::get(
-            "https://github.com/baironvillar/Starless/releases/download/v0.5.1/latest.json",
+            "https://github.com/Starless-org/StarMusic/releases/download/v0.5.1/latest.json",
         )
         .unwrap();
         assert!(response.status().is_success(), "el manifest no se pudo bajar");
@@ -2527,7 +2536,7 @@ mod tests {
     #[test]
     fn only_our_own_releases_are_accepted() {
         let ours = tauri::Url::parse(
-            "https://github.com/baironvillar/Starless/releases/download/v0.5.2/latest.json",
+            "https://github.com/Starless-org/StarMusic/releases/download/v0.5.2/latest.json",
         )
         .unwrap();
         assert!(is_our_manifest(&ours));
@@ -2536,7 +2545,7 @@ mod tests {
         assert!(!is_our_manifest(&other_host));
 
         let sibling = tauri::Url::parse(
-            "https://github.com/baironvillar/Starless-evil/releases/download/v0.5.2/latest.json",
+            "https://github.com/Starless-org/StarMusic-evil/releases/download/v0.5.2/latest.json",
         )
         .unwrap();
         assert!(!is_our_manifest(&sibling));

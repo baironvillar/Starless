@@ -28,16 +28,16 @@ fn embed_commit() {
     println!("cargo:rerun-if-changed=../.git/packed-refs");
     // Y la variable del entorno: cargo no la mira solo, así que sin esto una
     // build se queda con el commit viejo aunque la variable haya cambiado.
-    println!("cargo:rerun-if-env-changed=STARLESS_COMMIT");
+    println!("cargo:rerun-if-env-changed=STAR_MUSIC_COMMIT");
 
-    let commit = std::env::var("STARLESS_COMMIT")
+    let commit = std::env::var("STAR_MUSIC_COMMIT")
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| is_commit_sha(value))
         .or_else(git_head);
 
     if let Some(sha) = commit {
-        println!("cargo:rustc-env=STARLESS_COMMIT={sha}");
+        println!("cargo:rustc-env=STAR_MUSIC_COMMIT={sha}");
     }
 }
 

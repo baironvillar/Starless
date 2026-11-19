@@ -15,9 +15,9 @@
 import { type RefObject, useEffect, useRef } from "react";
 
 /** Sent to a menu's trigger: open, at `detail`. */
-export const MENU_AT = "starless:menu-at";
+export const MENU_AT = "star-music:menu-at";
 /** Sent to the window: open the shared playlist menu for `detail.id`. */
-export const PLAYLIST_MENU = "starless:playlist-menu";
+export const PLAYLIST_MENU = "star-music:playlist-menu";
 
 export type MenuPoint = { x: number; y: number };
 

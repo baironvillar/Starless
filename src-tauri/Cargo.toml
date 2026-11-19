@@ -1,5 +1,5 @@
 [package]
-name = "starless"
+name = "star-music"
 version = "0.7.0-beta.4"
 description = "A native desktop client for Spotify"
 authors = ["bairo"]
@@ -11,7 +11,7 @@ edition = "2024"
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "starless_lib"
+name = "star_music_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -66,7 +66,7 @@ symphonia = { version = "0.5", features = ["mp3"] }
 # Where the librespot credential cache lives. Resolved once, at startup.
 dirs = "6"
 
-# The one place Starless talks to an HTTP API: opening a GitHub issue, and only
+# The one place Star Music talks to an HTTP API: opening a GitHub issue, and only
 # when the person holding the app pressed the button. Blocking client, because
 # every caller is already inside `spawn_blocking` — a blocking client cannot be
 # built inside an async runtime. `urlencoding` builds the report URL handed back
@@ -111,13 +111,13 @@ windows = { version = "0.62", features = [
 
 # What only a desktop has. On a phone the system already keeps one process per
 # app and installs the updates, and the single-instance crate compiles empty
-# there. The TLS is the one Starless has always used: schannel on Windows.
+# there. The TLS is the one Star Music has always used: schannel on Windows.
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
-# One Starless at a time. Two copies means two streaming sessions on one account,
+# One Star Music at a time. Two copies means two streaming sessions on one account,
 # and that is not a cosmetic duplicate: they compete for the same audio keys and
 # the loser feeds the other one's ciphertext to the decoder.
 tauri-plugin-single-instance = "2"
-# Updates for people who already have Starless installed. See `docs/updates.md`
+# Updates for people who already have Star Music installed. See `docs/updates.md`
 # for the release flow and for why the updater signature is not optional.
 tauri-plugin-updater = "2"
 librespot-core = { version = "0.8", default-features = false, features = ["native-tls"] }
@@ -142,7 +142,7 @@ rand = "0.9"
 sha2 = "0.10"
 url = "2"
 
-# librespot-core 0.8.0 with four places changed, all marked `Starless:`. On
+# librespot-core 0.8.0 with four places changed, all marked `Star Music:`. On
 # Android it asked Spotify for its tokens as an Android client, with a client id
 # the session does not carry: the client token came behind a hash cash the crate
 # cannot solve and login5 refused the rest, so the session connected and the

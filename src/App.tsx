@@ -124,7 +124,7 @@ import { useSearch } from "./lib/useSearch";
 import { isMobile } from "./lib/version";
 
 /**
- * How many tracks in a row may fail before Starless stops skipping.
+ * How many tracks in a row may fail before Star Music stops skipping.
  *
  * Skipping on failure with no ceiling is an infinite loop that walks a playlist to
  * its end in milliseconds and then blames the user for the noise. Five in a row
@@ -1317,7 +1317,7 @@ export default function App() {
       intent.current += 1;
       setLoadedTrack(pending.track);
       playTrack(pending.track).catch((e) => {
-        console.error("Starless: no se pudo reproducir el DJ", explain(e));
+        console.error("Star Music: no se pudo reproducir el DJ", explain(e));
       });
     });
     return () => {
@@ -1370,7 +1370,7 @@ export default function App() {
       playTrack(track).catch((e) => {
         // A refusal that only reaches the console is a refusal the user never sees.
         // The bar shows whatever `status.error` says; this is the console copy.
-        console.error("Starless: no se pudo reproducir", explain(e));
+        console.error("Star Music: no se pudo reproducir", explain(e));
       });
     },
     [moveTo, visibleTracks],
@@ -1425,7 +1425,7 @@ export default function App() {
       moveTo(0);
       intent.current += 1;
       playTrack(track).catch((e) => {
-        console.error("Starless: no se pudo reproducir", explain(e));
+        console.error("Star Music: no se pudo reproducir", explain(e));
       });
     },
     [moveTo, setQueueOverride],
@@ -1557,14 +1557,14 @@ export default function App() {
           jamHead.current = head.id;
           if (before !== null && before !== head.id && head.id !== jamPlaying.current) {
             playTrack(head).catch((e) => {
-              console.error("Starless: no se pudo seguir la cola del jam", explain(e));
+              console.error("Star Music: no se pudo seguir la cola del jam", explain(e));
             });
           }
         }
       } catch (e) {
         // A jam that cannot be read right now is not a jam that is over: the
         // next poll asks again.
-        console.warn("Starless: no se pudo leer el jam", explain(e));
+        console.warn("Star Music: no se pudo leer el jam", explain(e));
       }
     };
 
@@ -1635,7 +1635,7 @@ export default function App() {
       setLoadedTrack(track);
       playTrack(track).catch((e) => {
         advancedRef.current = null;
-        console.error("Starless: no se pudo reproducir", explain(e));
+        console.error("Star Music: no se pudo reproducir", explain(e));
       });
     },
     [moveTo, visibleTracks],
@@ -1675,7 +1675,7 @@ export default function App() {
       try {
         voice = await djSpeak(track.id);
       } catch (e) {
-        console.error("Starless: el DJ no pudo hablar", explain(e));
+        console.error("Star Music: el DJ no pudo hablar", explain(e));
       }
       // El mundo se movió mientras se pedía la frase: lo que se pidió después
       // manda, y esta canción no arranca.
@@ -1760,7 +1760,7 @@ export default function App() {
           if (!first) {
             // **La radio no trajo nada.** No hay estación y no hay a dónde ir:
             // la lista se acabó de verdad.
-            console.error("Starless: la radio no trajo canciones");
+            console.error("Star Music: la radio no trajo canciones");
             return;
           }
           setQueue((current) => {
@@ -1783,7 +1783,7 @@ export default function App() {
           // **La radio que no arranca no corta la música:** la lista ya terminó
           // y no hay a dónde volver, pero el fallo se dice en la consola y la
           // app sigue como estaba.
-          console.error("Starless: la radio no siguió a la lista", explain(e));
+          console.error("Star Music: la radio no siguió a la lista", explain(e));
         });
     },
     [queue?.context, visibleTracks, playDirect],
@@ -1832,7 +1832,7 @@ export default function App() {
       });
       moveTo(0);
       playTrack(track).catch((e) => {
-        console.error("Starless: no se pudo reproducir", explain(e));
+        console.error("Star Music: no se pudo reproducir", explain(e));
       });
       // **La radio se pide después, no antes.**
       const mine = intent.current;
@@ -1852,7 +1852,7 @@ export default function App() {
           );
         })
         .catch((e) => {
-          console.error("Starless: la radio no arrancó", explain(e));
+          console.error("Star Music: la radio no arrancó", explain(e));
           // **La radio que no arranca no es una falla visible:** la canción
           // sigue sonando y la cola vuelve a ser una lista.
           setQueue((current) =>
@@ -2064,7 +2064,7 @@ export default function App() {
       intent.current += 1;
       setLoadedTrack(pending.track);
       playTrack(pending.track).catch((e) => {
-        console.error("Starless: no se pudo reproducir el DJ", explain(e));
+        console.error("Star Music: no se pudo reproducir el DJ", explain(e));
       });
       return;
     }
@@ -2155,7 +2155,7 @@ export default function App() {
   }, [shuffle, queue, moveTo]);
 
   /**
-   * Ask once at startup whether there is a newer Starless.
+   * Ask once at startup whether there is a newer Star Music.
    *
    * It downloads nothing and restarts nothing — it only decides whether the
    * Settings row says "there's a new version". Deliberately after the session is
@@ -2338,7 +2338,7 @@ export default function App() {
         // es exactamente lo que el DJ de Spotify no hace.
         await playStationTrack(mix.tracks[0], 0);
       } catch (e) {
-        console.error("Starless: no se pudo reproducir el DJ", e);
+        console.error("Star Music: no se pudo reproducir el DJ", e);
         setDjUnavailable(true);
       } finally {
         setDjBusy(false);
@@ -2428,7 +2428,7 @@ export default function App() {
       .catch((e) => {
         // Una falla aquí no es una canción rota: la estación se queda con lo
         // que ya tiene y sigue sonando.
-        console.error("Starless: la estación no pudo seguir", explain(e));
+        console.error("Star Music: la estación no pudo seguir", explain(e));
         setQueue((current) =>
           current && current.source !== "list" ? { ...current, source: "list" } : current,
         );

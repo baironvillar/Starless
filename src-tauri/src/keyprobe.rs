@@ -8,7 +8,7 @@
 //! would play the song. If every file is refused, the refusal is the account's
 //! and there is nothing to ask for (librespot #1649).
 //!
-//! `STARLESS_SP_KEYS=1` runs it once, a few seconds after the session is up,
+//! `STAR_MUSIC_SP_KEYS=1` runs it once, a few seconds after the session is up,
 //! against the first liked songs. It only asks for keys — it downloads no audio
 //! and writes no key to the log, only whether it came. Debug only, like the
 //! other probes.
@@ -25,14 +25,14 @@ use tauri::AppHandle;
 const SONGS: usize = 5;
 
 pub fn requested() -> bool {
-    std::env::var("STARLESS_SP_KEYS")
+    std::env::var("STAR_MUSIC_SP_KEYS")
         .map(|value| value != "0" && !value.is_empty())
         .unwrap_or(false)
 }
 
 pub fn run(app: AppHandle) {
     tauri::async_runtime::spawn_blocking(move || {
-        log::info!("=== STARLESS_SP_KEYS: una clave por archivo ===");
+        log::info!("=== STAR_MUSIC_SP_KEYS: una clave por archivo ===");
         let Some(session) = crate::selftest::wait_for_session(&app) else {
             log::error!("keys: la sesión no llegó a conectar");
             return;

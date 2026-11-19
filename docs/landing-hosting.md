@@ -13,15 +13,15 @@ for now, and **GitHub Pages**, which keeps working as before. Both come from
 
 | | GitHub Pages | Vercel |
 | --- | --- | --- |
-| Dirección | `https://baironvillar.github.io/Starless/` | la del proyecto en Vercel |
-| `base` | `/Starless` | `/` |
+| Dirección | `https://starless-org.github.io/StarMusic/` | la del proyecto en Vercel |
+| `base` | `/StarMusic` | `/` |
 | Quién publica | `.github/workflows/pages.yml` | la integración de Git de Vercel |
 
 GitHub Pages sirve un sitio de proyecto bajo el nombre del repositorio, así que
-todo enlace empieza con `/Starless`. Vercel lo sirve en la raíz de su dominio.
+todo enlace empieza con `/StarMusic`. Vercel lo sirve en la raíz de su dominio.
 `site/astro.config.mjs` elige según `VERCEL`, que Vercel pone en su build, y el
 marcado lee el prefijo de `import.meta.env.BASE_URL`. **Un enlace interno nuevo
-va con `BASE_URL`, nunca con `/Starless` ni con `/` escritos a mano**: con el
+va con `BASE_URL`, nunca con `/StarMusic` ni con `/` escritos a mano**: con el
 prefijo equivocado la página carga sin ícono, sin el logo de vidrio y sin
 fuentes, y no dice por qué.
 
@@ -29,7 +29,7 @@ fuentes, y no dice por qué.
 
 Se configura una vez, en el panel de Vercel:
 
-- **Repositorio:** `baironvillar/Starless`.
+- **Repositorio:** `Starless-org/StarMusic`.
 - **Root Directory:** `site`. Vercel detecta Astro y `bun.lock` solo.
 - **Production Branch:** `main`.
 

@@ -722,7 +722,7 @@ type OrderMenuProps = {
  * Which order the list on screen is in, which way, and how tall its rows are.
  *
  * **It reorders the screen and nothing else.** The client this mirrors rewrites
- * the playlist, and that is a write against a revision Starless does not hold —
+ * the playlist, and that is a write against a revision Star Music does not hold —
  * so this sorts what is in front of the user and says so, and the order on screen
  * is the order that plays. Nothing is saved.
  *

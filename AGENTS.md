@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Contexto para cualquier agente que toque este repositorio. Starless es un cliente
+Contexto para cualquier agente que toque este repositorio. Star Music es un cliente
 de escritorio no oficial de Spotify Premium: Tauri 2 en Rust con un frontend React.
 
 Lee [`PRODUCT.md`](PRODUCT.md) y [`DESIGN.md`](DESIGN.md) antes de cambiar
@@ -8,7 +8,7 @@ comportamiento o UI. Este archivo es el mapa y las trampas; aquellos dos son la
 razón de las reglas.
 
 **Para agregar una funcionalidad o cambiar comportamiento, cargá el skill
-[`starless`](.agent/skills/starless/SKILL.md).** Este archivo dice *qué* no se
+[`star-music`](.agent/skills/star-music/SKILL.md).** Este archivo dice *qué* no se
 rompe; el skill dice *en qué orden* se hace el cambio y *qué se actualiza del
 otro lado de la costura*. Casi todos los bugs de este repo viven entre dos
 capas, y ninguno de ellos se ve leyendo el archivo que se editó.
@@ -22,7 +22,7 @@ bun run dev          # sólo el frontend en Vite, sin Tauri. No hay audio
 bun run lint         # Biome
 bun run typecheck    # tsc --noEmit
 bun run version      # los tres manifiestos tienen que coincidir
-bun run logo         # regenera el ícono y public/starless.svg
+bun run logo         # regenera el ícono y public/star-music.svg
 bun run logo:invert  # el mismo ícono con los colores invertidos, a icons-dev/
 bun run hooks:install  # una vez por clon: star init hooks
 
@@ -77,6 +77,7 @@ src-tauri/src/
   keycheck.rs             si Spotify le niega las claves de audio a la cuenta, preguntado al entrar
   soloist.rs              Spotify Soloist para esas cuentas: descarga, clave, proceso y WebSocket
   settings.rs             lo que sobrevive a un reinicio
+  migrate.rs              el paso de Starless a Star Music, una vez al arrancar
   logging.rs              el log local con rotación
 relay/                    el Worker que recibe los reportes y crea los issues
 site/                     la landing en Astro; su texto vive en site/src/i18n (i18next)
@@ -143,7 +144,7 @@ en ningún proto ni en ninguna issue:
 5. **Todo texto pasa por `lib/i18n.ts`**, en los dos idiomas a la vez, escritos
    para que ambos lean natural y no como traducción.
 6. **La versión vive en cuatro manifiestos y la mueve
-   [star](https://github.com/baironvillar/star).** `package.json`,
+   [star](https://github.com/Starless-org/Star).** `package.json`,
    `src-tauri/tauri.conf.json`, `Cargo.toml` y `Cargo.lock` dicen lo mismo;
    `bun run version` falla si discrepan. No la edites a mano: una versión sale
    con `bun run release minor` desde `develop` (rama `release/<versión>`, PR) y
@@ -233,10 +234,10 @@ en ningún proto ni en ninguna issue:
   arregla matando todos los Vite y arrancando de nuevo. La prueba de un vistazo:
   si el log tiene los `la portada de … vino en N direcciones`, el frontend llegó
   a pedir la biblioteca; si no, nunca arrancó.
-- **`%APPDATA%\Starless` se borra al cerrar sesión.** `auth::forget_credentials`
+- **`%APPDATA%\Star Music` se borra al cerrar sesión.** `auth::forget_credentials`
   hace `remove_dir_all` sobre todo el directorio. Un ajuste guardado ahí se pierde
   en cada cierre de sesión. Lo que debe sobrevivir un reinicio va a
-  `%LOCALAPPDATA%\Starless` — que es también donde vive el log, por el mismo
+  `%LOCALAPPDATA%\Star Music` — que es también donde vive el log, por el mismo
   motivo.
 - **Un fallo al comprobar actualizaciones no se distingue de "no hay".** Cuando
   `latest.json` no se puede bajar —404, red caída, firma inválida— el comprobador
@@ -339,7 +340,7 @@ en ningún proto ni en ninguna issue:
   `__fastfail` —el `abort` de Rust— no pasa por el filtro.
 - **Dos copias abiertas a la vez se pisan el marcador.** El marcador es un archivo,
   no un proceso: la instalada y la de `cargo run` comparten
-  `%LOCALAPPDATA%\Starless\session.marker`, así que la segunda que arranca cree que
+  `%LOCALAPPDATA%\Star Music\session.marker`, así que la segunda que arranca cree que
   la primera murió.
   Y lo peor no es el aviso: dos sesiones de la misma cuenta se pelean las claves de
   audio, y la que pierde le pasa sus bytes a la otra. En vivo, el 17 de octubre:
@@ -387,13 +388,13 @@ en ningún proto ni en ninguna issue:
   `EndOfTrack` después de que una canción termine. Por eso el botón **carga la
   pista de nuevo** en vez de pedirle que siga, y no dice "sonando" cuando no
   suena nada. Para verlo sin esperar a que Spotify tire la conexión:
-  `STARLESS_KILL_SESSION=1` la corta a propósito ocho segundos después de abrir
+  `STAR_MUSIC_KILL_SESSION=1` la corta a propósito ocho segundos después de abrir
   la app (sólo en debug, como las sondas). Con la sesión muerta, un clic tiene
   que levantar la sesión nueva y poner la canción.
 - **Un `error audio key 0 1` con la sesión sana es Spotify negándole la clave a
   la cuenta, y no hay formato que la salve.** Medido el 6 de noviembre de 2026
   con una cuenta Premium (issue #104) que conecta, lee la biblioteca y no suena:
-  la sonda `STARLESS_SP_KEYS=1` (`keyprobe.rs`) pidió la clave de **los cuatro
+  la sonda `STAR_MUSIC_SP_KEYS=1` (`keyprobe.rs`) pidió la clave de **los cuatro
   formatos** —AAC_24 y OGG 96/160/320— de cinco canciones, por el mismo canal
   que usa librespot, y volvieron **0 de 20**. La cuenta que sí suena, en la
   misma máquina, con la misma build y el mismo client id, tiene los mismos
@@ -429,7 +430,7 @@ en ningún proto ni en ninguna issue:
     recibe nunca.
   **Un punto de contacto nuevo se agrega a esta lista con su motivo**, o no va.
   Y antes de un PR que toque cualquiera de ellos, la prueba con una cuenta que
-  suena, en [`reference/verificar.md`](.agent/skills/starless/reference/verificar.md).
+  suena, en [`reference/verificar.md`](.agent/skills/star-music/reference/verificar.md).
 - **Dos `Cache` de librespot sobre el mismo directorio no se pisan**, pero el
   archivo de credenciales se escribe entero (`File::create`): la sesión que se
   acaba de conectar es la única que escribe, y la muerta no vuelve a escribir.
@@ -512,7 +513,7 @@ en ningún proto ni en ninguna issue:
   avanzando, y por eso la recuperación **abandona** el player viejo
   (`std::mem::forget`, nunca `drop`: `Player::drop` hace `join` del hilo y ese
   hilo no vuelve) antes de abrir otro. Para probarlo sin esperar a que un
-  dispositivo real se trabe: `STARLESS_STALL_TEST=1` fuerza una recuperación
+  dispositivo real se trabe: `STAR_MUSIC_STALL_TEST=1` fuerza una recuperación
   veinte segundos después de abrir la app (sólo en debug, como las sondas).
   **Si tocas el player, mira ese watchdog.**
 - **`Image` no tiene `width`, y no porque se le olvidó.** El canal que lee la
@@ -531,7 +532,7 @@ en ningún proto ni en ninguna issue:
   el `hm://lexicon-session-provider/...` que aparece en la metadata es **el nombre
   interno del servicio**, y lo que va en el host de Spotify es el path sin el
   `hm://`. Sin el prefijo `lexicon-session-provider` da 404, y las siete URIs de
-  context adivinadas dieron 400. La sonda es `STARLESS_SP_DJ=1`.
+  context adivinadas dieron 400. La sonda es `STAR_MUSIC_SP_DJ=1`.
   Tres cosas de esa respuesta que no se ven mirando la lista:
   - **La primera fila es la canción que el DJ introduce, no la narración.** Su id
     resuelve a la canción real —`MetaTrack::get` sobre `42qNWdLKCI41S4uzfamhFM`
@@ -576,7 +577,7 @@ en ningún proto ni en ninguna issue:
     abrir —`extract` sale con código 33 y borra el MSI que lanza por
     `msiexec`—, y el `dj.spotify.com` es el web player móvil, sin una sola
     string de TTS en 3,4 MB de bundles: la voz del DJ es de las apps nativas.
-    La sonda es `STARLESS_SP_VOICE=1`.
+    La sonda es `STAR_MUSIC_SP_VOICE=1`.
   - **La voz se mezcla en la misma salida que la música, y no en otra.**
     El `Sink` de rodio de librespot no deja ver el `Mixer` del stream, y sin
     ese mixer la voz tendría que abrir un segundo stream en el mismo
@@ -726,7 +727,7 @@ en ningún proto ni en ninguna issue:
     el backend sepa lo que se escuchó, vuelve —y si vuelve, vuelve con datos.
   - **Una release pública puede llevar dentro una build de `develop`, y la app
     entonces se ofrece a sí misma.** El canal va compilado dentro del binario:
-    `STARLESS_CHANNEL` lo decide el workflow según si el commit del tag llegó a
+    `STAR_MUSIC_CHANNEL` lo decide el workflow según si el commit del tag llegó a
     `main`, y **cambiar la marca de prerelease en GitHub no lo cambia**. La
     release queda en borrador y se publica a mano, así que esa mano puede
     sacarle la marca: la build sigue siendo de `develop` y ahora está en el
@@ -832,7 +833,7 @@ en ningún proto ni en ninguna issue:
   canción que sembró la radio ni las recientes, así que no hay que filtrar nada.
   La otra candidate, `/inspiredby-mix/v2/seed_to_playlist/spotify:track:<id>`,
   devuelve una playlist editorial y no la radio: no sirve. La sonda es
-  `STARLESS_SP_RADIO=1`.
+  `STAR_MUSIC_SP_RADIO=1`.
 - **Las letras no se traducen, y no por falta de ganas: hoy no hay de dónde.**
   La idea era traducir sólo las canciones en otra escritura (coreano, japonés,
   chino…) y mostrar la traducción chica, entre paréntesis, debajo de cada línea.
@@ -860,7 +861,7 @@ en ningún proto ni en ninguna issue:
     par —`en→es` incluido— y `create()` tira `NotSupportedError`.
     `LanguageDetector` sí contesta `downloadable`. Es la puerta local y sin
     terceros, y está cerrada del lado de Microsoft, no del nuestro.
-  La sonda es `STARLESS_SP_LYRICS=1`: cada vez que se abren unas letras pide la
+  La sonda es `STAR_MUSIC_SP_LYRICS=1`: cada vez que se abren unas letras pide la
   misma canción de varias formas y escribe en el log **la forma** de la
   respuesta —idioma, campos, cuántas alternativas, cuánto alfabeto latino tiene
   cada una— y **nunca el texto**, para no copiar letras a un archivo. Con eso se
@@ -887,7 +888,7 @@ en ningún proto ni en ninguna issue:
   hacía que el DJ pidiera una página de más en la ventana en la que todavía no
   se está reproduciendo.
 - **El canal de la build es un hecho del build, no una consulta a la red.**
-  `STARLESS_CHANNEL` (develop|release) → `__STARLESS_CHANNEL__` (Vite define) →
+  `STAR_MUSIC_CHANNEL` (develop|release) → `__STAR_MUSIC_CHANNEL__` (Vite define) →
   `isPrerelease()`. Es la misma pregunta que decide el ícono invertido —¿el tag
   viene de `main`?— así que los dos no pueden contradecirse: una build de
   `develop` trae el ícono de desarrollo y la pastilla "pre-release" al lado de la
@@ -1101,7 +1102,7 @@ en ningún proto ni en ninguna issue:
   `capabilities/default.json` no le da `set-focus`, `show` ni `unminimize`. El
   backend ya tenía el handle y el patrón, así que el login avisa desde
   `auth.rs` y `lib.rs` levanta la ventana. **El momento es el callback de
-  OAuth**, que es cuando el browser muestra "Listo. Vuelve a Starless.": desde
+  OAuth**, que es cuando el browser muestra "Listo. Vuelve a Star Music.": desde
   ahí en adelante el browser es lo que la persona está mirando, y dejarla
   esperando es dejarla atrás.
 - **El relay es el código que archiva los reportes, y la CI no corría sus
@@ -1133,7 +1134,7 @@ en ningún proto ni en ninguna issue:
   sin cursor no hay dónde insertar nada.
 - **Una variable de Actions que no existe llega como cadena vacía, y
   `option_env!` no la distingue de una que existe y está vacía.**
-  `STARLESS_REPORT_RELAY` se pasa al build desde una variable del repositorio:
+  `STAR_MUSIC_REPORT_RELAY` se pasa al build desde una variable del repositorio:
   si no existe, el workflow la pasa igual y el binario recibe `Some("")`, que
   no es lo mismo que `None`. La app posteaba entonces a `/report` —una URL
   sin host— y culpaba al relay de no contestar, cuando lo que pasa es que no
@@ -1155,6 +1156,29 @@ en ningún proto ni en ninguna issue:
 - **`.agent/` es la copia canónica** de la configuración de agentes. Los shims de
   `.claude/` y `.opencode/` que apuntaban ahí se borraron; para recuperar el
   skill en esas herramientas, `git revert 96cf93c`.
+- **La app se llamaba Starless, y tres cosas siguen llamándose así a
+  propósito.** El 19 de noviembre de 2026 pasó a llamarse Star Music y el repo
+  se mudó a `Starless-org/StarMusic`. El renombre llegó también adentro —el
+  identifier, las carpetas, el log, la clave de Soloist, la entrada de "Iniciar
+  con Windows"—, y `migrate.rs` mueve todo eso **una vez, antes de que nada lea
+  una ruta**. Lo que no se movió, y por qué:
+  - **El `upgradeCode` del MSI** está fijado en `tauri.conf.json` al de
+    Starless (`590aac6e-…`). Tauri lo deriva del `productName`, así que sin
+    fijarlo la actualización no reemplaza a Starless: instala una segunda app
+    al lado. `bunx tauri inspect wix-upgrade-code` muestra los dos.
+  - **El `device_id` de la sesión** (`auth::session_config`) sigue siendo
+    `Starless`: es el id con el que Spotify conoce el equipo, no un nombre que
+    alguien lea.
+  - **El relay** sigue en `starless-relay` con sus marcas `<!-- starless-relay -->`:
+    las builds instaladas mandan sus reportes a esa dirección, y las marcas son
+    las que agrupan los issues que ya existen.
+  **Las betas instaladas antes del cambio no ven la prerelease siguiente.**
+  `is_our_manifest` aceptaba sólo `/baironvillar/Starless/…`, y la API ya
+  contesta con la ruta nueva: el botón dice `invalid_manifest_url`. La línea
+  pública sí actualiza, porque el endpoint de `tauri.conf.json` sigue al
+  redirect de GitHub. Una beta vieja se actualiza a mano, una vez.
+  **El MSI en GitHub se llama `Star.Music_…`**: el bundler lo escribe con
+  espacio y GitHub cambia los espacios por puntos al subirlo.
 
 ## Antes de abrir un PR
 
@@ -1163,7 +1187,7 @@ en ningún proto ni en ninguna issue:
 ojo, no leyendo el diff.
 
 El detalle de cada puerta —qué atrapa y qué **no** atrapa— está en
-[`reference/verificar.md`](.agent/skills/starless/reference/verificar.md). Lo
+[`reference/verificar.md`](.agent/skills/star-music/reference/verificar.md). Lo
 importante: `cargo check` **no detecta código muerto**, porque todo en el crate
 es `pub`, así que un comando sin llamadores pasa los dos perfiles sin un solo
 warning. Para eso hay que buscar el lado de adentro en el lado de afuera.

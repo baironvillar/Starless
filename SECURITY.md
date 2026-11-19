@@ -4,7 +4,7 @@
 
 No abras un issue público. Usa **Security Advisories**:
 
-**https://github.com/baironvillar/Starless/security/advisories/new**
+**https://github.com/Starless-org/StarMusic/security/advisories/new**
 
 Do not open a public issue. Use **Security Advisories** instead.
 
@@ -13,13 +13,13 @@ reporte, ni en un issue, ni en una captura.
 
 ## Qué es un problema de seguridad aquí
 
-**La firma de las actualizaciones.** Starless consulta GitHub Releases por una
+**La firma de las actualizaciones.** Star Music consulta GitHub Releases por una
 versión nueva y el manifest viene firmado. Sin esa verificación, cualquiera que
 pueda interceptar esa petición — una red hostil, una respuesta de DNS, un espejo
 comprometido — elige el próximo binario que se instala en la máquina de cada
 usuario. Ese es el riesgo más serio del proyecto.
 
-**El manejo de credenciales.** Starless inicia sesión con Spotify por OAuth y
+**El manejo de credenciales.** Star Music inicia sesión con Spotify por OAuth y
 la app nunca ve tu contraseña, pero sí maneja un token de sesión y lo cachea.
 Un token que se filtra por el log, por un archivo de sesión, o por un canal que
 no debería convertirlo en una sesión reproducible, es un problema.
@@ -50,7 +50,7 @@ el botón, eso sí es un hallazgo y va por acá.
 
 ## La llave de firma
 
-La llave privada del actualizador vive en `.secrets/starless-updater.key`. Ese
+La llave privada del actualizador vive en `.secrets/star-music-updater.key`. Ese
 directorio está en `.gitignore`, y el CI tiene un job que falla si alguna vez se
 versiona una llave.
 
@@ -70,5 +70,5 @@ Sin promesa de plazo, pero con intención:
   "no lo sé todavía".
 - **Un aviso** cuando haya una versión que lo arregle.
 
-Lo que no prometo es un programa de recompensas para researchers. Starless es
+Lo que no prometo es un programa de recompensas para researchers. Star Music es
 un proyecto de una persona.

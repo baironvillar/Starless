@@ -1,7 +1,7 @@
 //! What the person listened to, kept on this machine and nowhere else.
 //!
 //! **This is not telemetry, and the difference is the whole design.** PRODUCT.md
-//! promises that Starless reports usage data to nobody, its author included. A
+//! promises that Star Music reports usage data to nobody, its author included. A
 //! history that never leaves the disk it was written on reports to nobody: it
 //! exists so Home can say "your most played" and "keep listening", which Spotify
 //! stopped offering to apps like this one. Nothing here opens a socket, and the
@@ -35,7 +35,7 @@ const DAY_MS: i64 = 86_400_000;
 
 /// Where the file lives: next to `settings.json`.
 fn history_path() -> Option<PathBuf> {
-    crate::paths::data_local_dir().map(|base| base.join("Starless").join("history.jsonl"))
+    crate::paths::data_local_dir().map(|base| base.join(crate::paths::APP_DIR).join("history.jsonl"))
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

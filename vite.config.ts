@@ -34,8 +34,8 @@ export default defineConfig(({ mode }) => ({
      * does not have to understand `VAR=valor comando`: `cmd.exe` does not, and
      * the build is what decides whether the app calls itself a prerelease.
      */
-    __STARLESS_CHANNEL__: JSON.stringify(
-      process.env.STARLESS_CHANNEL ?? (mode === "development" ? "develop" : "release"),
+    __STAR_MUSIC_CHANNEL__: JSON.stringify(
+      process.env.STAR_MUSIC_CHANNEL ?? (mode === "development" ? "develop" : "release"),
     ),
     /**
      * Whether this bundle is for a phone. Tauri hands the target platform to
@@ -43,7 +43,7 @@ export default defineConfig(({ mode }) => ({
      * when the bundle is made, like the channel —and not by the window's width:
      * a narrow desktop window is not a phone.
      */
-    __STARLESS_MOBILE__: JSON.stringify(
+    __STAR_MUSIC_MOBILE__: JSON.stringify(
       process.env.TAURI_ENV_PLATFORM === "android" || process.env.TAURI_ENV_PLATFORM === "ios",
     ),
   },

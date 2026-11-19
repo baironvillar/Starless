@@ -13,7 +13,7 @@ const font = (name, cssVariable, weights, fallback) => ({
 });
 
 // Where the page lives decides its address. GitHub Pages serves a project site
-// under the repository's name, so every link there starts with `/Starless`;
+// under the repository's name, so every link there starts with `/StarMusic`;
 // Vercel serves it at the root of its own domain. Vercel sets `VERCEL` and
 // `VERCEL_PROJECT_PRODUCTION_URL` (a host, no scheme) during its build, and
 // the markup reads the prefix from `import.meta.env.BASE_URL`, so this is the
@@ -23,8 +23,8 @@ const vercel = process.env.VERCEL === "1";
 const vercelHost = process.env.VERCEL_PROJECT_PRODUCTION_URL;
 
 export default defineConfig({
-  site: vercel && vercelHost ? `https://${vercelHost}` : "https://baironvillar.github.io",
-  base: vercel ? "/" : "/Starless",
+  site: vercel && vercelHost ? `https://${vercelHost}` : "https://starless-org.github.io",
+  base: vercel ? "/" : "/StarMusic",
   fonts: [
     font("Syne", "--font-syne", ["600 800"], "sans-serif"),
     font("DM Sans", "--font-dm-sans", ["400 600"], "sans-serif"),

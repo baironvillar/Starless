@@ -330,7 +330,7 @@ export function TrackMenu({
 
             {/*
           The one item that points outside the app, and it is a link the user
-          asked for rather than Starless naming itself after anybody: PRODUCT.md
+          asked for rather than Star Music naming itself after anybody: PRODUCT.md
           forbids the Spotify name in *branding*, and a string this user copied
           on purpose is neither the app's name nor a claim of affiliation. It is
           the same link every client offers, and refusing to be able to share a

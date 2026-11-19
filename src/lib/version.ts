@@ -32,7 +32,7 @@ export async function appVersion(): Promise<string> {
  * while the settings panel renders.
  */
 export function isPrerelease(): boolean {
-  return typeof __STARLESS_CHANNEL__ !== "undefined" && __STARLESS_CHANNEL__ === "develop";
+  return typeof __STAR_MUSIC_CHANNEL__ !== "undefined" && __STAR_MUSIC_CHANNEL__ === "develop";
 }
 
 /**
@@ -43,7 +43,7 @@ export function isPrerelease(): boolean {
  * before it draws. The `typeof` guard is the one `isPrerelease` explains.
  */
 export function isMobile(): boolean {
-  return typeof __STARLESS_MOBILE__ !== "undefined" && __STARLESS_MOBILE__;
+  return typeof __STAR_MUSIC_MOBILE__ !== "undefined" && __STAR_MUSIC_MOBILE__;
 }
 
 /**

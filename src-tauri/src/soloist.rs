@@ -2,7 +2,7 @@
 //!
 //! The plan, the reasons and what is lost are in `docs/soloist.md`. In short:
 //! Soloist is Spotify's own headless Spotify Connect player. It plays where
-//! librespot is refused because it is Spotify's, and Starless drives it through
+//! librespot is refused because it is Spotify's, and Star Music drives it through
 //! its local WebSocket while the library, the queue and everything else stay on
 //! librespot's session.
 //!
@@ -111,7 +111,7 @@ struct Inner {
 /// `PlaybackStatus` on every read, so the position moves between events.
 #[derive(Default, Clone)]
 struct Playback {
-    /// The song Starless asked for, as a bare id.
+    /// The song Star Music asked for, as a bare id.
     requested: Option<String>,
     /// The song Soloist says is current, as a bare id.
     current: Option<String>,
@@ -123,7 +123,7 @@ struct Playback {
     speed: f64,
     volume: u16,
     /// The requested song was playing and is not any more: it ended, or
-    /// Soloist moved on by itself. The queue is Starless's, so this is the
+    /// Soloist moved on by itself. The queue is Star Music's, so this is the
     /// moment to say "finished" and let the frontend pick what comes next.
     finished: bool,
     /// The song was heard playing, so a later `idle` means it ended.
@@ -133,10 +133,10 @@ struct Playback {
 
 // --- Paths --------------------------------------------------------------------
 
-/// `%LOCALAPPDATA%\Starless\soloist`: it survives a sign-out, like everything
+/// `%LOCALAPPDATA%\Star Music\soloist`: it survives a sign-out, like everything
 /// that belongs to the machine rather than to the account (`AGENTS.md`).
 fn root() -> Option<PathBuf> {
-    crate::paths::data_local_dir().map(|dir| dir.join("Starless").join("soloist"))
+    crate::paths::data_local_dir().map(|dir| dir.join(crate::paths::APP_DIR).join("soloist"))
 }
 
 fn exe_path() -> Option<PathBuf> {
@@ -183,8 +183,8 @@ fn now_ms() -> u64 {
 /// quit one to pair the other.
 fn device_name() -> String {
     match std::env::var("COMPUTERNAME") {
-        Ok(name) if !name.trim().is_empty() => format!("Starless ({})", name.trim()),
-        _ => "Starless".to_string(),
+        Ok(name) if !name.trim().is_empty() => format!("Star Music ({})", name.trim()),
+        _ => "Star Music".to_string(),
     }
 }
 
@@ -283,7 +283,7 @@ pub fn download(app: &AppHandle) -> Result<(), String> {
     log::info!("soloist: descargando la build de Spotify");
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(300))
-        .user_agent(concat!("Starless/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("star-music/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|e| fail("soloist_download_failed", e))?;
     let response = client
@@ -540,6 +540,13 @@ pub fn stop(app: &AppHandle) {
     }
 }
 
+/// Move the stored key from its Starless name to its Star Music one. Called
+/// once at startup by `migrate::run`, before anything asks whether there is a
+/// key.
+pub fn migrate_key() {
+    key::migrate();
+}
+
 /// Stop Soloist and forget everything that was the account's: the key and the
 /// Connect session. The binary stays — it is the machine's, not the account's.
 pub fn forget(app: &AppHandle) {
@@ -688,7 +695,7 @@ fn read_item(item: &Value) -> (Option<String>, Option<u32>) {
 fn handle_event(app: &AppHandle, event: &Value) {
     let Some(state) = app.try_state::<SoloistState>() else { return };
     let kind = event.get("type").and_then(Value::as_str).unwrap_or("");
-    // One line per song change: the id and the duration Starless read from
+    // One line per song change: the id and the duration Star Music read from
     // it, never the name or anything else from the item. It is what found
     // where Soloist keeps the duration (`read_item`), and what will say so if
     // a new build moves it again.
@@ -745,7 +752,7 @@ fn handle_event(app: &AppHandle, event: &Value) {
                 }
             });
             // **The duration comes with the full snapshot, not with the change.**
-            // Measured live: a song started from Starless left the bar at 0:00
+            // Measured live: a song started from Star Music left the bar at 0:00
             // with the position running, because Soloist does not send a
             // `playback_state` when a song starts — only the change events. So
             // the snapshot is asked for every time the song changes.
@@ -801,8 +808,8 @@ fn apply_status(p: &mut Playback, status: &str) {
 }
 
 fn apply_track(p: &mut Playback, id: Option<String>) {
-    // Soloist moved on from the song Starless asked for —its own autoplay, or
-    // the end of a context—: for Starless that song finished, and what plays
+    // Soloist moved on from the song Star Music asked for —its own autoplay, or
+    // the end of a context—: for Star Music that song finished, and what plays
     // next is the queue's decision, not Soloist's.
     if p.heard && p.requested.is_some() && id != p.requested && id.is_some() {
         p.finished = true;
@@ -818,7 +825,7 @@ fn apply_position(p: &mut Playback, position: &Value) {
     p.speed = position.get("speed").and_then(Value::as_f64).unwrap_or(0.0);
 }
 
-/// Starless's volume scale (0..=65535) to Soloist's (0..=100).
+/// Star Music's volume scale (0..=65535) to Soloist's (0..=100).
 fn to_percent(volume: u16) -> u16 {
     ((u32::from(volume) * 100 + 32_767) / 65_535) as u16
 }
@@ -919,7 +926,7 @@ fn fail(code: &str, detail: impl std::fmt::Display) -> String {
 #[cfg(windows)]
 mod key {
     //! The key in the Windows Credential Manager: encrypted for the user by the
-    //! system, outside every file Starless writes, and gone with `delete`.
+    //! system, outside every file Star Music writes, and gone with `delete`.
 
     use windows::core::{PCWSTR, PWSTR};
     use windows::Win32::Security::Credentials::{
@@ -927,14 +934,42 @@ mod key {
         CRED_TYPE_GENERIC,
     };
 
-    const TARGET: &str = "Starless/soloist-api-key";
+    const TARGET: &str = "Star Music/soloist-api-key";
+    /// Where the key lived while the app was called Starless. Read once by
+    /// [`migrate`] and then removed.
+    const LEGACY_TARGET: &str = "Starless/soloist-api-key";
 
     fn wide(text: &str) -> Vec<u16> {
         text.encode_utf16().chain(std::iter::once(0)).collect()
     }
 
     pub fn write(value: &str) -> Result<(), String> {
-        let mut target = wide(TARGET);
+        write_at(TARGET, value)
+    }
+
+    pub fn read() -> Option<String> {
+        read_at(TARGET)
+    }
+
+    pub fn delete() {
+        delete_at(TARGET)
+    }
+
+    /// Carry the key over from its Starless name. A person who had paired
+    /// Soloist before the rename keeps it paired: the key is theirs, and
+    /// asking for it again because the app changed its name would be asking
+    /// for something they already gave.
+    pub fn migrate() {
+        let Some(old) = read_at(LEGACY_TARGET) else {
+            return;
+        };
+        if read().is_some() || write(&old).is_ok() {
+            delete_at(LEGACY_TARGET);
+        }
+    }
+
+    fn write_at(name: &str, value: &str) -> Result<(), String> {
+        let mut target = wide(name);
         let mut blob = value.as_bytes().to_vec();
         let credential = CREDENTIALW {
             Type: CRED_TYPE_GENERIC,
@@ -949,8 +984,8 @@ mod key {
         unsafe { CredWriteW(&credential, 0) }.map_err(|e| super::fail("soloist_key_store_failed", e))
     }
 
-    pub fn read() -> Option<String> {
-        let target = wide(TARGET);
+    fn read_at(name: &str) -> Option<String> {
+        let target = wide(name);
         let mut found: *mut CREDENTIALW = std::ptr::null_mut();
         // SAFETY: `found` is filled by the system and released with `CredFree`.
         unsafe {
@@ -966,8 +1001,8 @@ mod key {
         }
     }
 
-    pub fn delete() {
-        let target = wide(TARGET);
+    fn delete_at(name: &str) {
+        let target = wide(name);
         // SAFETY: a plain call with a buffer that outlives it.
         let _ = unsafe { CredDeleteW(PCWSTR(target.as_ptr()), CRED_TYPE_GENERIC, None) };
     }
@@ -984,6 +1019,7 @@ mod key {
         None
     }
     pub fn delete() {}
+    pub fn migrate() {}
 }
 
 #[cfg(windows)]

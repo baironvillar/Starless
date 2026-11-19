@@ -14,7 +14,7 @@ use librespot_core::{
     session::Session,
 };
 
-/// The client id Starless presents as a *streaming* client.
+/// The client id Star Music presents as a *streaming* client.
 ///
 /// This is deliberately **not** the app you registered in the Spotify developer
 /// dashboard, and that is the single most important fact in this file.
@@ -37,9 +37,9 @@ use librespot_core::{
 ///
 /// It is public, not a secret — PKCE needs no client secret — but it belongs to
 /// another project, so it is overridable and replaceable:
-/// `STARLESS_STREAMING_CLIENT_ID`.
+/// `STAR_MUSIC_STREAMING_CLIENT_ID`.
 pub const SHARED_CLIENT_ID: &str = "65b708073fc0480ea92a077233ca87bd";
-pub const STREAMING_CLIENT_ID_ENV: &str = "STARLESS_STREAMING_CLIENT_ID";
+pub const STREAMING_CLIENT_ID_ENV: &str = "STAR_MUSIC_STREAMING_CLIENT_ID";
 
 /// The redirect URI registered for [`SHARED_CLIENT_ID`].
 ///
@@ -48,7 +48,7 @@ pub const STREAMING_CLIENT_ID_ENV: &str = "STARLESS_STREAMING_CLIENT_ID";
 /// redirect URI too.
 ///
 /// `librespot-oauth` takes the port out of this and binds its callback server to
-/// it, so this is a port Starless opens locally, and only during login.
+/// it, so this is a port Star Music opens locally, and only during login.
 pub const STREAMING_REDIRECT_URI: &str = "http://127.0.0.1:8989/login";
 
 /// `streaming` is the scope that actually unlocks audio. Without it login
@@ -92,7 +92,7 @@ fn env_or(name: &str) -> Option<String> {
 /// the user authorise again.
 pub fn cache_dir() -> Result<PathBuf, String> {
     crate::paths::data_dir()
-        .map(|base| base.join("Starless"))
+        .map(|base| base.join(crate::paths::APP_DIR))
         .ok_or_else(|| fail("no_data_dir", "paths::data_dir() returned nothing"))
 }
 
@@ -163,6 +163,13 @@ pub fn session_config(client_id: &str) -> SessionConfig {
     config.client_id = client_id.to_string();
     // A phone and a computer on one account are two devices, not one. No
     // space: the jam puts the id in a URL path.
+    //
+    // **It still says Starless, and that is on purpose.** The app was renamed
+    // to Star Music, but this is not a name anyone reads: it is the id Spotify
+    // knows this device by, and the saved credential was issued to it. A new
+    // id is a new device to Spotify — a second entry in the account's device
+    // list, and a stored login that may no longer be accepted. The visible
+    // name in the device list is `soloist::device_name`, and that one moved.
     config.device_id = if cfg!(mobile) { "Starless-Android" } else { "Starless" }.to_string();
     // librespot downloads each track into this folder, and its default is
     // unwritable on a phone. See `paths::temp_dir`.
@@ -267,7 +274,7 @@ pub fn cached_session(cache: &Cache) -> Option<Session> {
 ///
 /// `on_browser_done` is called once the browser is done with its part, approved
 /// or not. **That is the moment the person is looking at "Listo. Vuelve a
-/// Starless." instead of at Starless**, so it is the moment the window has to
+/// Star Music." instead of at Star Music**, so it is the moment the window has to
 /// come back to the front by itself: the alternative is a person who has just
 /// authorised everything having to go and fetch a window that is hiding behind
 /// the browser.
@@ -302,7 +309,7 @@ fn pkce(
 const CALLBACK_PAGE: &str = "<!doctype html><meta charset=utf-8>\
      <body style=\"background:#08080A;color:#F4F5F7;font:16px system-ui;\
      display:grid;place-items:center;height:100vh;margin:0\">\
-     <p>Listo. Vuelve a Starless.</p>";
+     <p>Listo. Vuelve a Star Music.</p>";
 
 /// The same PKCE round trip, built here because `librespot-oauth` cannot do it
 /// on a phone.

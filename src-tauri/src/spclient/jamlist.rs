@@ -335,7 +335,7 @@ mod tests {
 
     /// El decodificador contra la respuesta real del servicio.
     ///
-    /// **La respuesta entera quedó en `%LOCALAPPDATA%\Starless`** cuando se
+    /// **La respuesta entera quedó en `%LOCALAPPDATA%\Star Music`** cuando se
     /// midió la cola: 43 KB de protobuf que el log muestra recortada. Si el
     /// archivo está, el decodificador se prueba contra él; si no, el test no
     /// dice nada.
@@ -349,7 +349,7 @@ mod tests {
     #[test]
     fn the_decoder_reads_the_real_answer() {
         let base = std::env::var("LOCALAPPDATA").unwrap_or_default();
-        let path = format!("{base}\\Starless\\jam-list-sesion.bin");
+        let path = format!("{base}\\Star Music\\jam-list-sesion.bin");
         let Ok(bytes) = std::fs::read(&path) else {
             return;
         };

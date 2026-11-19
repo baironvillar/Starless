@@ -1,4 +1,4 @@
-package app.starless.desktop
+package app.starmusic.desktop
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -9,7 +9,7 @@ import android.os.IBinder
 import androidx.core.app.ServiceCompat
 
 /**
- * Keeps Starless a foreground process while its window is not on screen.
+ * Keeps Star Music a foreground process while its window is not on screen.
  *
  * **Android cuts the network of a background app, loopback included.** During
  * the login the browser is in front, so the callback to `127.0.0.1:8989` never

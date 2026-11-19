@@ -34,9 +34,9 @@ Soloist real:
 ## Por qué existe
 
 Hay cuentas Premium a las que Spotify les niega las claves de audio por el canal
-que usa librespot (`error audio key 0 1`). Se midió con `STARLESS_SP_KEYS=1`:
+que usa librespot (`error audio key 0 1`). Se midió con `STAR_MUSIC_SP_KEYS=1`:
 **0 de 20** claves, en los cuatro formatos de cinco canciones (ver la trampa en
-`AGENTS.md`). Para esas cuentas Starless no suena, y no hay arreglo del lado de
+`AGENTS.md`). Para esas cuentas Star Music no suena, y no hay arreglo del lado de
 librespot (librespot #1649).
 
 **Spotify Soloist** es el reproductor sin ventana que Spotify publica para
@@ -99,10 +99,10 @@ Apenas conecta la sesión, el backend pide **una** clave de audio (la de la
 primera canción guardada, como hace la sonda). Si Spotify la niega con la sesión
 sana, la app lo sabe **antes** de que la persona apriete play:
 
-> **Spotify no entrega el audio de esta cuenta a Starless.**
+> **Spotify no entrega el audio de esta cuenta a Star Music.**
 > No es tu suscripción ni la app: Spotify bloquea a algunas cuentas Premium en
 > reproductores no oficiales. Puedes seguir escuchando con Spotify Soloist, el
-> reproductor liviano de Spotify, que Starless maneja por ti.
+> reproductor liviano de Spotify, que Star Music maneja por ti.
 > **[Configurar Soloist]** · Ahora no
 
 Con "Ahora no" la biblioteca se puede seguir mirando, y el mismo aviso vuelve,
@@ -124,15 +124,15 @@ marca solo cuando está listo, y el siguiente se enciende.
    la app **arranca Soloist con esa clave y la valida en el momento**: o
    "Clave aceptada", o "Spotify rechazó esa clave", nunca un fallo más tarde.
 3. **Emparejar una vez.** La app muestra el nombre exacto del dispositivo, en
-   grande: **"Starless en <nombre de la PC>"**, un código QR que abre Spotify en
+   grande: **"Star Music en <nombre de la PC>"**, un código QR que abre Spotify en
    el celular, y una ilustración de la lista de dispositivos con ese nombre
    resaltado. Texto: "Abre Spotify en tu celular, conectado al mismo Wi-Fi,
-   reproduce cualquier cosa y elige *Starless en …*". El paso se marca cuando
+   reproduce cualquier cosa y elige *Star Music en …*". El paso se marca cuando
    Soloist avisa `auth_state.logged_in`. Si en un minuto no llegó nada, la hoja
    nombra la causa probable: otra red, un Wi-Fi de invitados o de oficina, o una
    red que aísla los dispositivos.
 
-Al terminar: **"Listo. Starless reproduce con Spotify Soloist."** y la música
+Al terminar: **"Listo. Star Music reproduce con Spotify Soloist."** y la música
 arranca con lo que la persona había elegido.
 
 ### 3. Después
@@ -156,7 +156,7 @@ y `player_status`, y el evento `player://status`, hablan con librespot en
 `enum Engine { Librespot, Soloist }` detrás de esos mismos comandos, y un
 `soloist.rs` nuevo que traduce:
 
-| Starless | Soloist |
+| Star Music | Soloist |
 |---|---|
 | `play_track(id)` | `play` con `spotify:track:<id>` |
 | `toggle_playback` | `pause` / `play` sin `uri` |
@@ -164,26 +164,26 @@ y `player_status`, y el evento `player://status`, hablan con librespot en
 | `set_volume(v)` | `set_volume` (de 0–65535 a 0–100) |
 | `PlaybackStatus` | de `playback_state`, `position_sync` y `track_changed` |
 
-**La cola sigue siendo de Starless.** Soloist no acepta una lista, así que se le
+**La cola sigue siendo de Star Music.** Soloist no acepta una lista, así que se le
 manda canción por canción, y la siguiente se le adelanta con `add_to_queue`
 apenas empieza la actual, para que el paso entre una y otra no tenga silencio.
 El "terminó" se deduce de `track_changed` a la canción adelantada, o de
 `playback_changed` a `idle`. **Hay que medir** qué hace Soloist al terminar una
-canción sin nada en cola: si arranca su propio autoplay, Starless lo tiene que
+canción sin nada en cola: si arranca su propio autoplay, Star Music lo tiene que
 pisar con lo que dice su cola.
 
 ### El proceso
 
-- Vive en `%LOCALAPPDATA%\Starless\soloist\` (binario, `data\` y `cache\`), que
+- Vive en `%LOCALAPPDATA%\Star Music\soloist\` (binario, `data\` y `cache\`), que
   sobrevive al cierre de sesión. **Cerrar sesión borra `data\`** —la sesión de
   Soloist es de la cuenta— pero no el binario.
 - Lo arranca el backend con el login, y lo cierra al salir. Si sale con `10`, se
   descarga la build nueva. Si sale con `1` por el data-dir ocupado, es otra copia
-  de Starless (instalada y de desarrollo): se dice eso, no "Soloist falló".
+  de Star Music (instalada y de desarrollo): se dice eso, no "Soloist falló".
 - **Con Soloist activo, no se crea el player de librespot.** Soloist abre su
   propio stream WASAPI, y dos clientes del mismo dispositivo se pelean (ver la
   trampa del player en `AGENTS.md`).
-- Si Starless anuncia un dispositivo de Connect propio, **deja de anunciarlo
+- Si Star Music anuncia un dispositivo de Connect propio, **deja de anunciarlo
   mientras se empareja**: dos nombres parecidos en la lista fue el primer error
   de los testers de Spotifast.
 
@@ -198,7 +198,7 @@ pisar con lo que dice su cola.
 
 ## Lo que se pierde con Soloist, dicho de frente
 
-- **La voz del DJ**: sale por el sink propio de Starless (`voice.rs`), que con
+- **La voz del DJ**: sale por el sink propio de Star Music (`voice.rs`), que con
   Soloist no existe. **Decidido: se adapta a Soloist, pero en un arreglo
   posterior.** La primera versión de Soloist sale con el DJ como lista, sin voz,
   y la voz vuelve cuando se adapte (ver el punto 2 de abajo).
@@ -220,7 +220,7 @@ pisar con lo que dice su cola.
    la voz se adapta a Soloist, pero no en la primera versión.** Soloist sale con
    el DJ como lista, y la voz es un arreglo aparte que viene después: no frena
    el resto del plan. El camino más corto sigue siendo el que ya estaba sobre
-   la mesa —un stream propio de Starless que se abre sólo mientras Soloist está
+   la mesa —un stream propio de Star Music que se abre sólo mientras Soloist está
    en pausa, que es justo cuando el DJ habla—, pero se decide y se mide en ese
    arreglo, no ahora. Mientras tanto, con Soloist el DJ no dice nada, y la app
    no finge que lo va a decir: la frase no se muestra como si fuera a sonar.
@@ -240,9 +240,9 @@ Cada uno con una sonda, como el resto del repo, antes de construir la UI:
    al terminar, y qué hace Soloist con la cola vacía.
 4. **La clave inválida**: cómo falla Soloist con una clave rechazada (código de
    salida, mensaje), para que la hoja lo diga en el momento.
-5. **Si Starless anuncia un dispositivo de Connect hoy**, y cómo se apaga
+5. **Si Star Music anuncia un dispositivo de Connect hoy**, y cómo se apaga
    durante el emparejado.
-6. **La memoria y el arranque** de Starless más Soloist, para poder decirlo con
+6. **La memoria y el arranque** de Star Music más Soloist, para poder decirlo con
    números.
 
 ## Fuentes
