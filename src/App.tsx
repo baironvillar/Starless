@@ -38,6 +38,7 @@ import {
   unshuffledQueue,
   upNextTracks,
 } from "./lib/queue";
+import { sidebarTransport } from "./lib/sidebarPlayback";
 import {
   type Album,
   type Artist,
@@ -2324,8 +2325,18 @@ export default function App() {
     [shuffle, playFrom, playShuffled, playlistContext],
   );
 
+  const sidebarPlayback = sidebarTransport(queue, status, loadedTrack?.id ?? null);
   const onPlayFromSidebar = useCallback(
     async (id: string) => {
+      if (sidebarPlayback?.id === id) {
+        setSidebarError(null);
+        try {
+          await togglePlayback();
+        } catch (error) {
+          setSidebarError(explain(error));
+        }
+        return;
+      }
       const request = ++intent.current;
       setSidebarPending({ id, request });
       setSidebarError(null);
@@ -2348,7 +2359,7 @@ export default function App() {
         setSidebarPending((current) => (current?.request === request ? null : current));
       }
     },
-    [queryClient, shuffle, playShuffled, playFrom, t.emptyList],
+    [queryClient, shuffle, playShuffled, playFrom, t.emptyList, sidebarPlayback],
   );
 
   /**
@@ -2933,6 +2944,7 @@ export default function App() {
               onSelect={onSelectFromRail}
               onPlay={(id) => void onPlayFromSidebar(id)}
               playingRequest={sidebarPending?.request === intent.current ? sidebarPending.id : null}
+              transport={sidebarPlayback}
               playError={sidebarError}
             />
           )}
