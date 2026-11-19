@@ -1,6 +1,7 @@
-import { PanelLeftClose, PanelLeftOpen, Plus, TriangleAlert } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, Pin, Plus, TriangleAlert } from "lucide-react";
 import { motion } from "motion/react";
 import type { StringKey } from "../lib/i18n";
+import { useLibraryOrganisation } from "../lib/libraryOrganisation";
 import {
   type Account,
   coverImage,
@@ -116,6 +117,7 @@ export function LibrarySidebar({
   onPrefetch,
   onNewPlaylist,
 }: LibrarySidebarProps) {
+  const organisation = useLibraryOrganisation();
   const avatar = account ? coverImage(account.images) : null;
   /** The shape the panel is in; each layer below draws one of the two. */
   const railOnly = collapsed;
@@ -346,6 +348,8 @@ export function LibrarySidebar({
                       >
                         <PlaylistTile
                           title={playlist.name}
+                          pinned={organisation.preference(playlist.id).pinned}
+                          pinnedLabel={t.pinnedPlaylist}
                           imageUrl={coverImage(playlist.images)?.url ?? null}
                           // The DJ is drawn, not photographed: the service sends no cover for
                           // its card, and the rail would otherwise show an empty square.
@@ -500,6 +504,12 @@ export function LibrarySidebar({
                         between two covers. The shelf over there is where the count
                         belongs. */}
                             </span>
+                          )}
+                          {organisation.preference(playlist.id).pinned && (
+                            <Pin
+                              className="size-3 shrink-0 text-ink-muted"
+                              aria-label={t.pinnedPlaylist}
+                            />
                           )}
                         </button>
                       </div>

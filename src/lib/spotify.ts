@@ -3,6 +3,25 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useMemo, useSyncExternalStore } from "react";
 import { errors, type Lang } from "./i18n";
+import type { LibraryOrganisation, PlaylistPreference } from "./libraryOrganisation";
+
+export async function libraryOrganisation(account: string): Promise<LibraryOrganisation> {
+  if (hasBackend()) return invoke("library_organisation", { account });
+  return JSON.parse(localStorage.getItem(`starless:library:${account}`) ?? "{}");
+}
+
+export async function setPlaylistPreference(
+  account: string,
+  id: string,
+  preference: PlaylistPreference,
+): Promise<void> {
+  if (hasBackend()) return invoke("set_playlist_preference", { account, id, preference });
+  const saved = await libraryOrganisation(account);
+  localStorage.setItem(
+    `starless:library:${account}`,
+    JSON.stringify({ ...saved, [id]: preference }),
+  );
+}
 
 /**
  * The account's real data, as Spotify sends it.
@@ -687,7 +706,7 @@ export const SURFACE_OPACITY_DEFAULT = 32;
  */
 const SURFACE_OPACITY_KEY = "starless:surface-opacity";
 
-function hasBackend(): boolean {
+export function hasBackend(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
@@ -1698,6 +1717,7 @@ export async function savePlaylistDetails(
 }
 
 export const keys = {
+  libraryOrganisation: (account: string | null) => ["library-organisation", account] as const,
   account: ["account"] as const,
   playlists: ["playlists"] as const,
   liked: ["liked-tracks"] as const,
