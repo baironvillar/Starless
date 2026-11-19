@@ -88,6 +88,16 @@ The performance claims above are design targets, not measurements. Do not presen
 
 Withdrawing it needs withdrawing the promise. Analytics is still off the table; this is a file someone hands over on purpose after their app has already died.
 
+### Library organisation stays local
+
+Pinning and archiving playlists are per-account preferences on this device.
+Pins have their own saved order, independent of the library's chosen sort.
+They never modify the remote library or leave the machine. Archiving hides a
+playlist from Starless's shelves without removing it from an existing play queue;
+the person can restore it from Archived playlists on Home or the phone's Library.
+These preferences live beside settings, outside the credential directory, so
+signing out does not erase them or apply them to another account.
+
 ### The listening history is not telemetry
 
 Home's "most played", "keep listening" and "your week" come from a history Starless keeps **on this machine only** (`history.rs`, a `history.jsonl` next to `settings.json`). It never leaves the disk, so it reports to nobody and promise 3 stands. It records a song only after 30 seconds of real listening, keeps 120 days, and the person can switch it off or delete it from Settings. Sending any of it anywhere would be telemetry, and is ruled out like the rest.

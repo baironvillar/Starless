@@ -2,9 +2,11 @@ import { Lock, Play as PlayIcon, Radio } from "lucide-react";
 import { motion } from "motion/react";
 import { useState } from "react";
 import type { StringKey } from "../lib/i18n";
+import { useLibraryOrganisation } from "../lib/libraryOrganisation";
 import { SPRING } from "../lib/motion";
 import { type Artist, type HomeStats, isDjCard, type Play, type Playlist } from "../lib/spotify";
 import { isMobile } from "../lib/version";
+import { ArchivedPlaylists } from "./ArchivedPlaylists";
 import { DjArtwork } from "./DjArtwork";
 import { LikedCover } from "./LikedCover";
 import { cardImage, MediaCard } from "./MediaCard";
@@ -109,6 +111,7 @@ export function HomeScreen({
   const madeForYou = playlists.filter((playlist) => playlist.owner?.display_name === "spotify");
   const yours = playlists.filter((playlist) => playlist.owner?.display_name !== "spotify");
   const byId = new Map(playlists.map((playlist) => [playlist.id, playlist]));
+  const organisation = useLibraryOrganisation();
   const dj = madeForYou.find(isDjCard) ?? null;
 
   if (loading && playlists.length === 0) {
@@ -124,6 +127,10 @@ export function HomeScreen({
 
   // Quick tiles: the saved songs, the DJ, then the lists heard last, then the rail's order.
   const quickIds: string[] = [];
+  for (const playlist of playlists) {
+    if (!isDjCard(playlist) && organisation.preference(playlist.id).pinned)
+      quickIds.push(playlist.id);
+  }
   for (const play of stats?.recent ?? []) {
     const id = play.context?.id;
     if (id && id !== "liked" && byId.has(id) && !quickIds.includes(id)) quickIds.push(id);
@@ -146,6 +153,7 @@ export function HomeScreen({
 
   return (
     <div className="flex flex-col gap-11 pb-4">
+      <ArchivedPlaylists t={t} />
       {error && playlists.length === 0 && (
         <div className="surface-card rounded-card border border-white/8 px-5 py-4">
           <p className="text-[13px] font-semibold">{t.libraryUnavailableTitle}</p>

@@ -274,6 +274,24 @@ clothes, and there are only two of these, so one recipe covers both.
 - The content area carries the only large artwork. Chrome stays quiet so the album is the brightest thing on screen.
 - Spanish and English ship together; every string comes from a translation map, never inline.
 
+## Library organisation
+
+Pinned playlists precede other visible playlists and keep their own saved order.
+The selected library sort applies only to unpinned playlists. Pins can be dragged
+in every sidebar layout, moved with Alt + Up/Down from a focused playlist, or
+moved up/down from their menu. Pin marks use the existing muted ink and icon style.
+The playlist menu offers pin/unpin and archive/restore for actual playlists,
+including ones owned by someone else. The DJ card is not a playlist.
+
+Archived playlists are hidden from all regular shelves and quick-access tiles.
+Home and the phone's Library show an Archived playlists disclosure only when
+there are archived entries, including when every playlist is archived. Its rows name each playlist and offer a labelled
+restore button. Restoring preserves its pinned state. Archiving does not navigate
+away from an already open playlist or stop music.
+
+Pin, archive and move actions close their menu after saving successfully. A failed
+save keeps the menu open with the error, so closing it never implies lost work succeeded.
+
 ## The phone
 
 Decided with the user on 2026-11-02, one question at a time. The desktop layout does not

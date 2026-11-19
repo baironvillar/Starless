@@ -17,6 +17,7 @@ mod crossfade;
 mod history;
 mod keycheck;
 mod keyprobe;
+mod library_organisation;
 // Named `selftest`, never `diagnostic`: the `diagnostic` crate provides the
 // `#[diagnostic::on_unimplemented]` attribute that `#[tauri::command]` expands
 // to, and a local module of the same name shadows it at the crate root — which
@@ -2011,6 +2012,36 @@ fn set_library_view(view: String) {
     settings::save_library_view(&view);
 }
 
+#[tauri::command]
+async fn library_organisation(
+    account: String,
+) -> Result<std::collections::BTreeMap<String, library_organisation::Preference>, String> {
+    tauri::async_runtime::spawn_blocking(move || library_organisation::load(&account))
+        .await
+        .map_err(|_| "command_failed".to_string())?
+}
+
+#[tauri::command]
+async fn set_playlist_preference(
+    account: String,
+    id: String,
+    preference: library_organisation::Preference,
+) -> Result<std::collections::BTreeMap<String, library_organisation::Preference>, String> {
+    tauri::async_runtime::spawn_blocking(move || library_organisation::save(&account, &id, preference))
+        .await
+        .map_err(|_| "command_failed".to_string())?
+}
+
+#[tauri::command]
+async fn set_pinned_order(
+    account: String,
+    ids: Vec<String>,
+) -> Result<std::collections::BTreeMap<String, library_organisation::Preference>, String> {
+    tauri::async_runtime::spawn_blocking(move || library_organisation::reorder(&account, ids))
+        .await
+        .map_err(|_| "command_failed".to_string())?
+}
+
 /// How a playlist's songs are ordered, as `<order>-<asc|desc>`. Same reasoning
 /// as `library_sort`: the default is answered here, in one place.
 #[tauri::command]
@@ -2350,6 +2381,9 @@ pub fn run() {
             set_accent,
             library_sort,
             set_library_sort,
+            library_organisation,
+            set_playlist_preference,
+            set_pinned_order,
             library_view,
             set_library_view,
             track_order,
