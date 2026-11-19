@@ -1,6 +1,7 @@
 import { TriangleAlert } from "lucide-react";
 import type { StringKey } from "../lib/i18n";
 import { coverImage, isDjCard, type Playlist } from "../lib/spotify";
+import { ArchivedPlaylists } from "./ArchivedPlaylists";
 import { DjArtwork } from "./DjArtwork";
 import { LikedCover } from "./LikedCover";
 
@@ -30,6 +31,7 @@ export function MobileLibrary({ t, playlists, likedCount, error, onSelect }: Mob
       </h1>
 
       <div className="flex flex-col">
+        <ArchivedPlaylists t={t} />
         <Row
           onClick={() => onSelect("liked")}
           art={<LikedCover compact />}

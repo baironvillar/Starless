@@ -29,6 +29,7 @@ import { TrackList } from "./components/TrackList";
 import { UpdateAlert } from "./components/UpdateAlert";
 import { useBackRoot } from "./lib/back";
 import { type Lang, type StringKey, strings } from "./lib/i18n";
+import { organisedPlaylists, useLibraryOrganisation } from "./lib/libraryOrganisation";
 import { SPRING } from "./lib/motion";
 import {
   placeOfSong,
@@ -950,9 +951,14 @@ export default function App() {
   // The same query Home reads: "recently played" is its `last_played`, refreshed
   // whenever a play is recorded.
   const lastPlayed = useHomeStats().data?.last_played;
+  const organisation = useLibraryOrganisation();
   const orderedPlaylists = useMemo(
-    () => sortPlaylists(playlists.data ?? [], sortOrder, lastPlayed),
-    [playlists.data, sortOrder, lastPlayed],
+    () =>
+      organisedPlaylists(
+        sortPlaylists(playlists.data ?? [], sortOrder, lastPlayed),
+        organisation.preferences,
+      ),
+    [playlists.data, sortOrder, lastPlayed, organisation.preferences],
   );
 
   /**

@@ -10,6 +10,14 @@ export type Lang = "es" | "en";
 
 export const strings = {
   es: {
+    pinPlaylist: "Fijar playlist",
+    unpinPlaylist: "Desfijar playlist",
+    archivePlaylist: "Archivar en Starless",
+    restorePlaylist: "Restaurar playlist",
+    archivedPlaylists: "Playlists archivadas",
+    noArchivedPlaylists: "No tienes playlists archivadas.",
+    archiveLocalHint: "Solo se ocultan en Starless, en este dispositivo. Puedes restaurarlas aquí.",
+    pinnedPlaylist: "Playlist fijada",
     searchPlaceholder: "Buscar canciones",
     clearSearch: "Limpiar búsqueda",
     searchResultsTitle: "Resultados",
@@ -551,6 +559,14 @@ export const strings = {
     soloistRemove: "Quitar",
   },
   en: {
+    pinPlaylist: "Pin playlist",
+    unpinPlaylist: "Unpin playlist",
+    archivePlaylist: "Archive in Starless",
+    restorePlaylist: "Restore playlist",
+    archivedPlaylists: "Archived playlists",
+    noArchivedPlaylists: "You haven't archived any playlists.",
+    archiveLocalHint: "Hidden only in Starless on this device. Restore them here at any time.",
+    pinnedPlaylist: "Pinned playlist",
     searchPlaceholder: "Songs",
     clearSearch: "Clear search",
     searchResultsTitle: "Results",

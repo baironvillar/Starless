@@ -1,9 +1,20 @@
-import { Check, Link2, ListPlus, MoreHorizontal, Pencil } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  Check,
+  Link2,
+  ListPlus,
+  MoreHorizontal,
+  Pencil,
+  Pin,
+  PinOff,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { copyText } from "../lib/clipboard";
 import { type MenuPoint, PLAYLIST_MENU, useMenuAt } from "../lib/contextMenu";
 import type { StringKey } from "../lib/i18n";
-import { type Playlist, type Track, usePlaylistTracks } from "../lib/spotify";
+import { useLibraryOrganisation } from "../lib/libraryOrganisation";
+import { explain, isDjCard, type Playlist, type Track, usePlaylistTracks } from "../lib/spotify";
 import { MenuItem, MenuPanel } from "./MenuPanel";
 
 type PlaylistMenuProps = {
@@ -78,6 +89,8 @@ export function PlaylistMenu({
   onClose,
 }: PlaylistMenuProps) {
   const headless = at !== undefined;
+  const organisation = useLibraryOrganisation();
+  const preference = organisation.preference(playlist.id);
   const [ownOpen, setOpen] = useState(false);
   const open = headless ? at !== null : ownOpen;
   const [copied, setCopied] = useState<"idle" | "done" | "failed">("idle");
@@ -154,6 +167,43 @@ export function PlaylistMenu({
         label={t.playlistMenu}
         width={236}
       >
+        {!isDjCard(playlist) && organisation.ready && (
+          <>
+            <MenuItem
+              label={preference.pinned ? t.unpinPlaylist : t.pinPlaylist}
+              icon={preference.pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
+              onSelect={() => {
+                if (!organisation.busy)
+                  organisation.change({
+                    id: playlist.id,
+                    preference: { ...preference, pinned: !preference.pinned },
+                  });
+              }}
+            />
+            <MenuItem
+              label={preference.archived ? t.restorePlaylist : t.archivePlaylist}
+              icon={
+                preference.archived ? (
+                  <ArchiveRestore className="size-4" />
+                ) : (
+                  <Archive className="size-4" />
+                )
+              }
+              onSelect={() => {
+                if (!organisation.busy)
+                  organisation.change({
+                    id: playlist.id,
+                    preference: { ...preference, archived: !preference.archived },
+                  });
+              }}
+            />
+          </>
+        )}
+        {organisation.error && (
+          <p role="alert" className="px-3 py-2 text-[12px] text-warn-ink">
+            {explain(organisation.error)}
+          </p>
+        )}
         {/*
           **Una playlist sin canciones no tiene nada que mandar a la cola.** La
           fila se esconde en vez de quedar apagada: una fila que no hace nada se

@@ -274,6 +274,19 @@ clothes, and there are only two of these, so one recipe covers both.
 - The content area carries the only large artwork. Chrome stays quiet so the album is the brightest thing on screen.
 - Spanish and English ship together; every string comes from a translation map, never inline.
 
+## Library organisation
+
+Pinned playlists precede other visible playlists; the selected library sort still
+applies inside both groups. Pin marks use the existing muted ink and icon style.
+The playlist menu offers pin/unpin and archive/restore for actual playlists,
+including ones owned by someone else. The DJ card is not a playlist.
+
+Archived playlists are hidden from all regular shelves and quick-access tiles.
+Home and the phone's Library keep an Archived playlists disclosure even when
+every playlist is archived. Its rows name each playlist and offer a labelled
+restore button. Restoring preserves its pinned state. Archiving does not navigate
+away from an already open playlist or stop music.
+
 ## The phone
 
 Decided with the user on 2026-11-02, one question at a time. The desktop layout does not
