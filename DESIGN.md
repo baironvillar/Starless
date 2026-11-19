@@ -292,6 +292,16 @@ away from an already open playlist or stop music.
 Pin, archive and move actions close their menu after saving successfully. A failed
 save keeps the menu open with the error, so closing it never implies lost work succeeded.
 
+## Sidebar playback
+
+An actual playlist with songs gets a play button when approached or focused,
+in the list, grid and collapsed rail. The accent disc is a sibling of the
+navigation button: playing keeps the current screen, while clicking the name
+or artwork opens the playlist. A loading request keeps its spinner visible.
+Empty playlists offer no play action; the DJ keeps its existing card action.
+Failed library requests are explained in the sidebar without replacing the
+current queue. The latest playback intent wins when requests overlap.
+
 ## The phone
 
 Decided with the user on 2026-11-02, one question at a time. The desktop layout does not
