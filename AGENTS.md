@@ -87,7 +87,7 @@ docs/escribir-playlists.md el protocolo para crear una playlist, y cómo se supo
 docs/jam.md               el protocolo de la sesión compartida, y cómo se supo
 docs/android.md           llevar la app a Android: lo que hay que medir antes
 docs/landing-i18n.md      los idiomas de la landing: dónde vive cada texto y cómo se agrega
-docs/landing-hosting.md   dónde se publica la landing (Vercel y Pages) y por qué cambia el `base`
+docs/landing-hosting.md   dónde se publica la landing (Cloudflare) y qué necesita el workflow
 docs/soloist.md           la salida de emergencia para las cuentas sin claves: el plan con Soloist
 ```
 

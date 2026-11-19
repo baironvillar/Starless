@@ -43,10 +43,13 @@ gratuito alcanza de sobra: 100 000 pedidos por día, y esto recibe unos pocos.
 2. **Token name:** `starless-relay`.
 3. **Expiration:** la más larga que te deje. Anota la fecha: cuando venza, los
    reportes empiezan a fallar y hay que repetir este paso y el 5.
-4. **Repository access:** *Only select repositories* → `Starless-org/StarMusic`.
-5. **Permissions → Repository permissions → Issues:** *Read and write*. Nada
+4. **Resource owner:** `Starless-org`, no tu cuenta. El repo es de la
+   organización desde noviembre de 2026, y un token cuyo dueño es tu cuenta no
+   lo ve: los issues fallan con 404 aunque el token sea nuevo.
+5. **Repository access:** *Only select repositories* → `Starless-org/StarMusic`.
+6. **Permissions → Repository permissions → Issues:** *Read and write*. Nada
    más: ningún otro permiso.
-6. **Generate token** y copia el valor (empieza con `github_pat_`). GitHub no lo
+7. **Generate token** y copia el valor (empieza con `github_pat_`). GitHub no lo
    vuelve a mostrar.
 
 > El token no se pega en ningún archivo ni se manda por chat. Va directo a

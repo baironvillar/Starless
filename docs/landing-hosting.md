@@ -1,38 +1,50 @@
 # Dónde vive la landing / Where the landing lives
 
-La landing (`site/`) se publica en dos lugares a la vez: en **Vercel**, que es la
-dirección que se comparte por ahora, y en **GitHub Pages**, que sigue andando
-como estaba. Las dos salen de `main`: la landing ofrece la release pública, y
-`main` es lo que ya salió.
+La landing (`site/`) se publica en **Cloudflare**, como un Worker que sirve los
+archivos estáticos de `astro build`. Sale de `main`: la landing ofrece la
+release pública, y `main` es lo que ya salió.
 
-The landing (`site/`) is published in two places: **Vercel**, the address shared
-for now, and **GitHub Pages**, which keeps working as before. Both come from
-`main`.
+The landing (`site/`) is published on **Cloudflare**, as a Worker that serves
+the static files `astro build` writes. It ships from `main`.
 
-## La diferencia es la dirección
+## Antes / Before
 
-| | GitHub Pages | Vercel |
-| --- | --- | --- |
-| Dirección | `https://starless-org.github.io/StarMusic/` | la del proyecto en Vercel |
-| `base` | `/StarMusic` | `/` |
-| Quién publica | `.github/workflows/pages.yml` | la integración de Git de Vercel |
+Hasta noviembre de 2026 se publicaba en dos lugares: en Vercel, en la raíz de
+su dominio, y en GitHub Pages, bajo `/StarMusic` (antes `/Starless`).
+`astro.config.mjs` elegía el prefijo leyendo `VERCEL`. Con la mudanza del repo a
+`Starless-org` las dos se dejaron: Pages ya no estaba activado en el repo, y
+Vercel se reemplazó por Cloudflare, donde ya vive el relay.
 
-GitHub Pages sirve un sitio de proyecto bajo el nombre del repositorio, así que
-todo enlace empieza con `/StarMusic`. Vercel lo sirve en la raíz de su dominio.
-`site/astro.config.mjs` elige según `VERCEL`, que Vercel pone en su build, y el
-marcado lee el prefijo de `import.meta.env.BASE_URL`. **Un enlace interno nuevo
-va con `BASE_URL`, nunca con `/StarMusic` ni con `/` escritos a mano**: con el
-prefijo equivocado la página carga sin ícono, sin el logo de vidrio y sin
-fuentes, y no dice por qué.
+## Cómo se publica
 
-## El proyecto en Vercel
+| | |
+| --- | --- |
+| Dirección | `https://star-music.bairovillar.workers.dev` |
+| `base` | `/` |
+| Quién publica | `.github/workflows/landing.yml`, en cada push a `main` que toque `site/` |
+| Configuración | `site/wrangler.jsonc` |
 
-Se configura una vez, en el panel de Vercel:
+El marcado lee el prefijo de `import.meta.env.BASE_URL`. **Un enlace interno
+nuevo va con `BASE_URL`, nunca con `/` escrito a mano**: si algún día la página
+vuelve a vivir bajo un prefijo, con el prefijo equivocado carga sin ícono, sin
+el logo de vidrio y sin fuentes, y no dice por qué.
 
-- **Repositorio:** `Starless-org/StarMusic`.
-- **Root Directory:** `site`. Vercel detecta Astro y `bun.lock` solo.
-- **Production Branch:** `main`.
+## Lo que necesita el workflow
 
-Las otras ramas dan *previews*, que no son la dirección pública. Un cambio en
-la landing llega a la dirección de Vercel cuando llega a `main`, igual que en
-Pages.
+Dos secretos del repo, que se cargan una vez:
+
+- **`CLOUDFLARE_ACCOUNT_ID`**: el id de la cuenta (`bunx wrangler whoami`).
+- **`CLOUDFLARE_API_TOKEN`**: un token de la plantilla *Edit Cloudflare
+  Workers*, creado en <https://dash.cloudflare.com/profile/api-tokens>. Sólo
+  puede editar Workers; no es la sesión de nadie.
+
+Sin ellos el workflow falla en el paso de Cloudflare y la landing sigue con la
+versión anterior.
+
+A mano, desde `site/`: `bun run build && bunx wrangler deploy`.
+
+## Un dominio propio
+
+Cuando la landing tenga dominio: se agrega como *Custom Domain* del Worker
+`star-music` en Cloudflare, y se cambia `site` en `astro.config.mjs`, que es la
+dirección absoluta a la que apunta la tarjeta para compartir.
