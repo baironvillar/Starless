@@ -3,6 +3,7 @@ import { motion } from "motion/react";
 import { useState } from "react";
 import type { StringKey } from "../lib/i18n";
 import { useLibraryOrganisation } from "../lib/libraryOrganisation";
+import type { SidebarTransport } from "../lib/sidebarPlayback";
 import {
   type Account,
   coverImage,
@@ -64,6 +65,7 @@ type LibrarySidebarProps = {
   onSelect: (id: string) => void;
   onPlay: (id: string) => void;
   playingRequest?: string | null;
+  transport?: SidebarTransport | null;
   playError?: string | null;
   /** Called on approach, so the list is already loaded by the time it is opened. */
   onPrefetch?: (playlistId: string) => void;
@@ -122,6 +124,7 @@ export function LibrarySidebar({
   onSelect,
   onPlay,
   playingRequest,
+  transport,
   playError,
   onPrefetch,
   onNewPlaylist,
@@ -442,8 +445,12 @@ export function LibrarySidebar({
                         />
                         {!isDjCard(playlist) && playlist.tracks?.total !== 0 && (
                           <SidebarPlayButton
-                            label={`${t.play} — ${playlist.name}`}
-                            busy={playingRequest === playlist.id}
+                            label={`${transport?.id === playlist.id ? (transport.playing ? t.pause : t.resume) : t.play} — ${playlist.name}`}
+                            playing={transport?.id === playlist.id && transport.playing}
+                            busy={
+                              playingRequest === playlist.id ||
+                              (transport?.id === playlist.id && transport.loading)
+                            }
                             onPlay={() => onPlay(playlist.id)}
                             className="top-2 right-2"
                           />
@@ -597,8 +604,12 @@ export function LibrarySidebar({
                         </button>
                         {!isDjCard(playlist) && playlist.tracks?.total !== 0 && (
                           <SidebarPlayButton
-                            label={`${t.play} — ${playlist.name}`}
-                            busy={playingRequest === playlist.id}
+                            label={`${transport?.id === playlist.id ? (transport.playing ? t.pause : t.resume) : t.play} — ${playlist.name}`}
+                            playing={transport?.id === playlist.id && transport.playing}
+                            busy={
+                              playingRequest === playlist.id ||
+                              (transport?.id === playlist.id && transport.loading)
+                            }
                             onPlay={() => onPlay(playlist.id)}
                             className={
                               collapsed

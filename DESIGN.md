@@ -298,6 +298,9 @@ An actual playlist with songs gets a play button when approached or focused,
 in the list, grid and collapsed rail. The accent disc is a sibling of the
 navigation button: playing keeps the current screen, while clicking the name
 or artwork opens the playlist. A loading request keeps its spinner visible.
+The playlist that owns the current queue shows Pause while playing and Resume
+while paused. These toggle the existing player without reloading the song or
+replacing the queue. Other playlists still offer Play from the beginning.
 Empty playlists offer no play action; the DJ keeps its existing card action.
 Failed library requests are explained in the sidebar without replacing the
 current queue. The latest playback intent wins when requests overlap.

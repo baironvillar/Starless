@@ -203,6 +203,7 @@ export const strings = {
 
     play: "Reproducir",
     pause: "Pausar",
+    resume: "Reanudar",
     previous: "Anterior",
     next: "Siguiente",
     shuffle: "Aleatorio",
@@ -751,6 +752,7 @@ export const strings = {
 
     play: "Play",
     pause: "Pause",
+    resume: "Resume",
     previous: "Previous",
     next: "Next",
     shuffle: "Shuffle",
