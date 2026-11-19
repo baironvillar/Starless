@@ -38,7 +38,11 @@ import {
   unshuffledQueue,
   upNextTracks,
 } from "./lib/queue";
-import { sidebarTransport } from "./lib/sidebarPlayback";
+import {
+  createSidebarRequests,
+  type SidebarRequest,
+  sidebarTransport,
+} from "./lib/sidebarPlayback";
 import {
   type Album,
   type Artist,
@@ -1195,7 +1199,8 @@ export default function App() {
    */
   const closeLyrics = useCallback(() => setLyricsOpen(false), []);
 
-  const [sidebarPending, setSidebarPending] = useState<{ id: string; request: number } | null>(
+  const [sidebarRequests] = useState(() => createSidebarRequests(() => intent.current));
+  const [sidebarPending, setSidebarPending] = useState<(SidebarRequest & { id: string }) | null>(
     null,
   );
   const [sidebarError, setSidebarError] = useState<string | null>(null);
@@ -2328,7 +2333,9 @@ export default function App() {
   const sidebarPlayback = sidebarTransport(queue, status, loadedTrack?.id ?? null);
   const onPlayFromSidebar = useCallback(
     async (id: string) => {
+      const request = sidebarRequests.begin();
       if (sidebarPlayback?.id === id) {
+        setSidebarPending(null);
         setSidebarError(null);
         try {
           await togglePlayback();
@@ -2337,14 +2344,13 @@ export default function App() {
         }
         return;
       }
-      const request = ++intent.current;
-      setSidebarPending({ id, request });
+      setSidebarPending({ id, ...request });
       setSidebarError(null);
       try {
         // Share the prefetched list, but carry the clicked playlist's context:
         // the screen can still be showing an entirely different playlist.
         const tracks = await queryClient.fetchQuery(playlistTracksQuery(id));
-        if (request !== intent.current) return;
+        if (!sidebarRequests.current(request)) return;
         if (tracks.length === 0) {
           setSidebarError(t.emptyList);
           return;
@@ -2354,12 +2360,12 @@ export default function App() {
           playShuffled(tracks, tracks[Math.floor(Math.random() * tracks.length)], context);
         else playFrom(tracks, tracks[0], context);
       } catch (error) {
-        if (request === intent.current) setSidebarError(explain(error));
+        if (sidebarRequests.current(request)) setSidebarError(explain(error));
       } finally {
-        setSidebarPending((current) => (current?.request === request ? null : current));
+        setSidebarPending((current) => (current?.request === request.request ? null : current));
       }
     },
-    [queryClient, shuffle, playShuffled, playFrom, t.emptyList, sidebarPlayback],
+    [queryClient, shuffle, playShuffled, playFrom, t.emptyList, sidebarPlayback, sidebarRequests],
   );
 
   /**
@@ -2943,7 +2949,9 @@ export default function App() {
               onNewPlaylist={() => openNaming()}
               onSelect={onSelectFromRail}
               onPlay={(id) => void onPlayFromSidebar(id)}
-              playingRequest={sidebarPending?.request === intent.current ? sidebarPending.id : null}
+              playingRequest={
+                sidebarPending && sidebarRequests.current(sidebarPending) ? sidebarPending.id : null
+              }
               transport={sidebarPlayback}
               playError={sidebarError}
             />

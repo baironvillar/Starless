@@ -1,8 +1,29 @@
 import { expect, test } from "bun:test";
-import { sidebarTransport } from "./sidebarPlayback";
+import { createSidebarRequests, sidebarTransport } from "./sidebarPlayback";
 
 const queue = { source: "list", context: { kind: "playlist" as const, id: "playlist-a" } };
 const status = { trackId: "shared-track", playing: true, loading: false, finished: false };
+
+test("a failed sidebar fetch leaves the speaking DJ's playback intent valid", async () => {
+  const intent = 7;
+  const voiceIntent = intent;
+  const requests = createSidebarRequests(() => intent);
+  const ticket = requests.begin();
+  await expect(Promise.reject(new Error("network_failed"))).rejects.toThrow();
+  expect(intent).toBe(voiceIntent);
+  expect(requests.current(ticket)).toBe(true);
+});
+
+test("only the latest sidebar fetch can play, and a later playback choice cancels it", () => {
+  let intent = 2;
+  const requests = createSidebarRequests(() => intent);
+  const old = requests.begin();
+  const latest = requests.begin();
+  expect(requests.current(old)).toBe(false);
+  expect(requests.current(latest)).toBe(true);
+  intent += 1;
+  expect(requests.current(latest)).toBe(false);
+});
 
 test("transport belongs to the queue's playlist even when another playlist contains the same song", () => {
   expect(sidebarTransport(queue, status, "shared-track")).toEqual({

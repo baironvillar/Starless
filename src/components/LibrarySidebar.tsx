@@ -557,7 +557,7 @@ export function LibrarySidebar({
                       <div
                         key={playlist.id}
                         style={at(4 + index)}
-                        className={`cascade group/sidebar relative w-full rounded-[14px] ${organisation.preference(playlist.id).pinned ? "cursor-grab active:cursor-grabbing" : ""} ${dropPin === playlist.id ? "ring-2 ring-accent" : ""}`}
+                        className={`cascade group/sidebar relative w-full rounded-[14px] ${collapsed ? "pb-7" : ""} ${organisation.preference(playlist.id).pinned ? "cursor-grab active:cursor-grabbing" : ""} ${dropPin === playlist.id ? "ring-2 ring-accent" : ""}`}
                         {...pinDrag(playlist.id)}
                         data-playlist-id={isDjCard(playlist) ? undefined : playlist.id}
                       >
@@ -621,7 +621,7 @@ export function LibrarySidebar({
                             onPlay={() => onPlay(playlist.id)}
                             className={
                               collapsed
-                                ? "top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
+                                ? "bottom-0 left-1/2 -translate-x-1/2"
                                 : "top-1/2 right-2 -translate-y-1/2"
                             }
                           />
