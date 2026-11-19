@@ -1,10 +1,12 @@
 import { PanelLeftClose, PanelLeftOpen, Pin, Plus, TriangleAlert } from "lucide-react";
 import { motion } from "motion/react";
+import { useState } from "react";
 import type { StringKey } from "../lib/i18n";
 import { useLibraryOrganisation } from "../lib/libraryOrganisation";
 import {
   type Account,
   coverImage,
+  explain,
   isDjCard,
   type LibrarySort,
   type LibraryView,
@@ -118,6 +120,56 @@ export function LibrarySidebar({
   onNewPlaylist,
 }: LibrarySidebarProps) {
   const organisation = useLibraryOrganisation();
+  const [draggedPin, setDraggedPin] = useState<string | null>(null);
+  const [dropPin, setDropPin] = useState<string | null>(null);
+  const pins = playlists.filter((playlist) => organisation.preference(playlist.id).pinned);
+  const pinDrag = (id: string): React.HTMLAttributes<HTMLDivElement> => {
+    const pinned = organisation.preference(id).pinned;
+    return {
+      draggable: pinned && !organisation.busy,
+      title: pinned ? t.reorderPinnedHint : undefined,
+      onDragStart: (event) => {
+        if (!pinned || organisation.busy) {
+          event.preventDefault();
+          return;
+        }
+        setDraggedPin(id);
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("application/x-starless-pin", id);
+      },
+      onDragOver: (event) => {
+        if (!pinned || !draggedPin || draggedPin === id || organisation.busy) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        setDropPin(id);
+      },
+      onDrop: (event) => {
+        event.preventDefault();
+        if (pinned && draggedPin && !organisation.busy)
+          void organisation.move(draggedPin, id).catch(() => {});
+        setDraggedPin(null);
+        setDropPin(null);
+      },
+      onDragEnd: () => {
+        setDraggedPin(null);
+        setDropPin(null);
+      },
+      onKeyDown: (event) => {
+        if (
+          !pinned ||
+          !event.altKey ||
+          organisation.busy ||
+          !["ArrowUp", "ArrowDown"].includes(event.key)
+        )
+          return;
+        event.preventDefault();
+        event.stopPropagation();
+        const index = pins.findIndex((playlist) => playlist.id === id);
+        const target = pins[index + (event.key === "ArrowUp" ? -1 : 1)];
+        if (target) void organisation.move(id, target.id).catch(() => {});
+      },
+    };
+  };
   const avatar = account ? coverImage(account.images) : null;
   /** The shape the panel is in; each layer below draws one of the two. */
   const railOnly = collapsed;
@@ -208,6 +260,19 @@ export function LibrarySidebar({
                   collapsed ? "items-center px-2 pt-3" : "px-4 pt-4"
                 }`}
               >
+                {organisation.error && (
+                  <p
+                    role="alert"
+                    title={explain(organisation.error)}
+                    className="px-2 py-2 text-[12px] text-warn-ink"
+                  >
+                    {collapsed ? (
+                      <TriangleAlert className="size-4" aria-label={explain(organisation.error)} />
+                    ) : (
+                      explain(organisation.error)
+                    )}
+                  </p>
+                )}
                 <div
                   style={at(0)}
                   className={`cascade flex items-center gap-2 ${collapsed ? "w-full justify-center" : ""}`}
@@ -342,7 +407,8 @@ export function LibrarySidebar({
                       <div
                         key={playlist.id}
                         style={at(4 + index)}
-                        className="cascade"
+                        className={`cascade rounded-[12px] ${organisation.preference(playlist.id).pinned ? "cursor-grab active:cursor-grabbing" : ""} ${dropPin === playlist.id ? "ring-2 ring-accent" : ""}`}
+                        {...pinDrag(playlist.id)}
                         // A right-click opens its menu (lib/contextMenu.ts). Not the DJ's: no songs to queue.
                         data-playlist-id={isDjCard(playlist) ? undefined : playlist.id}
                       >
@@ -460,7 +526,8 @@ export function LibrarySidebar({
                       <div
                         key={playlist.id}
                         style={at(4 + index)}
-                        className="cascade w-full"
+                        className={`cascade w-full rounded-[14px] ${organisation.preference(playlist.id).pinned ? "cursor-grab active:cursor-grabbing" : ""} ${dropPin === playlist.id ? "ring-2 ring-accent" : ""}`}
+                        {...pinDrag(playlist.id)}
                         data-playlist-id={isDjCard(playlist) ? undefined : playlist.id}
                       >
                         <button

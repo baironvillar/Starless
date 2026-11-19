@@ -276,8 +276,10 @@ clothes, and there are only two of these, so one recipe covers both.
 
 ## Library organisation
 
-Pinned playlists precede other visible playlists; the selected library sort still
-applies inside both groups. Pin marks use the existing muted ink and icon style.
+Pinned playlists precede other visible playlists and keep their own saved order.
+The selected library sort applies only to unpinned playlists. Pins can be dragged
+in every sidebar layout, moved with Alt + Up/Down from a focused playlist, or
+moved up/down from their menu. Pin marks use the existing muted ink and icon style.
 The playlist menu offers pin/unpin and archive/restore for actual playlists,
 including ones owned by someone else. The DJ card is not a playlist.
 
@@ -286,6 +288,9 @@ Home and the phone's Library keep an Archived playlists disclosure even when
 every playlist is archived. Its rows name each playlist and offer a labelled
 restore button. Restoring preserves its pinned state. Archiving does not navigate
 away from an already open playlist or stop music.
+
+Pin, archive and move actions close their menu after saving successfully. A failed
+save keeps the menu open with the error, so closing it never implies lost work succeeded.
 
 ## The phone
 

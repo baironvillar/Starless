@@ -11,6 +11,9 @@ export type Lang = "es" | "en";
 export const strings = {
   es: {
     pinPlaylist: "Fijar playlist",
+    movePinnedUp: "Mover fijada hacia arriba",
+    movePinnedDown: "Mover fijada hacia abajo",
+    reorderPinnedHint: "Arrastra para ordenar las fijadas, o usa Alt + ↑ / ↓.",
     unpinPlaylist: "Desfijar playlist",
     archivePlaylist: "Archivar en Starless",
     restorePlaylist: "Restaurar playlist",
@@ -560,6 +563,9 @@ export const strings = {
   },
   en: {
     pinPlaylist: "Pin playlist",
+    movePinnedUp: "Move pinned playlist up",
+    movePinnedDown: "Move pinned playlist down",
+    reorderPinnedHint: "Drag to arrange pinned playlists, or use Alt + ↑ / ↓.",
     unpinPlaylist: "Unpin playlist",
     archivePlaylist: "Archive in Starless",
     restorePlaylist: "Restore playlist",

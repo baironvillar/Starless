@@ -3,24 +3,61 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useMemo, useSyncExternalStore } from "react";
 import { errors, type Lang } from "./i18n";
-import type { LibraryOrganisation, PlaylistPreference } from "./libraryOrganisation";
+import {
+  type LibraryOrganisation,
+  normaliseOrganisation,
+  type PlaylistPreference,
+  pinnedIds,
+} from "./libraryOrganisationModel";
 
 export async function libraryOrganisation(account: string): Promise<LibraryOrganisation> {
   if (hasBackend()) return invoke("library_organisation", { account });
-  return JSON.parse(localStorage.getItem(`starless:library:${account}`) ?? "{}");
+  return normaliseOrganisation(
+    JSON.parse(localStorage.getItem(`starless:library:${account}`) ?? "{}"),
+  );
 }
 
 export async function setPlaylistPreference(
   account: string,
   id: string,
   preference: PlaylistPreference,
-): Promise<void> {
+): Promise<LibraryOrganisation> {
   if (hasBackend()) return invoke("set_playlist_preference", { account, id, preference });
   const saved = await libraryOrganisation(account);
-  localStorage.setItem(
-    `starless:library:${account}`,
-    JSON.stringify({ ...saved, [id]: preference }),
-  );
+  const ids = pinnedIds(saved);
+  const position = saved[id]?.pinned ? (saved[id]?.position ?? ids.indexOf(id)) : ids.length;
+  const updated = {
+    ...saved,
+    [id]: {
+      ...preference,
+      position: preference.pinned
+        ? position !== undefined && position >= 0
+          ? position
+          : ids.length
+        : null,
+    },
+  };
+  if (!preference.pinned && !preference.archived) delete updated[id];
+  localStorage.setItem(`starless:library:${account}`, JSON.stringify(updated));
+  return updated;
+}
+
+export async function setPinnedOrder(account: string, ids: string[]): Promise<LibraryOrganisation> {
+  if (hasBackend()) return invoke("set_pinned_order", { account, ids });
+  const saved = await libraryOrganisation(account);
+  const current = pinnedIds(saved);
+  if (
+    ids.length !== current.length ||
+    new Set(ids).size !== ids.length ||
+    ids.some((id) => !current.includes(id))
+  )
+    throw new Error("command_failed");
+  const updated = { ...saved };
+  ids.forEach((id, position) => {
+    updated[id] = { ...saved[id], position };
+  });
+  localStorage.setItem(`starless:library:${account}`, JSON.stringify(updated));
+  return updated;
 }
 
 /**
