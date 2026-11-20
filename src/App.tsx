@@ -415,40 +415,43 @@ function Ground({
  * ground copy stays on the window's pixels while the bottom strip follows the bar.
  */
 function EdgeFade({
-  above,
   below,
   barPresent,
+  left,
+  right,
   ...ground
 }: {
-  above: boolean;
   below: boolean;
   barPresent: boolean;
+  /** The content column's own edges, in px, so the strip never leaves it. */
+  left: number;
+  right: number;
   url: string | null;
   background: Background;
   effect: Effects;
 }) {
-  const slide = "transition-[bottom,opacity] duration-300 ease-[var(--ease-glass)]";
+  // Only the bottom: the top edge sits under the top bar, whose own surface hides
+  // the cut, and a second strip there painted the ground twice in the corners.
+  //
+  // **The strip is as wide as `<main>`, not the window.** Full width, it also
+  // covered the gutters and the rounded corners of the rail and the queue, and the
+  // ground drawn over the ground doubles its dim, bloom and grain wherever the
+  // gradient is half-opaque: a darker band with nothing under it to hide.
+  const slide = "transition-[bottom,left,right,opacity] duration-300 ease-[var(--ease-glass)]";
+  const bottom = barPresent ? 144 : 20;
   return (
-    <>
+    <div
+      aria-hidden="true"
+      className={`edge-fade edge-fade-bottom pointer-events-none absolute z-[15] h-11 overflow-hidden ${slide} ${below ? "" : "opacity-0"}`}
+      style={{ bottom, left, right }}
+    >
       <div
-        aria-hidden="true"
-        className={`edge-fade edge-fade-top pointer-events-none absolute inset-x-0 top-[104px] z-[15] h-11 overflow-hidden transition-opacity duration-300 ${above ? "" : "opacity-0"}`}
+        className={`absolute h-screen ${slide}`}
+        style={{ bottom: -bottom, left: -left, width: "100vw" }}
       >
-        <div className="absolute inset-x-0 -top-[104px] h-screen">
-          <Ground {...ground} />
-        </div>
+        <Ground {...ground} />
       </div>
-      <div
-        aria-hidden="true"
-        className={`edge-fade edge-fade-bottom pointer-events-none absolute inset-x-0 z-[15] h-11 overflow-hidden ${slide} ${barPresent ? "bottom-[144px]" : "bottom-5"} ${below ? "" : "opacity-0"}`}
-      >
-        <div
-          className={`absolute inset-x-0 h-screen ${slide} ${barPresent ? "-bottom-[144px]" : "-bottom-5"}`}
-        >
-          <Ground {...ground} />
-        </div>
-      </div>
-    </>
+    </div>
   );
 }
 
@@ -3442,9 +3445,10 @@ export default function App() {
 
         {!MOBILE && (
           <EdgeFade
-            above={moreAbove}
             below={moreBelow}
             barPresent={barPresent}
+            left={libraryOpen ? (railOnly ? 112 : 280) : 36}
+            right={queueOpen ? 280 : 36}
             url={groundUrl}
             background={background}
             effect={effect}

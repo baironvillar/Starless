@@ -645,10 +645,6 @@
   display: block;
 }
 
-.edge-fade-top {
-  mask-image: linear-gradient(to bottom, #000, transparent);
-}
-
 .edge-fade-bottom {
   mask-image: linear-gradient(to top, #000, transparent);
 }
