@@ -21,7 +21,7 @@ type PublicChannel = {
 };
 
 /**
- * Whether a newer Starless exists, and the job of installing it.
+ * Whether a newer Star Music exists, and the job of installing it.
  *
  * Two decisions live here, and both are about not surprising someone who is
  * listening to music.
@@ -31,7 +31,7 @@ type PublicChannel = {
  * never restarts itself. Downloading a few megabytes at launch is what turns an
  * updater into the reason an app takes longer to open.
  *
- * **Ask before applying.** Starless plays audio. An update that installs itself
+ * **Ask before applying.** Star Music plays audio. An update that installs itself
  * mid-track cuts the song, and an app that cuts your music to install a patch is
  * an app you turn off. So the button is in Settings and the click is the user's.
  *
@@ -256,8 +256,8 @@ export async function checkForUpdate({ quiet = false }: { quiet?: boolean } = {}
     publish({ status: "current" });
   } catch (e) {
     // Offline, a blocked request, an endpoint that is not configured yet. None of
-    // those mean anything about the copy of Starless the user is running.
-    console.warn("Starless: no se pudo comprobar si hay actualizaciones", e);
+    // those mean anything about the copy of Star Music the user is running.
+    console.warn("Star Music: no se pudo comprobar si hay actualizaciones", e);
     // A quiet check that fails leaves the last answer standing: the network
     // dropping is not news about the installation, and wiping a real update
     // off the screen because one request failed would hide it.
@@ -281,7 +281,7 @@ const RECHECK_AFTER_MS = 10 * 60 * 1000;
 /**
  * Ask again, quietly, if the last answer is old.
  *
- * **"Once at startup" is a promise about a launch, and Starless is not
+ * **"Once at startup" is a promise about a launch, and Star Music is not
  * launched every day.** It lives in the tray and starts with Windows, so a
  * check from the morning is still on screen days later. On the develop line
  * that answer was the door back to the public release —"Go back to 0.5.5"—
@@ -347,7 +347,7 @@ export async function installUpdate(
     // opens, and an update that does not install is the failure a person is
     // most likely to report —so the one thing that could tell us why was
     // exactly the thing nobody could see.
-    console.warn("Starless: no se pudo instalar la actualización", e);
+    console.warn("Star Music: no se pudo instalar la actualización", e);
     const reason = e instanceof Error ? e.message : String(e);
     invoke("log_frontend_error", { message: reason }).catch(() => {});
     sink({ status: "installFailed", update });
@@ -498,7 +498,7 @@ export async function checkPrerelease(): Promise<void> {
     // about the network, not about the installation. What it is *not* is always
     // the same fact: a spent rate limit is a different one, and the backend
     // says so with a code of its own.
-    console.warn("Starless: no se pudo comprobar la prerelease", e);
+    console.warn("Star Music: no se pudo comprobar la prerelease", e);
     publishPrerelease({ status: "error", reason: errorReason(e) });
   }
 }

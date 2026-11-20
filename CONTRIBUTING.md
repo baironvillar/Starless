@@ -1,9 +1,9 @@
 # Contribuir / Contributing
 
-Gracias por mirar. Starless es chico y está bien definido; los cambios que más
+Gracias por mirar. Star Music es chico y está bien definido; los cambios que más
 ayudan son los que respetan las restricciones que ya están escritas.
 
-Thank you for looking. Starless is small and tightly specified; the changes
+Thank you for looking. Star Music is small and tightly specified; the changes
 that help most are the ones that respect the constraints already written down.
 
 ## Antes de empezar
@@ -32,8 +32,8 @@ constraints the code has to respect.
 ## Puesta en marcha / Getting started
 
 ```bash
-git clone https://github.com/baironvillar/Starless.git
-cd Starless
+git clone https://github.com/Starless-org/StarMusic.git
+cd Star Music
 bun install
 bun run hooks:install
 bun run app                # el instalador necesita la llave: ver README
@@ -165,7 +165,7 @@ quietly undo it.
 ### Publishing a version
 
 A version goes through a branch and a PR like any other change, and
-[star](https://github.com/baironvillar/star) does both halves:
+[star](https://github.com/Starless-org/Star) does both halves:
 
 ```bash
 git switch develop && git pull
@@ -271,7 +271,7 @@ por un PR titulado `0.4.0`; el PR de `develop` a `main` lleva el mismo título y
 el merge commit, también. Los pasos están en
 [Publishing a version](#publishing-a-version).
 
-La regla está escrita una sola vez, en [star](https://github.com/baironvillar/star),
+La regla está escrita una sola vez, en [star](https://github.com/Starless-org/Star),
 y corre en los tres sitios donde puede correr: el hook local (`.githooks/` es una
 línea que llama a star), un job de CI y el workflow de release. Se instala una
 vez por clon:
@@ -292,14 +292,14 @@ hook on for a clone.
 Los reportes —de crash y de feedback— van al **relay** de `relay/`, un
 Cloudflare Worker que tiene el token de GitHub y crea el issue. La app no lleva
 ningún token: solo sabe la dirección del relay, que se hornea en el build desde
-la variable del repositorio `STARLESS_REPORT_RELAY`.
+la variable del repositorio `STAR_MUSIC_REPORT_RELAY`.
 
 Un build local no la tiene, así que el botón abre GitHub en el navegador con el
 reporte precargado y apretas "Create". Para probar contra un relay:
 
 ```bash
 # PowerShell
-$env:STARLESS_REPORT_RELAY = "https://starless-relay.<cuenta>.workers.dev"
+$env:STAR_MUSIC_REPORT_RELAY = "https://starless-relay.<cuenta>.workers.dev"
 bun run app
 ```
 

@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /*
- * Starless — design tokens.
+ * Star Music — design tokens.
  * Values come from DESIGN.md. Change them there first, then here.
  */
 
@@ -816,7 +816,7 @@
  * Range inputs.
  *
  * The browser's default range looks like a different app wearing our clothes, so
- * it is redrawn rather than accepted. Starless has exactly two of these — the seek
+ * it is redrawn rather than accepted. Star Music has exactly two of these — the seek
  * bar and the volume — so they share one recipe: a 4px track, a white thumb, and a
  * fill driven by the `--fill` custom property that each control sets from its own
  * value. Unlayered on purpose: it must outrank utilities, because appearance reset

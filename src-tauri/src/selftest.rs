@@ -1,12 +1,12 @@
-//! Self-test for the part of Starless nobody can see.
+//! Self-test for the part of Star Music nobody can see.
 //!
 //! Whether audio actually comes out depends on four things that all fail
 //! silently: the output device opening, librespot's session completing its
 //! handshake, Spotify deciding to hand over a decryption key, and the decoder
 //! surviving the stream. In a GUI app none of that has anywhere to surface.
 //!
-//! With `STARLESS_DIAGNOSTIC=1` the backend plays one real track from the
-//! account on startup and records the whole chain in `starless.log`. That turns
+//! With `STAR_MUSIC_DIAGNOSTIC=1` the backend plays one real track from the
+//! account on startup and records the whole chain in `star-music.log`. That turns
 //! "it doesn't play" into a line to read, which is the difference between
 //! debugging and guessing.
 
@@ -26,7 +26,7 @@ const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 /// `true` when the environment asks for it. Read once, at startup.
 pub fn requested() -> bool {
-    std::env::var("STARLESS_DIAGNOSTIC")
+    std::env::var("STAR_MUSIC_DIAGNOSTIC")
         .map(|value| value != "0" && !value.is_empty())
         .unwrap_or(false)
 }
@@ -34,7 +34,7 @@ pub fn requested() -> bool {
 /// Play one track on the account's behalf, from the account's own library.
 pub fn run(app: AppHandle) {
     tauri::async_runtime::spawn_blocking(move || {
-        log::info!("=== STARLESS_DIAGNOSTIC: prueba de reproducción ===");
+        log::info!("=== STAR_MUSIC_DIAGNOSTIC: prueba de reproducción ===");
 
         let Some(session) = wait_for_session(&app) else {
             log::error!("DIAGNOSTIC: la sesión no llegó a conectar en 25s");

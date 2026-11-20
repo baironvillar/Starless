@@ -25,7 +25,7 @@ use std::path::PathBuf;
 
 /// Where the file lives.
 pub fn settings_path() -> Option<PathBuf> {
-    crate::paths::data_local_dir().map(|base| base.join("Starless").join("settings.json"))
+    crate::paths::data_local_dir().map(|base| base.join(crate::paths::APP_DIR).join("settings.json"))
 }
 
 /// Every field is optional, and every field defaults.
@@ -117,7 +117,7 @@ pub struct Settings {
     #[serde(default)]
     pub normalisation: Option<bool>,
 
-    /// Whether the window's close button hides Starless in the tray instead of
+    /// Whether the window's close button hides Star Music in the tray instead of
     /// quitting it.
     #[serde(default)]
     pub close_to_tray: Option<bool>,

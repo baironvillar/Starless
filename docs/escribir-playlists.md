@@ -7,7 +7,7 @@ la revisión cambiada.
 Este documento describe el protocolo y deja constancia de cómo se llegó a él.
 Los dos pedidos se verificaron en vivo contra el servicio, con el token del
 cliente de escritorio: los dos contestan `200`. Lo que **no** se probó desde
-Starless es la corrida completa con su propio token, porque el id que generaba
+Star Music es la corrida completa con su propio token, porque el id que generaba
 era inválido —ver más abajo— y ya está arreglado. Que quede escrito es lo que
 permite medir lo que sigue en vez de volver a adivinar.
 
@@ -127,7 +127,7 @@ que se midió es la segunda: el `200` vino con el atributo cambiado. Un `200`
 que no cambia nada es la forma más silenciosa de no escribir.
 
 Medido contra el servicio con la cuenta del usuario. La sonda es
-`STARLESS_SP_PRIVATE=1`, y además pide `STARLESS_SP_PRIVATE_ID=<id>` para
+`STAR_MUSIC_SP_PRIVATE=1`, y además pide `STAR_MUSIC_SP_PRIVATE_ID=<id>` para
 saber a qué playlist puede tocar —la que se le nombre— y la deja como la
 encontró:
 
@@ -184,10 +184,10 @@ Midiendo:
 | --- | --- |
 | `0wZQmwut8WFchl01nectwn` (escritorio) | 125 |
 | `1BZzZO1UGeXUK0aOZQITtn` (escritorio) | 126 |
-| el que generaba Starless | 129 a 131 |
+| el que generaba Star Music | 129 a 131 |
 
 Decodificado como número en base62 con el alfabeto que usa librespot (`0-9a-zA-Z`),
-los ids del escritorio quedan holgadamente por debajo de 2^127 y los de Starless
+los ids del escritorio quedan holgadamente por debajo de 2^127 y los de Star Music
 por encima de 2^128. La causa era escribir los dígitos **del menos significativo al
 más**: el `push` va sacando el dígito menor, así que el mayor queda al final y el
 string resultante vale otra cosa. Con el orden correcto y 127 bits, el mismo pedido
@@ -195,7 +195,7 @@ contesta `200`.
 
 **La respuesta ya estaba en la dependencia.** `SpotifyId::from_raw(&bytes).to_base62()`
 de `librespot-core` la hace bien —su `to_base62` termina en un `dst.reverse()`— y es
-lo que usa Starless ahora. Escribirla a mano fue el error entero.
+lo que usa Star Music ahora. Escribirla a mano fue el error entero.
 
 Un id tiene 22 dígitos de base62, que guardan hasta ~2^131, así que el largo no
 basta: el servicio acepta un rango y rechaza el resto en silencio. **127 bits es
@@ -321,12 +321,12 @@ Esta sección es la que costó más y terminó sin hallazgos. Queda escrita porq
 es lo que **no** es la causa, y volver a hacerlo sería la forma más fácil de
 volver a hacerlo.
 
-Starless sí llegó a mandar los dos pedidos y el servicio contestó `400 invalid
+Star Music sí llegó a mandar los dos pedidos y el servicio contestó `400 invalid
 argument` en los dos. El primer reflejo, cambiar un campo del cuerpo, era el
 equivocado. Se descartó lo siguiente, en este orden:
 
 **El cuerpo.** Decodificados los dos con el mismo parser y comparados campo por
-campo, el de Starless y el del cliente de escritorio tienen **el mismo árbol, los
+campo, el de Star Music y el del cliente de escritorio tienen **el mismo árbol, los
 mismos números de campo, los mismos tipos y los mismos largos**. Lo único que
 difiere es el id de la playlist y las marcas de tiempo. Probar `public: false` y
 después `public: true` dio el mismo `400`.
@@ -342,7 +342,7 @@ CAk=`. **Las cuatro dieron `400`.**
 escritorio, tomados de la captura: el `GET` al rootlist `200` —o sea que el token
 servía— y los `POST` `400`. Con el cuerpo literal y un id nuevo, `200`. O sea:
 **la identidad tampoco era la causa**, y el mismo cliente que no puede crear una
-playlist desde Starless la crea sin problema con esos mismos bytes.
+playlist desde Star Music la crea sin problema con esos mismos bytes.
 
 **La versión de HTTP.** `spclient` ya habla HTTP/2 con ventana adaptativa
 (`http_client.rs:170`), y ese camino también dio `400`.

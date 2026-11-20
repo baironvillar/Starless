@@ -50,14 +50,14 @@ it names the string, it does not have to quote it.
 
 2. **The browser gets the same instance.** A module `<script>` at the end of
    `index.astro` (bundled by Astro, unlike the inline script) loads i18next with
-   both languages, puts it on `window.starlessI18n`, and sends `starless:i18n`.
+   both languages, puts it on `window.starMusicI18n`, and sends `star-music:i18n`.
 
 3. **The switch asks i18next.** The inline script's `apply(lang)` takes
    `getFixedT(lang)` and rewrites every `[data-i18n]`, `[data-i18n-label]` and
    `[data-i18n-track]`. A click or a saved Spanish preference that comes before
    i18next is ready waits for the event (`whenI18n`).
 
-The choice is remembered in `localStorage` (`starless-lang`), as before.
+The choice is remembered in `localStorage` (`star-music-lang`), as before.
 
 ## Agregar un texto / Adding a text
 

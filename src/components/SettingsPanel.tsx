@@ -1052,7 +1052,7 @@ function General({
  * keeps. What it had not accounted for is the person who never opens Settings.
  * The badge and the alert answer that without giving up the reason: the update
  * is announced once, quietly, and **nothing is installed by itself.** The click
- * is still here, still in Settings, still the user's — because Starless is
+ * is still here, still in Settings, still the user's — because Star Music is
  * playing and an app that cuts your music to install a patch is an app you turn
  * off.
  */
@@ -2342,7 +2342,7 @@ function Diagnostics({
           type="button"
           onClick={() => setChangelogOpen((open) => !open)}
           aria-expanded={changelogOpen}
-          aria-controls="starless-changelog"
+          aria-controls="star-music-changelog"
           className="flex w-full items-center gap-6 border-b border-white/8 px-5 py-4 text-left transition-colors duration-200 hover:bg-white/6"
         >
           <span className="min-w-0 flex-1 text-[13.5px] font-semibold">{t.changelogs}</span>
@@ -2356,7 +2356,7 @@ function Diagnostics({
 
         {changelogOpen && (
           <div
-            id="starless-changelog"
+            id="star-music-changelog"
             className="border-b border-white/8 px-5 py-5 last:border-b-0"
           >
             <Changelog t={t} lang={lang} />

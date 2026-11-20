@@ -87,7 +87,7 @@ versión. Quien actualiza desde la 0.5.5 ve todo eso junto con lo de acá.
   contra el servicio con una sesión de verdad; el protocolo está en
   [`docs/jam.md`](docs/jam.md).
 - **El orden y la vista de las listas se recuerdan.** El orden, su dirección y la
-  vista Compacta o Lista van a `%LOCALAPPDATA%\Starless`, como el resto de los
+  vista Compacta o Lista van a `%LOCALAPPDATA%\Star Music`, como el resto de los
   ajustes que sobreviven a un cierre de sesión (ver la trampa de `%APPDATA%` en
   `AGENTS.md`).
 - **Mensajes de error en los dos idiomas.** Las frases de los códigos de error
@@ -177,11 +177,11 @@ Cosas que se quieren pero que **no se pueden prometer hasta medir si la puerta
 existe**. Es el mismo camino que tuvo la voz del DJ: primero una sonda que prueba
 que el servicio responde, y recién después una versión con número.
 
-### Que la escucha en Starless cuente en Spotify
+### Que la escucha en Star Music cuente en Spotify
 
 **El problema.** Spotify cuenta los minutos escuchados por semana, las
 reproducciones de cada canción, «Reproducido recientemente» y el resumen del año
-(Wrapped). Lo que se escucha en Starless no aparece en ninguno de los cuatro: para
+(Wrapped). Lo que se escucha en Star Music no aparece en ninguno de los cuatro: para
 la cuenta es como si no se hubiera escuchado nada.
 
 **Por qué pasa.** Spotify no cuenta lo que suena: cuenta lo que los clientes le
@@ -200,7 +200,7 @@ el audio pero no manda esos eventos, así que la escucha nunca llega a la cuenta
    probablemente un protobuf por canción con el id, el contexto (playlist, radio,
    DJ), el tiempo realmente reproducido y el motivo de inicio y de fin. Hay que
    saber cuáles son obligatorios y cuáles opcionales.
-3. **La prueba.** Una sonda en debug (`STARLESS_SP_PLAYS=1`, como las otras) que
+3. **La prueba.** Una sonda en debug (`STAR_MUSIC_SP_PLAYS=1`, como las otras) que
    reporta una canción escuchada entera y comprueba que aparece en «Reproducido
    recientemente» de la cuenta. Si no aparece, la investigación no terminó.
 
@@ -213,7 +213,7 @@ el audio pero no manda esos eventos, así que la escucha nunca llega a la cuenta
   que en la app oficial.
 - **Sale desde Rust, nunca desde el webview.** Es la misma regla que el audio y
   las credenciales: el backend es la frontera de confianza.
-- **Con permiso.** No es telemetría de Starless —los datos van a la cuenta de la
+- **Con permiso.** No es telemetría de Star Music —los datos van a la cuenta de la
   persona, en el servicio que ella ya usa—, pero sí es algo que sale de la máquina
   por cada canción, y la regla de cero telemetría existe para que nada salga sin
   que la persona lo sepa. Por eso la primera vez la app **pregunta** si quiere que
@@ -228,9 +228,9 @@ cambiar sin aviso, como todo lo que usa librespot. Y si el servicio pide una
 identidad que la sesión no tiene, la respuesta es que no se puede, y este punto
 se cierra en vez de buscar otra identidad (ver la regla 7 de `AGENTS.md`).
 
-### Starless en Android
+### Star Music en Android
 
-**El problema.** Starless sólo existe en la computadora. Tauri 2 compila el
+**El problema.** Star Music sólo existe en la computadora. Tauri 2 compila el
 mismo backend y el mismo frontend para Android, así que la app no se reescribe:
 se lleva.
 
@@ -262,7 +262,7 @@ se cierra. La distribución sería por las releases de GitHub, no por una tienda
 Estas están escritas como preguntas en `PRODUCT.md` y `DESIGN.md` y siguen sin
 respuesta. No están en ninguna versión porque no se han decidido.
 
-- **¿Starless se registra como un dispositivo Spotify Connect?** La dependencia
+- **¿Star Music se registra como un dispositivo Spotify Connect?** La dependencia
   `librespot-connect` ya está en `Cargo.toml`, pero registrarla cambia lo que
   aparece en la app del usuario en el teléfono, y eso no es una decisión técnica.
 - **¿El vidrio es el único tratamiento de superficie, o hay un modo sólido como

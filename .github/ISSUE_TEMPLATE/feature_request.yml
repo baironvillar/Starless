@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Starless tiene pocas restricciones duras, y conviene conocerlas antes de
+        Star Music tiene pocas restricciones duras, y conviene conocerlas antes de
         proponer algo: es un cliente **no oficial** (sin marca de Spotify en
         ninguna parte), **sólo Premium**, **cero telemetría**, y el **audio no pasa
         por la ventana**. Una funcionalidad que rompa alguna de estas no entra,

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Starless",
+  "productName": "Star Music",
   "version": "0.7.0-beta.4",
-  "identifier": "app.starless.desktop",
+  "identifier": "app.starmusic.desktop",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Starless",
+        "title": "Star Music",
         "width": 1180,
         "height": 760,
         "minWidth": 768,
@@ -34,6 +34,11 @@
     "android": {
       "minSdkVersion": 26
     },
+    "windows": {
+      "wix": {
+        "upgradeCode": "590aac6e-46c3-5cba-bd95-956f342f5a22"
+      }
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -48,7 +53,7 @@
       "dialog": false,
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRGM0JGNDIxQjQ5MzQ4OUYKUldTZlNKTzBJZlE3VDN1UitNbXBray8vS0ZwYVFnOVVsSlFUaDhmVjJmT25TNGY2WCs0eEJDYXYK",
       "endpoints": [
-        "https://github.com/baironvillar/Starless/releases/latest/download/latest.json"
+        "https://github.com/Starless-org/StarMusic/releases/latest/download/latest.json"
       ],
       "allowDowngrades": true,
       "windows": {

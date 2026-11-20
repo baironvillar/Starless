@@ -1,0 +1,11 @@
+// The landing, served by Cloudflare as static assets. No Worker code runs: the
+// Worker only hands out what `astro build` wrote to `dist/`. Deployed by
+// `.github/workflows/landing.yml` from `main`; see docs/landing-hosting.md.
+{
+  "name": "star-music",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "404-page"
+  }
+}

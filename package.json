@@ -1,5 +1,5 @@
 {
-  "name": "starless",
+  "name": "star-music",
   "private": true,
   "version": "0.7.0-beta.4",
   "type": "module",
@@ -42,7 +42,7 @@
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
-    "@baironvillar/star": "github:baironvillar/star#v0.6.0",
+    "@baironvillar/star": "github:Starless-org/Star#v0.6.0",
     "@biomejs/biome": "^2.5.15",
     "@tauri-apps/cli": "^2",
     "@types/react": "^19.1.8",

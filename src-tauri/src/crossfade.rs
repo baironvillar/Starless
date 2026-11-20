@@ -429,7 +429,7 @@ enum Retire {
     Natural,
 }
 
-/// Las colas del sink de Starless.
+/// Las colas del sink de Star Music.
 pub struct Decks {
     mixer: rodio::mixer::Mixer,
     /// Donde escribe el player.

@@ -5,7 +5,7 @@ import { SPRING } from "../lib/motion";
 import { coverImage, type Track, trackArtists, trackRowKeys } from "../lib/spotify";
 
 /** Lets the input point `aria-activedescendant` at the highlighted row. */
-export const SEARCH_MENU_ID = "starless-search-menu";
+export const SEARCH_MENU_ID = "star-music-search-menu";
 
 /**
  * Below this length Spotify answers with whatever it felt like, which reads as a

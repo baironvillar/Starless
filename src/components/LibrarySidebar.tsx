@@ -135,7 +135,7 @@ export function LibrarySidebar({
         }
         setDraggedPin(id);
         event.dataTransfer.effectAllowed = "move";
-        event.dataTransfer.setData("application/x-starless-pin", id);
+        event.dataTransfer.setData("application/x-star-music-pin", id);
       },
       onDragOver: (event) => {
         if (!pinned || !draggedPin || draggedPin === id || organisation.busy) return;

@@ -29,14 +29,14 @@ pub struct NowPlaying {
     pub playing: bool,
 }
 
-/// Tell Windows which app this process is, so the media card says "Starless"
+/// Tell Windows which app this process is, so the media card says "Star Music"
 /// with its icon instead of "Unknown application".
 ///
 /// **Windows names a media session by the process's AppUserModelID, and an
 /// unpackaged process only has one when it was launched from a shortcut that
 /// carries it.** The installer's Start menu shortcut does
-/// (`System.AppUserModel.ID` = the bundle identifier), so a Starless opened
-/// from there was named and every other Starless — `bun run app`, the relaunch
+/// (`System.AppUserModel.ID` = the bundle identifier), so a Star Music opened
+/// from there was named and every other Star Music — `bun run app`, the relaunch
 /// after an update, the `.exe` double-clicked — was an unknown app. Claiming
 /// the same id by hand makes every launch the one from the shortcut: Windows
 /// finds that shortcut by the id, and takes the name and the icon from it.
@@ -190,7 +190,7 @@ mod imp {
 
     use super::NowPlaying;
 
-    /// Windows is the only platform Starless ships on; elsewhere the keys are
+    /// Windows is the only platform Star Music ships on; elsewhere the keys are
     /// simply not there.
     pub struct MediaKeys;
 

@@ -159,7 +159,7 @@ mod tests {
                 .expect("clock after epoch")
                 .as_nanos();
             Self(std::env::temp_dir().join(format!(
-                "starless-library-{}-{nonce}.json",
+                "star-music-library-{}-{nonce}.json",
                 std::process::id()
             )))
         }

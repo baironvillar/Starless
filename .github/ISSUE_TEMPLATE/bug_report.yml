@@ -10,7 +10,7 @@ body:
 
         - **La versión**: Ajustes → General, o el número que aparece abajo a la izquierda.
         - **El log**: si la app se cae o una canción no suena, el registro local ya
-          tiene el motivo. Poné `STARLESS_DIAGNOSTIC=1` antes de abrirla y pegá el
+          tiene el motivo. Poné `STAR_MUSIC_DIAGNOSTIC=1` antes de abrirla y pegá el
           resultado del autodiagnóstico, no una captura del error en pantalla.
 
         Ojo con la versión **0.3.0**: las instalaciones de 0.3.0 no se actualizan
@@ -43,7 +43,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: Versión de Starless / Starless version
+      label: Versión de Star Music / Star Music version
     validations:
       required: true
 
@@ -63,7 +63,7 @@ body:
     id: diagnostics
     attributes:
       label: Autodiagnóstico / Self-test output
-      description: La salida de `STARLESS_DIAGNOSTIC=1`, si la pudiste correr.
+      description: La salida de `STAR_MUSIC_DIAGNOSTIC=1`, si la pudiste correr.
     validations:
       required: false
 

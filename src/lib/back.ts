@@ -24,7 +24,7 @@ let listening = false;
 declare global {
   interface Window {
     /** `MainActivity`'s bridge: moves the app behind the others without closing it. */
-    StarlessAndroid?: { moveToBack: () => void };
+    StarMusicAndroid?: { moveToBack: () => void };
   }
 }
 
@@ -52,7 +52,7 @@ export function useBackRoot(onBack: () => boolean) {
   const page = useRef(onBack);
   page.current = onBack;
   const handler = useRef(() => {
-    if (!page.current()) window.StarlessAndroid?.moveToBack();
+    if (!page.current()) window.StarMusicAndroid?.moveToBack();
   });
   useEffect(() => {
     if (!isMobile()) return;
@@ -63,7 +63,7 @@ export function useBackRoot(onBack: () => boolean) {
         const top = stack[stack.length - 1];
         if (top) top.current();
         else root?.current();
-      }).catch((e) => console.error("Starless: no se pudo escuchar el botón atrás", e));
+      }).catch((e) => console.error("Star Music: no se pudo escuchar el botón atrás", e));
     }
   }, []);
 }

@@ -3,7 +3,7 @@ import { useId } from "react";
 /**
  * Liked Songs' face, drawn in the logo's language.
  *
- * **The same materials as the Starless mark.** A dark glass plate, the mark's
+ * **The same materials as the Star Music mark.** A dark glass plate, the mark's
  * ring with its fading glass gradient, and in the middle a heart lit from
  * inside: the accent under glass, blurred into a glow behind it, with a white
  * specular along its top. Spotify sends no cover for Liked Songs, and the old

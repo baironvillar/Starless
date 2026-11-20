@@ -1,6 +1,6 @@
 # Actualizaciones
 
-Cómo llega una versión nueva a alguien que ya tiene Starless instalado.
+Cómo llega una versión nueva a alguien que ya tiene Star Music instalado.
 
 ## La idea
 
@@ -29,8 +29,8 @@ bunx star init updater
 
 Mira la llave pública de `src-tauri/tauri.conf.json`, el secreto
 `TAURI_SIGNING_PRIVATE_KEY` en GitHub (sólo su nombre: el valor no se puede
-leer) y el respaldo en `~/.star/keys/app.starless.desktop/`, fuera del repo.
-La llave de siempre también está en `.secrets/starless-updater.key`, que está
+leer) y el respaldo en `~/.star/keys/app.starmusic.desktop/`, fuera del repo.
+La llave de siempre también está en `.secrets/star-music-updater.key`, que está
 en `.gitignore`. Guárdala además en un gestor de contraseñas.
 
 **No la regeneres.** Una llave nueva invalida la confianza de todas las
@@ -49,7 +49,7 @@ release, no leer la biblioteca ni ver un log.
 
 ## En cada release
 
-La release la hace [star](https://github.com/baironvillar/star), en dos pasos.
+La release la hace [star](https://github.com/Starless-org/Star), en dos pasos.
 Nadie commitea directo en `develop` ni en `main` (ver
 [`CONTRIBUTING.md`](../CONTRIBUTING.md#branches-and-pull-requests)), y la
 versión tampoco: sale de una rama `release/<versión>` y llega a `develop` por
@@ -107,10 +107,10 @@ abajo.
   la firma de su `.sig` y las notas del CHANGELOG. La release queda en
   borrador, así que ese paso es el último que puede frenarla.
 
-Lo propio de Starless entra por los parámetros: el canal, el relay y el commit
+Lo propio de Star Music entra por los parámetros: el canal, el relay y el commit
 de la build (`build-env`), el ícono de desarrollo en las betas (`args`) y el
 nombre limpio del instalador (`asset-name-pattern`). El bundler de Tauri
-localiza el MSI (`Starless_0.5.4_x64_en-US.msi`), y el idioma se saca del
+localiza el MSI (`Star Music_0.5.4_x64_en-US.msi`), y el idioma se saca del
 nombre al subirlo.
 
 ### Si el tag quedó mal
@@ -136,8 +136,8 @@ Una release son tres archivos y un párrafo:
 
 | Archivo | Qué es |
 | --- | --- |
-| `Starless_<version>_x64.msi` | el instalador |
-| `Starless_<version>_x64.msi.sig` | su firma |
+| `Star.Music_<version>_x64.msi` | el instalador |
+| `Star.Music_<version>_x64.msi.sig` | su firma |
 | `latest.json` | el manifest que lee la app instalada |
 
 y el cuerpo de la release —y las notas del manifest— son la sección del
@@ -180,7 +180,7 @@ la 0.5.4 lo dice en sus notas.
 La firma cubre el contenido del archivo, no su nombre, y el plugin la verifica
 sin comparar el nombre del comentario con el del archivo. `tauri-action` v1
 escribe en `latest.json` la dirección con el nombre ya cambiado
-(`…/releases/download/v0.7.0/Starless_0.7.0_x64.msi`); las releases hechas
+(`…/releases/download/v0.7.0/Star.Music_0.7.0_x64.msi`); las releases hechas
 antes apuntaban al **id** del asset, que tampoco cambia al renombrar.
 
 Qué número corresponde a cada tipo de release está escrito en
@@ -200,7 +200,7 @@ Antes la pregunta era "¿el tag llegó a `main`?". star etiqueta en `develop`, y
 `develop` llega a `main` después, así que con esa regla toda versión habría
 salido como prerelease. Ahora lo dice el número, y se lee en él.
 
-Una beta lleva el canal `develop` (`STARLESS_CHANNEL`, lo que la app muestra en
+Una beta lleva el canal `develop` (`STAR_MUSIC_CHANNEL`, lo que la app muestra en
 Ajustes) y el ícono de desarrollo. Una versión sin sufijo lleva `release` y el
 ícono de siempre.
 
@@ -256,14 +256,14 @@ respondiendo la URL de actualización**.
 
 Sin ella, cualquiera que intercepte esa petición (una red hostil, una respuesta
 DNS, un espejo comprometido) elige el próximo binario que se instala en la
-máquina de cada usuario de Starless. No es el mismo riesgo que el de SmartScreen,
+máquina de cada usuario de Star Music. No es el mismo riesgo que el de SmartScreen,
 y este se cierra gratis.
 
 ## Lo que decide la app, no el plugin
 
 - **Comprueba al arrancar**, una sola vez, 2.5 s después de abrirse. No descarga
   nada.
-- **No instala sola.** El botón está en Ajustes → General. Starless está sonando;
+- **No instala sola.** El botón está en Ajustes → General. Star Music está sonando;
   una app que corta la música para instalar un parche es una app que la gente
   apaga.
 - **Un fallo al comprobar no se muestra.** Significa que GitHub no respondió, lo
@@ -283,7 +283,7 @@ responde.
 **El endpoint ya apunta al repositorio real.** En `src-tauri/tauri.conf.json`:
 
 ```json
-"endpoints": ["https://github.com/baironvillar/Starless/releases/latest/download/latest.json"]
+"endpoints": ["https://github.com/Starless-org/StarMusic/releases/latest/download/latest.json"]
 ```
 
 Si bifurcaste el repo, cámbialo por el tuyo: mientras apunte a otro lado, el
@@ -291,11 +291,11 @@ comprobador siempre dirá que estás al día. Una URL que no existe también vie
 con «no hay nada nuevo», y ese fallo silencioso es justo el que hace que un
 actualizador roto parezca uno que funciona.
 
-Lo mismo con `STARLESS_REPO`: el manifest se construye con las URLs del repo que
+Lo mismo con `STAR_MUSIC_REPO`: el manifest se construye con las URLs del repo que
 le pases, así que un fork que olvide cambiarlo publica un `latest.json` que
 apunta a releases ajenas. **En la CI esto ya no se puede equivocar**: el action
 arma el `latest.json` con el repositorio desde el que corre, así que el
-`STARLESS_REPO` manual dejó de tener sentido y sólo queda como herramienta para
+`STAR_MUSIC_REPO` manual dejó de tener sentido y sólo queda como herramienta para
 generar el manifest localmente.
 
 **Sin `pubkey`, `tauri build` falla** — a propósito. En un fork, `bunx star init

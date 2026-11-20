@@ -2,7 +2,7 @@
 //!
 //! ## Por qué este módulo existe
 //!
-//! Starless llegaba a `api.spotify.com` con un client id propio, y una app en
+//! Star Music llegaba a `api.spotify.com` con un client id propio, y una app en
 //! modo desarrollo sólo sirve a los usuarios de su lista: cinco, desde febrero de
 //! 2026. Para todos los demás, `/me` respondía 403 y la app abría con una
 //! biblioteca vacía sin decir por qué. No es una cuota que se pague — el modo de
@@ -66,7 +66,7 @@ const CALL_TIMEOUT: Duration = Duration::from_secs(20);
 /// Cuántas playlists pide por llamada.
 ///
 /// El rootlist pagina, y este es el techo de una página: la biblioteca de una
-/// cuenta que usa Starless todos los días entra entera. Si alguna vez no entra,
+/// cuenta que usa Star Music todos los días entra entera. Si alguna vez no entra,
 /// la respuesta trae los índices de página siguiente y esta constante es lo
 /// único que hay que subir.
 const ROOTLIST_PAGE: usize = 200;
@@ -74,7 +74,7 @@ const ROOTLIST_PAGE: usize = 200;
 /// Corre una llamada async contra la sesión y devuelve su resultado en el hilo
 /// que la pidió.
 ///
-/// `spclient` es async y el resto de Starless vive en hilos bloqueantes. El
+/// `spclient` es async y el resto de Star Music vive en hilos bloqueantes. El
 /// puente es el runtime de librespot más un canal: la llamada se va, y este
 /// hilo espera con un timeout. El receptor se suelta al vencer, porque una
 /// llamada colgada no puede dejar la app sin ventana.
@@ -551,7 +551,7 @@ struct Profile {
 /// La cuenta de quien tiene la sesión abierta.
 ///
 /// **El Premium no se pregunta: se deduce.** `/me` contestaba con un campo
-/// `product` que Starless leía para avisarle a un usuario free que no iba a
+/// `product` que Star Music leía para avisarle a un usuario free que no iba a
 /// oír nada — y esa comprobación ya la hizo otra cosa: librespot se niega a
 /// seguir con una cuenta que no sea premium y cierra el proceso. Que haya una
 /// sesión viva ya *es* la respuesta, y preguntar de nuevo sería una viaje al
@@ -1400,7 +1400,7 @@ pub(super) fn now_millis() -> i64 {
 ///
 /// La entropía sale de dos `RandomState` —que el sistema siembra al arrancar el
 /// proceso— mezclados con el reloj y el pid. El reloj solo no alcanza: dos
-/// playlists creadas en el mismo milisegundo por dos Starless abiertos se
+/// playlists creadas en el mismo milisegundo por dos Star Music abiertos se
 /// pisarían, y una colisión no avisa. Es el `ADD` de otra persona lo que
 /// escribiría encima.
 fn new_playlist_id() -> String {
@@ -2445,7 +2445,7 @@ pub fn jam_queue(session: &Session, session_id: &str) -> Result<Vec<Track>, Stri
 ///              "logging_params": {"command_initiated_time": 1759…,
 ///                                 "command_received_time": 1759…,
 ///                                 "page_instance_ids": [], "interaction_ids": [],
-///                                 "device_identifier": "Starless",
+///                                 "device_identifier": "Star Music",
 ///                                 "command_id": "<hex>"}},
 ///  "connection_type": "wlan", "intent_id": "<hex>"}
 /// ```
@@ -2658,7 +2658,7 @@ mod tests {
     /// entre, pero se mandan porque es lo que manda el cliente de escritorio.
     #[test]
     fn the_jam_command_carries_the_endpoint_and_not_the_type() {
-        let body = jam_command_body("add_to_queue", Some("spotify:track:3b5E38f6Dbx28IVof4oeAA"), "Starless");
+        let body = jam_command_body("add_to_queue", Some("spotify:track:3b5E38f6Dbx28IVof4oeAA"), "Star Music");
         let json: serde_json::Value = serde_json::from_str(&body).expect("el comando es JSON");
 
         let command = &json["command"];
@@ -2691,8 +2691,8 @@ mod tests {
     /// no habría ningún error que lo dijera.
     #[test]
     fn two_jam_commands_do_not_share_the_intent_id() {
-        let first = jam_command_body("add_to_queue", None, "Starless");
-        let second = jam_command_body("add_to_queue", None, "Starless");
+        let first = jam_command_body("add_to_queue", None, "Star Music");
+        let second = jam_command_body("add_to_queue", None, "Star Music");
 
         let one: serde_json::Value = serde_json::from_str(&first).expect("el comando es JSON");
         let two: serde_json::Value = serde_json::from_str(&second).expect("el comando es JSON");

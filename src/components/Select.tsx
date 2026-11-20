@@ -25,7 +25,7 @@ type SelectProps = {
  * the one place where a choice looked like it belonged to another program.
  *
  * So the list is now the app's own menu —the same floating surface every other
- * menu in Starless uses— with a check on the chosen option. The trigger keeps
+ * menu in Star Music uses— with a check on the chosen option. The trigger keeps
  * the exact shape it had, so nothing that was already there moved.
  *
  * **The list is a portal, and that is what makes it work inside the settings

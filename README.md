@@ -1,6 +1,6 @@
 <div align="center">
 
-# Starless
+# Star Music
 
 **Cliente de escritorio no oficial para Spotify Premium.**
 **Unofficial desktop client for Spotify Premium.**
@@ -8,7 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Windows](https://img.shields.io/badge/Windows-first-0078D4?logo=windows&logoColor=white)
 ![Tauri](https://img.shields.io/badge/Tauri-2-FFC131?logo=tauri&logoColor=black)
-![CI](https://github.com/baironvillar/Starless/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/Starless-org/StarMusic/actions/workflows/ci.yml/badge.svg)
 
 Hecho con Tauri y React. El audio no pasa por la ventana.
 Built with Tauri and React. The audio never goes through the window.
@@ -20,7 +20,7 @@ Built with Tauri and React. The audio never goes through the window.
 ## Español
 
 > [!IMPORTANT]
-> **Starless no está afiliado, asociado, autorizado ni respaldado por Spotify AB.**
+> **Star Music no está afiliado, asociado, autorizado ni respaldado por Spotify AB.**
 > Es un cliente de terceros. No usa el logotipo ni la marca de Spotify, y no
 > implica ningún tipo de aprobación. **Requiere Spotify Premium**: sin Premium
 > Spotify no entrega audio, y esta app no puede cambiar eso.
@@ -28,7 +28,7 @@ Built with Tauri and React. The audio never goes through the window.
 ### Qué es
 
 Un reproductor de escritorio para Spotify Premium que abre rápido y se
-aparta. El cliente oficial funciona, pero tarda en arrancar y pesa; Starless
+aparta. El cliente oficial funciona, pero tarda en arrancar y pesa; Star Music
 existe por esa diferencia concreta, no por ofrecer otra forma de escuchar
 música.
 
@@ -52,15 +52,15 @@ mantiene baja mientras suena.
 - **Cola de reproducción**, con lo que suena y lo que sigue.
 - **Agregar a una playlist** y crear una playlist desde ahí mismo.
 - **Interfaz bilingüe**, español e inglés, con selector.
-- **Cero telemetría.** Starless no reporta datos de uso a nadie, tampoco a su
+- **Cero telemetría.** Star Music no reporta datos de uso a nadie, tampoco a su
   autor.
 - **Actualizaciones automáticas:** comprueba si hay versión nueva al abrir y
   tú decides cuándo instalarla. Una app que corta la música para instalar un
   parche es una app que la gente apaga.
 - **Diagnóstico:** registro a archivo local con rotación y un autodiagnóstico
-  con `STARLESS_DIAGNOSTIC=1`.
+  con `STAR_MUSIC_DIAGNOSTIC=1`.
 - **Reportes de crash.** Si la app se muere sin cerrarse, al volver a abrirla
-  Starless lo detecta y te ofrece mandar el registro. Tú decides: nada sale de
+  Star Music lo detecta y te ofrece mandar el registro. Tú decides: nada sale de
   tu máquina hasta que aprietas el botón, y lo que se manda ya viene sin tu
   nombre de cuenta, sin tu usuario de Windows y sin identificadores de
   canción.
@@ -78,9 +78,9 @@ renderse: una región bloqueada o un CDN muerto no deberían terminar la sesión
 ### Instalar
 
 Windows primero. Los instaladores van adjuntos a las
-[ releases](https://github.com/baironvillar/Starless/releases):
+[ releases](https://github.com/Starless-org/StarMusic/releases):
 
-- `starless_*-setup.exe` — instalador NSIS, instala para el usuario actual.
+- `star-music_*-setup.exe` — instalador NSIS, instala para el usuario actual.
 - `*-setup.msi` — instalador MSI.
 
 > [!WARNING]
@@ -111,8 +111,8 @@ sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
 Después:
 
 ```bash
-git clone https://github.com/baironvillar/Starless.git
-cd Starless
+git clone https://github.com/Starless-org/StarMusic.git
+cd Star Music
 bun install
 ```
 
@@ -150,7 +150,7 @@ instalaciones que ya tienen la pública vieja.
 | `bun run design:detect` | Detector de diseño de Impeccable sobre `src/` |
 
 La versión vive en cuatro manifiestos (`package.json`, `tauri.conf.json`,
-`Cargo.toml` y `Cargo.lock`) y la mueve [star](https://github.com/baironvillar/star)
+`Cargo.toml` y `Cargo.lock`) y la mueve [star](https://github.com/Starless-org/Star)
 en los cuatro a la vez. Un PR que la cambie en un solo archivo se ve en el CI.
 
 ### Estructura
@@ -173,7 +173,7 @@ audio no puede pasar por la webview o por qué el blur tiene tope de 24px.
 
 ### Actualizaciones
 
-Una copia instalada de Starless comprueba GitHub Releases por una versión
+Una copia instalada de Star Music comprueba GitHub Releases por una versión
 nueva, 2,5 segundos después de abrir, y **no descarga nada** hasta que lo pides
 en Ajustes. El manifest vive en la release y GitHub redirige la URL a la más
 reciente, así que no hay servidor propio que mantener.
@@ -201,7 +201,7 @@ release en borrador; sólo falta darle a *Publish release*.
   sesión queda conectada en 1 a 1,7 s y la biblioteca llega en 2 a 3,5 s: el
   "menos de un segundo" de `PRODUCT.md` se cumple para la ventana, no para la
   biblioteca. En memoria privada son unos 290 MB en reposo y 325 MB con música,
-  y de eso `starless.exe` —el audio, la sesión— es 12 a 14 MB: **el resto es
+  y de eso `star-music.exe` —el audio, la sesión— es 12 a 14 MB: **el resto es
   WebView2**, la ventana. Son números de una máquina, no un benchmark.
 
 ### Documentación
@@ -222,7 +222,7 @@ release en borrador; sólo falta darle a *Publish release*.
 ## English
 
 > [!IMPORTANT]
-> **Starless is not affiliated with, associated with, authorized by, or endorsed
+> **Star Music is not affiliated with, associated with, authorized by, or endorsed
 > by Spotify AB.** It is a third-party client. It uses no Spotify logo or
 > wordmark and implies no endorsement. **It requires Spotify Premium**: without
 > Premium, Spotify delivers no audio, and this app cannot change that.
@@ -230,7 +230,7 @@ release en borrador; sólo falta darle a *Publish release*.
 ### What it is
 
 A desktop player for Spotify Premium that opens fast and then gets out of the
-way. The official client works, but it is slow to start and heavy; Starless
+way. The official client works, but it is slow to start and heavy; Star Music
 exists for that one difference, not to offer another way to listen to music.
 
 Decoded audio goes from librespot to the system driver over WASAPI on Windows.
@@ -251,14 +251,14 @@ music plays.
 - **A play queue**, with what is playing and what is next.
 - **Adding to a playlist**, and creating a playlist from there.
 - **A bilingual interface**, Spanish and English, with a selector.
-- **Zero telemetry.** Starless reports usage data to nobody, including its
+- **Zero telemetry.** Star Music reports usage data to nobody, including its
   author.
 - **Automatic updates:** it checks for a new version when it opens, and you
   decide when to install it. An app that cuts the music to install a patch is
   an app people turn off.
 - **Diagnostics:** a local log file with rotation, plus a self-test behind
-  `STARLESS_DIAGNOSTIC=1`.
-- **Crash reports.** If the app dies without shutting down, Starless notices when
+  `STAR_MUSIC_DIAGNOSTIC=1`.
+- **Crash reports.** If the app dies without shutting down, Star Music notices when
   you reopen it and offers to send the log. You decide: nothing leaves your
   machine until you press the button, and what does leave has already had your
   account name, your Windows user name and any track identifiers taken out.
@@ -276,9 +276,9 @@ region-blocked track or dead CDN should not end the session.
 ### Install
 
 Windows first. Installers are attached to the
-[releases](https://github.com/baironvillar/Starless/releases):
+[releases](https://github.com/Starless-org/StarMusic/releases):
 
-- `starless_*-setup.exe` — NSIS installer, installs for the current user.
+- `star-music_*-setup.exe` — NSIS installer, installs for the current user.
 - `*-setup.msi` — MSI installer.
 
 > [!WARNING]
@@ -309,8 +309,8 @@ sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
 Then:
 
 ```bash
-git clone https://github.com/baironvillar/Starless.git
-cd Starless
+git clone https://github.com/Starless-org/StarMusic.git
+cd Star Music
 bun install
 ```
 
@@ -348,7 +348,7 @@ already trusts the old public half unable to update.
 | `bun run design:detect` | Impeccable design detector over `src/` |
 
 The version lives in four manifests (`package.json`, `tauri.conf.json`,
-`Cargo.toml` and `Cargo.lock`) and [star](https://github.com/baironvillar/star)
+`Cargo.toml` and `Cargo.lock`) and [star](https://github.com/Starless-org/Star)
 moves all four at once. A PR that bumps one file and forgets the others shows
 up in CI.
 
@@ -373,7 +373,7 @@ not travel through the webview, or why the blur radius caps at 24px.
 
 ### Updates
 
-An installed copy of Starless checks GitHub Releases for a new version 2.5
+An installed copy of Star Music checks GitHub Releases for a new version 2.5
 seconds after opening, and **downloads nothing** until you ask in Settings. The
 manifest lives on the release and GitHub redirects that URL to the newest one,
 so there is no server of our own to maintain.
@@ -401,7 +401,7 @@ leaves the release as a draft; all that is left is clicking *Publish release*.
   `develop`, 30 October 2026, three launches. The window shows in about 40 ms, the session is
   connected in 1 to 1.7 s and the library arrives in 2 to 3.5 s: the "under a
   second" in `PRODUCT.md` holds for the window, not for the library. Private
-  memory is about 290 MB at rest and 325 MB while playing, and `starless.exe`
+  memory is about 290 MB at rest and 325 MB while playing, and `star-music.exe`
   —the audio, the session— is 12 to 14 MB of it: **the rest is WebView2**, the
   window. These are one machine's numbers, not a benchmark.
 

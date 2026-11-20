@@ -142,7 +142,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # The updater signing key can sign an update for every installed copy of
-      # Starless. It belongs in a CI secret, never in a repository, and
+      # Star Music. It belongs in a CI secret, never in a repository, and
       # regenerating it would strand every install that already trusts the old
       # public half. Cheap to check, expensive to discover late.
       - name: Guard
@@ -151,7 +151,7 @@ jobs:
             echo "::error::.secrets is tracked in this repository"
             exit 1
           fi
-          if git ls-files | grep -qE 'starless-updater\.key'; then
+          if git ls-files | grep -qE 'star-music-updater\.key'; then
             echo "::error::an updater private key is tracked in this repository"
             exit 1
           fi

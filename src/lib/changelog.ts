@@ -48,6 +48,7 @@ export const CHANGELOG: ChangelogEntry[] = [
         {
           title: "Nuevo",
           items: [
+            "Starless ahora se llama Star Music. Al actualizar no se pierde nada: la sesión, los ajustes, el historial, la clave de Soloist y el inicio con Windows pasan solos al nombre nuevo, y la actualización reemplaza a la app anterior en vez de instalar otra al lado.",
             "Las cuentas a las que Spotify les niega el audio ya pueden escuchar. A algunas cuentas Premium Spotify les niega las claves de audio, y Starless no podía sonar para ellas. Ahora la app lo detecta al entrar y ofrece Spotify Soloist en tres pasos: descargar la versión oficial, pegar tu clave personal —que se guarda en el Administrador de credenciales de Windows— y emparejar una vez desde el teléfono. Las cuentas que suenan normal no ven nada de esto. Por ahora, con Soloist el DJ suena como una lista, sin su voz.",
             "Se puede volver a buscar actualizaciones aunque haya una ofrecida. Un botón al lado del de instalar, en Ajustes → General, vuelve a preguntar. La oferta queda en pantalla hasta que llega la respuesta, y no se borra si falla la red.",
           ],
@@ -66,6 +67,7 @@ export const CHANGELOG: ChangelogEntry[] = [
         {
           title: "New",
           items: [
+            "Starless is now called Star Music. Updating loses nothing: the session, the settings, the history, the Soloist key and start-with-Windows carry over to the new name on their own, and the update replaces the old app instead of installing a second one next to it.",
             "Accounts Spotify refuses audio to can listen now. Some Premium accounts get every audio key refused, and Starless could not play for them. The app now notices at sign-in and offers Spotify Soloist in three steps: download the official build, paste your personal key —kept in the Windows Credential Manager— and pair once from your phone. Accounts that play normally see none of this. For now, under Soloist the DJ plays as a list, without its voice.",
             "You can check for updates again while one is offered. A button next to the install button, in Settings → General, asks again. The offer stays on screen until the answer arrives, and a dropped network does not wipe it.",
           ],

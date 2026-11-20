@@ -42,12 +42,12 @@ use super::{
 
 /// `true` when the environment asks for the probe. Read once, at startup.
 ///
-/// Separate from `STARLESS_DIAGNOSTIC` on purpose: that one plays a real track
+/// Separate from `STAR_MUSIC_DIAGNOSTIC` on purpose: that one plays a real track
 /// for twenty seconds, and a question about the library does not need a song
 /// playing on the developer's desk to be answered.
 #[cfg(debug_assertions)]
 pub fn requested() -> bool {
-    std::env::var("STARLESS_SP_PROBE")
+    std::env::var("STAR_MUSIC_SP_PROBE")
         .map(|value| value != "0" && !value.is_empty())
         .unwrap_or(false)
 }
@@ -55,7 +55,7 @@ pub fn requested() -> bool {
 /// A second, narrower question: which context URIs exist at all.
 #[cfg(debug_assertions)]
 pub fn shapes_requested() -> bool {
-    std::env::var("STARLESS_SP_SHAPES")
+    std::env::var("STAR_MUSIC_SP_SHAPES")
         .map(|value| value != "0" && !value.is_empty())
         .unwrap_or(false)
 }
@@ -72,7 +72,7 @@ pub fn shapes_requested() -> bool {
 /// would have asked for.
 #[cfg(debug_assertions)]
 pub fn pictures_requested() -> bool {
-    std::env::var("STARLESS_SP_PICTURE")
+    std::env::var("STAR_MUSIC_SP_PICTURE")
         .map(|value| value != "0" && !value.is_empty())
         .unwrap_or(false)
 }
@@ -382,7 +382,7 @@ fn probe_contexts(session: &Session, tag: &str, candidates: &[String]) {
     }
 }
 
-/// What this session can answer without a client id of Starless's own.
+/// What this session can answer without a client id of Star Music's own.
 ///
 /// Development only. The answer decides whether the library moves off the Web
 /// API, and it is worth one line in the log more than it is worth a screen.
@@ -550,7 +550,7 @@ pub fn run_shape_probe(app: tauri::AppHandle) {
 /// cuenta.
 #[cfg(debug_assertions)]
 pub fn dj_requested() -> bool {
-    std::env::var("STARLESS_SP_DJ")
+    std::env::var("STAR_MUSIC_SP_DJ")
         .map(|value| value != "0" && !value.is_empty())
         .unwrap_or(false)
 }
@@ -673,7 +673,7 @@ pub fn run_dj_probe(app: tauri::AppHandle) {
         }) {
             // La sonda de la voz sola, para no gastar media hora midiendo lo
             // que ya está medido cuando lo que se busca es una puerta.
-            if std::env::var("STARLESS_SP_TTS")
+            if std::env::var("STAR_MUSIC_SP_TTS")
                 .map(|value| value != "0" && !value.is_empty())
                 .unwrap_or(false)
             {
@@ -723,7 +723,7 @@ pub fn run_dj_probe(app: tauri::AppHandle) {
 /// la radio repite la canción que la sembró— y si hay cursor para seguir.
 #[cfg(debug_assertions)]
 pub fn radio_requested() -> bool {
-    std::env::var("STARLESS_SP_RADIO")
+    std::env::var("STAR_MUSIC_SP_RADIO")
         .map(|value| value != "0" && !value.is_empty())
         .unwrap_or(false)
 }
@@ -1863,7 +1863,7 @@ fn raw_playlist(session: &Session, playlist_id: &str) -> Result<SelectedListCont
 /// contesta que la frase está mal, no que la cosa no exista.
 #[cfg(debug_assertions)]
 pub fn home_requested() -> bool {
-    std::env::var("STARLESS_SP_HOME")
+    std::env::var("STAR_MUSIC_SP_HOME")
         .map(|value| value != "0" && !value.is_empty())
         .unwrap_or(false)
 }
@@ -2000,7 +2000,7 @@ pub fn run_home_probe(app: tauri::AppHandle) {
 /// la Web API de por medio —que además este access point no sirve, `/user/<id>/
 /// playlist` dio `404` en los dos verbos.
 ///
-/// Lo que sí cambia es lo que se está decidiendo. Hasta acá Starless sólo leía.
+/// Lo que sí cambia es lo que se está decidiendo. Hasta acá Star Music sólo leía.
 /// Escribir en la cuenta de quien la está usando, por un endpoint que Spotify no
 /// documenta, es una decisión de producto y no de ingeniería, y por eso la sonda
 /// queda como está: la respuesta vive acá y el botón es otra conversación.
@@ -2015,7 +2015,7 @@ pub fn run_home_probe(app: tauri::AppHandle) {
 /// que puede modificar la cuenta de quien la corre no es una sonda.
 #[cfg(debug_assertions)]
 pub fn create_requested() -> bool {
-    std::env::var("STARLESS_SP_CREATE")
+    std::env::var("STAR_MUSIC_SP_CREATE")
         .map(|value| value != "0" && !value.is_empty())
         .unwrap_or(false)
 }
@@ -2074,11 +2074,11 @@ pub fn run_create_probe(app: tauri::AppHandle) {
                 "la forma de la Web API, en este host",
             ),
             (
-                format!("/playlist/v2/user/{user}/playlist/starless-sonda/items"),
+                format!("/playlist/v2/user/{user}/playlist/star-music-sonda/items"),
                 "agregar canciones",
             ),
             (
-                format!("/playlist/v2/user/{user}/playlist/starless-sonda/description"),
+                format!("/playlist/v2/user/{user}/playlist/star-music-sonda/description"),
                 "cambiar el nombre",
             ),
         ];
@@ -2320,7 +2320,7 @@ pub fn run_voice_probe(app: tauri::AppHandle) {
 /// Si hay que probar la voz del DJ sin que nadie haga clic.
 #[cfg(debug_assertions)]
 pub fn voice_requested() -> bool {
-    std::env::var("STARLESS_SP_VOICE")
+    std::env::var("STAR_MUSIC_SP_VOICE")
         .map(|value| value != "0" && !value.is_empty())
         .unwrap_or(false)
 }
@@ -2844,7 +2844,7 @@ fn guardar_audio(path: &str, body: &[u8]) {
         return;
     }
     let nombre = path.trim_start_matches('/').replace('/', "_");
-    let destino = std::env::temp_dir().join(format!("starless-{nombre}.bin"));
+    let destino = std::env::temp_dir().join(format!("star-music-{nombre}.bin"));
     if std::fs::write(&destino, body).is_err() {
         log::error!("SP_TTS: no se pudo guardar el audio en {destino:?}");
         return;
@@ -3008,7 +3008,7 @@ fn tts_request(
 /// `true` when the environment asks for the probe. Read once, at startup.
 ///
 /// **Esta sonda modifica la cuenta, y por eso pide una playlist por su id.**
-/// Sin `STARLESS_SP_PRIVATE_ID` no escribe nada: sólo lee y dice qué trae
+/// Sin `STAR_MUSIC_SP_PRIVATE_ID` no escribe nada: sólo lee y dice qué trae
 /// cada ítem de la biblioteca. La sonda de creación —que sí escribe— se
 /// dejó inofensiva a propósito; acá no se puede, porque lo que se busca es
 /// justamente la puerta de escritura. El precio de medirla es que la
@@ -3016,7 +3016,7 @@ fn tts_request(
 /// dejar como la encontró**.
 #[cfg(debug_assertions)]
 pub fn private_requested() -> bool {
-    std::env::var("STARLESS_SP_PRIVATE")
+    std::env::var("STAR_MUSIC_SP_PRIVATE")
         .map(|value| value != "0" && !value.is_empty())
         .unwrap_or(false)
 }
@@ -3024,7 +3024,7 @@ pub fn private_requested() -> bool {
 /// La playlist que la sonda puede tocar, si el ambiente la nombró.
 #[cfg(debug_assertions)]
 fn private_target() -> Option<String> {
-    std::env::var("STARLESS_SP_PRIVATE_ID")
+    std::env::var("STAR_MUSIC_SP_PRIVATE_ID")
         .ok()
         .map(|value| value.trim().to_owned())
         .filter(|value| !value.is_empty())
@@ -3130,7 +3130,7 @@ pub fn run_private_probe(app: tauri::AppHandle) {
         }
 
         let Some(target) = private_target() else {
-            log::info!("SP_PRIVATE: sin STARLESS_SP_PRIVATE_ID no se escribe nada");
+            log::info!("SP_PRIVATE: sin STAR_MUSIC_SP_PRIVATE_ID no se escribe nada");
             return;
         };
 
@@ -3317,7 +3317,7 @@ fn post_rootlist(session: &Session, path: &str, body: Vec<u8>) -> (u16, String) 
 /// se miden las dos: no se mira el cuerpo, que es lo que más miente.
 #[cfg(debug_assertions)]
 pub fn jam_requested() -> bool {
-    std::env::var("STARLESS_SP_JAM")
+    std::env::var("STAR_MUSIC_SP_JAM")
         .map(|value| value != "0" && !value.is_empty())
         .unwrap_or(false)
 }
@@ -3330,7 +3330,7 @@ pub fn jam_requested() -> bool {
 /// de Spotify y en la lista de sesiones— hasta que alguien la cierre.
 #[cfg(debug_assertions)]
 pub fn jam_create_requested() -> bool {
-    std::env::var("STARLESS_SP_JAM_CREATE")
+    std::env::var("STAR_MUSIC_SP_JAM_CREATE")
         .map(|value| value != "0" && !value.is_empty())
         .unwrap_or(false)
 }
@@ -3345,10 +3345,10 @@ pub fn jam_create_requested() -> bool {
 /// sesión activa y sin canción sonando, la cola no existe —el servicio
 /// contesta `Not Found`—, y la pregunta es si el comando la crea.
 ///
-/// `STARLESS_SP_JAM_QUEUE=1` corre esto y nada más.
+/// `STAR_MUSIC_SP_JAM_QUEUE=1` corre esto y nada más.
 #[cfg(debug_assertions)]
 pub fn jam_queue_requested() -> bool {
-    std::env::var("STARLESS_SP_JAM_QUEUE")
+    std::env::var("STAR_MUSIC_SP_JAM_QUEUE")
         .map(|value| value != "0" && !value.is_empty())
         .unwrap_or(false)
 }
@@ -3507,7 +3507,7 @@ pub fn run_jam_probe(app: tauri::AppHandle) {
             log::info!("SP_JAM: se esperan 10 s a que la cola del jam exista");
             std::thread::sleep(std::time::Duration::from_secs(10));
         } else {
-            log::info!("SP_JAM: sin STARLESS_SP_JAM_CREATE no se activa ninguna sesión");
+            log::info!("SP_JAM: sin STAR_MUSIC_SP_JAM_CREATE no se activa ninguna sesión");
         }
 
         // La sesión por su id, con barra y sin barra: la barra final cambia
@@ -4008,7 +4008,7 @@ fn jam_probe_writes(session: &Session, session_id: &str, device: &str) {
             "{{\"command\":{{\"type\":\"PLAY\",\"context_uri\":\"{track}\"}},\"connection_type\":\"LOCAL\",\"intent_id\":\"jam\"}}"
         ),
         format!(
-            "{{\"player_command_json\":\"{{\\\"type\\\":\\\"PLAY\\\"}}\",\"target_device_id\":\"{device}\",\"command_id\":\"starless-probe\"}}"
+            "{{\"player_command_json\":\"{{\\\"type\\\":\\\"PLAY\\\"}}\",\"target_device_id\":\"{device}\",\"command_id\":\"star-music-probe\"}}"
         ),
     ] {
         jam_ask(
@@ -4788,13 +4788,13 @@ fn describe_strings(bytes: &[u8]) -> String {
 
 /// Dónde dejar un archivo de la sonda.
 ///
-/// Vive con el log, en `%LOCALAPPDATA%\Starless`: es el único directorio que
+/// Vive con el log, en `%LOCALAPPDATA%\Star Music`: es el único directorio que
 /// sobrevive a un reinicio y que no se borra al cerrar sesión, que es lo que
 /// un archivo de medición necesita.
 #[cfg(debug_assertions)]
 fn jam_scratch_path(name: &str) -> String {
     let base = std::env::var("LOCALAPPDATA").unwrap_or_default();
-    format!("{base}\\Starless\\{name}")
+    format!("{base}\\Star Music\\{name}")
 }
 
 /// El id del primer participante de la sesión.
@@ -4848,7 +4848,7 @@ fn find_key(value: &serde_json::Value, key: &str) -> Option<String> {
 // Las traducciones de las letras
 // ---------------------------------------------------------------------------
 
-/// `STARLESS_SP_LYRICS=1`: what `/color-lyrics/v2` sends besides the lines.
+/// `STAR_MUSIC_SP_LYRICS=1`: what `/color-lyrics/v2` sends besides the lines.
 ///
 /// librespot reads the lines and drops `alternatives`, with a TODO that says
 /// nobody knows what it is for. The official client shows translations and
@@ -4856,7 +4856,7 @@ fn find_key(value: &serde_json::Value, key: &str) -> Option<String> {
 /// travel there — and whether asking in a language changes the answer.
 #[cfg(debug_assertions)]
 pub fn lyrics_requested() -> bool {
-    std::env::var("STARLESS_SP_LYRICS")
+    std::env::var("STAR_MUSIC_SP_LYRICS")
         .map(|value| value != "0" && !value.is_empty())
         .unwrap_or(false)
 }

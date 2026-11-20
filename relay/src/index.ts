@@ -1,5 +1,5 @@
 /**
- * The Starless report relay.
+ * The Star Music report relay.
  *
  * **Why it exists.** A report has to end up as a GitHub issue, and creating an
  * issue takes a token. A token baked into the app can be pulled out of any

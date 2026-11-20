@@ -1,6 +1,6 @@
 // The icon in the notification area, and what it does.
 //
-// It is how Starless stays reachable once its window is gone: the close button
+// It is how Star Music stays reachable once its window is gone: the close button
 // can hide the window (`settings::saved_close_to_tray`) and a launch at login
 // starts without one, and in both cases the music keeps playing with nothing
 // on screen. The menu is the player bar, small: what is playing, the three
@@ -65,7 +65,7 @@ pub fn exists(app: &AppHandle) -> bool {
 }
 
 fn build(app: &AppHandle) -> tauri::Result<Tray> {
-    let now = MenuItem::with_id(app, "now", "Starless", false, None::<&str>)?;
+    let now = MenuItem::with_id(app, "now", "Star Music", false, None::<&str>)?;
     let toggle = MenuItem::with_id(app, "toggle", "", false, None::<&str>)?;
     let next = MenuItem::with_id(app, "next", "", false, None::<&str>)?;
     let previous = MenuItem::with_id(app, "previous", "", false, None::<&str>)?;
@@ -87,7 +87,7 @@ fn build(app: &AppHandle) -> tauri::Result<Tray> {
 
     let mut builder = TrayIconBuilder::with_id("main")
         .menu(&menu)
-        .tooltip("Starless")
+        .tooltip("Star Music")
         // Left click is the way back to the window, as everywhere else on
         // Windows; the menu is the right click.
         .show_menu_on_left_click(false)
@@ -169,7 +169,7 @@ fn refresh(tray: &Tray) {
     let now_text = match &playing {
         Some(now) if now.artist.is_empty() => menu_text(&now.title),
         Some(now) => menu_text(&format!("{} — {}", now.title, now.artist)),
-        None => "Starless".to_string(),
+        None => "Star Music".to_string(),
     };
     let _ = tray.now.set_text(now_text);
     let _ = tray

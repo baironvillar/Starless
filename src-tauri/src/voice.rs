@@ -17,7 +17,7 @@
 //! WASAPI se pelean, y el que pierde le pasa sus bytes al otro. Para poder
 //! mezclar la voz con la música hace falta el `Mixer` de ese stream, y
 //! librespot no lo deja ver —el `Sink` que recibe es una caja opaca—.
-//! Por eso el `Sink` es de Starless y no de librespot: el `SinkBuilder` es un
+//! Por eso el `Sink` es de Star Music y no de librespot: el `SinkBuilder` es un
 //! puntero a función, y lo que se le pasa puede ser un sink propio.
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -226,14 +226,14 @@ impl rodio::Source for VoiceSource {
     }
 }
 
-/// El sink de Starless.
+/// El sink de Star Music.
 ///
 /// Es el de librespot con dos diferencias: guarda el `Mixer` del stream, que
 /// librespot no deja ver —sin eso, la voz tendría que abrir un segundo stream
 /// en el mismo dispositivo—, y la música no va a una cola sino a las de
 /// `crossfade`, que puede tener el final de una canción en una y la siguiente
 /// en otra, sobre el mismo mixer.
-pub struct StarlessSink {
+pub struct StarMusicSink {
     decks: Arc<crate::crossfade::Decks>,
     /// El stream tiene que quedar vivo: si se cae, el mixer se cae con él.
     _stream: rodio::OutputStream,
@@ -260,10 +260,10 @@ fn device_failed(reason: &str) -> ! {
     panic!("el dispositivo de salida de audio no se pudo abrir: {reason}");
 }
 
-fn open(device: Option<String>, format: AudioFormat) -> StarlessSink {
+fn open(device: Option<String>, format: AudioFormat) -> StarMusicSink {
     let host = cpal::default_host();
     log::info!(
-        "Using Starless sink with format {format:?} and cpal host: {}",
+        "Using Star Music sink with format {format:?} and cpal host: {}",
         host.id().name()
     );
 
@@ -357,13 +357,13 @@ fn open(device: Option<String>, format: AudioFormat) -> StarlessSink {
     }
     OUTPUT_LOST.store(false, Ordering::SeqCst);
 
-    StarlessSink {
+    StarMusicSink {
         decks,
         _stream: stream,
     }
 }
 
-impl Sink for StarlessSink {
+impl Sink for StarMusicSink {
     fn start(&mut self) -> SinkResult<()> {
         self.decks.start();
         Ok(())
