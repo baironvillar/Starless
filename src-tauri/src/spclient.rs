@@ -1580,6 +1580,76 @@ pub fn add_to_playlist(session: &Session, playlist_id: &str, track_id: &str) -> 
     Ok(())
 }
 
+/// Guarda una canción en "Canciones que te gustan".
+///
+/// **No es una playlist y no usa el camino de las playlists.** Las canciones
+/// guardadas son el set `collection` del servicio de colección, el mismo que
+/// `liked_tracks` lee por el context `spotify:user:<id>:collection`. Se escribe
+/// con `POST /collection/v2/write` y un `WriteRequest` de
+/// `collection2v2.proto` (extraído del cliente oficial, y que librespot trae en
+/// `proto/` pero no compila). Son cuatro campos, así que se codifica a mano en
+/// vez de agregar el `.proto` a un build.
+///
+/// **Sin medir contra una cuenta todavía.** El camino y la forma salen del
+/// proto del cliente; a diferencia de las playlists, nadie capturó esta
+/// escritura. Si el servicio la rechaza, el fallo vuelve como `like_failed`
+/// y el log trae el cuerpo, como en `send_changes`.
+///
+/// `added_at` va en **segundos** (es un `int32`), no en milisegundos como el
+/// timestamp de una playlist.
+pub fn like_track(session: &Session, track_id: &str) -> Result<(), String> {
+    SpotifyId::from_base62(track_id).map_err(|_| "bad_track_id".to_string())?;
+
+    let username = session.username().to_owned();
+    let added_at = (now_millis() / 1000) as i32;
+    let uri = format!("spotify:track:{track_id}");
+
+    let mut item = Vec::new();
+    {
+        let mut out = protobuf::CodedOutputStream::vec(&mut item);
+        out.write_string(1, &uri).map_err(|_| "like_failed".to_string())?;
+        out.write_int32(2, added_at).map_err(|_| "like_failed".to_string())?;
+        out.flush().map_err(|_| "like_failed".to_string())?;
+    }
+    let mut body = Vec::new();
+    {
+        let mut out = protobuf::CodedOutputStream::vec(&mut body);
+        out.write_string(1, &username).map_err(|_| "like_failed".to_string())?;
+        out.write_string(2, "collection").map_err(|_| "like_failed".to_string())?;
+        out.write_tag(3, protobuf::rt::WireType::LengthDelimited)
+            .map_err(|_| "like_failed".to_string())?;
+        out.write_raw_varint32(item.len() as u32)
+            .map_err(|_| "like_failed".to_string())?;
+        out.write_raw_bytes(&item).map_err(|_| "like_failed".to_string())?;
+        out.flush().map_err(|_| "like_failed".to_string())?;
+    }
+
+    let printable = hex_without_account(&body, &username);
+    let owned = session.clone();
+    call(session, async move {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            reqwest::header::CONTENT_TYPE,
+            reqwest::header::HeaderValue::from_static("application/x-protobuf"),
+        );
+        owned
+            .spclient()
+            .request(
+                &reqwest::Method::POST,
+                "/collection/v2/write",
+                Some(headers),
+                Some(&body),
+            )
+            .await
+            .map(|answer| log::info!("spclient: canción guardada → {} bytes", answer.len()))
+            .map_err(|e| {
+                log::error!("spclient: guardar la canción falló: {e}");
+                log::error!("spclient: cuerpo enviado — {printable}");
+                "like_failed".to_string()
+            })
+    })
+}
+
 /// Cambia los detalles de una playlist que ya existe: el nombre, la descripción
 /// y la portada.
 ///
