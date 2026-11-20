@@ -344,7 +344,7 @@ export function LyricsPanel({
           onClick={onCinema}
           aria-label={t.cinemaExit}
           title={t.cinemaExit}
-          className={`absolute top-6 right-6 z-10 rounded-pill p-2.5 text-ink-muted transition-[opacity,color,background-color] duration-700 hover:bg-white/8 hover:text-ink ${
+          className={`absolute top-6 right-6 z-10 rounded-pill p-2.5 text-ink-muted transition-[opacity,color,background-color] duration-[var(--dur-panel)] hover:bg-white/8 hover:text-ink ${
             idle ? "opacity-0" : ""
           }`}
         >
@@ -352,7 +352,7 @@ export function LyricsPanel({
         </button>
       )}
       <div
-        className={`mb-7 flex shrink-0 items-start justify-between gap-6 transition-opacity duration-700 ${
+        className={`mb-7 flex shrink-0 items-start justify-between gap-6 transition-opacity duration-[var(--dur-panel)] ${
           idle ? "opacity-0" : ""
         } ${cinema ? "hidden" : ""}`}
       >
@@ -500,7 +500,7 @@ export function LyricsPanel({
                 {/* The intro before the first line is a break too, with no row of its own. */}
                 {lyrics.synced && (lyrics.lines[0]?.start_ms ?? 0) >= INTRO_DOTS_MS && (
                   <span
-                    className={`px-3 py-1.5 transition-opacity duration-300 ${
+                    className={`px-3 py-1.5 transition-opacity duration-[var(--dur-panel)] ${
                       activeIndex < 0 ? "opacity-100" : "opacity-(--lyric-far)"
                     }`}
                   >
@@ -536,7 +536,7 @@ export function LyricsPanel({
                         seekable ? `${line.text} — ${formatDuration(line.start_ms)}` : undefined
                       }
                       title={seekable ? t.jumpToLine : undefined}
-                      className={`lyric-in relative isolate w-fit max-w-full rounded-pill px-3 py-1.5 text-left ${cinema ? "text-[clamp(26px,2.6vw,40px)] leading-[1.35]" : "text-[20px] leading-[1.5]"} font-medium transition-[opacity,background-color] duration-300 ${
+                      className={`lyric-in relative isolate w-fit max-w-full rounded-pill px-3 py-1.5 text-left ${cinema ? "text-[clamp(26px,2.6vw,40px)] leading-[1.35]" : "text-[20px] leading-[1.5]"} font-medium transition-[opacity,background-color] duration-[var(--dur-panel)] ${
                         seekable
                           ? "cursor-pointer hover:bg-white/6 hover:opacity-100"
                           : "cursor-default"
