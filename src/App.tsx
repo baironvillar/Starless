@@ -3452,6 +3452,7 @@ export default function App() {
         )}
 
         <PlayerBar
+          onNewPlaylist={openNaming}
           track={loadedTrack}
           status={status}
           dj={djVoice}

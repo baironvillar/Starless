@@ -1,12 +1,14 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, Search } from "lucide-react";
+import { Heart, Plus, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { StringKey } from "../lib/i18n";
+import { organisedPlaylists, useLibraryOrganisation } from "../lib/libraryOrganisation";
 import {
   addToPlaylist,
   coverImage,
   explain,
   keys,
+  likeTrack,
   type Playlist,
   type Track,
   useAccount,
@@ -24,6 +26,13 @@ type PlaylistPickerProps = {
   onDone: () => void;
   /** Opens the new-playlist dialog with this song pending. */
   onNewPlaylist: (track: Track) => void;
+  /**
+   * Offers Liked Songs as the first row.
+   *
+   * Only the player bar asks for it: it has no row beside the song to carry a
+   * heart, so the picker is the one place the song can be saved from.
+   */
+  withLiked?: boolean;
 };
 
 /**
@@ -45,7 +54,13 @@ type PlaylistPickerProps = {
  * alternative is to close everything and say nothing, and a write that
  * happened without a word is indistinguishable from a write that did not.
  */
-export function PlaylistPicker({ t, track, onDone, onNewPlaylist }: PlaylistPickerProps) {
+export function PlaylistPicker({
+  t,
+  track,
+  onDone,
+  onNewPlaylist,
+  withLiked = false,
+}: PlaylistPickerProps) {
   const [query, setQuery] = useState("");
   const [added, setAdded] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
@@ -54,6 +69,7 @@ export function PlaylistPicker({ t, track, onDone, onNewPlaylist }: PlaylistPick
   const playlists = usePlaylists();
   const account = useAccount();
   const queryClient = useQueryClient();
+  const organisation = useLibraryOrganisation();
 
   /**
    * Only the account's own playlists.
@@ -67,10 +83,15 @@ export function PlaylistPicker({ t, track, onDone, onNewPlaylist }: PlaylistPick
   const mine = useMemo(() => {
     const id = account.data?.id;
     const name = account.data?.display_name;
-    return (playlists.data ?? []).filter(
+    const own = (playlists.data ?? []).filter(
       (playlist) => playlist.owner?.display_name === id || playlist.owner?.display_name === name,
     );
-  }, [playlists.data, account.data]);
+    // Archived lists go last, not away: the shelf hides them because they are
+    // out of the way, and a song can still belong in one.
+    const shown = organisedPlaylists(own, organisation.preferences);
+    const archived = own.filter((playlist) => organisation.preferences[playlist.id]?.archived);
+    return [...shown, ...archived];
+  }, [playlists.data, account.data, organisation.preferences]);
 
   /**
    * The filter narrows a list that is already in memory. It is not a search
@@ -81,6 +102,21 @@ export function PlaylistPicker({ t, track, onDone, onNewPlaylist }: PlaylistPick
     if (!needle) return mine;
     return mine.filter((playlist) => playlist.name.toLowerCase().includes(needle));
   }, [mine, query]);
+
+  const like = async () => {
+    setBusy("liked");
+    setFailure(null);
+    setAdded(null);
+    try {
+      await likeTrack(track.id);
+      setAdded(t.likedSongs);
+      void queryClient.invalidateQueries({ queryKey: keys.liked });
+      setTimeout(onDone, ADDED_MS);
+    } catch (error) {
+      setFailure(explain(error));
+      setBusy(null);
+    }
+  };
 
   const add = async (playlist: Playlist) => {
     setBusy(playlist.id);
@@ -135,6 +171,21 @@ export function PlaylistPicker({ t, track, onDone, onNewPlaylist }: PlaylistPick
         </span>
         <span className="min-w-0 flex-1 truncate">{t.newPlaylist}</span>
       </button>
+
+      {withLiked && (
+        <button
+          type="button"
+          disabled={busy !== null}
+          onClick={() => void like()}
+          className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] transition-colors duration-150 hover:bg-white/6 disabled:opacity-50"
+        >
+          <span className="grid size-4 shrink-0 place-items-center text-ink-muted">
+            <Heart className="size-4" strokeWidth={2} />
+          </span>
+          <span className="min-w-0 flex-1 truncate">{t.likedSongs}</span>
+          {busy === "liked" && <span className="text-[11px] text-ink-faint">…</span>}
+        </button>
+      )}
 
       <div className="mx-3 my-1 h-px bg-white/8" />
 

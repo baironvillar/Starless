@@ -1179,6 +1179,7 @@ const errorsEs = {
   // three sends the user looking in the wrong place.
   playlist_not_found: "Esa playlist no está en tu biblioteca.",
   add_failed: "No se pudo agregar la canción a la playlist.",
+  like_failed: "No se pudo guardar la canción en las que te gustan.",
   // The details are one write with two failures of their own: the service
   // refused the change, or the picture did not go up. "It failed" for the two
   // is the same message for two problems that need two different answers.
@@ -1249,6 +1250,7 @@ export const errors: Record<Lang, Record<keyof typeof errorsEs, string>> = {
     session_dropped: "The playback session dropped.",
     playlist_not_found: "That playlist isn't in your library.",
     add_failed: "Couldn't add the song to the playlist.",
+    like_failed: "Couldn't save the song to Liked Songs.",
     details_failed: "Couldn't save the playlist's details.",
     upload_failed: "Couldn't upload the image.",
     visibility_failed: "The details were saved, but the playlist's visibility didn't change.",

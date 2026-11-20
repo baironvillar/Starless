@@ -1626,6 +1626,10 @@ spclient_command!(
     track_id: String
 );
 
+// Guarda una canción en "Canciones que te gustan". Es otro servicio que las
+// playlists (la colección), así que no pasa por una revisión.
+spclient_command!(like_track, spclient::like_track, (), track_id: String);
+
 /// Guarda los detalles de una playlist: el nombre, la descripción y la portada.
 ///
 /// **La portada se sube antes de escribirse.** El JPEG va a
@@ -2345,6 +2349,7 @@ pub fn run() {
             my_playlists,
             create_playlist,
             add_to_playlist,
+            like_track,
             update_playlist_details,
             liked_tracks,
             playlist_tracks,

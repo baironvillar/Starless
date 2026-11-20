@@ -33,6 +33,7 @@ import {
   useEffectsSettings,
 } from "../lib/spotify";
 import { useMediaSession, usePlayerKeys } from "../lib/usePlayerKeys";
+import { AddToPlaylistButton } from "./AddToPlaylistButton";
 import { DjArtwork, DjMark } from "./DjArtwork";
 import { SmoothSlider } from "./SmoothSlider";
 
@@ -46,6 +47,8 @@ import { SmoothSlider } from "./SmoothSlider";
 export type RepeatMode = "off" | "all" | "one";
 
 type PlayerBarProps = {
+  /** Opens the new-playlist dialog with the playing song pending. */
+  onNewPlaylist: (track: Track) => void;
   /** The track the backend is actually holding. Null before anything is played. */
   track: Track | null;
   status: PlaybackStatus | null;
@@ -182,6 +185,7 @@ function fillStyle(percent: number): React.CSSProperties {
  * animates its own transform and opacity only.
  */
 export function PlayerBar({
+  onNewPlaylist,
   track,
   status,
   dj,
@@ -673,7 +677,14 @@ export function PlayerBar({
                 </div>
 
                 <div className="mt-5 shrink-0 overflow-hidden">
-                  <motion.div style={{ x: slideX }}>{now}</motion.div>
+                  <div className="flex items-center gap-2">
+                    <motion.div style={{ x: slideX }} className="min-w-0 flex-1">
+                      {now}
+                    </motion.div>
+                    {track && !dj && !error && (
+                      <AddToPlaylistButton t={t} track={track} onNewPlaylist={onNewPlaylist} />
+                    )}
+                  </div>
                 </div>
 
                 <div className="mt-4 flex shrink-0 items-center gap-2.5">
@@ -857,6 +868,11 @@ export function PlayerBar({
                   </>
                 ) : null}
               </div>
+
+              {/* Only for a loaded song: not while the DJ speaks, not on an error. */}
+              {track && !dj && !error && (
+                <AddToPlaylistButton t={t} track={track} onNewPlaylist={onNewPlaylist} />
+              )}
             </motion.div>
           )}
         </AnimatePresence>

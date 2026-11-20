@@ -1705,6 +1705,19 @@ export async function addToPlaylist(playlistId: string, trackId: string): Promis
 }
 
 /**
+ * Saves a song to Liked Songs.
+ *
+ * It is a different service from the playlists (the saved-songs collection), so
+ * it has no revision to read and no playlist id: only the song.
+ */
+export async function likeTrack(trackId: string): Promise<void> {
+  if (!hasBackend()) {
+    throw new Error("like_failed");
+  }
+  await invoke<void>("like_track", { trackId });
+}
+
+/**
  * How long the details write may take before the webview stops waiting.
  *
  * **It is longer than the backend can take, and that is the point.** The
