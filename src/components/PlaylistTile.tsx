@@ -86,7 +86,7 @@ export function PlaylistTile({
               src={imageUrl}
               alt=""
               loading="lazy"
-              className="pointer-events-none absolute inset-0 size-full object-cover transition-transform duration-300 group-hover/tile:scale-[1.03]"
+              className="pointer-events-none absolute inset-0 size-full object-cover transition-transform duration-[var(--dur-panel)] group-hover/tile:scale-[1.03]"
             />
           )
         )}

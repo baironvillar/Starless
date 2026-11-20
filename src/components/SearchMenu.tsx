@@ -1,7 +1,7 @@
 import { CornerDownLeft, Loader2 } from "lucide-react";
 import { motion } from "motion/react";
 import type { StringKey } from "../lib/i18n";
-import { SPRING } from "../lib/motion";
+import { MENU } from "../lib/motion";
 import { coverImage, type Track, trackArtists, trackRowKeys } from "../lib/spotify";
 
 /** Lets the input point `aria-activedescendant` at the highlighted row. */
@@ -89,7 +89,7 @@ export function SearchMenu({
         initial={{ opacity: 0, y: -8, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: -8, scale: 0.98 }}
-        transition={SPRING}
+        transition={MENU}
         role="listbox"
         id={SEARCH_MENU_ID}
         aria-label={t.searchResultsFor.replace("{query}", query)}

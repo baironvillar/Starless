@@ -197,17 +197,17 @@ export function LibrarySidebar({
       // The width is animated, and it is the one layout animation in the app that
       // resizes a glass surface — which costs a blur re-sample per frame for about
       // a quarter of a second. It is worth it: the alternative is a panel that
-      // teleports to half its width while the content beside it slides over 300ms.
+      // teleports to half its width while the content beside it slides over 240ms.
       //
       // **In CSS, with the content's own duration and curve, and not in `motion`.**
       // It used to be a spring of about 450 ms while the content's `left` ran a
-      // 300 ms `--ease-glass` transition: two clocks, so the gap between the rail
+      // 240 ms `--ease-glass` transition: two clocks, so the gap between the rail
       // and the content opened and closed while they moved — the exact "two
       // things at different speeds" this was meant to avoid. One transition for
       // both means the gap is the same 20 px on every frame, and `data-still`
       // stops both at once.
       style={{ width: collapsed ? RAIL_PX : PANEL_PX }}
-      className={`surface pointer-events-auto absolute top-[104px] ${barPresent ? "bottom-[144px]" : "bottom-5"} left-5 z-20 flex flex-col overflow-hidden rounded-card transition-[width,bottom] duration-300 ease-[var(--ease-glass)]`}
+      className={`surface pointer-events-auto absolute top-[104px] ${barPresent ? "bottom-[144px]" : "bottom-5"} left-5 z-20 flex flex-col overflow-hidden rounded-card transition-[width,bottom] duration-[var(--dur-panel)] ease-[var(--ease-glass)]`}
     >
       {/*
         Both shapes are always there, one over the other, and only their

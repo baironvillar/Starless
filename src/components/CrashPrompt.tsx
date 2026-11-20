@@ -199,7 +199,7 @@ function Sent({
 
   return (
     <div
-      className={`pointer-events-auto absolute left-1/2 z-30 -translate-x-1/2 transition-[bottom] duration-300 ease-[var(--ease-glass)] ${
+      className={`pointer-events-auto absolute left-1/2 z-30 -translate-x-1/2 transition-[bottom] duration-[var(--dur-panel)] ease-[var(--ease-glass)] ${
         barPresent ? "bottom-[136px]" : "bottom-5"
       }`}
     >
