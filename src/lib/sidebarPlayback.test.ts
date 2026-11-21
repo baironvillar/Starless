@@ -46,14 +46,26 @@ test("only the latest sidebar fetch can play, and a later playback choice cancel
   const old = requests.begin();
   const latest = requests.begin();
   const played: string[] = [];
-  await requests.load(old, async () => "old", (value) => played.push(value));
-  await requests.load(latest, async () => "latest", (value) => played.push(value));
+  await requests.load(
+    old,
+    async () => "old",
+    (value) => played.push(value),
+  );
+  await requests.load(
+    latest,
+    async () => "latest",
+    (value) => played.push(value),
+  );
   expect(played).toEqual(["latest"]);
   expect(requests.current(old)).toBe(false);
   expect(requests.current(latest)).toBe(true);
   intent += 1;
   expect(requests.current(latest)).toBe(false);
-  await requests.load(latest, async () => "cancelled", (value) => played.push(value));
+  await requests.load(
+    latest,
+    async () => "cancelled",
+    (value) => played.push(value),
+  );
   expect(played).toEqual(["latest"]);
 });
 
