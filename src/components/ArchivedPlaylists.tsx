@@ -36,7 +36,6 @@ export function ArchivedPlaylists({ t }: { t: Record<StringKey, string> }) {
       {open && (
         <div className="surface-card mt-2 rounded-card border border-white/8 p-3">
           <p className="mb-2 text-ink-muted">{t.archiveLocalHint}</p>
-          {archived.length === 0 && <p className="text-ink-faint">{t.noArchivedPlaylists}</p>}
           {archived.map((playlist) => (
             <div key={playlist.id} className="flex items-center gap-2 py-2">
               {organisation.preference(playlist.id).pinned && (

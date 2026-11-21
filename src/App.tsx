@@ -2349,16 +2349,20 @@ export default function App() {
       try {
         // Share the prefetched list, but carry the clicked playlist's context:
         // the screen can still be showing an entirely different playlist.
-        const tracks = await queryClient.fetchQuery(playlistTracksQuery(id));
-        if (!sidebarRequests.current(request)) return;
-        if (tracks.length === 0) {
-          setSidebarError(t.emptyList);
-          return;
-        }
-        const context: RadioContext = { kind: "playlist", id };
-        if (shuffle)
-          playShuffled(tracks, tracks[Math.floor(Math.random() * tracks.length)], context);
-        else playFrom(tracks, tracks[0], context);
+        await sidebarRequests.load(
+          request,
+          () => queryClient.fetchQuery(playlistTracksQuery(id)),
+          (tracks) => {
+            if (tracks.length === 0) {
+              setSidebarError(t.emptyList);
+              return;
+            }
+            const context: RadioContext = { kind: "playlist", id };
+            if (shuffle)
+              playShuffled(tracks, tracks[Math.floor(Math.random() * tracks.length)], context);
+            else playFrom(tracks, tracks[0], context);
+          },
+        );
       } catch (error) {
         if (sidebarRequests.current(request)) setSidebarError(explain(error));
       } finally {

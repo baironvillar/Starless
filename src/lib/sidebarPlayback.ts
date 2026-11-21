@@ -10,6 +10,10 @@ export function createSidebarRequests(readIntent: () => number) {
     begin: (): SidebarRequest => ({ request: ++latest, intent: readIntent() }),
     current: (ticket: SidebarRequest) =>
       ticket.request === latest && ticket.intent === readIntent(),
+    async load<T>(ticket: SidebarRequest, fetch: () => Promise<T>, play: (data: T) => void) {
+      const data = await fetch();
+      if (ticket.request === latest && ticket.intent === readIntent()) play(data);
+    },
   };
 }
 
