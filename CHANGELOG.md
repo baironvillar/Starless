@@ -32,6 +32,10 @@ and Star Music adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Sin publicar]
 
+### Fixed / Corregido
+
+- **Desde una beta, la release final se ofrece como actualización y no como volver atrás.** La comparación de versiones leía `0.7.0-beta.5` como más nueva que `0.7.0`, así que Ajustes decía «Volver a la 0.7.0» a quien estaba avanzando hacia ella. Ahora una beta es anterior a su release, y el botón dice «Actualizar». / From a beta, the final release is offered as an update, not as going back. The version comparison read `0.7.0-beta.5` as newer than `0.7.0`, so Settings said "Go back to 0.7.0" to someone moving toward it. A beta now comes before its release, and the button says "Update".
+
 ## [0.7.0] - 2026-11-21
 
 ### New / Nuevo
