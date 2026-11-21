@@ -21,14 +21,14 @@ jobs:
     name: Publish the landing to Cloudflare
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
       - name: Build
         working-directory: site
         run: bun install --frozen-lockfile && bun run build
       # El token y la cuenta son secretos del repo (ver docs/landing-hosting.md).
       # El token sólo puede editar Workers: no es la sesión de nadie.
-      - uses: cloudflare/wrangler-action@v3
+      - uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
