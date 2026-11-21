@@ -76,7 +76,7 @@ urlencoding = "2"
 # Spotify Soloist (`soloist.rs`): unpacking Spotify's build and talking to its
 # local WebSocket. Both are already in the tree —`zip` through the updater,
 # `tungstenite` through librespot's dealer— so naming them costs no new crates.
-zip = { version = "4", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 tungstenite = { version = "0.28", default-features = false, features = ["handshake"] }
 # Scrubbing a log before it leaves the machine. Already in the tree through Tauri,
 # so naming it directly costs no extra build time.
