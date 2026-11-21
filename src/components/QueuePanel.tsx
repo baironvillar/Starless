@@ -468,7 +468,7 @@ function QueueRow({
           inner one and the click lands on the outer— and the plus needs to be
           its own control, with its own label.
       */}
-      <div className="group flex w-full items-center gap-1 rounded-[14px] px-2 py-2 text-left transition-colors duration-200 hover:bg-white/6">
+      <div className="group flex w-full items-center rounded-[14px] px-2 py-2 text-left transition-colors duration-200 hover:bg-white/6">
         <button
           type="button"
           onClick={() => onPlay(track, row)}
@@ -510,14 +510,24 @@ function QueueRow({
             mark, and the list goes from something you read to something you
             operate.
         */}
-        <TrackMenu
-          t={t}
-          track={track}
-          onOpenArtist={onOpenArtist}
-          onOpenAlbum={onOpenAlbum}
-          onAddToQueue={onAddToQueue}
-          onNewPlaylist={onNewPlaylist}
-        />
+        {/*
+            **The dots' room opens on approach; it is not reserved.** The button
+            hides with opacity, which keeps its box: every row showed an empty
+            28 px slot that looked like a hidden control. The wrapper is zero
+            wide until the row is hovered (or focused, or its menu is open), so
+            the duration slides over and the dots take its place. Open or
+            focused keeps it wide, or the anchor would move under the menu.
+        */}
+        <div className="flex w-0 shrink-0 justify-end overflow-hidden transition-[width] duration-[var(--dur-base)] ease-[var(--ease-glass)] group-focus-within:w-8 group-hover:w-8 has-[[aria-expanded=true]]:w-8">
+          <TrackMenu
+            t={t}
+            track={track}
+            onOpenArtist={onOpenArtist}
+            onOpenAlbum={onOpenAlbum}
+            onAddToQueue={onAddToQueue}
+            onNewPlaylist={onNewPlaylist}
+          />
+        </div>
       </div>
     </li>
   );

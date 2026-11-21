@@ -169,6 +169,8 @@ export function TrackMenu({
           setPoint(null);
           setOpen((value) => !value);
         }}
+        // Lets a row keep its dots' room open while the menu is up (QueuePanel).
+        aria-expanded={open}
         aria-label={t.trackMenuFor.replace("{name}", track.name)}
         title={t.trackMenu}
         className={`grid shrink-0 place-items-center rounded-pill text-ink-muted transition-all duration-150 hover:bg-white/10 hover:text-ink focus-visible:opacity-100 ${
