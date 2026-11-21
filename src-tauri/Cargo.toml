@@ -64,7 +64,7 @@ cpal = "0.16"
 symphonia = { version = "0.5", features = ["mp3"] }
 
 # Where the librespot credential cache lives. Resolved once, at startup.
-dirs = "6"
+dirs = "7"
 
 # The one place Star Music talks to an HTTP API: opening a GitHub issue, and only
 # when the person holding the app pressed the button. Blocking client, because
