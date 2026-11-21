@@ -1,0 +1,60 @@
+# Dependabot: revisa dependencias cada semana y abre PRs hacia develop.
+# Los parches y menores van agrupados en un solo PR por ecosistema para no
+# llenar la cola; los mayores llegan por separado porque pueden romper cosas.
+# src-tauri/vendor queda fuera: es código vendorizado de librespot, se
+# actualiza a mano.
+version: 2
+updates:
+  - package-ecosystem: bun
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      app-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: bun
+    directory: /site
+    target-branch: develop
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      site-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    target-branch: develop
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      cargo-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      actions:
+        patterns: ["*"]
