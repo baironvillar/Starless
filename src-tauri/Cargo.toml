@@ -137,7 +137,7 @@ librespot-core = { version = "0.8", default-features = false, features = [
 reqwest = { version = "0.12", default-features = false, features = [
     "rustls-tls-webpki-roots",
 ] }
-base64 = "0.22"
+base64 = "0.23"
 rand = "0.9"
 sha2 = "0.10"
 url = "2"
