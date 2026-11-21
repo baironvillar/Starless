@@ -59,7 +59,7 @@ futures-util = "0.3"
 # de audio, `symphonia` por los archivos locales—, así que nombrarlas acá no
 # cuesta ni un segundo de compilación: sólo deja de ser un accidente del
 # backend lo que la voz usa para sonar.
-rodio = "0.21"
+rodio = "0.22"
 cpal = "0.16"
 symphonia = { version = "0.5", features = ["mp3"] }
 
