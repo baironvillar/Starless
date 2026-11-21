@@ -24,7 +24,6 @@ mod library_organisation;
 // breaks every command in this file with an error that points nowhere useful.
 mod logging;
 mod media_keys;
-mod migrate;
 mod models;
 mod paths;
 mod playback;
@@ -2105,11 +2104,6 @@ async fn reset_customisation() -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let context = tauri::generate_context!();
-    // **Before anything reads a path, and before the window exists.** The
-    // folders, the WebView2 storage and the Soloist key still carry the
-    // Starless name on a machine that just updated; once something has created
-    // the new folder, the old one stops being moved. See `migrate`.
-    let migrated = migrate::run(&context.config().identifier);
     // Before any window exists: the taskbar reads the id when the window is
     // created, and the media card reads it when the session opens.
     media_keys::claim_app_id(&context.config().identifier);
@@ -2173,9 +2167,6 @@ pub fn run() {
             //
             // `RUST_LOG` still wins, e.g. `RUST_LOG=librespot=debug bun run app`.
             logging::init();
-            for note in &migrated {
-                log::info!("{note}");
-            }
 
             // Order matters here, and it is the whole design. The marker from the
             // previous run is *moved aside* rather than overwritten, so the question

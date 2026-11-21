@@ -34,11 +34,6 @@
     "android": {
       "minSdkVersion": 26
     },
-    "windows": {
-      "wix": {
-        "upgradeCode": "590aac6e-46c3-5cba-bd95-956f342f5a22"
-      }
-    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

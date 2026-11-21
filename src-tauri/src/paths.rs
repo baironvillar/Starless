@@ -18,10 +18,6 @@ use std::path::PathBuf;
 /// misses one of them splits the app's files across two folders.
 pub const APP_DIR: &str = "Star Music";
 
-/// The folder's name before the app was called Star Music. Read only by
-/// `migrate`, which moves what is there to [`APP_DIR`].
-pub const LEGACY_APP_DIR: &str = "Starless";
-
 #[cfg(mobile)]
 use std::sync::OnceLock;
 

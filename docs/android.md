@@ -91,7 +91,7 @@ se midió.
 
 El cambio de ruta del audio con auriculares Bluetooth, qué hace Spotify con dos
 dispositivos de la misma cuenta (el teléfono ya se presenta como
-`Starless-Android`), el reporte de crash en móvil —va apagado—, el nombre del
+`StarMusic-Android`), el reporte de crash en móvil —va apagado—, el nombre del
 hilo en el hook de panic, una build de release y su tamaño, y todo el
 frontend: la prueba usa el layout de escritorio.
 
