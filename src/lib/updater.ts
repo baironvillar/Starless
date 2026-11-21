@@ -1,6 +1,7 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { check, type Update as TauriUpdate, Update } from "@tauri-apps/plugin-updater";
+import { isNewerThan } from "./semver";
 import { isPrerelease, markPublicBuild } from "./version";
 
 /**
@@ -532,15 +533,4 @@ export async function installPrerelease(update: TauriUpdate): Promise<void> {
       publishPrerelease({ status: "installFailed", update: state.update });
     }
   });
-}
-
-/** `1.10.0` is newer than `1.9.0`, which a string comparison gets backwards. */
-function isNewerThan(candidate: string, current: string): boolean {
-  const a = candidate.split(".").map((n) => Number.parseInt(n, 10) || 0);
-  const b = current.split(".").map((n) => Number.parseInt(n, 10) || 0);
-  for (let i = 0; i < Math.max(a.length, b.length); i++) {
-    const diff = (a[i] ?? 0) - (b[i] ?? 0);
-    if (diff !== 0) return diff > 0;
-  }
-  return false;
 }
