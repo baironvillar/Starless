@@ -1,6 +1,6 @@
 [package]
 name = "star-music"
-version = "0.7.0-beta.5"
+version = "0.7.0"
 description = "A native desktop client for Spotify"
 authors = ["bairo"]
 edition = "2024"
