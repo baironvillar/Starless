@@ -32,6 +32,8 @@ and Star Music adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Sin publicar]
 
+## [0.7.0] - 2026-11-21
+
 ### New / Nuevo
 
 - **Puedes agregar la canción que suena a una playlist desde el reproductor.** Un botón junto al nombre de la canción abre la lista de tus playlists —con buscador—, "Nueva playlist" y "Canciones que te gustan"; las playlists archivadas quedan al final. / You can add the playing song to a playlist from the player. A button next to the song's name opens your playlists —searchable—, "New playlist" and "Liked Songs"; archived playlists come last.
