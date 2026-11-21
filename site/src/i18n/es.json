@@ -73,6 +73,7 @@
     "the-service-doesn-t-authorise-unofficial": "El servicio no autoriza clientes no oficiales. Star Music solo reproduce lo que tu cuenta ya puede reproducir y no convierte canciones en archivos, pero nadie puede prometerte que el servicio nunca actúe sobre una cuenta.",
     "windows-only-for-now": "Por ahora, solo Windows",
     "macos-and-linux-come-once-windows": "macOS y Linux vienen después de que Windows esté firmado y estable.",
+    "a-starless-project-open-source": "Un proyecto de <a href=\"https://github.com/Starless-org\">Starless</a> · software libre",
     "star-music-is-an-independent-project-unaffiliated": "Star Music es un proyecto independiente, sin relación con el servicio de música que reproduce.",
     "in-beta-for-windows": "En beta · Para Windows",
     "download": "Descargar",
