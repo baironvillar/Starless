@@ -145,7 +145,7 @@ export function MediaCard({
             src={imageUrl}
             alt=""
             loading="lazy"
-            className="pointer-events-none absolute inset-0 size-full object-cover transition-transform duration-300 group-hover/card:scale-[1.03]"
+            className="pointer-events-none absolute inset-0 size-full object-cover transition-transform duration-[var(--dur-panel)] group-hover/card:scale-[1.03]"
           />
         ) : null}
 

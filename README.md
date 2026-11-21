@@ -1,6 +1,6 @@
 <div align="center">
 
-# Starless
+# Star Music
 
 **Cliente de escritorio no oficial para Spotify Premium.**
 **Unofficial desktop client for Spotify Premium.**
@@ -8,7 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Windows](https://img.shields.io/badge/Windows-first-0078D4?logo=windows&logoColor=white)
 ![Tauri](https://img.shields.io/badge/Tauri-2-FFC131?logo=tauri&logoColor=black)
-![CI](https://github.com/baironvillar/Starless/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/Starless-org/StarMusic/actions/workflows/ci.yml/badge.svg)
 
 Hecho con Tauri y React. El audio no pasa por la ventana.
 Built with Tauri and React. The audio never goes through the window.
@@ -20,7 +20,7 @@ Built with Tauri and React. The audio never goes through the window.
 ## Español
 
 > [!IMPORTANT]
-> **Starless no está afiliado, asociado, autorizado ni respaldado por Spotify AB.**
+> **Star Music no está afiliado, asociado, autorizado ni respaldado por Spotify AB.**
 > Es un cliente de terceros. No usa el logotipo ni la marca de Spotify, y no
 > implica ningún tipo de aprobación. **Requiere Spotify Premium**: sin Premium
 > Spotify no entrega audio, y esta app no puede cambiar eso.
@@ -28,7 +28,7 @@ Built with Tauri and React. The audio never goes through the window.
 ### Qué es
 
 Un reproductor de escritorio para Spotify Premium que abre rápido y se
-aparta. El cliente oficial funciona, pero tarda en arrancar y pesa; Starless
+aparta. El cliente oficial funciona, pero tarda en arrancar y pesa; Star Music
 existe por esa diferencia concreta, no por ofrecer otra forma de escuchar
 música.
 
@@ -52,15 +52,15 @@ mantiene baja mientras suena.
 - **Cola de reproducción**, con lo que suena y lo que sigue.
 - **Agregar a una playlist** y crear una playlist desde ahí mismo.
 - **Interfaz bilingüe**, español e inglés, con selector.
-- **Cero telemetría.** Starless no reporta datos de uso a nadie, tampoco a su
+- **Cero telemetría.** Star Music no reporta datos de uso a nadie, tampoco a su
   autor.
 - **Actualizaciones automáticas:** comprueba si hay versión nueva al abrir y
   tú decides cuándo instalarla. Una app que corta la música para instalar un
   parche es una app que la gente apaga.
 - **Diagnóstico:** registro a archivo local con rotación y un autodiagnóstico
-  con `STARLESS_DIAGNOSTIC=1`.
+  con `STAR_MUSIC_DIAGNOSTIC=1`.
 - **Reportes de crash.** Si la app se muere sin cerrarse, al volver a abrirla
-  Starless lo detecta y te ofrece mandar el registro. Tú decides: nada sale de
+  Star Music lo detecta y te ofrece mandar el registro. Tú decides: nada sale de
   tu máquina hasta que aprietas el botón, y lo que se manda ya viene sin tu
   nombre de cuenta, sin tu usuario de Windows y sin identificadores de
   canción.
@@ -78,9 +78,9 @@ renderse: una región bloqueada o un CDN muerto no deberían terminar la sesión
 ### Instalar
 
 Windows primero. Los instaladores van adjuntos a las
-[ releases](https://github.com/baironvillar/Starless/releases):
+[ releases](https://github.com/Starless-org/StarMusic/releases):
 
-- `starless_*-setup.exe` — instalador NSIS, instala para el usuario actual.
+- `star-music_*-setup.exe` — instalador NSIS, instala para el usuario actual.
 - `*-setup.msi` — instalador MSI.
 
 > [!WARNING]
@@ -111,34 +111,28 @@ sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
 Después:
 
 ```bash
-git clone https://github.com/baironvillar/Starless.git
-cd Starless
+git clone https://github.com/Starless-org/StarMusic.git
+cd Star Music
 bun install
 ```
 
-### El paso que casi nadie espera
+### La llave del actualizador
 
-`bun run app:build` **falla a propósito** la primera vez, y no es un bug:
+Para desarrollar no hace falta: `bun run app` no firma nada.
 
-```
-Error: updater `pubkey` is not a valid public key
-```
-
-La configuración trae `"pubkey": "PENDIENTE: bun run updater:pubkey"`. Un
-actualizador sin llave pública no verifica nada, y el build prefiere no
-compilar antes que compilar inseguro. Genera tu par de llaves una vez:
+`bun run app:build` sí: firma el instalador para el actualizador, y para eso
+necesita la llave privada en `TAURI_SIGNING_PRIVATE_KEY`. Esa llave es del
+dueño del repositorio y no está en él. En un fork que vaya a publicar sus
+propias versiones, deja `"pubkey": ""` en `src-tauri/tauri.conf.json` y corre:
 
 ```bash
-bun run updater:key        # te pide una contraseña
-bun run updater:pubkey     # copia la pública a src-tauri/tauri.conf.json
+bunx star init updater
 ```
 
-Tu llave privada queda en `.secrets/`, que está en `.gitignore`. Si publicas
-versiones, esa llave es la que firma cada actualización: **guárdala fuera del
-repositorio** y no la regeneres, porque una llave nueva deja sin poder
-actualizarse a todas las instalaciones que ya tienen la pública vieja.
-
-Después de eso, `bun run app` levanta la app en modo desarrollo.
+Genera tu llave, deja un respaldo en `~/.star/keys/`, fuera del repositorio,
+la sube como secreto de tu repo y escribe la pública. **No la regeneres
+después:** una llave nueva deja sin poder actualizarse a todas las
+instalaciones que ya tienen la pública vieja.
 
 ### Comandos
 
@@ -150,13 +144,14 @@ Después de eso, `bun run app` levanta la app en modo desarrollo.
 | `bun run lint` | Biome: lint y formato en modo lectura |
 | `bun run lint:fix` | Lo mismo, escribiendo las correcciones |
 | `bun run typecheck` | `tsc --noEmit` |
-| `bun run version` | La versión y si los tres manifiestos coinciden |
-| `bun run version:bump patch` | Sube la versión en los tres manifiestos |
+| `bun run version` | La versión y si los cuatro manifiestos coinciden |
+| `bun run release minor` | Prepara una versión: rama, PR y notas (ver `docs/updates.md`) |
+| `bun run doctor` | Qué falta o está mal para publicar |
 | `bun run design:detect` | Detector de diseño de Impeccable sobre `src/` |
 
-La versión vive en un solo lugar, `src-tauri/tauri.conf.json`. El script la
-propaga a `Cargo.toml` y `package.json` y falla si discrepan, así que un PR que
-cambie la versión en un solo archivo se ve en el CI.
+La versión vive en cuatro manifiestos (`package.json`, `tauri.conf.json`,
+`Cargo.toml` y `Cargo.lock`) y la mueve [star](https://github.com/Starless-org/Star)
+en los cuatro a la vez. Un PR que la cambie en un solo archivo se ve en el CI.
 
 ### Estructura
 
@@ -178,7 +173,7 @@ audio no puede pasar por la webview o por qué el blur tiene tope de 24px.
 
 ### Actualizaciones
 
-Una copia instalada de Starless comprueba GitHub Releases por una versión
+Una copia instalada de Star Music comprueba GitHub Releases por una versión
 nueva, 2,5 segundos después de abrir, y **no descarga nada** hasta que lo pides
 en Ajustes. El manifest vive en la release y GitHub redirige la URL a la más
 reciente, así que no hay servidor propio que mantener.
@@ -186,8 +181,8 @@ reciente, así que no hay servidor propio que mantener.
 El detalle completo, incluida la firma y por qué no es opcional, está en
 [`docs/updates.md`](docs/updates.md).
 
-Publicar es `bun run version:bump patch` en una rama `release/<versión>`, un PR
-a `develop`, y empujar el tag sobre el commit mergeado. La CI compila en Windows, firma, arma el `latest.json` y deja la
+Publicar es `bun run release minor` desde `develop`, que abre el PR de la
+versión, y `bun run release finish` cuando el CI pasa, que la mergea y empuja el tag. La CI compila en Windows, firma, arma el `latest.json` y deja la
 release en borrador; sólo falta darle a *Publish release*.
 
 ### Advertencias honestas
@@ -206,7 +201,7 @@ release en borrador; sólo falta darle a *Publish release*.
   sesión queda conectada en 1 a 1,7 s y la biblioteca llega en 2 a 3,5 s: el
   "menos de un segundo" de `PRODUCT.md` se cumple para la ventana, no para la
   biblioteca. En memoria privada son unos 290 MB en reposo y 325 MB con música,
-  y de eso `starless.exe` —el audio, la sesión— es 12 a 14 MB: **el resto es
+  y de eso `star-music.exe` —el audio, la sesión— es 12 a 14 MB: **el resto es
   WebView2**, la ventana. Son números de una máquina, no un benchmark.
 
 ### Documentación
@@ -227,7 +222,7 @@ release en borrador; sólo falta darle a *Publish release*.
 ## English
 
 > [!IMPORTANT]
-> **Starless is not affiliated with, associated with, authorized by, or endorsed
+> **Star Music is not affiliated with, associated with, authorized by, or endorsed
 > by Spotify AB.** It is a third-party client. It uses no Spotify logo or
 > wordmark and implies no endorsement. **It requires Spotify Premium**: without
 > Premium, Spotify delivers no audio, and this app cannot change that.
@@ -235,7 +230,7 @@ release en borrador; sólo falta darle a *Publish release*.
 ### What it is
 
 A desktop player for Spotify Premium that opens fast and then gets out of the
-way. The official client works, but it is slow to start and heavy; Starless
+way. The official client works, but it is slow to start and heavy; Star Music
 exists for that one difference, not to offer another way to listen to music.
 
 Decoded audio goes from librespot to the system driver over WASAPI on Windows.
@@ -256,14 +251,14 @@ music plays.
 - **A play queue**, with what is playing and what is next.
 - **Adding to a playlist**, and creating a playlist from there.
 - **A bilingual interface**, Spanish and English, with a selector.
-- **Zero telemetry.** Starless reports usage data to nobody, including its
+- **Zero telemetry.** Star Music reports usage data to nobody, including its
   author.
 - **Automatic updates:** it checks for a new version when it opens, and you
   decide when to install it. An app that cuts the music to install a patch is
   an app people turn off.
 - **Diagnostics:** a local log file with rotation, plus a self-test behind
-  `STARLESS_DIAGNOSTIC=1`.
-- **Crash reports.** If the app dies without shutting down, Starless notices when
+  `STAR_MUSIC_DIAGNOSTIC=1`.
+- **Crash reports.** If the app dies without shutting down, Star Music notices when
   you reopen it and offers to send the log. You decide: nothing leaves your
   machine until you press the button, and what does leave has already had your
   account name, your Windows user name and any track identifiers taken out.
@@ -281,9 +276,9 @@ region-blocked track or dead CDN should not end the session.
 ### Install
 
 Windows first. Installers are attached to the
-[releases](https://github.com/baironvillar/Starless/releases):
+[releases](https://github.com/Starless-org/StarMusic/releases):
 
-- `starless_*-setup.exe` — NSIS installer, installs for the current user.
+- `star-music_*-setup.exe` — NSIS installer, installs for the current user.
 - `*-setup.msi` — MSI installer.
 
 > [!WARNING]
@@ -314,34 +309,28 @@ sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
 Then:
 
 ```bash
-git clone https://github.com/baironvillar/Starless.git
-cd Starless
+git clone https://github.com/Starless-org/StarMusic.git
+cd Star Music
 bun install
 ```
 
-### The step nobody expects
+### The updater key
 
-`bun run app:build` **fails on purpose** the first time, and it is not a bug:
+You do not need it to develop: `bun run app` signs nothing.
 
-```
-Error: updater `pubkey` is not a valid public key
-```
-
-The config ships `"pubkey": "PENDIENTE: bun run updater:pubkey"`. An updater
-with no public key verifies nothing, and the build would rather not compile than
-compile insecure. Generate your keypair once:
+`bun run app:build` does: it signs the installer for the updater, and for that
+it needs the private key in `TAURI_SIGNING_PRIVATE_KEY`. That key belongs to
+the owner of the repository and is not in it. In a fork that will publish its
+own versions, leave `"pubkey": ""` in `src-tauri/tauri.conf.json` and run:
 
 ```bash
-bun run updater:key        # asks you for a password
-bun run updater:pubkey     # copies the public half into src-tauri/tauri.conf.json
+bunx star init updater
 ```
 
-Your private key lands in `.secrets/`, which is git-ignored. If you ship
-releases, that key is what signs every update: **keep it outside the
-repository** and never regenerate it, because a new key leaves every install
-that already trusts the old public half unable to update.
-
-After that, `bun run app` starts the app in development mode.
+It generates your key, keeps a backup in `~/.star/keys/`, outside the
+repository, uploads it as a secret of your repo and writes the public half.
+**Never regenerate it afterwards:** a new key leaves every install that
+already trusts the old public half unable to update.
 
 ### Commands
 
@@ -353,13 +342,15 @@ After that, `bun run app` starts the app in development mode.
 | `bun run lint` | Biome: lint and format, read-only |
 | `bun run lint:fix` | Same, writing the fixes |
 | `bun run typecheck` | `tsc --noEmit` |
-| `bun run version` | The version, and whether all three manifests agree |
-| `bun run version:bump patch` | Bumps the version in all three manifests |
+| `bun run version` | The version, and whether all four manifests agree |
+| `bun run release minor` | Prepares a version: branch, PR and notes (see `docs/updates.md`) |
+| `bun run doctor` | What is missing or wrong before publishing |
 | `bun run design:detect` | Impeccable design detector over `src/` |
 
-The version lives in one place, `src-tauri/tauri.conf.json`. The script
-propagates it to `Cargo.toml` and `package.json` and fails when they disagree,
-so a PR that bumps one file and forgets the others shows up in CI.
+The version lives in four manifests (`package.json`, `tauri.conf.json`,
+`Cargo.toml` and `Cargo.lock`) and [star](https://github.com/Starless-org/Star)
+moves all four at once. A PR that bumps one file and forgets the others shows
+up in CI.
 
 ### Layout
 
@@ -382,7 +373,7 @@ not travel through the webview, or why the blur radius caps at 24px.
 
 ### Updates
 
-An installed copy of Starless checks GitHub Releases for a new version 2.5
+An installed copy of Star Music checks GitHub Releases for a new version 2.5
 seconds after opening, and **downloads nothing** until you ask in Settings. The
 manifest lives on the release and GitHub redirects that URL to the newest one,
 so there is no server of our own to maintain.
@@ -390,8 +381,8 @@ so there is no server of our own to maintain.
 The full detail, including the signature and why it is not optional, is in
 [`docs/updates.md`](docs/updates.md).
 
-Publishing is `bun run version:bump patch` on a `release/<version>` branch, a
-PR into `develop`, and pushing the tag on the merged commit. CI builds on Windows, signs, writes `latest.json` and
+Publishing is `bun run release minor` from `develop`, which opens the version
+PR, and `bun run release finish` once CI passes, which merges it and pushes the tag. CI builds on Windows, signs, writes `latest.json` and
 leaves the release as a draft; all that is left is clicking *Publish release*.
 
 ### Honest warnings
@@ -410,7 +401,7 @@ leaves the release as a draft; all that is left is clicking *Publish release*.
   `develop`, 30 October 2026, three launches. The window shows in about 40 ms, the session is
   connected in 1 to 1.7 s and the library arrives in 2 to 3.5 s: the "under a
   second" in `PRODUCT.md` holds for the window, not for the library. Private
-  memory is about 290 MB at rest and 325 MB while playing, and `starless.exe`
+  memory is about 290 MB at rest and 325 MB while playing, and `star-music.exe`
   —the audio, the session— is 12 to 14 MB of it: **the rest is WebView2**, the
   window. These are one machine's numbers, not a benchmark.
 

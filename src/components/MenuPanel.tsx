@@ -10,7 +10,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useBack } from "../lib/back";
-import { SPRING, SPRING_SHEET } from "../lib/motion";
+import { MENU, SPRING_SHEET } from "../lib/motion";
 import { isMobile } from "../lib/version";
 
 type MenuPanelProps = {
@@ -102,7 +102,7 @@ export function MenuPanel({
    * submenu opens *beside* the row instead, and flips to the other side when
    * there is no room, for the same reason.
    */
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open || SHEET) {
       setAt(null);
       return;
@@ -235,7 +235,7 @@ export function MenuPanel({
           initial={{ opacity: 0, y: -6, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -6, scale: 0.98 }}
-          transition={SPRING}
+          transition={MENU}
           role="listbox"
           aria-label={label}
           /**

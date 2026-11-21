@@ -6,7 +6,7 @@
 
 web
 
-Starless ships as a Windows desktop app via Tauri. The interface is a local webview, not a website served over the network, and `web` is the closest value this schema offers. The design language is not per-OS and does not adapt, so the platform is not `adaptive`. macOS and Linux follow Windows; see Constraints.
+Star Music ships as a Windows desktop app via Tauri. The interface is a local webview, not a website served over the network, and `web` is the closest value this schema offers. The design language is not per-OS and does not adapt, so the platform is not `adaptive`. macOS and Linux follow Windows; see Constraints.
 
 ## Stack
 
@@ -18,13 +18,13 @@ Vite over Next.js is a settled decision, not an oversight. Tauri serves a local 
 
 Primary: people who already pay for Spotify Premium and are frustrated with the official desktop client — it feels slow to start and heavy on resources. They arrive from a recommendation or their own search, already holding a Premium account.
 
-They are not looking for a different music service. They want the same one that opens faster. They install once, log in, and use Starless as a daily driver.
+They are not looking for a different music service. They want the same one that opens faster. They install once, log in, and use Star Music as a daily driver.
 
 ## Product Purpose
 
-Starless is an unofficial desktop client for Spotify Premium. It exists because the official client is slow and heavy, and because a desktop music player should open instantly and then get out of the way.
+Star Music is an unofficial desktop client for Spotify Premium. It exists because the official client is slow and heavy, and because a desktop music player should open instantly and then get out of the way.
 
-Success means: cold start under one second, a small memory footprint while playing, and an interface that feels designed rather than assembled. A user who installs Starless and keeps using it daily has succeeded. A user who tries it once and returns to the official app has not.
+Success means: cold start under one second, a small memory footprint while playing, and an interface that feels designed rather than assembled. A user who installs Star Music and keeps using it daily has succeeded. A user who tries it once and returns to the official app has not.
 
 ## Positioning
 
@@ -32,13 +32,13 @@ Three claims a neighbouring client could not truthfully copy:
 
 1. **Cold start under a second, with a small memory footprint.** Decoded audio goes straight to the system driver (rodio/cpal → WASAPI on Windows) and never passes through the webview, so the window is interactive before the session finishes negotiating with Spotify.
 2. **An interface built for motion rather than adapted to it.** Transitions, crossfades and layout changes are designed as a system, not retrofitted screen by screen.
-3. **Zero telemetry.** Starless reports usage data to nobody, including its author.
+3. **Zero telemetry.** Star Music reports usage data to nobody, including its author.
 
-Explicitly not claimed: Starless does not remove the algorithmic feed and does not replace cards with something else. The home feed stays.
+Explicitly not claimed: Star Music does not remove the algorithmic feed and does not replace cards with something else. The home feed stays.
 
 ## Operating Context
 
-Desktop, Windows first, window around 1180×760 with a 900×600 minimum. The user is almost always doing something else at the same time — Starless is a companion to another task, not the task. It should be startable, usable and dismissable without demanding attention.
+Desktop, Windows first, window around 1180×760 with a 900×600 minimum. The user is almost always doing something else at the same time — Star Music is a companion to another task, not the task. It should be startable, usable and dismissable without demanding attention.
 
 Because it is a desktop window rather than a site, window-level affordances matter: media keys, quick search, and a player bar that is always present so the user never has to navigate somewhere to control playback.
 
@@ -54,14 +54,14 @@ Durable constraints that future work must preserve:
 
 Undecided:
 
-- Whether Starless registers as a Spotify Connect device.
+- Whether Star Music registers as a Spotify Connect device.
 - Code-signing budget and timing.
 - Domain and final logo.
 
 ## Brand Commitments
 
-- Name: **Starless**.
-- Starless is an unofficial third-party client. It must not use Spotify's name in branding, must not use the Spotify logo or wordmark, and must not imply endorsement or affiliation. The README carries the disclaimer.
+- Name: **Star Music**.
+- Star Music is an unofficial third-party client. It must not use Spotify's name in branding, must not use the Spotify logo or wordmark, and must not imply endorsement or affiliation. The README carries the disclaimer.
 - Nothing is yet committed about visual identity, palette or typography. Those are open until design work begins.
 
 ## Evidence on Hand
@@ -82,15 +82,25 @@ The performance claims above are design targets, not measurements. Do not presen
 
 **A crash report, and only a crash report.** Three conditions hold it inside the promise, and all three are load-bearing:
 
-- **It needs a crash.** Starless notices by asking the inverse question — did the previous session end cleanly? — because the deaths nobody can instrument from the inside (a hard abort, a driver fault, a process closed from the Task Manager) are the ones worth reporting.
+- **It needs a crash.** Star Music notices by asking the inverse question — did the previous session end cleanly? — because the deaths nobody can instrument from the inside (a hard abort, a driver fault, a process closed from the Task Manager) are the ones worth reporting.
 - **It needs a click.** The app detects, builds the report, shows exactly what would leave the machine, and waits. There is no timer and no background upload. `PRODUCT.md` promise 3 survives because nothing moves without someone asking.
 - **It carries no personal data.** The log is scrubbed before it is shown on screen, not after, so there is no code path that can send the unscrubbed version: the Spotify account name, the Windows account name inside every path, anything shaped like a credential, and track identifiers all go.
 
 Withdrawing it needs withdrawing the promise. Analytics is still off the table; this is a file someone hands over on purpose after their app has already died.
 
+### Library organisation stays local
+
+Pinning and archiving playlists are per-account preferences on this device.
+Pins have their own saved order, independent of the library's chosen sort.
+They never modify the remote library or leave the machine. Archiving hides a
+playlist from Star Music's shelves without removing it from an existing play queue;
+the person can restore it from Archived playlists on Home or the phone's Library.
+These preferences live beside settings, outside the credential directory, so
+signing out does not erase them or apply them to another account.
+
 ### The listening history is not telemetry
 
-Home's "most played", "keep listening" and "your week" come from a history Starless keeps **on this machine only** (`history.rs`, a `history.jsonl` next to `settings.json`). It never leaves the disk, so it reports to nobody and promise 3 stands. It records a song only after 30 seconds of real listening, keeps 120 days, and the person can switch it off or delete it from Settings. Sending any of it anywhere would be telemetry, and is ruled out like the rest.
+Home's "most played", "keep listening" and "your week" come from a history Star Music keeps **on this machine only** (`history.rs`, a `history.jsonl` next to `settings.json`). It never leaves the disk, so it reports to nobody and promise 3 stands. It records a song only after 30 seconds of real listening, keeps 120 days, and the person can switch it off or delete it from Settings. Sending any of it anywhere would be telemetry, and is ruled out like the rest.
 
 ## Accessibility & Inclusion
 

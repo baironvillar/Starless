@@ -1,4 +1,4 @@
-package app.starless.desktop
+package app.starmusic.desktop
 
 import android.app.Notification
 import android.app.PendingIntent
@@ -72,7 +72,7 @@ object NowPlayingCenter {
   private var art: Bitmap? = null
   private val release = Runnable { wakeLock?.takeIf { it.isHeld }?.release() }
 
-  /** What the page calls, as `window.StarlessMedia`. */
+  /** What the page calls, as `window.StarMusicMedia`. */
   private class Bridge(private val context: Context) {
     /** `NowPlaying` as JSON, or "null". See `mediaSession` in `src/lib/spotify.ts`. */
     @JavascriptInterface
@@ -81,10 +81,10 @@ object NowPlayingCenter {
 
   fun attach(context: Context, view: WebView) {
     webView = view
-    view.addJavascriptInterface(Bridge(context.applicationContext), "StarlessMedia")
+    view.addJavascriptInterface(Bridge(context.applicationContext), "StarMusicMedia")
     if (session != null) return
     val app = context.applicationContext
-    session = MediaSessionCompat(app, "Starless").apply {
+    session = MediaSessionCompat(app, "Star Music").apply {
       setCallback(object : MediaSessionCompat.Callback() {
         override fun onPlay() = key("play")
         override fun onPause() = key("pause")
@@ -93,7 +93,7 @@ object NowPlayingCenter {
       })
     }
     wakeLock = app.getSystemService(PowerManager::class.java)
-      .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Starless:playback")
+      .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Star Music:playback")
       .apply { setReferenceCounted(false) }
   }
 
@@ -135,7 +135,7 @@ object NowPlayingCenter {
   fun key(name: String) {
     val view = webView ?: return
     main.post {
-      view.evaluateJavascript("window.__starlessMediaKey&&window.__starlessMediaKey('$name')", null)
+      view.evaluateJavascript("window.__starMusicMediaKey&&window.__starMusicMediaKey('$name')", null)
     }
   }
 

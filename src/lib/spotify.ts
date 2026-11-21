@@ -1,8 +1,64 @@
-import { useQuery } from "@tanstack/react-query";
+import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useMemo, useSyncExternalStore } from "react";
 import { errors, type Lang } from "./i18n";
+import {
+  type LibraryOrganisation,
+  normaliseOrganisation,
+  type PlaylistPreference,
+  pinnedIds,
+} from "./libraryOrganisationModel";
+
+export async function libraryOrganisation(account: string): Promise<LibraryOrganisation> {
+  if (hasBackend()) return invoke("library_organisation", { account });
+  return normaliseOrganisation(
+    JSON.parse(localStorage.getItem(`star-music:library:${account}`) ?? "{}"),
+  );
+}
+
+export async function setPlaylistPreference(
+  account: string,
+  id: string,
+  preference: PlaylistPreference,
+): Promise<LibraryOrganisation> {
+  if (hasBackend()) return invoke("set_playlist_preference", { account, id, preference });
+  const saved = await libraryOrganisation(account);
+  const ids = pinnedIds(saved);
+  const position = saved[id]?.pinned ? (saved[id]?.position ?? ids.indexOf(id)) : ids.length;
+  const updated = {
+    ...saved,
+    [id]: {
+      ...preference,
+      position: preference.pinned
+        ? position !== undefined && position >= 0
+          ? position
+          : ids.length
+        : null,
+    },
+  };
+  if (!preference.pinned && !preference.archived) delete updated[id];
+  localStorage.setItem(`star-music:library:${account}`, JSON.stringify(updated));
+  return updated;
+}
+
+export async function setPinnedOrder(account: string, ids: string[]): Promise<LibraryOrganisation> {
+  if (hasBackend()) return invoke("set_pinned_order", { account, ids });
+  const saved = await libraryOrganisation(account);
+  const current = pinnedIds(saved);
+  if (
+    ids.length !== current.length ||
+    new Set(ids).size !== ids.length ||
+    ids.some((id) => !current.includes(id))
+  )
+    throw new Error("command_failed");
+  const updated = { ...saved };
+  ids.forEach((id, position) => {
+    updated[id] = { ...saved[id], position };
+  });
+  localStorage.setItem(`star-music:library:${account}`, JSON.stringify(updated));
+  return updated;
+}
 
 /**
  * The account's real data, as Spotify sends it.
@@ -139,7 +195,7 @@ export function formatDuration(ms: number | null): string {
  * **The app's language, not the system's.** The collator above is deliberately
  * locale-`undefined`, and it is right there: an A–Z either respects accents or it
  * does not, and there is no "wrong" shape to get. A date does have shapes —
- * `Aug 17, 2026` against `17 ago 2026` — and Starless has a language switch that
+ * `Aug 17, 2026` against `17 ago 2026` — and Star Music has a language switch that
  * already changes every other word on screen. A column left in the system locale
  * under an interface the user just switched is the one line that reads as a
  * different app.
@@ -489,6 +545,71 @@ export function onPlaybackStatus(handler: (status: PlaybackStatus) => void): Pro
 }
 
 /**
+ * Whether Spotify refuses this account its audio keys: `true`, `false`, or
+ * `null` while it is not known (`keycheck.rs`).
+ *
+ * Asked once on mount and then heard as an event, because the check runs right
+ * after the session comes up and may finish before or after the window asks.
+ */
+export async function audioKeysRefused(): Promise<boolean | null> {
+  if (!hasBackend()) return null;
+  return invoke<boolean | null>("audio_keys_refused");
+}
+
+export function onAudioKeys(
+  handler: (refused: boolean | null) => void,
+): Promise<UnlistenFn> | null {
+  if (!hasBackend()) return null;
+  return listen<boolean | null>("playback://keys", (event) => handler(event.payload));
+}
+
+/**
+ * Spotify Soloist, the way out for an account whose keys are refused
+ * (`soloist.rs`, `docs/soloist.md`).
+ *
+ * **There is no key in here, ever.** The key goes to the backend once, through
+ * `soloistSetKey`, and what comes back is only whether there is one.
+ */
+export type SoloistStatus = {
+  installed: boolean;
+  version: string | null;
+  expires_in_days: number | null;
+  has_key: boolean;
+  running: boolean;
+  paired: boolean;
+  device_name: string;
+  error: string | null;
+};
+
+export async function soloistStatus(): Promise<SoloistStatus | null> {
+  if (!hasBackend()) return null;
+  return invoke<SoloistStatus>("soloist_status");
+}
+
+export function onSoloistStatus(
+  handler: (status: SoloistStatus) => void,
+): Promise<UnlistenFn> | null {
+  if (!hasBackend()) return null;
+  return listen<SoloistStatus>("soloist://status", (event) => handler(event.payload));
+}
+
+export async function soloistDownload(): Promise<SoloistStatus> {
+  return invoke<SoloistStatus>("soloist_download");
+}
+
+export async function soloistSetKey(key: string): Promise<SoloistStatus> {
+  return invoke<SoloistStatus>("soloist_set_key", { key });
+}
+
+export async function soloistStart(): Promise<SoloistStatus> {
+  return invoke<SoloistStatus>("soloist_start");
+}
+
+export async function soloistRemove(): Promise<SoloistStatus> {
+  return invoke<SoloistStatus>("soloist_remove");
+}
+
+/**
  * Subscribe to the DJ's voice.
  *
  * The event says that the DJ stopped talking —whether it was heard to the end
@@ -567,14 +688,14 @@ export type NowPlaying = {
 /**
  * Tell Windows what is playing; `null` hides the card and frees the media keys.
  *
- * On the phone the same answer goes to Android (`window.StarlessMedia`): the lock
+ * On the phone the same answer goes to Android (`window.StarMusicMedia`): the lock
  * screen, the notification, the headset buttons and the wake lock that keeps
  * the next song loading with the screen off all live in Kotlin
  * (`NowPlayingCenter.kt`), where Android's media session is.
  */
 export async function mediaSession(now: NowPlaying | null): Promise<void> {
   if (!hasBackend()) return;
-  window.StarlessMedia?.nowPlaying(JSON.stringify(now));
+  window.StarMusicMedia?.nowPlaying(JSON.stringify(now));
   return invoke<void>("media_session", { now });
 }
 
@@ -590,9 +711,9 @@ export function onMediaKey(handler: (key: MediaKey) => void): Promise<UnlistenFn
   if (!hasBackend()) return null;
   // The phone's lock screen and headset buttons arrive from Kotlin, which
   // calls this function by name: the same keys, the same handler.
-  if (window.StarlessMedia) window.__starlessMediaKey = handler;
+  if (window.StarMusicMedia) window.__starMusicMediaKey = handler;
   return listen<MediaKey>("media://key", (event) => handler(event.payload)).then((stop) => () => {
-    if (window.__starlessMediaKey === handler) window.__starlessMediaKey = undefined;
+    if (window.__starMusicMediaKey === handler) window.__starMusicMediaKey = undefined;
     stop();
   });
 }
@@ -620,9 +741,9 @@ export const SURFACE_OPACITY_DEFAULT = 32;
  * iterate on: the slider never left its loading state, because the read that
  * enables it never resolved.
  */
-const SURFACE_OPACITY_KEY = "starless:surface-opacity";
+const SURFACE_OPACITY_KEY = "star-music:surface-opacity";
 
-function hasBackend(): boolean {
+export function hasBackend(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
@@ -895,7 +1016,7 @@ export const EFFECTS = {
 export type EffectName = keyof typeof EFFECTS;
 export type Effects = { [K in EffectName]: (typeof EFFECTS)[K][number] };
 
-const EFFECTS_KEY = "starless:effects";
+const EFFECTS_KEY = "star-music:effects";
 
 export const EFFECTS_DEFAULT: Effects = {
   glow: "on",
@@ -984,7 +1105,7 @@ export async function setEffect<K extends EffectName>(name: K, value: Effects[K]
 export const THEMES = ["dark", "light", "system"] as const;
 export type Theme = (typeof THEMES)[number];
 
-const THEME_KEY = "starless:theme";
+const THEME_KEY = "star-music:theme";
 const SYSTEM_LIGHT = "(prefers-color-scheme: light)";
 
 let currentTheme: Theme = "dark";
@@ -1193,7 +1314,7 @@ export async function saveBackgroundLook(dim: number, blur: number): Promise<voi
  * backend, and a personalisation setting that only works in the packaged build
  * is a setting nobody finds while they are designing it.
  */
-const ACCENT_KEY = "starless:accent";
+const ACCENT_KEY = "star-music:accent";
 
 /** The colour DESIGN.md ships. Also what "back to default" writes. */
 export const ACCENT_DEFAULT = "#ff5a36";
@@ -1315,7 +1436,7 @@ export function isDark(hex: string): boolean {
  * this session cannot see.
  *
  * **"Recently played" is the exception, because the date is ours.** The local
- * history (`history.rs`) stamps every song heard in Starless with its time and
+ * history (`history.rs`) stamps every song heard in Star Music with its time and
  * the playlist it came from, so the last time a playlist sounded *here* is a
  * fact this app does have. It is only this machine's listening, never Spotify's,
  * and a playlist that never sounded here goes after the rest, by name.
@@ -1425,8 +1546,8 @@ export function sortPlaylists(
   return sorted;
 }
 
-const LIBRARY_SORT_KEY = "starless:library-sort";
-const LIBRARY_VIEW_KEY = "starless:library-view";
+const LIBRARY_SORT_KEY = "star-music:library-sort";
+const LIBRARY_VIEW_KEY = "star-music:library-view";
 
 /**
  * Both preferences cross to `localStorage` when there is no bridge, for the same
@@ -1470,8 +1591,8 @@ export async function setLibraryView(view: LibraryView): Promise<void> {
   return invoke<void>("set_library_view", { view });
 }
 
-const TRACK_ORDER_KEY = "starless:track-order";
-const TRACK_VIEW_KEY = "starless:track-view";
+const TRACK_ORDER_KEY = "star-music:track-order";
+const TRACK_VIEW_KEY = "star-music:track-view";
 
 /**
  * The order and the view a playlist opens in. Rust keeps the order as
@@ -1550,6 +1671,19 @@ export async function addToPlaylist(playlistId: string, trackId: string): Promis
     throw new Error("add_failed");
   }
   await invoke<void>("add_to_playlist", { playlistId, trackId });
+}
+
+/**
+ * Saves a song to Liked Songs.
+ *
+ * It is a different service from the playlists (the saved-songs collection), so
+ * it has no revision to read and no playlist id: only the song.
+ */
+export async function likeTrack(trackId: string): Promise<void> {
+  if (!hasBackend()) {
+    throw new Error("like_failed");
+  }
+  await invoke<void>("like_track", { trackId });
 }
 
 /**
@@ -1633,6 +1767,7 @@ export async function savePlaylistDetails(
 }
 
 export const keys = {
+  libraryOrganisation: (account: string | null) => ["library-organisation", account] as const,
   account: ["account"] as const,
   playlists: ["playlists"] as const,
   liked: ["liked-tracks"] as const,
@@ -1684,18 +1819,45 @@ export function useLyrics(trackId: string | null) {
   });
 }
 
-export function useAccount() {
-  return useQuery({
+function accountQuery(client: QueryClient) {
+  return {
     queryKey: keys.account,
-    queryFn: () => invoke<Account>("account"),
+    queryFn: async () => {
+      const account = await invoke<Account>("account");
+      // Publish the account only after its local preferences are cached. The
+      // shelves can then render their first response without an extra empty frame.
+      await client
+        .fetchQuery({
+          queryKey: keys.libraryOrganisation(account.id),
+          queryFn: () => libraryOrganisation(account.id),
+          staleTime: Infinity,
+          retry: false,
+        })
+        .catch(() => {});
+      return account;
+    },
     staleTime: 5 * 60_000,
-  });
+  };
+}
+
+export function useAccount() {
+  const client = useQueryClient();
+  return useQuery(accountQuery(client));
 }
 
 export function usePlaylists() {
+  const client = useQueryClient();
   return useQuery({
     queryKey: keys.playlists,
-    queryFn: () => invoke<Playlist[]>("my_playlists"),
+    queryFn: async () => {
+      // Keep network reads parallel, but never publish playlists before the
+      // account's archived choices are known. Refetches keep their existing data.
+      const [playlists] = await Promise.all([
+        invoke<Playlist[]>("my_playlists"),
+        client.ensureQueryData(accountQuery(client)),
+      ]);
+      return playlists;
+    },
     staleTime: 5 * 60_000,
   });
 }
@@ -1899,13 +2061,19 @@ export const SESSION_ERRORS = new Set([
   "reconnecting",
   "audio_stalled",
   "audio_device_failed",
+  // Spotify refuses this account every key (`keycheck.rs`): every song fails
+  // the same way, so skipping would burn the queue blaming songs that are fine.
+  "keys_refused",
+  // Soloist went away under a song: the song is fine, the player is not.
+  "soloist_stopped",
+  "soloist_expired",
 ]);
 
 declare global {
   interface Window {
     /** `NowPlayingCenter.kt`'s bridge, on Android only: `NowPlaying` as JSON, or "null". */
-    StarlessMedia?: { nowPlaying: (json: string) => void };
+    StarMusicMedia?: { nowPlaying: (json: string) => void };
     /** What Kotlin calls when a lock-screen, notification or headset button is pressed. */
-    __starlessMediaKey?: (key: MediaKey) => void;
+    __starMusicMediaKey?: (key: MediaKey) => void;
   }
 }

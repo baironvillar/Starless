@@ -146,7 +146,7 @@ voz impostora en los speakers: dos dispositivos, dos sonidos, y la voz encima de
 la música. La única voz que sale por el mismo dispositivo que la música es la
 que reproduce el player, o sea la de Sonantic.
 
-La sonda es `STARLESS_SP_VOICE=1`: pide el audio, lo decodifica y lo pone en el
+La sonda es `STAR_MUSIC_SP_VOICE=1`: pide el audio, lo decodifica y lo pone en el
 mixer, sin que nadie haga clic.
 
 ## 6. El DJ abre y cierra cada tramo, y las dos frases se dicen

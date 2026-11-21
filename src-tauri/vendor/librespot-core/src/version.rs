@@ -38,7 +38,7 @@ pub const SPOTIFY_SPIRC_VERSION: &str = "3.2.6";
 /// The user agent to fall back to, if one could not be determined dynamically.
 pub const FALLBACK_USER_AGENT: &str = "Spotify/124200290 Linux/0 (librespot)";
 
-// Starless: Android announces the desktop version, like the rest of its
+// Star Music: Android announces the desktop version, like the rest of its
 // identity (`spclient.rs`, `http_client.rs`). Only iOS keeps the mobile one.
 pub fn spotify_version() -> String {
     match crate::config::OS {

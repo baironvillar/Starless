@@ -1,9 +1,12 @@
-import { PanelLeftClose, PanelLeftOpen, Plus, TriangleAlert } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, Pin, Plus, TriangleAlert } from "lucide-react";
 import { motion } from "motion/react";
+import { useState } from "react";
 import type { StringKey } from "../lib/i18n";
+import { useLibraryOrganisation } from "../lib/libraryOrganisation";
 import {
   type Account,
   coverImage,
+  explain,
   isDjCard,
   type LibrarySort,
   type LibraryView,
@@ -116,6 +119,57 @@ export function LibrarySidebar({
   onPrefetch,
   onNewPlaylist,
 }: LibrarySidebarProps) {
+  const organisation = useLibraryOrganisation();
+  const [draggedPin, setDraggedPin] = useState<string | null>(null);
+  const [dropPin, setDropPin] = useState<string | null>(null);
+  const pins = playlists.filter((playlist) => organisation.preference(playlist.id).pinned);
+  const pinDrag = (id: string): React.HTMLAttributes<HTMLDivElement> => {
+    const pinned = organisation.preference(id).pinned;
+    return {
+      draggable: pinned && !organisation.busy,
+      title: pinned ? t.reorderPinnedHint : undefined,
+      onDragStart: (event) => {
+        if (!pinned || organisation.busy) {
+          event.preventDefault();
+          return;
+        }
+        setDraggedPin(id);
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("application/x-star-music-pin", id);
+      },
+      onDragOver: (event) => {
+        if (!pinned || !draggedPin || draggedPin === id || organisation.busy) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        setDropPin(id);
+      },
+      onDrop: (event) => {
+        event.preventDefault();
+        if (pinned && draggedPin && !organisation.busy)
+          void organisation.move(draggedPin, id).catch(() => {});
+        setDraggedPin(null);
+        setDropPin(null);
+      },
+      onDragEnd: () => {
+        setDraggedPin(null);
+        setDropPin(null);
+      },
+      onKeyDown: (event) => {
+        if (
+          !pinned ||
+          !event.altKey ||
+          organisation.busy ||
+          !["ArrowUp", "ArrowDown"].includes(event.key)
+        )
+          return;
+        event.preventDefault();
+        event.stopPropagation();
+        const index = pins.findIndex((playlist) => playlist.id === id);
+        const target = pins[index + (event.key === "ArrowUp" ? -1 : 1)];
+        if (target) void organisation.move(id, target.id).catch(() => {});
+      },
+    };
+  };
   const avatar = account ? coverImage(account.images) : null;
   /** The shape the panel is in; each layer below draws one of the two. */
   const railOnly = collapsed;
@@ -143,17 +197,17 @@ export function LibrarySidebar({
       // The width is animated, and it is the one layout animation in the app that
       // resizes a glass surface — which costs a blur re-sample per frame for about
       // a quarter of a second. It is worth it: the alternative is a panel that
-      // teleports to half its width while the content beside it slides over 300ms.
+      // teleports to half its width while the content beside it slides over 240ms.
       //
       // **In CSS, with the content's own duration and curve, and not in `motion`.**
       // It used to be a spring of about 450 ms while the content's `left` ran a
-      // 300 ms `--ease-glass` transition: two clocks, so the gap between the rail
+      // 240 ms `--ease-glass` transition: two clocks, so the gap between the rail
       // and the content opened and closed while they moved — the exact "two
       // things at different speeds" this was meant to avoid. One transition for
       // both means the gap is the same 20 px on every frame, and `data-still`
       // stops both at once.
       style={{ width: collapsed ? RAIL_PX : PANEL_PX }}
-      className={`surface pointer-events-auto absolute top-[104px] ${barPresent ? "bottom-[144px]" : "bottom-5"} left-5 z-20 flex flex-col overflow-hidden rounded-card transition-[width,bottom] duration-300 ease-[var(--ease-glass)]`}
+      className={`surface pointer-events-auto absolute top-[104px] ${barPresent ? "bottom-[144px]" : "bottom-5"} left-5 z-20 flex flex-col overflow-hidden rounded-card transition-[width,bottom] duration-[var(--dur-panel)] ease-[var(--ease-glass)]`}
     >
       {/*
         Both shapes are always there, one over the other, and only their
@@ -206,6 +260,19 @@ export function LibrarySidebar({
                   collapsed ? "items-center px-2 pt-3" : "px-4 pt-4"
                 }`}
               >
+                {organisation.error && (
+                  <p
+                    role="alert"
+                    title={explain(organisation.error)}
+                    className="px-2 py-2 text-[12px] text-warn-ink"
+                  >
+                    {collapsed ? (
+                      <TriangleAlert className="size-4" aria-label={explain(organisation.error)} />
+                    ) : (
+                      explain(organisation.error)
+                    )}
+                  </p>
+                )}
                 <div
                   style={at(0)}
                   className={`cascade flex items-center gap-2 ${collapsed ? "w-full justify-center" : ""}`}
@@ -340,12 +407,15 @@ export function LibrarySidebar({
                       <div
                         key={playlist.id}
                         style={at(4 + index)}
-                        className="cascade"
+                        className={`cascade rounded-[12px] ${organisation.preference(playlist.id).pinned ? "cursor-grab active:cursor-grabbing" : ""} ${dropPin === playlist.id ? "ring-2 ring-accent" : ""}`}
+                        {...pinDrag(playlist.id)}
                         // A right-click opens its menu (lib/contextMenu.ts). Not the DJ's: no songs to queue.
                         data-playlist-id={isDjCard(playlist) ? undefined : playlist.id}
                       >
                         <PlaylistTile
                           title={playlist.name}
+                          pinned={organisation.preference(playlist.id).pinned}
+                          pinnedLabel={t.pinnedPlaylist}
                           imageUrl={coverImage(playlist.images)?.url ?? null}
                           // The DJ is drawn, not photographed: the service sends no cover for
                           // its card, and the rail would otherwise show an empty square.
@@ -456,7 +526,8 @@ export function LibrarySidebar({
                       <div
                         key={playlist.id}
                         style={at(4 + index)}
-                        className="cascade w-full"
+                        className={`cascade w-full rounded-[14px] ${organisation.preference(playlist.id).pinned ? "cursor-grab active:cursor-grabbing" : ""} ${dropPin === playlist.id ? "ring-2 ring-accent" : ""}`}
+                        {...pinDrag(playlist.id)}
                         data-playlist-id={isDjCard(playlist) ? undefined : playlist.id}
                       >
                         <button
@@ -500,6 +571,12 @@ export function LibrarySidebar({
                         between two covers. The shelf over there is where the count
                         belongs. */}
                             </span>
+                          )}
+                          {organisation.preference(playlist.id).pinned && (
+                            <Pin
+                              className="size-3 shrink-0 text-ink-muted"
+                              aria-label={t.pinnedPlaylist}
+                            />
                           )}
                         </button>
                       </div>

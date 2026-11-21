@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { placeOfSong, queueWithAdded, queueWithListAdded, rowPlace, upNextTracks } from "./queue";
+import {
+  placeOfSong,
+  queueWithAdded,
+  queueWithListAdded,
+  rowPlace,
+  unshuffledQueue,
+  upNextTracks,
+} from "./queue";
 import type { Track } from "./spotify";
 
 const track = (id: string): Track => ({
@@ -161,5 +168,54 @@ describe("placeOfSong", () => {
 
   test("a song that is not in the list has no place", () => {
     expect(placeOfSong(2, list, "z")).toBe(-1);
+  });
+});
+
+describe("unshuffledQueue", () => {
+  const original = ["a", "b", "c", "d", "e"].map(track);
+  const ids = (edit: { tracks: Track[] }) => edit.tracks.map((item) => item.id);
+
+  test("turning shuffle off brings back the playlist's order", () => {
+    const shuffled = ["c", "e", "a", "d", "b"].map(track);
+    const edit = unshuffledQueue(shuffled, original, 0);
+    expect(ids(edit)).toEqual(["a", "b", "c", "d", "e"]);
+  });
+
+  test("the song that is playing keeps playing, at its place in the playlist", () => {
+    const shuffled = ["c", "e", "a", "d", "b"].map(track);
+    const edit = unshuffledQueue(shuffled, original, 1);
+    expect(edit.at).toBe(4);
+    expect(edit.tracks[edit.at].id).toBe("e");
+  });
+
+  test("what comes next is what came after the song in the playlist", () => {
+    const shuffled = ["c", "e", "a", "d", "b"].map(track);
+    const edit = unshuffledQueue(shuffled, original, 0);
+    expect(upNextTracks(edit.at, edit.tracks, edit.tracks).map((item) => item.id)).toEqual([
+      "d",
+      "e",
+    ]);
+  });
+
+  test("a song added while shuffled stays right after the one that is playing", () => {
+    const shuffled = ["c", "z", "e", "a", "d", "b"].map(track);
+    const edit = unshuffledQueue(shuffled, original, 0);
+    expect(ids(edit)).toEqual(["a", "b", "c", "z", "d", "e"]);
+    expect(edit.at).toBe(2);
+  });
+
+  test("with nothing playing the order comes back and nothing is playing", () => {
+    const shuffled = ["c", "e", "a", "d", "b"].map(track);
+    const edit = unshuffledQueue(shuffled, original, -1);
+    expect(ids(edit)).toEqual(["a", "b", "c", "d", "e"]);
+    expect(edit.at).toBe(-1);
+  });
+
+  test("a song that is twice in the playlist is still twice", () => {
+    const twice = ["a", "b", "a", "c"].map(track);
+    const shuffled = ["b", "a", "c", "a"].map(track);
+    const edit = unshuffledQueue(shuffled, twice, 0);
+    expect(ids(edit)).toEqual(["a", "b", "a", "c"]);
+    expect(edit.tracks[edit.at].id).toBe("b");
   });
 });

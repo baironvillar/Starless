@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "starless-site",
+      "name": "star-music-site",
       "dependencies": {
         "astro": "^7.4.4",
         "i18next": "^26.7.2",

@@ -1,8 +1,11 @@
+import { Pin } from "lucide-react";
 import { motion } from "motion/react";
 
 import { SPRING } from "../lib/motion";
 
 type PlaylistTileProps = {
+  pinned?: boolean;
+  pinnedLabel?: string;
   title: string;
   imageUrl?: string | null;
   /**
@@ -43,6 +46,8 @@ type PlaylistTileProps = {
  * cover with a name under it has no play control to nest, so the tile is the target.
  */
 export function PlaylistTile({
+  pinned,
+  pinnedLabel,
   title,
   imageUrl,
   artwork,
@@ -81,13 +86,14 @@ export function PlaylistTile({
               src={imageUrl}
               alt=""
               loading="lazy"
-              className="pointer-events-none absolute inset-0 size-full object-cover transition-transform duration-300 group-hover/tile:scale-[1.03]"
+              className="pointer-events-none absolute inset-0 size-full object-cover transition-transform duration-[var(--dur-panel)] group-hover/tile:scale-[1.03]"
             />
           )
         )}
       </span>
 
       <span className="line-clamp-2 w-full text-center text-[11.5px] leading-[14px] font-medium">
+        {pinned && <Pin className="mr-1 inline size-3" aria-label={pinnedLabel} />}
         {title}
       </span>
     </motion.button>

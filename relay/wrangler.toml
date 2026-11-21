@@ -1,11 +1,14 @@
 # The report relay. Deploy steps: relay/README.md.
 
-name = "starless-relay"
+# The name is part of the Worker's address, and the address is compiled into each
+# build through `STAR_MUSIC_REPORT_RELAY`: renaming it is a redeploy and a new
+# value for that variable.
+name = "star-music-relay"
 main = "src/index.ts"
 compatibility_date = "2026-10-01"
 
 [vars]
-REPO = "baironvillar/Starless"
+REPO = "Starless-org/StarMusic"
 # Reports per address per hour.
 RATE_LIMIT = "10"
 

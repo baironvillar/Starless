@@ -1,4 +1,4 @@
-package app.starless.desktop
+package app.starmusic.desktop
 
 import android.content.Intent
 import android.os.Bundle
@@ -23,7 +23,7 @@ class MainActivity : TauriActivity() {
 
   override fun onWebViewCreate(webView: WebView) {
     NowPlayingCenter.attach(this, webView)
-    webView.addJavascriptInterface(Bridge(), "StarlessAndroid")
+    webView.addJavascriptInterface(Bridge(), "StarMusicAndroid")
   }
 
   /**

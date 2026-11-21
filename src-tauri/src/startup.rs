@@ -6,7 +6,7 @@
 // `settings.json` — a value removed by Task Manager's "Startup apps" page would
 // otherwise leave the switch saying "on" for an app that no longer starts.
 //
-// The launch carries `--minimized`: Starless comes up in the tray, not in the
+// The launch carries `--minimized`: Star Music comes up in the tray, not in the
 // person's face at every sign-in.
 
 /// The argument a launch at sign-in carries.
@@ -21,8 +21,7 @@ mod imp {
     use windows::core::{HSTRING, w};
 
     const RUN_KEY: windows::core::PCWSTR = w!("Software\\Microsoft\\Windows\\CurrentVersion\\Run");
-    const VALUE: windows::core::PCWSTR = w!("Starless");
-
+    const VALUE: windows::core::PCWSTR = w!("Star Music");
     pub fn enabled() -> bool {
         // SAFETY: static, NUL-terminated names; no buffer is passed, so the
         // call only reports whether the value exists.
@@ -73,7 +72,7 @@ mod imp {
     }
 }
 
-/// Whether Starless starts at sign-in.
+/// Whether Star Music starts at sign-in.
 pub fn enabled() -> bool {
     imp::enabled()
 }
@@ -81,7 +80,7 @@ pub fn enabled() -> bool {
 /// Turn it on or off, and answer with what is true afterwards.
 ///
 /// **Never from a development build.** The value is the path of the running
-/// executable, and in `bun run app` that is `target\debug\starless.exe`: the
+/// executable, and in `bun run app` that is `target\debug\star-music.exe`: the
 /// next sign-in would start a debug build out of a source tree. The switch
 /// answers with the registry as it is, so in development it does not move.
 pub fn set(on: bool) -> bool {

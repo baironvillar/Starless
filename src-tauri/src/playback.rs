@@ -320,7 +320,7 @@ fn build_player(app: &AppHandle, state: &PlaybackState, session: &Session) {
         config,
         session.clone(),
         Box::new(Unattenuated),
-        // El sink es de Starless y no de librespot.
+        // El sink es de Star Music y no de librespot.
         //
         // El de librespot no deja ver el `Mixer` del stream, y sin ese mixer la
         // voz del DJ tendría que abrir un segundo stream en el mismo
@@ -376,7 +376,7 @@ fn build_player(app: &AppHandle, state: &PlaybackState, session: &Session) {
 /// position moved? If it has not, for long enough that no slow device could
 /// explain it, the player is stuck and the app goes and builds another one.
 pub fn watch(app: AppHandle) {
-    // A development tool: `STARLESS_STALL_TEST=1` forces one stall recovery
+    // A development tool: `STAR_MUSIC_STALL_TEST=1` forces one stall recovery
     // twenty seconds in, so the recovery can be tried without waiting for a
     // device that really stops answering.
     #[cfg(debug_assertions)]
@@ -411,8 +411,8 @@ pub fn watch(app: AppHandle) {
                 && now.duration_since(started) >= std::time::Duration::from_secs(20)
             {
                 forced_done = true;
-                log::warn!("[audio_stalled] STARLESS_STALL_TEST: simulando un player trabado");
-                recover_from_stall(&app, "prueba manual (STARLESS_STALL_TEST)", 0);
+                log::warn!("[audio_stalled] STAR_MUSIC_STALL_TEST: simulando un player trabado");
+                recover_from_stall(&app, "prueba manual (STAR_MUSIC_STALL_TEST)", 0);
                 continue;
             }
 
@@ -477,13 +477,13 @@ pub fn watch(app: AppHandle) {
 ///
 /// A device that stops answering is not something anybody can reproduce on
 /// purpose, so the recovery would otherwise only be testable the day it
-/// happens to a real person. `STARLESS_STALL_TEST=1` forces it, twenty
+/// happens to a real person. `STAR_MUSIC_STALL_TEST=1` forces it, twenty
 /// seconds in.
 ///
 /// It is compiled out of release: the gate is the build, not the branch.
 #[cfg(debug_assertions)]
 fn forced_stall_requested() -> bool {
-    std::env::var("STARLESS_STALL_TEST")
+    std::env::var("STAR_MUSIC_STALL_TEST")
         .map(|value| value != "0" && !value.is_empty())
         .unwrap_or(false)
 }
@@ -713,6 +713,23 @@ fn forward_events(app: AppHandle, player: Arc<Player>, generation: u32) {
                         // it is a connection that has to be rebuilt. The track
                         // that failed goes back on when it is up.
                         schedule_reconnect(&app, track_id, state.status().real_duration_ms);
+                    } else if app
+                        .try_state::<crate::keycheck::KeyCheckState>()
+                        .and_then(|state| state.refused())
+                        == Some(true)
+                    {
+                        // **Not the song: the account.** Spotify refuses this
+                        // account every key (`keycheck.rs`), so every song fails
+                        // the same way, and skipping would burn the whole queue
+                        // reporting songs as broken. The code says what is true,
+                        // and the frontend does not skip on it (`SESSION_ERRORS`).
+                        log::error!("[keys_refused] {track_id}: Spotify le niega la clave a la cuenta");
+                        player.stop();
+                        state.mutate(|s| {
+                            s.playing = false;
+                            s.loading = false;
+                            s.error = Some("keys_refused".into());
+                        });
                     } else {
                         log::error!("[track_unavailable] {track_id}");
                         state.mutate(|s| {
@@ -1353,7 +1370,7 @@ fn requested_track(state: &PlaybackState, fallback: (String, u32)) -> (String, u
 
 /// `true` when the environment asks for the connection to be cut on purpose.
 ///
-/// **The reason this exists is the same as `STARLESS_STALL_TEST`.** A session
+/// **The reason this exists is the same as `STAR_MUSIC_STALL_TEST`.** A session
 /// that dies on its own is not something anybody can reproduce when they want
 /// to: Spotify drops it when it drops it, and the bug around it —a session
 /// that dies while the queue is empty never fails a track, so nothing ever
@@ -1363,7 +1380,7 @@ fn requested_track(state: &PlaybackState, fallback: (String, u32)) -> (String, u
 /// It is compiled out of release: the gate is the build, not the branch.
 #[cfg(debug_assertions)]
 pub fn kill_session_requested() -> bool {
-    std::env::var("STARLESS_KILL_SESSION")
+    std::env::var("STAR_MUSIC_KILL_SESSION")
         .map(|value| value != "0" && !value.is_empty())
         .unwrap_or(false)
 }
@@ -1388,7 +1405,7 @@ pub fn kill_session(app: &AppHandle) {
     };
     let session = state.0.lock().ok().and_then(|guard| guard.clone());
     if let Some(session) = session {
-        log::warn!("[connection_lost] STARLESS_KILL_SESSION: la sesión se cortó a propósito");
+        log::warn!("[connection_lost] STAR_MUSIC_KILL_SESSION: la sesión se cortó a propósito");
         session.shutdown();
     }
 }

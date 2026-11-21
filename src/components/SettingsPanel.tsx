@@ -69,6 +69,7 @@ import {
   normalisation,
   pickBackground,
   resetCustomisation,
+  type SoloistStatus,
   SURFACE_OPACITY_DEFAULT,
   SURFACE_OPACITY_MAX,
   SURFACE_OPACITY_MIN,
@@ -103,6 +104,7 @@ import {
   pendingVersion,
   prereleaseState,
   prereleaseVersion,
+  refreshUpdateIfStale,
   subscribePrerelease,
   subscribeUpdate,
   updateState,
@@ -130,6 +132,17 @@ type SettingsPanelProps = {
   onOpenFeedback: () => void;
   onClose: () => void;
   onLangChange: (lang: Lang) => void;
+  /**
+   * Spotify Soloist, when this account needs it or already has it set up
+   * (`docs/soloist.md`). `null` for everyone else, who never sees the row.
+   */
+  soloist?: SoloistSettings | null;
+};
+
+type SoloistSettings = {
+  status: SoloistStatus | null;
+  onSetup: () => void;
+  onRemove: () => void;
 };
 
 /**
@@ -559,6 +572,7 @@ export function SettingsPanel({
   onOpenFeedback,
   onClose,
   onLangChange,
+  soloist = null,
 }: SettingsPanelProps) {
   const [section, setSection] = useState<Section>("sectionGeneral");
   /**
@@ -805,7 +819,7 @@ export function SettingsPanel({
                 {section === "sectionGeneral" && (
                   <General t={t} lang={lang} onLangChange={onLangChange} />
                 )}
-                {section === "sectionAudio" && <Audio t={t} />}
+                {section === "sectionAudio" && <Audio t={t} soloist={soloist} />}
                 {section === "sectionAccount" && <Account t={t} account={account} />}
                 {section === "sectionCustom" && <Custom t={t} part={customPart} />}
                 {section === "sectionDiagnostics" && (
@@ -1038,12 +1052,18 @@ function General({
  * keeps. What it had not accounted for is the person who never opens Settings.
  * The badge and the alert answer that without giving up the reason: the update
  * is announced once, quietly, and **nothing is installed by itself.** The click
- * is still here, still in Settings, still the user's — because Starless is
+ * is still here, still in Settings, still the user's — because Star Music is
  * playing and an app that cuts your music to install a patch is an app you turn
  * off.
  */
 function Updates({ t }: { t: Record<StringKey, string> }) {
   const state = useSyncExternalStore(subscribeUpdate, updateState, updateState);
+  // Opening Settings is the moment someone looks at this row, so it is the
+  // moment the answer has to be current: an answer from days ago offered the
+  // door back to the old public release after a newer one was out.
+  useEffect(() => {
+    refreshUpdateIfStale();
+  }, []);
   const update = installableUpdate(state);
   const version = pendingVersion(state);
   const simulated = state.status === "simulated";
@@ -1056,6 +1076,17 @@ function Updates({ t }: { t: Record<StringKey, string> }) {
   const sameNumber = update ? update.version === update.currentVersion : false;
   const backHint = sameNumber ? t.updateGoBackSame : t.updateGoBack;
   const backLabel = sameNumber ? t.updateGoBackSameShort : t.updateGoBackShort;
+  // **An update on screen is an answer, and an answer can be old or wrong.**
+  // With one showing, the "check" button was not drawn, so a row stuck on the
+  // door back to 0.5.5 after 0.6.0 came out had no way to be asked again: the
+  // only path to the new release went through installing the old one. The
+  // check is the quiet one on purpose —it keeps the offer on screen until
+  // there is a newer answer, and a request that fails does not wipe it.
+  const [rechecking, setRechecking] = useState(false);
+  const recheck = () => {
+    setRechecking(true);
+    void checkForUpdate({ quiet: true }).finally(() => setRechecking(false));
+  };
 
   return (
     <div className="mt-5">
@@ -1095,6 +1126,26 @@ function Updates({ t }: { t: Record<StringKey, string> }) {
               </button>
             )}
 
+            {/* Not while the update waits to install: a quiet check leaves a
+                download that already finished alone, so the button would spin
+                and change nothing. */}
+            {update && (state.status === "available" || state.status === "installFailed") && (
+              <button
+                type="button"
+                onClick={recheck}
+                disabled={rechecking}
+                aria-label={t.updateCheck}
+                title={t.updateCheck}
+                className="flex size-10 shrink-0 items-center justify-center rounded-pill border border-white/14 bg-white/6 transition-colors duration-200 hover:bg-white/10 disabled:opacity-50"
+              >
+                {rechecking ? (
+                  <Loader2 className="size-4 animate-spin" strokeWidth={2} />
+                ) : (
+                  <RefreshCw className="size-4" strokeWidth={2} />
+                )}
+              </button>
+            )}
+
             {/* A version with nothing behind it. The button stays unlit and says
                 why, because a green "Update" that goes nowhere is the one thing
                 worse than no button at all. */}
@@ -1126,7 +1177,13 @@ function Updates({ t }: { t: Record<StringKey, string> }) {
   );
 }
 
-function Audio({ t }: { t: Record<StringKey, string> }) {
+function Audio({
+  t,
+  soloist = null,
+}: {
+  t: Record<StringKey, string>;
+  soloist?: SoloistSettings | null;
+}) {
   const [crossfade, setCrossfade] = useState<number | null>(null);
 
   useEffect(() => {
@@ -1187,6 +1244,7 @@ function Audio({ t }: { t: Record<StringKey, string> }) {
 
   return (
     <div className="max-w-[620px]">
+      {soloist && <SoloistRow t={t} soloist={soloist} />}
       <Group>
         <Row label={t.audioQuality} hint={t.audioQualityHint}>
           <Select
@@ -2284,7 +2342,7 @@ function Diagnostics({
           type="button"
           onClick={() => setChangelogOpen((open) => !open)}
           aria-expanded={changelogOpen}
-          aria-controls="starless-changelog"
+          aria-controls="star-music-changelog"
           className="flex w-full items-center gap-6 border-b border-white/8 px-5 py-4 text-left transition-colors duration-200 hover:bg-white/6"
         >
           <span className="min-w-0 flex-1 text-[13.5px] font-semibold">{t.changelogs}</span>
@@ -2298,7 +2356,7 @@ function Diagnostics({
 
         {changelogOpen && (
           <div
-            id="starless-changelog"
+            id="star-music-changelog"
             className="border-b border-white/8 px-5 py-5 last:border-b-0"
           >
             <Changelog t={t} lang={lang} />
@@ -2387,6 +2445,49 @@ function ChangelogGroup({ title, items }: { title: string; items: string[] }) {
  * `span` is for the card whose control is wider than half a column: it crosses
  * both columns instead of being squeezed into one.
  */
+/**
+ * Where Spotify Soloist stands, in one line, with the two things a person may
+ * want to do about it. **One health line and no more**: the setup lives in its
+ * own sheet, and this row is how a person who closed it finds it again.
+ */
+function SoloistRow({ t, soloist }: { t: Record<StringKey, string>; soloist: SoloistSettings }) {
+  const status = soloist.status;
+  const ready = status?.installed && status.has_key;
+  const days = String(status?.expires_in_days ?? "—");
+  const line =
+    status?.running && status.paired
+      ? t.soloistSettingsActive.replace("{days}", days)
+      : ready
+        ? t.soloistSettingsIdle
+        : t.soloistSettingsMissing;
+  return (
+    <div className="mb-4">
+      <Group>
+        <Row label={t.soloistSettingsTitle} hint={line}>
+          <span className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={soloist.onSetup}
+              className="h-8 rounded-pill bg-white/10 px-3 text-[13px] font-medium transition-colors duration-200 hover:bg-white/16"
+            >
+              {t.soloistSettingsSetup}
+            </button>
+            {ready && (
+              <button
+                type="button"
+                onClick={soloist.onRemove}
+                className="h-8 rounded-pill px-3 text-[13px] font-medium text-ink-muted transition-colors duration-200 hover:bg-white/8 hover:text-ink"
+              >
+                {t.soloistRemove}
+              </button>
+            )}
+          </span>
+        </Row>
+      </Group>
+    </div>
+  );
+}
+
 function Group({ children, span }: { children: React.ReactNode; span?: boolean }) {
   return (
     <div

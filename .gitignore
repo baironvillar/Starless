@@ -20,7 +20,7 @@ dist-ssr
 .wrangler/
 
 # The updater's private signing key. It can sign an update for every installed
-# copy of Starless, it is never needed to build the app, and a repository is the
+# copy of Star Music, it is never needed to build the app, and a repository is the
 # last place it should ever land. The public half (`.pub`) is committed on purpose,
 # inside tauri.conf.json.
 .secrets/

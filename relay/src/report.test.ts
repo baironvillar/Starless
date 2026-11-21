@@ -54,8 +54,8 @@ test("the issue body says it came through the relay, and carries the signature",
   const parsed = parseReport(valid);
   if (!("report" in parsed)) throw new Error("expected a report");
   const body = issueBody(parsed.report);
-  expect(body).toContain("<!-- starless-relay -->");
-  expect(body).toContain("<!-- starless-signature: 0123456789abcdef -->");
+  expect(body).toContain("<!-- star-music-relay -->");
+  expect(body).toContain("<!-- star-music-signature: 0123456789abcdef -->");
 });
 
 test("the rate window is one hour per address", () => {

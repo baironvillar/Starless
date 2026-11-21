@@ -1,8 +1,8 @@
-//! Where Starless keeps its files, asked in one place.
+//! Where Star Music keeps its files, asked in one place.
 //!
 //! **On a desktop the answer is `dirs`, and it does not move.** The credentials
-//! live in `%APPDATA%\Starless` and everything that must survive a sign-out in
-//! `%LOCALAPPDATA%\Starless` (see `AGENTS.md`), and a person who updates keeps
+//! live in `%APPDATA%\Star Music` and everything that must survive a sign-out in
+//! `%LOCALAPPDATA%\Star Music` (see `AGENTS.md`), and a person who updates keeps
 //! both where they were.
 //!
 //! **On Android `dirs` has no answer.** It falls through to the Linux rules,
@@ -12,6 +12,11 @@
 //! before anything else reads a path. See `docs/android.md`.
 
 use std::path::PathBuf;
+
+/// The folder the app's files hang from, under both bases. One name, asked
+/// from one place: it used to be written out in six files, and a rename that
+/// misses one of them splits the app's files across two folders.
+pub const APP_DIR: &str = "Star Music";
 
 #[cfg(mobile)]
 use std::sync::OnceLock;

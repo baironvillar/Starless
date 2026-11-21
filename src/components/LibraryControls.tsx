@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { StringKey } from "../lib/i18n";
-import { SPRING } from "../lib/motion";
+import { MENU } from "../lib/motion";
 import { LIBRARY_SORTS, type LibrarySort, type LibraryView, useHomeStats } from "../lib/spotify";
 
 /** The label each order is announced with, in both languages. */
@@ -127,7 +127,7 @@ export function LibrarySortMenu({ t, sort, onSortChange, className = "" }: Libra
               initial={{ opacity: 0, y: -6, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -6, scale: 0.98 }}
-              transition={SPRING}
+              transition={MENU}
               role="listbox"
               aria-label={t.librarySort}
               style={{ top: at.top, left: at.left, width: MENU_PX }}

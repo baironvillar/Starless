@@ -58,3 +58,22 @@ Por eso la regla del backend es la frontera de confianza: el webview nunca ve un
 credencial, pregunta si hay sesión y recibe un booleano y un nombre. Un bug que
 necesita un token en el frontend no es un bug de implementación, es un bug de
 diseño, y ninguna puerta lo va a avisar.
+## Si tocaste Soloist o la comprobación de claves
+
+Los tests fijan la lógica (`a_soloist_that_is_not_paired_never_takes_the_playback`,
+`a_dead_connection_is_not_a_refusal` y los demás de `keycheck.rs` y `soloist.rs`),
+pero el riesgo que importa es que una cuenta que **sí** suena por librespot salga
+perjudicada, y eso sólo se ve en la app. Con `bun run app` y **una cuenta que
+recibe las claves**:
+
+1. El log dice `claves de audio: la cuenta las recibe`, y no aparece ningún aviso.
+2. Play, pausa, adelantar dentro de la canción y volumen responden como siempre.
+3. Una canción termina sola y arranca la siguiente; con crossfade, se mezclan.
+4. El DJ habla antes de su canción.
+5. En Ajustes → Audio **no** está la fila de Soloist.
+
+Y con **una cuenta bloqueada**, si el cambio es de Soloist: el aviso al entrar, los
+tres pasos, y que la canción suene con la barra completa (posición y duración).
+
+Si no tienes las dos cuentas a mano, dilo en el PR: es la parte que ningún test
+cubre.

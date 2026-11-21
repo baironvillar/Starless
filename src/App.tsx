@@ -8,8 +8,8 @@ import { AlbumScreen } from "./components/AlbumScreen";
 import { ArtistScreen } from "./components/ArtistScreen";
 import { AuthGate } from "./components/AuthGate";
 import { CrashPrompt } from "./components/CrashPrompt";
-import { CursorGlow } from "./components/CursorGlow";
 import { FeedbackPanel } from "./components/FeedbackPanel";
+import { BACKGROUND_BLUR_PX, EdgeFade, Ground } from "./components/Ground";
 import { HomeScreen } from "./components/HomeScreen";
 import { JamPanel } from "./components/JamPanel";
 import { LibrarySidebar } from "./components/LibrarySidebar";
@@ -23,17 +23,20 @@ import { PlaylistScreen } from "./components/PlaylistScreen";
 import { QueuePanel } from "./components/QueuePanel";
 import { SearchScreen } from "./components/SearchScreen";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { SoloistDialog } from "./components/SoloistDialog";
 import { TopBar } from "./components/TopBar";
 import { TrackList } from "./components/TrackList";
 import { UpdateAlert } from "./components/UpdateAlert";
 import { useBackRoot } from "./lib/back";
 import { type Lang, type StringKey, strings } from "./lib/i18n";
+import { organisedPlaylists, useLibraryOrganisation } from "./lib/libraryOrganisation";
 import { SPRING } from "./lib/motion";
 import {
   placeOfSong,
   queueWithAdded,
   queueWithListAdded,
   rowPlace,
+  unshuffledQueue,
   upNextTracks,
 } from "./lib/queue";
 import {
@@ -45,14 +48,13 @@ import {
   applyEffects,
   applySurfaceOpacity,
   applyTheme,
-  type Background,
+  audioKeysRefused,
   createPlaylist as createPlaylistCall,
   DEFAULT_TRACK_LIST_PREFS,
   type DjNarration,
   djMix,
   djMore,
   djSpeak,
-  type Effects,
   effects,
   explain,
   historyKey,
@@ -72,8 +74,10 @@ import {
   listCount,
   loadBackground,
   MIN_LISTENED_MS,
+  onAudioKeys,
   onDjVoice,
   onPlaybackStatus,
+  onSoloistStatus,
   PLAYLIST_STALE_MS,
   type PlaybackStatus,
   type PlayContext,
@@ -85,6 +89,7 @@ import {
   radioStart,
   recordPlay,
   SESSION_ERRORS,
+  type SoloistStatus,
   theme as savedTheme,
   setEffect,
   setErrorLanguage,
@@ -92,6 +97,8 @@ import {
   setLibraryView,
   setTrackOrder,
   setTrackView,
+  soloistRemove,
+  soloistStatus,
   sortPlaylists,
   surfaceOpacity,
   type Track,
@@ -115,7 +122,7 @@ import { useSearch } from "./lib/useSearch";
 import { isMobile } from "./lib/version";
 
 /**
- * How many tracks in a row may fail before Starless stops skipping.
+ * How many tracks in a row may fail before Star Music stops skipping.
  *
  * Skipping on failure with no ceiling is an infinite loop that walks a playlist to
  * its end in milliseconds and then blames the user for the noise. Five in a row
@@ -156,6 +163,15 @@ type Queue = {
    * radio could not be seeded at all.
    */
   context: RadioContext | null;
+  /**
+   * The order the queue had before shuffle reordered it, while shuffle is on.
+   *
+   * **It lives in the queue and not beside it**, so a queue that replaces this
+   * one takes it away: playing another playlist under shuffle must not "restore"
+   * the order of the playlist before it. `unshuffledQueue` reads it when the
+   * switch goes off.
+   */
+  original?: Track[];
 };
 
 /**
@@ -286,154 +302,6 @@ function useNarrowWindow(): boolean {
   return narrow;
 }
 
-/** "Suave" is half the frost, not a dimmer bloom of its own: same light, less of it. */
-const BLOOM_OPACITY = { normal: 1, soft: 0.5, off: 0 } as const;
-
-/**
- * Where the bloom sits. Every shape is the same two greys, Bone and silver, so
- * changing it moves the light and never brings hue back (DESIGN.md). `top` is
- * the one the app shipped with, byte for byte.
- */
-const BLOOM_SHAPES = {
-  top: [
-    "radial-gradient(90% 70% at 50% -6%, rgb(var(--bloom-a) / 0.24) 0%, transparent 64%)",
-    "radial-gradient(70% 70% at 104% 108%, rgb(var(--bloom-b) / 0.18) 0%, transparent 60%)",
-    "radial-gradient(60% 60% at -6% 96%, rgb(var(--bloom-a) / 0.10) 0%, transparent 60%)",
-  ],
-  corners: [
-    "radial-gradient(65% 65% at -4% -6%, rgb(var(--bloom-a) / 0.22) 0%, transparent 62%)",
-    "radial-gradient(65% 65% at 104% 106%, rgb(var(--bloom-b) / 0.20) 0%, transparent 62%)",
-  ],
-  center: [
-    "radial-gradient(60% 55% at 50% 46%, rgb(var(--bloom-a) / 0.16) 0%, transparent 70%)",
-    "radial-gradient(110% 90% at 50% 50%, rgb(var(--bloom-b) / 0.07) 0%, transparent 72%)",
-  ],
-  side: [
-    "radial-gradient(55% 95% at -8% 40%, rgb(var(--bloom-a) / 0.24) 0%, transparent 64%)",
-    "radial-gradient(40% 60% at 104% 100%, rgb(var(--bloom-b) / 0.10) 0%, transparent 60%)",
-  ],
-} as const;
-
-/** The blur slider's 0..100 onto pixels. Past 40 the picture is only its colours. */
-const BACKGROUND_BLUR_PX = 40;
-
-/**
- * The ground: the person's picture, the bloom, the grain and the light that follows
- * the pointer, in that order. A component because it is drawn twice — see
- * `EdgeFade`.
- */
-function Ground({
-  url,
-  background,
-  effect,
-}: {
-  url: string | null;
-  background: Background;
-  effect: Effects;
-}) {
-  return (
-    <>
-      {url && (
-        <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
-          {/*
-            Scaled past the window so the blur has picture to pull from at the
-            edges: blurred at its own size, the border fades to the black under
-            it and the photo gets a dark frame nobody chose.
-
-            Keyed by the picture so a new song's cover fades in over the last one
-            once, instead of snapping. It is a single fade per song, not motion
-            under the glass — DESIGN.md's rule is about backdrops that never stop.
-          */}
-          <AnimatePresence initial={false}>
-            <motion.div
-              key={url}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.6 }}
-              className="absolute inset-0 bg-cover bg-center"
-              style={{
-                backgroundImage: `url(${url})`,
-                filter:
-                  background.blur > 0
-                    ? `blur(${(background.blur / 100) * BACKGROUND_BLUR_PX}px)`
-                    : undefined,
-                scale: background.blur > 0 ? 1.08 : 1,
-              }}
-            />
-          </AnimatePresence>
-          <div className="absolute inset-0 bg-ground" style={{ opacity: background.dim / 100 }} />
-        </div>
-      )}
-      <div
-        className="pointer-events-none absolute inset-0 transition-opacity duration-300"
-        style={{
-          opacity: BLOOM_OPACITY[effect.bloom],
-          background: BLOOM_SHAPES[effect.shape].join(", "),
-        }}
-      />
-      {effect.grain === "on" && <div aria-hidden="true" className="grain" />}
-      {effect.glow === "on" && <CursorGlow />}
-    </>
-  );
-}
-
-/**
- * The fade at the content's top and bottom edges, while the surfaces frost.
- *
- * **The mask cannot do it then.** A mask on `<main>` makes it a backdrop root, so
- * every frosted card and tile inside it would blur nothing, and `index.css` takes
- * the mask away above 6%. That left the list cut in a straight line under the top
- * bar and above the player, between two panels whose corners are round.
- *
- * So the fade is painted over the content instead of cut out of it: a strip at each
- * edge draws the ground again, window-aligned, under a gradient. Where the strip is
- * opaque the content is covered by the same ground that is behind it, which reads
- * exactly like the content fading out. The strips are siblings of `<main>`, so
- * nothing inside it loses its blur. They sit under the rail, the queue and the bars
- * (z-20 and up), which cover the rest of each strip's width.
- *
- * The inner layer moves opposite to its strip with the same transition, so the
- * ground copy stays on the window's pixels while the bottom strip follows the bar.
- */
-function EdgeFade({
-  above,
-  below,
-  barPresent,
-  ...ground
-}: {
-  above: boolean;
-  below: boolean;
-  barPresent: boolean;
-  url: string | null;
-  background: Background;
-  effect: Effects;
-}) {
-  const slide = "transition-[bottom,opacity] duration-300 ease-[var(--ease-glass)]";
-  return (
-    <>
-      <div
-        aria-hidden="true"
-        className={`edge-fade edge-fade-top pointer-events-none absolute inset-x-0 top-[104px] z-[15] h-11 overflow-hidden transition-opacity duration-300 ${above ? "" : "opacity-0"}`}
-      >
-        <div className="absolute inset-x-0 -top-[104px] h-screen">
-          <Ground {...ground} />
-        </div>
-      </div>
-      <div
-        aria-hidden="true"
-        className={`edge-fade edge-fade-bottom pointer-events-none absolute inset-x-0 z-[15] h-11 overflow-hidden ${slide} ${barPresent ? "bottom-[144px]" : "bottom-5"} ${below ? "" : "opacity-0"}`}
-      >
-        <div
-          className={`absolute inset-x-0 h-screen ${slide} ${barPresent ? "-bottom-[144px]" : "-bottom-5"}`}
-        >
-          <Ground {...ground} />
-        </div>
-      </div>
-    </>
-  );
-}
-
 /** The phone's layout (DESIGN.md, "The phone"), decided when the bundle was made. */
 const MOBILE = isMobile();
 
@@ -490,6 +358,59 @@ export default function App() {
    * → Diagnostics is one door to it; the sign-in screen is the other.
    */
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  /**
+   * Whether Spotify refuses this account its audio keys (`keycheck.rs`), and
+   * where Spotify Soloist —the way out— stands (`soloist.rs`).
+   *
+   * **Up here and not in a screen**, because three places read them: the
+   * warning that opens by itself after sign-in, the player that hits the
+   * refusal, and the Settings row.
+   */
+  const [keysRefused, setKeysRefused] = useState<boolean | null>(null);
+  const [soloist, setSoloist] = useState<SoloistStatus | null>(null);
+  const [soloistDialog, setSoloistDialog] = useState<"intro" | "steps" | null>(null);
+  /**
+   * "Not now" holds for the session: the warning does not come back on every
+   * render, only when the person presses play and meets the refusal again.
+   */
+  const soloistDismissed = useRef(false);
+
+  useEffect(() => {
+    let alive = true;
+    void audioKeysRefused()
+      .then((value) => {
+        if (alive) setKeysRefused(value);
+      })
+      .catch(() => {});
+    void soloistStatus()
+      .then((value) => {
+        if (alive && value) setSoloist(value);
+      })
+      .catch(() => {});
+    const offKeys = onAudioKeys((value) => {
+      setKeysRefused(value);
+      // A new account gets its own warning.
+      if (value === null) soloistDismissed.current = false;
+    });
+    const offSoloist = onSoloistStatus(setSoloist);
+    return () => {
+      alive = false;
+      void offKeys?.then((off) => off());
+      void offSoloist?.then((off) => off());
+    };
+  }, []);
+
+  /**
+   * **Said once, right after sign-in, while the person is still looking at the
+   * library** —not after they press play and watch nothing happen. Only when
+   * Soloist is not set up yet: an account that already set it up plays through
+   * it from the start, and the backend starts it by itself.
+   */
+  useEffect(() => {
+    if (keysRefused !== true || !soloist || soloistDismissed.current) return;
+    if (soloist.installed && soloist.has_key) return;
+    setSoloistDialog((current) => current ?? "intro");
+  }, [keysRefused, soloist]);
   /**
    * Where the "a page about something" surface is pointed, or `null`.
    *
@@ -880,9 +801,14 @@ export default function App() {
   // The same query Home reads: "recently played" is its `last_played`, refreshed
   // whenever a play is recorded.
   const lastPlayed = useHomeStats().data?.last_played;
+  const organisation = useLibraryOrganisation();
   const orderedPlaylists = useMemo(
-    () => sortPlaylists(playlists.data ?? [], sortOrder, lastPlayed),
-    [playlists.data, sortOrder, lastPlayed],
+    () =>
+      organisedPlaylists(
+        sortPlaylists(playlists.data ?? [], sortOrder, lastPlayed),
+        organisation.preferences,
+      ),
+    [playlists.data, sortOrder, lastPlayed, organisation.preferences],
   );
 
   /**
@@ -938,8 +864,14 @@ export default function App() {
    * it is the rule applied to a list that is not the library. Playing something
    * from a search result has to make *those songs* the queue; otherwise "next"
    * jumps back into a playlist the user left twenty screens ago, which is exactly
-   * the drift described above. It is cleared whenever the user navigates somewhere
-   * that defines its own list.
+   * the drift described above.
+   *
+   * **It is not cleared by navigating.** It used to be: opening another playlist
+   * without playing it emptied the queue, and the song that was sounding was
+   * left with nothing behind it — the panel went blank and "next" walked into a
+   * playlist the user was only looking at. Opening is reading; the queue changes
+   * when the user plays something, which is what replaces it (`playFrom`,
+   * `playShuffled`). Only signing out clears it (`resetView`).
    *
    * **The override carries the DJ's line with it.** The line belongs to the
    * queue that brought it —it is what the DJ says before its own mix— so it
@@ -1141,7 +1073,7 @@ export default function App() {
    *
    * So the surfaces that float over the content change their bottom inset
    * with the bar: with it, they stop where the bar begins; without it, they
-   * go down to the window's own 20px inset. The movement is the same 300ms
+   * go down to the window's own 20px inset. The movement is the same 240ms
    * the panels already use, because the bar arriving and the content moving
    * are one movement and not two.
    *
@@ -1183,6 +1115,11 @@ export default function App() {
     const unlisten = onPlaybackStatus((next) => {
       heard = true;
       setStatus(next);
+      // Play met the refusal: the warning comes back, even after "not now".
+      // It is the one moment the person is asking for exactly what it offers.
+      if (next.error === "keys_refused") {
+        setSoloistDialog((current) => current ?? "intro");
+      }
     });
     // The listener is async, so the cleanup has to wait for it — returning a
     // promise from the effect would leave a dangling subscription behind.
@@ -1230,7 +1167,7 @@ export default function App() {
       intent.current += 1;
       setLoadedTrack(pending.track);
       playTrack(pending.track).catch((e) => {
-        console.error("Starless: no se pudo reproducir el DJ", explain(e));
+        console.error("Star Music: no se pudo reproducir el DJ", explain(e));
       });
     });
     return () => {
@@ -1283,7 +1220,7 @@ export default function App() {
       playTrack(track).catch((e) => {
         // A refusal that only reaches the console is a refusal the user never sees.
         // The bar shows whatever `status.error` says; this is the console copy.
-        console.error("Starless: no se pudo reproducir", explain(e));
+        console.error("Star Music: no se pudo reproducir", explain(e));
       });
     },
     [moveTo, visibleTracks],
@@ -1330,13 +1267,15 @@ export default function App() {
       advancedRef.current = null;
       setLoadedTrack(track);
       setQueueOverride(shuffleFrom(tracks, track.id), context);
+      // El orden de la lista queda guardado: apagar el aleatorio lo devuelve.
+      setQueue((current) => (current ? { ...current, original: tracks } : current));
       // **La canción que empieza queda adelante.** El orden nuevo la pone
       // primero, y el lugar en la cola tiene que decir lo mismo.
       asked.current = track.id;
       moveTo(0);
       intent.current += 1;
       playTrack(track).catch((e) => {
-        console.error("Starless: no se pudo reproducir", explain(e));
+        console.error("Star Music: no se pudo reproducir", explain(e));
       });
     },
     [moveTo, setQueueOverride],
@@ -1468,14 +1407,14 @@ export default function App() {
           jamHead.current = head.id;
           if (before !== null && before !== head.id && head.id !== jamPlaying.current) {
             playTrack(head).catch((e) => {
-              console.error("Starless: no se pudo seguir la cola del jam", explain(e));
+              console.error("Star Music: no se pudo seguir la cola del jam", explain(e));
             });
           }
         }
       } catch (e) {
         // A jam that cannot be read right now is not a jam that is over: the
         // next poll asks again.
-        console.warn("Starless: no se pudo leer el jam", explain(e));
+        console.warn("Star Music: no se pudo leer el jam", explain(e));
       }
     };
 
@@ -1546,7 +1485,7 @@ export default function App() {
       setLoadedTrack(track);
       playTrack(track).catch((e) => {
         advancedRef.current = null;
-        console.error("Starless: no se pudo reproducir", explain(e));
+        console.error("Star Music: no se pudo reproducir", explain(e));
       });
     },
     [moveTo, visibleTracks],
@@ -1586,7 +1525,7 @@ export default function App() {
       try {
         voice = await djSpeak(track.id);
       } catch (e) {
-        console.error("Starless: el DJ no pudo hablar", explain(e));
+        console.error("Star Music: el DJ no pudo hablar", explain(e));
       }
       // El mundo se movió mientras se pedía la frase: lo que se pidió después
       // manda, y esta canción no arranca.
@@ -1671,7 +1610,7 @@ export default function App() {
           if (!first) {
             // **La radio no trajo nada.** No hay estación y no hay a dónde ir:
             // la lista se acabó de verdad.
-            console.error("Starless: la radio no trajo canciones");
+            console.error("Star Music: la radio no trajo canciones");
             return;
           }
           setQueue((current) => {
@@ -1681,6 +1620,9 @@ export default function App() {
               tracks: [...current.tracks, ...mix.tracks],
               source: "radio",
               context,
+              // La lista terminó y lo que sigue es la radio: ya no hay un orden
+              // de la lista al que volver si se apaga el aleatorio.
+              original: undefined,
             };
           });
           // **La primera parecida arranca en el lugar siguiente al de la
@@ -1691,7 +1633,7 @@ export default function App() {
           // **La radio que no arranca no corta la música:** la lista ya terminó
           // y no hay a dónde volver, pero el fallo se dice en la consola y la
           // app sigue como estaba.
-          console.error("Starless: la radio no siguió a la lista", explain(e));
+          console.error("Star Music: la radio no siguió a la lista", explain(e));
         });
     },
     [queue?.context, visibleTracks, playDirect],
@@ -1740,7 +1682,7 @@ export default function App() {
       });
       moveTo(0);
       playTrack(track).catch((e) => {
-        console.error("Starless: no se pudo reproducir", explain(e));
+        console.error("Star Music: no se pudo reproducir", explain(e));
       });
       // **La radio se pide después, no antes.**
       const mine = intent.current;
@@ -1760,7 +1702,7 @@ export default function App() {
           );
         })
         .catch((e) => {
-          console.error("Starless: la radio no arrancó", explain(e));
+          console.error("Star Music: la radio no arrancó", explain(e));
           // **La radio que no arranca no es una falla visible:** la canción
           // sigue sonando y la cola vuelve a ser una lista.
           setQueue((current) =>
@@ -1972,7 +1914,7 @@ export default function App() {
       intent.current += 1;
       setLoadedTrack(pending.track);
       playTrack(pending.track).catch((e) => {
-        console.error("Starless: no se pudo reproducir el DJ", explain(e));
+        console.error("Star Music: no se pudo reproducir el DJ", explain(e));
       });
       return;
     }
@@ -2021,22 +1963,49 @@ export default function App() {
    * turning it on produces an order that stays, which is what the panel can show
    * and what "shuffle" means in every client that has a queue panel.
    *
-   * Turning it *off* deliberately leaves the order alone. Restoring the original
-   * order would jump the song that is playing to wherever it sits in the list,
-   * which is an audible change nobody asked for.
+   * **Turning it off brings the order back.** It used to leave the shuffled order
+   * standing, on the reasoning that restoring it would make the song that is
+   * playing jump. It does not: the song keeps sounding, and only its place in the
+   * list changes, to the one it has in the playlist — so what comes next is what
+   * came after it there. Leaving the order shuffled made the switch a one-way
+   * door: off looked exactly like on, and on again only drew another order.
+   *
+   * **With nothing playing the switch only sets the mode.** There is no queue to
+   * reorder yet, and building one here put a shuffled run of the screen under
+   * "next up" that nobody had started — and that then stayed when the user
+   * opened another playlist. Pressing play under shuffle (`playShuffled`) is
+   * what decides the order.
    */
   const onToggleShuffle = useCallback(() => {
     const turningOn = !shuffle;
     setShuffle(turningOn);
-    if (!turningOn || visibleTracks.length < 2) return;
-    setQueueOverride(shuffleFrom(visibleTracks, status?.trackId ?? loadedTrack?.id ?? null));
+    const at = queueAtRef.current;
+    if (at < 0 || !queue) return;
+    if (!turningOn) {
+      if (!queue.original) return;
+      const edit = unshuffledQueue(queue.tracks, queue.original, at);
+      setQueue({ ...queue, tracks: edit.tracks, original: undefined });
+      moveTo(edit.at);
+      return;
+    }
+    if (queue.tracks.length < 2) return;
+    // **La cola cambia de orden, no de dueño.** El contexto de la radio, las
+    // frases del DJ y de dónde vino la canción siguen siendo los mismos: por eso
+    // no pasa por `setQueueOverride`, que es la puerta de una cola nueva.
+    const current = queue.tracks[at];
+    const rest = [...queue.tracks.slice(0, at), ...queue.tracks.slice(at + 1)];
+    setQueue({
+      ...queue,
+      tracks: current ? [current, ...shuffleFrom(rest)] : shuffleFrom(rest),
+      original: queue.tracks,
+    });
     // **El orden nuevo deja la canción que suena adelante**, así que el lugar
     // en la cola también es el primero.
     moveTo(0);
-  }, [shuffle, visibleTracks, status?.trackId, loadedTrack, setQueueOverride, moveTo]);
+  }, [shuffle, queue, moveTo]);
 
   /**
-   * Ask once at startup whether there is a newer Starless.
+   * Ask once at startup whether there is a newer Star Music.
    *
    * It downloads nothing and restarts nothing — it only decides whether the
    * Settings row says "there's a new version". Deliberately after the session is
@@ -2049,7 +2018,16 @@ export default function App() {
     // date", which is the silence `AGENTS.md` warns about.
     if (isMobile()) return;
     const id = setTimeout(() => void checkForUpdate(), 2500);
-    return () => clearTimeout(id);
+    // **And again every few hours, quietly.** The app lives in the tray for
+    // days, so a check made only at launch goes stale: a release published
+    // while it was open never reached the badge, and the Settings row kept
+    // offering whatever it found that morning. One small request every six
+    // hours downloads nothing and does not change the rule above.
+    const every = setInterval(() => void checkForUpdate({ quiet: true }), 6 * 60 * 60 * 1000);
+    return () => {
+      clearTimeout(id);
+      clearInterval(every);
+    };
   }, []);
 
   const mainRef = useRef<HTMLElement | null>(null);
@@ -2210,7 +2188,7 @@ export default function App() {
         // es exactamente lo que el DJ de Spotify no hace.
         await playStationTrack(mix.tracks[0], 0);
       } catch (e) {
-        console.error("Starless: no se pudo reproducir el DJ", e);
+        console.error("Star Music: no se pudo reproducir el DJ", e);
         setDjUnavailable(true);
       } finally {
         setDjBusy(false);
@@ -2300,7 +2278,7 @@ export default function App() {
       .catch((e) => {
         // Una falla aquí no es una canción rota: la estación se queda con lo
         // que ya tiene y sigue sonando.
-        console.error("Starless: la estación no pudo seguir", explain(e));
+        console.error("Star Music: la estación no pudo seguir", explain(e));
         setQueue((current) =>
           current && current.source !== "list" ? { ...current, source: "list" } : current,
         );
@@ -2458,9 +2436,8 @@ export default function App() {
       }
       setActiveItem(id);
       setActive("navLibrary");
-      // A library list is its own queue again: the songs played from a
-      // search have nothing to do with the playlist they just opened.
-      setQueueOverride(null);
+      // **Opening a playlist is not playing it**, so the queue stays: see
+      // `visibleTracks`. It changes when a song of this playlist is played.
       setLyricsOpen(false);
       // Leaving an artist behind here would strand it: this click is
       // navigation, and the artist page is the thing it navigates away
@@ -2468,7 +2445,7 @@ export default function App() {
       setDetail(null);
       leaveResults();
     },
-    [orderedPlaylists, onPlayDj, setQueueOverride, leaveResults],
+    [orderedPlaylists, onPlayDj, leaveResults],
   );
 
   /**
@@ -2722,6 +2699,9 @@ export default function App() {
         lines: queue?.lines ?? {},
         source: queue?.source ?? "list",
         context: queue?.context ?? null,
+        // Lo agregado con el aleatorio puesto sobrevive a apagarlo: `unshuffledQueue`
+        // lo deja después de la que suena.
+        original: queue?.original,
       });
       moveTo(edit.at);
     },
@@ -2749,6 +2729,9 @@ export default function App() {
         lines: queue?.lines ?? {},
         source: queue?.source ?? "list",
         context: queue?.context ?? null,
+        // Lo agregado con el aleatorio puesto sobrevive a apagarlo: `unshuffledQueue`
+        // lo deja después de la que suena.
+        original: queue?.original,
       });
       moveTo(edit.at);
     },
@@ -2986,7 +2969,7 @@ export default function App() {
         it they go down to the window's own 20px: that space belongs to the
         content, and a band of empty ground under the library is a hole, not
         breathing room. The bar arriving and the content moving are one
-        movement, so they share the 300ms the panels already use.
+        movement, so they share the 240ms the panels already use.
 
         `overflow-x-hidden` is spelled out because it is not the default and the
         default is a trap: writing only `overflow-y: auto` leaves the horizontal
@@ -3012,8 +2995,8 @@ export default function App() {
           // above the mini player and the tab bar (72px each with their gap).
           className={
             MOBILE
-              ? `on-ground fixed inset-x-3 top-[max(12px,env(safe-area-inset-top))] ${barPresent ? "bottom-[calc(max(12px,env(safe-area-inset-bottom))+144px)]" : "bottom-[calc(max(12px,env(safe-area-inset-bottom))+72px)]"} overflow-x-hidden overflow-y-auto transition-[bottom] duration-300 ease-[var(--ease-glass)]`
-              : `on-ground content-fade absolute top-[104px] ${barPresent ? "bottom-[144px]" : "bottom-5"} overflow-x-hidden overflow-y-auto pr-3 transition-[left,right,bottom] duration-300 ease-[var(--ease-glass)] ${
+              ? `on-ground fixed inset-x-3 top-[max(12px,env(safe-area-inset-top))] ${barPresent ? "bottom-[calc(max(12px,env(safe-area-inset-bottom))+144px)]" : "bottom-[calc(max(12px,env(safe-area-inset-bottom))+72px)]"} overflow-x-hidden overflow-y-auto transition-[bottom] duration-[var(--dur-panel)] ease-[var(--ease-glass)]`
+              : `on-ground content-fade absolute top-[104px] ${barPresent ? "bottom-[144px]" : "bottom-5"} overflow-x-hidden overflow-y-auto pr-3 transition-[left,right,bottom] duration-[var(--dur-panel)] ease-[var(--ease-glass)] ${
                   libraryOpen ? (railOnly ? "left-[112px]" : "left-[280px]") : "left-9"
                 } ${queueOpen ? "right-[280px]" : "right-9"}`
           }
@@ -3152,14 +3135,12 @@ export default function App() {
               onOpenLiked={() => {
                 setActiveItem("liked");
                 setActive("navLibrary");
-                setQueueOverride(null);
                 setLyricsOpen(false);
                 setDetail(null);
               }}
               onOpenPlaylist={(playlist) => {
                 setActiveItem(playlist.id);
                 setActive("navLibrary");
-                setQueueOverride(null);
                 setLyricsOpen(false);
                 setDetail(null);
               }}
@@ -3292,9 +3273,9 @@ export default function App() {
               loadingId={loadingId}
               failedId={failedId}
               // This list defines the queue, and it has to say so *here* as well
-              // as when the playlist was opened. `queueOverride` is only cleared
-              // on navigation, so playing a song inside the playlist already on
-              // screen used to leave the previous queue standing — open a shuffled
+              // and not only when the playlist was opened: opening one leaves the
+              // queue alone, so playing a song inside the playlist on screen is
+              // what replaces it. Before, it left the previous queue standing — open a shuffled
               // run from Home, click a song in "LoL", and the songs after it came
               // from the old list. The drift the queue design exists to prevent.
               onPlay={(track) => playFrom(libraryTracks, track, playlistContext)}
@@ -3311,9 +3292,10 @@ export default function App() {
 
         {!MOBILE && (
           <EdgeFade
-            above={moreAbove}
             below={moreBelow}
             barPresent={barPresent}
+            left={libraryOpen ? (railOnly ? 112 : 280) : 36}
+            right={queueOpen ? 280 : 36}
             url={groundUrl}
             background={background}
             effect={effect}
@@ -3321,6 +3303,7 @@ export default function App() {
         )}
 
         <PlayerBar
+          onNewPlaylist={openNaming}
           track={loadedTrack}
           status={status}
           dj={djVoice}
@@ -3398,6 +3381,18 @@ export default function App() {
               onOpenFeedback={() => setFeedbackOpen(true)}
               onClose={() => setSettingsOpen(false)}
               onLangChange={setLang}
+              soloist={
+                keysRefused || soloist?.installed || soloist?.has_key
+                  ? {
+                      status: soloist,
+                      onSetup: () => setSoloistDialog("steps"),
+                      onRemove: () =>
+                        void soloistRemove()
+                          .then(setSoloist)
+                          .catch(() => {}),
+                    }
+                  : null
+              }
             />
           )}
         </AnimatePresence>
@@ -3415,7 +3410,7 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.4 }}
+              transition={{ duration: 0.24 }}
               className="fixed inset-0 z-[60] overflow-hidden bg-ground px-[6vw] py-[6vh]"
             >
               {coverUrl && (
@@ -3468,6 +3463,19 @@ export default function App() {
           once someone signs in — and a notice that is not mounted yet cannot mark
           the Settings button the notice is pointing at. */}
       {!isMobile() && <UpdateAlert t={t} />}
+
+      {/* Spotify Soloist, the way out for an account whose keys are refused. */}
+      <SoloistDialog
+        t={t}
+        open={soloistDialog !== null}
+        mode={soloistDialog ?? "intro"}
+        status={soloist}
+        onSetup={() => setSoloistDialog("steps")}
+        onClose={() => {
+          soloistDismissed.current = true;
+          setSoloistDialog(null);
+        }}
+      />
     </div>
   );
 }

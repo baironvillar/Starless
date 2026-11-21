@@ -12,14 +12,14 @@ const home = new URL(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/`, Astro.si
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Starless</title>
+<title>Star Music</title>
 <meta name="description" content="A light, unofficial desktop client for your Premium account. For Windows." />
 <link rel="canonical" href={home} />
 <meta property="og:type" content="website" />
 <meta property="og:url" content={home} />
-<meta property="og:title" content="Starless" />
+<meta property="og:title" content="Star Music" />
 <meta property="og:description" content="A light, unofficial desktop client for your Premium account. For Windows." />
-<meta property="og:image" content={`${home}starless.png`} />
+<meta property="og:image" content={`${home}star-music.png`} />
 <meta property="og:locale" content="en_GB" />
 <meta property="og:locale:alternate" content="es_ES" />
 <!-- shortcut: a square icon card, not a 1200×630 banner; draw one if previews should show the app. -->
@@ -28,7 +28,7 @@ const home = new URL(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/`, Astro.si
      for their URLs to carry the base. A relative path only finds them when
      the URL ends with a slash: without it the logo and the screenshots come
      out broken while the text and the styles load fine. -->
-<link rel="icon" type="image/svg+xml" href={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/starless.svg`} />
+<link rel="icon" type="image/svg+xml" href={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/star-music.svg`} />
 <Font cssVariable="--font-syne" preload />
 <Font cssVariable="--font-dm-sans" preload />
 <Font cssVariable="--font-dm-mono" />
@@ -139,7 +139,7 @@ const home = new URL(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/`, Astro.si
   /* The mark on its glass plate, like the app icon: the hero is the logo. */
   .plate { width: clamp(112px, 11vw, 168px); aspect-ratio: 1; border-radius: 22.5%; display: grid; place-items: center; margin-bottom: 30px; }
   .plate img { width: 76%; height: 76%; }
-  /* As wide as the word, not as the column: at 112px "starless" ran 10px past the 34rem column, and the silver gradient (background-clip: text) paints only inside the box, so the last "s" was cut off. The padding is the wordmark's -0.03em tracking, which is also taken after the last letter and pulls the box in past its ink. */
+  /* As wide as the word, not as the column: at 112px "star-music" ran 10px past the 34rem column, and the silver gradient (background-clip: text) paints only inside the box, so the last "s" was cut off. The padding is the wordmark's -0.03em tracking, which is also taken after the last letter and pulls the box in past its ink. */
   .pitch h1 { width: max-content; padding-right: 0.04em; font-size: clamp(64px, 7.4vw, 112px); line-height: 0.95; padding-bottom: 0.06em; }
   .pitch p { margin-top: 22px; font-size: clamp(17px, 1.4vw, 20px); line-height: 1.55; color: var(--body); max-width: 26rem; }
   .pitch .key { margin-top: 30px; }
@@ -417,18 +417,18 @@ const home = new URL(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/`, Astro.si
 </head>
 <body>
 <main>
-  <section class="hero" id="inicio" data-track={t("track.starless")} data-i18n-track="track.starless">
+  <section class="hero" id="inicio" data-track={t("track.star-music")} data-i18n-track="track.star-music">
     <canvas id="ferro" aria-hidden="true"></canvas>
     <header class="top">
-      <span class="brand"><img src={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/starless.svg`} alt="" width="28" height="28" /><span class="sl-wordmark">starless</span><span class="beta">Beta</span></span>
-      <nav aria-label={t("page.sections")} data-i18n-label="page.sections"><a href="#que-hace" data-i18n="page.what-it-does" set:html={t("page.what-it-does")}></a><a href="#antes" data-i18n="page.before-you-install" set:html={t("page.before-you-install")}></a><a href="https://github.com/baironvillar/Starless">GitHub</a><button class="lang" type="button" aria-label={t("page.ver-en-espanol")} data-i18n-label="page.ver-en-espanol"><span lang="en">EN</span><span lang="es">ES</span></button></nav>
+      <span class="brand"><img src={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/star-music.svg`} alt="" width="28" height="28" /><span class="sl-wordmark">star music</span><span class="beta">Beta</span></span>
+      <nav aria-label={t("page.sections")} data-i18n-label="page.sections"><a href="#que-hace" data-i18n="page.what-it-does" set:html={t("page.what-it-does")}></a><a href="#antes" data-i18n="page.before-you-install" set:html={t("page.before-you-install")}></a><a href="https://github.com/Starless-org/StarMusic">GitHub</a><button class="lang" type="button" aria-label={t("page.ver-en-espanol")} data-i18n-label="page.ver-en-espanol"><span lang="en">EN</span><span lang="es">ES</span></button></nav>
     </header>
     <div class="stage" aria-hidden="true"></div>
     <div class="pitch">
-      <div class="plate sl-glass"><img src={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/starless-glass.svg`} alt="" width="128" height="128" /></div>
-      <h1 class="sl-wordmark">starless</h1>
+      <div class="plate sl-glass"><img src={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/star-music-glass.svg`} alt="" width="128" height="128" /></div>
+      <h1 class="sl-wordmark">star music</h1>
       <p data-i18n="page.a-light-unofficial-desktop-client-for" set:html={t("page.a-light-unofficial-desktop-client-for")}></p>
-      <a class="key" href="https://github.com/baironvillar/Starless/releases/download/v0.5.5/Starless_0.5.5_x64.msi" data-msi>
+      <a class="key" href="https://github.com/Starless-org/StarMusic/releases/latest" data-msi>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0l-5-5m5 5l5-5M5 20h14"/></svg>
         <span data-i18n="page.download-for-windows" set:html={t("page.download-for-windows")}></span>
         <span class="size nums" data-size>8.1 MB</span>
@@ -443,7 +443,7 @@ const home = new URL(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/`, Astro.si
       <div class="promises">
         <div class="promise"><h3 data-i18n="page.the-window-comes-first" set:html={t("page.the-window-comes-first")}></h3><p data-i18n="page.it-opens-before-it-has-finished" set:html={t("page.it-opens-before-it-has-finished")}></p></div>
         <div class="promise"><h3 data-i18n="page.made-to-move" set:html={t("page.made-to-move")}></h3><p data-i18n="page.the-screens-the-bar-that-arrives" set:html={t("page.the-screens-the-bar-that-arrives")}></p></div>
-        <div class="promise"><h3 data-i18n="page.zero-telemetry" set:html={t("page.zero-telemetry")}></h3><p data-i18n="page.starless-reports-nothing-to-anyone-not" set:html={t("page.starless-reports-nothing-to-anyone-not")}></p></div>
+        <div class="promise"><h3 data-i18n="page.zero-telemetry" set:html={t("page.zero-telemetry")}></h3><p data-i18n="page.star-music-reports-nothing-to-anyone-not" set:html={t("page.star-music-reports-nothing-to-anyone-not")}></p></div>
       </div>
     </div>
   </section>
@@ -459,7 +459,7 @@ const home = new URL(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/`, Astro.si
             <li><h3 data-i18n="page.the-queue" set:html={t("page.the-queue")}></h3><p data-i18n="page.what-s-playing-and-what-s" set:html={t("page.what-s-playing-and-what-s")}></p></li>
             <li><h3 data-i18n="page.your-way" set:html={t("page.your-way")}></h3><p data-i18n="page.the-accent-colour-and-how-solid" set:html={t("page.the-accent-colour-and-how-solid")}></p></li>
           </ol>
-          <figure class="window" aria-label={t("page.starless-screens")} data-i18n-label="page.starless-screens">
+          <figure class="window" aria-label={t("page.star-music-screens")} data-i18n-label="page.star-music-screens">
             <div class="shot"><Screen variant="library" /></div>
             <div class="shot"><Screen variant="playlist" /></div>
             <div class="shot"><Screen variant="queue" /></div>
@@ -548,7 +548,7 @@ const home = new URL(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/`, Astro.si
         <div>
           <div class="fact"><h3 data-i18n="page.you-need-premium" set:html={t("page.you-need-premium")}></h3><p data-i18n="page.it-s-a-condition-of-the" set:html={t("page.it-s-a-condition-of-the")}></p></div>
           <div class="fact"><h3 data-i18n="page.it-s-unofficial" set:html={t("page.it-s-unofficial")}></h3><p data-i18n="page.an-independent-project-if-the-service" set:html={t("page.an-independent-project-if-the-service")}></p></div>
-          <div class="fact"><h3 data-i18n="page.your-password-never-goes-through-starless" set:html={t("page.your-password-never-goes-through-starless")}></h3><p data-i18n="page.you-sign-in-in-your-browser" set:html={t("page.you-sign-in-in-your-browser")}></p></div>
+          <div class="fact"><h3 data-i18n="page.your-password-never-goes-through-star-music" set:html={t("page.your-password-never-goes-through-star-music")}></h3><p data-i18n="page.you-sign-in-in-your-browser" set:html={t("page.you-sign-in-in-your-browser")}></p></div>
           <div class="fact"><h3 data-i18n="page.using-it-is-your-call" set:html={t("page.using-it-is-your-call")}></h3><p data-i18n="page.the-service-doesn-t-authorise-unofficial" set:html={t("page.the-service-doesn-t-authorise-unofficial")}></p></div>
           <div class="fact"><h3 data-i18n="page.windows-only-for-now" set:html={t("page.windows-only-for-now")}></h3><p data-i18n="page.macos-and-linux-come-once-windows" set:html={t("page.macos-and-linux-come-once-windows")}></p></div>
         </div>
@@ -558,18 +558,18 @@ const home = new URL(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/`, Astro.si
 </main>
 
 <footer id="fin">
-  <span data-i18n="page.starless-is-an-independent-project-unaffiliated" set:html={t("page.starless-is-an-independent-project-unaffiliated")}></span>
-  <span>MIT · <a href="https://github.com/baironvillar/Starless">GitHub</a></span>
+  <span data-i18n="page.star-music-is-an-independent-project-unaffiliated" set:html={t("page.star-music-is-an-independent-project-unaffiliated")}></span>
+  <span><span data-i18n="page.a-starless-project-open-source" set:html={t("page.a-starless-project-open-source")}></span> · MIT · <a href="https://github.com/Starless-org/StarMusic">GitHub</a></span>
 </footer>
 
 <div class="player sl-glass" role="region" aria-label={t("page.player-and-download")} data-i18n-label="page.player-and-download">
   <canvas class="dot" id="dot" width="84" height="84" aria-hidden="true"></canvas>
   <div class="now">
-    <div class="line"><span id="title-now">Starless</span></div>
+    <div class="line"><span id="title-now">Star Music</span></div>
     <small class="nums" data-i18n="page.in-beta-for-windows" set:html={t("page.in-beta-for-windows")}></small>
     <div class="bar" aria-hidden="true"><i id="progress"></i></div>
   </div>
-  <a class="key" href="https://github.com/baironvillar/Starless/releases/download/v0.5.5/Starless_0.5.5_x64.msi" data-msi aria-label={t("page.download-for-windows")} data-i18n-label="page.download-for-windows"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0l-5-5m5 5l5-5M5 20h14"/></svg><span data-i18n="page.download" set:html={t("page.download")}></span></a>
+  <a class="key" href="https://github.com/Starless-org/StarMusic/releases/latest" data-msi aria-label={t("page.download-for-windows")} data-i18n-label="page.download-for-windows"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0l-5-5m5 5l5-5M5 20h14"/></svg><span data-i18n="page.download" set:html={t("page.download")}></span></a>
 </div>
 
 <script is:inline id="frag" type="x-shader/x-fragment">
@@ -956,7 +956,7 @@ void main() {
   // i18next arrives with the module script, which runs after this one: anything
   // that needs it waits for the event the module sends when it is ready.
   const whenI18n = (fn) =>
-    window.starlessI18n ? fn() : document.addEventListener("starless:i18n", fn, { once: true });
+    window.starMusicI18n ? fn() : document.addEventListener("star-music:i18n", fn, { once: true });
 
   function splitDj() {
     const words = djLine.textContent.trim().split(/\s+/);
@@ -1032,7 +1032,7 @@ void main() {
     const mb = new Intl.NumberFormat(lang, { maximumFractionDigits: 1 }).format(bytes / 1048576);
     for (const s of document.querySelectorAll("[data-size]")) s.textContent = `${mb} MB`;
   };
-  fetch("https://api.github.com/repos/baironvillar/Starless/releases/latest")
+  fetch("https://api.github.com/repos/Starless-org/StarMusic/releases/latest")
     .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
     .then((release) => {
       const msi = release.assets.find((a) => a.name.endsWith(".msi"));
@@ -1078,7 +1078,7 @@ void main() {
   function apply(next) {
     lang = next;
     document.documentElement.lang = next;
-    const t = window.starlessI18n.getFixedT(next);
+    const t = window.starMusicI18n.getFixedT(next);
     // A text with a number in it (the drawing's "12 songs") carries the number in data-i18n-count.
     for (const n of translated)
       n.innerHTML = t(n.dataset.i18n, n.dataset.i18nCount ? { count: Number(n.dataset.i18nCount) } : undefined);
@@ -1093,7 +1093,7 @@ void main() {
   let want = "en", timer = 0;
   function setLang(next) {
     want = next;
-    try { localStorage.setItem("starless-lang", next); } catch {}
+    try { localStorage.setItem("star-music-lang", next); } catch {}
     if (reduce) return whenI18n(() => apply(next));
     if (timer) return;
     document.documentElement.classList.add("swapping");
@@ -1106,14 +1106,14 @@ void main() {
     }, 180);
   }
   document.querySelector(".lang").addEventListener("click", () => setLang(want === "en" ? "es" : "en"));
-  try { if (localStorage.getItem("starless-lang") === "es") { want = "es"; whenI18n(() => apply("es")); } } catch {}
+  try { if (localStorage.getItem("star-music-lang") === "es") { want = "es"; whenI18n(() => apply("es")); } } catch {}
 </script>
 <script>
   // Bundled by Astro, unlike the inline script above: this is the one place the
   // browser loads i18next. It hands the instance over and says it is ready.
   import { i18n } from "../i18n";
-  Object.assign(window, { starlessI18n: i18n });
-  document.dispatchEvent(new Event("starless:i18n"));
+  Object.assign(window, { starMusicI18n: i18n });
+  document.dispatchEvent(new Event("star-music:i18n"));
 </script>
 </body>
 </html>

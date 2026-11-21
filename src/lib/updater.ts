@@ -21,7 +21,7 @@ type PublicChannel = {
 };
 
 /**
- * Whether a newer Starless exists, and the job of installing it.
+ * Whether a newer Star Music exists, and the job of installing it.
  *
  * Two decisions live here, and both are about not surprising someone who is
  * listening to music.
@@ -31,7 +31,7 @@ type PublicChannel = {
  * never restarts itself. Downloading a few megabytes at launch is what turns an
  * updater into the reason an app takes longer to open.
  *
- * **Ask before applying.** Starless plays audio. An update that installs itself
+ * **Ask before applying.** Star Music plays audio. An update that installs itself
  * mid-track cuts the song, and an app that cuts your music to install a patch is
  * an app you turn off. So the button is in Settings and the click is the user's.
  *
@@ -72,6 +72,13 @@ let current: UpdateState = { status: "idle" };
 const listeners = new Set<(state: UpdateState) => void>();
 
 function publish(state: UpdateState) {
+  // **An update is a handle to a resource in Rust, and a quiet check makes a
+  // new one every time.** The one it replaces is let go, or every check
+  // would leave another update parked in the backend's table.
+  const previous = installableUpdate(current);
+  if (previous && previous !== installableUpdate(state) && state.status !== "downloading") {
+    void previous.close().catch(() => {});
+  }
   current = state;
   for (const listener of listeners) listener(state);
 }
@@ -192,9 +199,25 @@ export function clearSimulatedUpdate(): void {
  *
  * Safe to call more than once: a check already in flight is not started again.
  */
-export async function checkForUpdate(): Promise<void> {
-  if (current.status === "checking") return;
-  publish({ status: "checking" });
+export async function checkForUpdate({ quiet = false }: { quiet?: boolean } = {}): Promise<void> {
+  if (current.status === "checking" || checkInFlight) return;
+  // A download in progress or one waiting to install is the user's click
+  // being carried out, and a check that replaced it would take the button
+  // out from under them.
+  if (
+    quiet &&
+    (current.status === "downloading" ||
+      current.status === "ready" ||
+      current.status === "simulated")
+  ) {
+    return;
+  }
+  checkInFlight = true;
+  lastChecked = Date.now();
+  // **A quiet check keeps what is on screen until it has an answer.** The
+  // row would otherwise blink —the button disappears, a spinner, the button
+  // again— every time Settings opens, for a check the user did not ask for.
+  if (!quiet) publish({ status: "checking" });
 
   try {
     const update = await check();
@@ -233,10 +256,43 @@ export async function checkForUpdate(): Promise<void> {
     publish({ status: "current" });
   } catch (e) {
     // Offline, a blocked request, an endpoint that is not configured yet. None of
-    // those mean anything about the copy of Starless the user is running.
-    console.warn("Starless: no se pudo comprobar si hay actualizaciones", e);
-    publish({ status: "idle" });
+    // those mean anything about the copy of Star Music the user is running.
+    console.warn("Star Music: no se pudo comprobar si hay actualizaciones", e);
+    // A quiet check that fails leaves the last answer standing: the network
+    // dropping is not news about the installation, and wiping a real update
+    // off the screen because one request failed would hide it.
+    if (!quiet) publish({ status: "idle" });
+  } finally {
+    checkInFlight = false;
   }
+}
+
+let checkInFlight = false;
+let lastChecked = 0;
+
+/**
+ * How old an answer can be before opening Settings asks again.
+ *
+ * Opening and closing the panel a few times in a row is one question, not
+ * five: the answer from a minute ago is still the answer.
+ */
+const RECHECK_AFTER_MS = 10 * 60 * 1000;
+
+/**
+ * Ask again, quietly, if the last answer is old.
+ *
+ * **"Once at startup" is a promise about a launch, and Star Music is not
+ * launched every day.** It lives in the tray and starts with Windows, so a
+ * check from the morning is still on screen days later. On the develop line
+ * that answer was the door back to the public release —"Go back to 0.5.5"—
+ * and when 0.6.0 came out the row kept offering 0.5.5: the person had to go
+ * back to the old release and only then was offered the new one. There was
+ * no way out from the row either, because with an update on screen the
+ * "check" button is not drawn.
+ */
+export function refreshUpdateIfStale(): void {
+  if (Date.now() - lastChecked < RECHECK_AFTER_MS) return;
+  void checkForUpdate({ quiet: true });
 }
 
 /**
@@ -291,7 +347,7 @@ export async function installUpdate(
     // opens, and an update that does not install is the failure a person is
     // most likely to report —so the one thing that could tell us why was
     // exactly the thing nobody could see.
-    console.warn("Starless: no se pudo instalar la actualización", e);
+    console.warn("Star Music: no se pudo instalar la actualización", e);
     const reason = e instanceof Error ? e.message : String(e);
     invoke("log_frontend_error", { message: reason }).catch(() => {});
     sink({ status: "installFailed", update });
@@ -442,7 +498,7 @@ export async function checkPrerelease(): Promise<void> {
     // about the network, not about the installation. What it is *not* is always
     // the same fact: a spent rate limit is a different one, and the backend
     // says so with a code of its own.
-    console.warn("Starless: no se pudo comprobar la prerelease", e);
+    console.warn("Star Music: no se pudo comprobar la prerelease", e);
     publishPrerelease({ status: "error", reason: errorReason(e) });
   }
 }

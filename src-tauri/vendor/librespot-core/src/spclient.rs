@@ -184,7 +184,7 @@ impl SpClient {
         // on macOS and Windows. On Android and iOS we can send a platform-specific client ID and are
         // then presented with a hash cash challenge. On Linux, we have to pass the old keymaster ID.
         // We delegate most of this logic to `SessionConfig`.
-        // Starless: Android asks as Windows. The session's client id is a
+        // Star Music: Android asks as Windows. The session's client id is a
         // desktop one, and the Android path answers it with a hash cash this
         // crate cannot solve and a token login5 then refuses. See the
         // repository's `docs/android.md`.

@@ -6,11 +6,11 @@ Brief-pinned by the user. Not a roll, not a challenger: the user rejected two ro
 
 **Floating translucent glass.** The player bar and the navigation rail float above the content instead of being docked to the window edges. Components are round, layered, and semi-transparent, with an iOS-adjacent feel — depth from light and blur rather than from borders and shadows.
 
-This is a technique, not Apple's product. Do not call it "Liquid Glass" in code, copy, or UI: that is Apple's design language name and calling Starless by it invites exactly the trademark problem PRODUCT.md is trying to avoid. Describe it internally as *floating glass*.
+This is a technique, not Apple's product. Do not call it "Liquid Glass" in code, copy, or UI: that is Apple's design language name and calling Star Music by it invites exactly the trademark problem PRODUCT.md is trying to avoid. Describe it internally as *floating glass*.
 
 Two constraints sharpen it, and both come from PRODUCT.md rather than from taste:
 
-- Starless promises a sub-second cold start and a small memory footprint. Glass is the most expensive thing this app could render. Every rule in Performance Budget exists to protect that promise.
+- Star Music promises a sub-second cold start and a small memory footprint. Glass is the most expensive thing this app could render. Every rule in Performance Budget exists to protect that promise.
 - The user is Premium and frustrated. A glass bar that becomes unreadable over a bright album cover is a worse experience than a solid one, and it would be their first impression.
 
 ## Shape
@@ -33,20 +33,20 @@ The top bar is a three-column grid, `1fr auto 1fr`, so the search stays opticall
 
 ## Brand
 
-The mark is **"wave over equalizer"**: a ring, eight bars that fade from light grey to almost black — the sound going out into silence — and a sine wave that draws an S over them. **It has no stars, and nothing in Starless ever should**: the name is a night without them. It replaced a fading star, which said the opposite of the name.
+The mark is **"wave over equalizer"**: a ring, eight bars that fade from light grey to almost black — the sound going out into silence — and a sine wave that draws an S over them. **It has no stars, and nothing in Star Music ever should**: the name is a night without them. It replaced a fading star, which said the opposite of the name.
 
 The mark is grey only. Ember lives in the interface, never in the logo.
 
 | File | Use |
 |---|---|
-| `public/starless-glass.svg` | The main mark, liquid glass. Splash, sign-in, the landing hero — anything ≥ 64px |
-| `public/starless.svg` | Flat grey on dark. Favicon, tray, anything < 64px, where the glass filters blur into nothing |
-| `public/starless-light.svg` / `starless-dev.svg` | Inverted grey for light grounds; the development build's mark |
-| `public/starless-mono.svg` | One ink, `currentColor` |
+| `public/star-music-glass.svg` | The main mark, liquid glass. Splash, sign-in, the landing hero — anything ≥ 64px |
+| `public/star-music.svg` | Flat grey on dark. Favicon, tray, anything < 64px, where the glass filters blur into nothing |
+| `public/star-music-light.svg` / `star-music-dev.svg` | Inverted grey for light grounds; the development build's mark |
+| `public/star-music-mono.svg` | One ink, `currentColor` |
 
 All of them, and every app icon in `src-tauri/icons`, come out of `scripts/logo.ts` (`bun run logo`, and `bun run logo:invert` for `icons-dev`). The approved originals and the canvas they were chosen on are in `brand-kit/`, beside the repo. Geometry, on a 100×100 viewBox: ring r=43 stroke 5; bars 5 wide at x = 19.5 + 8n, heights 30 52 62 52 38 26 16 8, centred on y=50; wave `M16 50 C 27 20, 39 20, 50 50 S 73 80, 84 50`, stroke 7, round caps.
 
-The wordmark is lowercase "starless" in Syne 700, −0.03em, silver gradient (`.sl-wordmark` on the landing).
+The wordmark is lowercase "star music" in Syne 700, −0.03em, silver gradient (`.sl-wordmark` on the landing).
 
 ## Colour
 
@@ -115,7 +115,7 @@ Behind everything sits a static bloom of pale light on black: three radials in B
 
 **The person can take the movement back.** Settings → Personalisation has the pointer light (on/off), the pulse on the volume (with waves, soft, off), the bloom (normal, soft at half, off) and the interface animations (on/off: off forces Motion's reduced motion through `MotionConfig` and stops every CSS transition and keyframe under `:root[data-still]`, the same rule the system's reduced motion gets). **Quiet mode** sits above them: it is not a stored setting, it is on when all four are off, and switching it writes all four — off, or back to the shipped values. The shipped values are the ones described here; `settings::EFFECTS` lists them, first value first.
 
-**The ground is also the person's to shape, and it stays still.** The bloom has four shapes (top, corners, centre, side), all the same two greys, so moving the light never brings hue back. Grain is a fixed tile of noise at 7% over the ground: texture, and it breaks the bands a soft gradient draws over black. And the person can put **their own picture** behind the glass, darkened (0–90%) and blurred (0–40px): the one place hue may come back, because it is chosen once by the person and does not change with the music — the per-album tint that this section forbids was neither. The picture is copied to `%LOCALAPPDATA%\Starless\background` (`background.rs`), sits under the bloom and the grain, and never animates. Quiet mode does not touch any of the three: they are how the ground looks, not movement.
+**The ground is also the person's to shape, and it stays still.** The bloom has four shapes (top, corners, centre, side), all the same two greys, so moving the light never brings hue back. Grain is a fixed tile of noise at 7% over the ground: texture, and it breaks the bands a soft gradient draws over black. And the person can put **their own picture** behind the glass, darkened (0–90%) and blurred (0–40px): the one place hue may come back, because it is chosen once by the person and does not change with the music — the per-album tint that this section forbids was neither. The picture is copied to `%LOCALAPPDATA%\Star Music\background` (`background.rs`), sits under the bloom and the grain, and never animates. Quiet mode does not touch any of the three: they are how the ground looks, not movement.
 
 ## The glass recipe
 
@@ -273,6 +273,24 @@ clothes, and there are only two of these, so one recipe covers both.
 - The rail persists and swaps its contents; the layout never reflows between sections.
 - The content area carries the only large artwork. Chrome stays quiet so the album is the brightest thing on screen.
 - Spanish and English ship together; every string comes from a translation map, never inline.
+
+## Library organisation
+
+Pinned playlists precede other visible playlists and keep their own saved order.
+The selected library sort applies only to unpinned playlists. Pins can be dragged
+in every sidebar layout, moved with Alt + Up/Down from a focused playlist, or
+moved up/down from their menu. Pin marks use the existing muted ink and icon style.
+The playlist menu offers pin/unpin and archive/restore for actual playlists,
+including ones owned by someone else. The DJ card is not a playlist.
+
+Archived playlists are hidden from all regular shelves and quick-access tiles.
+Home and the phone's Library show an Archived playlists disclosure only when
+there are archived entries, including when every playlist is archived. Its rows name each playlist and offer a labelled
+restore button. Restoring preserves its pinned state. Archiving does not navigate
+away from an already open playlist or stop music.
+
+Pin, archive and move actions close their menu after saving successfully. A failed
+save keeps the menu open with the error, so closing it never implies lost work succeeded.
 
 ## The phone
 

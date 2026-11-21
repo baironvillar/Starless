@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /*
- * Starless — design tokens.
+ * Star Music — design tokens.
  * Values come from DESIGN.md. Change them there first, then here.
  */
 
@@ -48,6 +48,19 @@
   --spacing: 0.25rem;
 
   --ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /*
+   * The app's clock. `DURATION` in `lib/motion.ts` holds the same three numbers for
+   * `motion`; the rail, the content and the bars move together, one side in CSS and
+   * one in `motion`, so a change here is a change there.
+   *
+   * fast  = a control answering a hover or a press
+   * base  = something small appearing or leaving (menus, tiles)
+   * panel = a surface docking, or the layout making room for one. Both directions.
+   */
+  --dur-fast: 150ms;
+  --dur-base: 200ms;
+  --dur-panel: 240ms;
 
 }
 
@@ -501,8 +514,8 @@
   background-color: var(--color-ink);
   color: var(--color-ground);
   transition:
-    background-color 400ms ease,
-    color 400ms ease;
+    background-color var(--dur-panel) ease,
+    color var(--dur-panel) ease;
 }
 .play-key[data-style="accent"],
 .play-key[data-style="cover"] {
@@ -645,10 +658,6 @@
   display: block;
 }
 
-.edge-fade-top {
-  mask-image: linear-gradient(to bottom, #000, transparent);
-}
-
 .edge-fade-bottom {
   mask-image: linear-gradient(to top, #000, transparent);
 }
@@ -665,7 +674,7 @@
 }
 
 @utility arrive {
-  animation: arrive 320ms var(--ease-glass) both;
+  animation: arrive var(--dur-panel) var(--ease-glass) both;
 }
 
 /*
@@ -742,7 +751,7 @@
 }
 
 @utility lyric-in {
-  animation: lyric-in 340ms var(--ease-glass) both;
+  animation: lyric-in var(--dur-panel) var(--ease-glass) both;
 }
 
 /*
@@ -816,7 +825,7 @@
  * Range inputs.
  *
  * The browser's default range looks like a different app wearing our clothes, so
- * it is redrawn rather than accepted. Starless has exactly two of these — the seek
+ * it is redrawn rather than accepted. Star Music has exactly two of these — the seek
  * bar and the volume — so they share one recipe: a 4px track, a white thumb, and a
  * fill driven by the `--fill` custom property that each control sets from its own
  * value. Unlayered on purpose: it must outrank utilities, because appearance reset
@@ -993,9 +1002,10 @@
  */
 .cascade {
   transition:
-    opacity 260ms var(--ease-glass),
-    transform 260ms var(--ease-glass);
-  transition-delay: calc(80ms + min(var(--i, 0), 12) * 22ms);
+    opacity var(--dur-base) var(--ease-glass),
+    transform var(--dur-base) var(--ease-glass);
+  /* No head start and a short step: the twelfth piece lands at ~310 ms, not ~600. */
+  transition-delay: calc(min(var(--i, 0), 8) * 14ms);
 }
 
 [data-shown="false"] .cascade {

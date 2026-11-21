@@ -1,6 +1,6 @@
 ---
-name: starless
-description: Use when adding a feature, changing behaviour, fixing a bug, or removing code in the Starless repository — anything that touches src/** or src-tauri/**. Encodes the order of operations and the cross-layer checklist that keeps a change from breaking something that already works. Covers adding a Tauri command, a React Query hook, a screen, a setting, a Rust model field, or an error code; reading the library; playing audio; editing playlists; and cleaning up dead code. Not for visual design — use impeccable for that.
+name: star-music
+description: Use when adding a feature, changing behaviour, fixing a bug, or removing code in the Star Music repository — anything that touches src/** or src-tauri/**. Encodes the order of operations and the cross-layer checklist that keeps a change from breaking something that already works. Covers adding a Tauri command, a React Query hook, a screen, a setting, a Rust model field, or an error code; reading the library; playing audio; editing playlists; and cleaning up dead code. Not for visual design — use impeccable for that.
 version: 1.0.0
 user-invocable: true
 argument-hint: "[agregar | cambiar | corregir | limpiar] <qué>"

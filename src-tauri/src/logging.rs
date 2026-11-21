@@ -1,6 +1,6 @@
 //! A log that outlives the terminal.
 //!
-//! Starless is a windowed app. Someone double-clicking it has no console, so a
+//! Star Music is a windowed app. Someone double-clicking it has no console, so a
 //! message written to stderr goes nowhere and the app just silently refuses to
 //! make a sound. That is exactly how two root causes went unnoticed here: a
 //! wrong client id, and Spotify refusing to hand over audio keys.
@@ -31,7 +31,7 @@ const MAX_BYTES: u64 = 2 * 1024 * 1024;
 /// the user's data, `%LOCALAPPDATA%` stays on the machine and holds what belongs
 /// to this installation. A log belongs to the second kind.
 pub fn log_path() -> Option<PathBuf> {
-    crate::paths::data_local_dir().map(|base| base.join("Starless").join("starless.log"))
+    crate::paths::data_local_dir().map(|base| base.join(crate::paths::APP_DIR).join("star-music.log"))
 }
 
 /// Writes each line to both the file and the terminal.
@@ -54,7 +54,7 @@ impl Write for Tee {
         match self.file.write_all(buf) {
             Ok(()) => Ok(buf.len()),
             Err(e) => {
-                eprintln!("Starless: no se pudo escribir el log: {e}");
+                eprintln!("Star Music: no se pudo escribir el log: {e}");
                 self.to_terminal = true;
                 Ok(buf.len())
             }
@@ -90,9 +90,9 @@ fn open_log_file(path: &PathBuf) -> io::Result<File> {
 /// Failures are deliberately non-fatal: an app that cannot write a log file
 /// should still be an app that runs.
 pub fn init() {
-    // `starless_lib`, not `starless`: `env_logger` matches the crate name as
+    // `star_music_lib`, not `star-music`: `env_logger` matches the crate name as
     // compiled, and the lib target carries the `_lib` suffix that Windows needs.
-    // Getting this wrong filters out every line Starless writes about itself,
+    // Getting this wrong filters out every line Star Music writes about itself,
     // which leaves only librespot's — and librespot's is not the half that
     // explains our own decisions.
     //
@@ -103,7 +103,7 @@ pub fn init() {
     // carries.
     let mut builder = env_logger::Builder::from_env(
         env_logger::Env::default()
-            .default_filter_or("warn,symphonia=error,librespot=info,starless_lib=info"),
+            .default_filter_or("warn,symphonia=error,librespot=info,star_music_lib=info"),
     );
     builder.format_timestamp_millis();
 
@@ -123,7 +123,7 @@ pub fn init() {
         None => {
             // No file, but the console is still worth having.
             builder.init();
-            eprintln!("Starless [log_unavailable]: no se pudo abrir el archivo de log");
+            eprintln!("Star Music [log_unavailable]: no se pudo abrir el archivo de log");
         }
     }
 }

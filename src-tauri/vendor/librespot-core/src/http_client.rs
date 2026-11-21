@@ -111,7 +111,7 @@ impl HttpClient {
         let (spotify_platform, os_version) = match OS {
             "ios" => ("iOS", os_version),
             "macos" => ("OSX", zero_str),
-            // Starless: Android says Win32 too, to match the client token
+            // Star Music: Android says Win32 too, to match the client token
             // `spclient.rs` asks for as Windows. The DJ answered 500 to an
             // Android User-Agent carrying a Windows token.
             "windows" | "android" => ("Win32", zero_str),

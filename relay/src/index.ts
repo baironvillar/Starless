@@ -1,5 +1,5 @@
 /**
- * The Starless report relay.
+ * The Star Music report relay.
  *
  * **Why it exists.** A report has to end up as a GitHub issue, and creating an
  * issue takes a token. A token baked into the app can be pulled out of any
@@ -128,7 +128,7 @@ function github(env: Env, method: string, path: string, body?: unknown): Promise
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
       // GitHub answers 403 to a request without one.
-      "User-Agent": "starless-relay",
+      "User-Agent": "star-music-relay",
       ...(body ? { "Content-Type": "application/json" } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,

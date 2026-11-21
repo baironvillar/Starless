@@ -1,5 +1,5 @@
 ---
-name: Starless landing
+name: Star Music landing
 description: The ferrofluid speaker. A black pool that keeps the beat, and a still page around it.
 colors:
   ground: "#0b0b0f"
@@ -93,15 +93,15 @@ components:
     padding: "20px 8px"
 ---
 
-# Design System: Starless landing
+# Design System: Star Music landing
 
 ## Brand
 
 The mark is **"wave over equalizer"**: a ring, eight bars fading from light grey to almost black, and a sine wave drawing an S over them. **No stars, ever**: it replaced a fading star. The mark is grey only; Ember is for the interface.
 
-- **Hero:** `starless-glass.svg` on a `.sl-glass` plate with the app icon's corner (22.5%), above the wordmark.
-- **Header and favicon:** `starless.svg`, the flat grey mark, at 28px; the glass blurs into nothing that small.
-- **Wordmark:** lowercase "starless" in Syne 700, -0.03em, silver gradient (`.sl-wordmark`). It is the hero's `h1` and the header's name.
+- **Hero:** `star-music-glass.svg` on a `.sl-glass` plate with the app icon's corner (22.5%), above the wordmark.
+- **Header and favicon:** `star-music.svg`, the flat grey mark, at 28px; the glass blurs into nothing that small.
+- **Wordmark:** lowercase "star music" in Syne 700, -0.03em, silver gradient (`.sl-wordmark`). It is the hero's `h1` and the header's name.
 
 The SVGs in `site/public` are written by `bun run logo` at the repo root, from the same geometry as the app icons. Do not edit them by hand. Tokens, `.sl-glass` and `.sl-wordmark` come from `brand-kit/tokens.css`.
 
@@ -109,7 +109,7 @@ The SVGs in `site/public` are written by `bun run logo` at the repo root, from t
 
 **Creative North Star: "The Ferrofluid Speaker"**
 
-The page is a still room with one thing moving in it: a pool of black ferrofluid, rendered live, that raises its spikes on a 112 BPM kick and on the speed of the visitor's hand. Everything else stays monochrome and moves only with the hand: the page is a playlist, and scrolling is what changes the track. A section arrives as it comes up from the bottom and stays lit for as long as it is on screen, hairlines draw themselves in, the app's window changes screen while it holds still, the DJ says its line a word at a time, the feature list lights the row in the middle of the screen, and each thing Starless doesn't do is crossed out. All of it is scroll-driven CSS; without scroll timelines, or with reduced motion, the page is still and complete. The music is made visible; the interface stays out of its way.
+The page is a still room with one thing moving in it: a pool of black ferrofluid, rendered live, that raises its spikes on a 112 BPM kick and on the speed of the visitor's hand. Everything else stays monochrome and moves only with the hand: the page is a playlist, and scrolling is what changes the track. A section arrives as it comes up from the bottom and stays lit for as long as it is on screen, hairlines draw themselves in, the app's window changes screen while it holds still, the DJ says its line a word at a time, the feature list lights the row in the middle of the screen, and each thing Star Music doesn't do is crossed out. All of it is scroll-driven CSS; without scroll timelines, or with reduced motion, the page is still and complete. The music is made visible; the interface stays out of its way.
 
 **Nothing on the page may be dimmed out of sight, and nothing on it may flicker.** The scroll drives the page, not the reader: an effect may bring something in, draw it, light it or take it away, but whatever is on screen is legible. A section that fades to a tenth of its opacity on the way out reads as a broken page, not as a transition, and the same goes for a row that cannot be read and a digit that vanishes — the first version of this page did all three, and scrolling it felt like losing the text. A frame that leaves the text unpainted is the same failure by another road: the words are there, and the reader sees them blink out and back. So the decoration may never make the page stutter while it is read.
 
@@ -260,4 +260,4 @@ The player bar's art is a drop of the same liquid: an 84px WebGL canvas (shown a
 
 ## Download target
 
-Every download key links to `https://github.com/baironvillar/Starless/releases/latest`, the release GitHub marks Latest (0.5.5 when this was written). The page no longer prints the version: the line under the download key and the player bar say "In beta" instead, so nothing on the page goes stale when a release ships. The size next to the key still follows the release.
+Every download key links to `https://github.com/Starless-org/StarMusic/releases/latest`, the release GitHub marks Latest (0.5.5 when this was written). The page no longer prints the version: the line under the download key and the player bar say "In beta" instead, so nothing on the page goes stale when a release ships. The size next to the key still follows the release.

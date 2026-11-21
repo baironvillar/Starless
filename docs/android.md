@@ -1,6 +1,6 @@
 # Android
 
-Cómo llevar Starless a un teléfono Android, qué del código actual se rompe en
+Cómo llevar Star Music a un teléfono Android, qué del código actual se rompe en
 el camino, y qué hay que medir antes de prometerlo.
 
 El análisis se sacó de leer el código de este repositorio y el de sus
@@ -37,7 +37,7 @@ prendido, el 2 de noviembre de 2026. La build es de debug, instalada por `adb`.
 | El callback vuelve a `127.0.0.1:8989` | **no**, hasta agregar el servicio en primer plano | `ss` y `dumpsys netpolicy` (abajo) |
 | La sesión conecta | sí | log: `Authenticated as …`, país `CL` |
 | La sesión se restaura al reabrir | sí, sin navegador, en menos de 2 s | log |
-| Las carpetas | sí: `Starless/starless.log` y `credentials/Starless`, separadas | `run-as … find` |
+| Las carpetas | sí: `Star Music/star-music.log` y `credentials/Star Music`, separadas | `run-as … find` |
 | El dispositivo de audio | sí: AAudio, abierto en 1 ms | log: `cpal host: AAudio` |
 | La biblioteca | **no**, hasta el parche de `librespot-core` | log: hash cash y `BAD_REQUEST` (abajo) |
 | Una playlist, las letras | sí: 590 ms y 942 ms | log |
@@ -70,7 +70,7 @@ algo a volver a medir; resultó un bloqueo. El `clienttoken` con
 (`Login request was denied: BAD_REQUEST`): la sesión conecta y la biblioteca no
 se lee. Y con los tokens arreglados el DJ seguía en `500` mientras el
 User-Agent dijera `Android/16` con la versión móvil. `librespot-core` 0.8.0 va
-copiado en `src-tauri/vendor/` con cuatro cambios marcados `Starless:` para que
+copiado en `src-tauri/vendor/` con cuatro cambios marcados `Star Music:` para que
 Android pida los tokens, y se nombre en HTTP, como Windows. El handshake se
 queda Linux ARM: Windows en ARM ahí sería `PLATFORM_WINDOWS_CE_ARM`, que nunca
 se midió.
@@ -82,7 +82,7 @@ se midió.
   `./node_modules/.bin/tauri android …`.
 - `tauri android build` termina con un symlink de la librería a `jniLibs/`, y
   Windows no deja crear symlinks sin el *Modo de desarrollador*. Sin él, se
-  copia `target/aarch64-linux-android/debug/libstarless_lib.so` a mano y se
+  copia `target/aarch64-linux-android/debug/libstar_music_lib.so` a mano y se
   corre `gradlew assembleArm64Debug -x rustBuildArm64Debug`.
 - `tauri android init` genera `minSdk = 24`, y `cpal` usa AAudio con
   `api-level-26`: el mínimo es 26, en `tauri.conf.json` y en el Gradle.
@@ -91,13 +91,13 @@ se midió.
 
 El cambio de ruta del audio con auriculares Bluetooth, qué hace Spotify con dos
 dispositivos de la misma cuenta (el teléfono ya se presenta como
-`Starless-Android`), el reporte de crash en móvil —va apagado—, el nombre del
+`StarMusic-Android`), el reporte de crash en móvil —va apagado—, el nombre del
 hilo en el hook de panic, una build de release y su tamaño, y todo el
 frontend: la prueba usa el layout de escritorio.
 
 ## Por qué en el mismo repositorio
 
-Lo que tiene valor en Starless es lo compartido: la capa sobre librespot,
+Lo que tiene valor en Star Music es lo compartido: la capa sobre librespot,
 `spclient`, el DJ, la radio, el crossfade, y las trampas de `AGENTS.md` que ya
 se pagaron. Un repositorio aparte obligaría a portar a mano cada arreglo de la
 sesión o del player, y uno de los dos terminaría atrasado sin que nadie lo note.
@@ -214,7 +214,7 @@ a `librespot-oauth` que exponga la URL. La primera no toca dependencias.
 **Lo que queda por medir:** que el callback a `http://127.0.0.1:8989/login`
 llegue. El navegador corre en otro proceso del mismo teléfono, así que el
 loopback es el mismo; lo que no se sabe es si Android deja vivo el proceso de
-Starless —y su `TcpListener`— mientras la persona escribe la contraseña. El
+Star Music —y su `TcpListener`— mientras la persona escribe la contraseña. El
 redirect **no se puede cambiar**: es el registrado para el client id compartido
 (`auth.rs:44-52`).
 
@@ -338,17 +338,17 @@ restaurada (`StoredCredential`), que es la que usa `spclient`.
 ya no es el mismo: la biblioteca (`spclient`), la voz del DJ
 (`client-tts/v1/fulfill`), el DJ (`lexicon-session-provider`), la radio
 (`context-resolve/v1/autoplay`), el jam (`social-connect`) y las escrituras de
-playlists. Las sondas existen y ya son de debug (`STARLESS_SP_*`); lo que
+playlists. Las sondas existen y ya son de debug (`STAR_MUSIC_SP_*`); lo que
 cambia es que en Android no hay variables de entorno a mano (ver
 [Desarrollo](#desarrollo)).
 
 ### El id del dispositivo
 
-`auth.rs:164` fija `config.device_id = "Starless"` para que Spotify no liste un
+`auth.rs:164` fija `config.device_id = "Star Music"` para que Spotify no liste un
 dispositivo nuevo en cada apertura. Con el teléfono y la computadora en la misma
 cuenta, **los dos dicen ser el mismo dispositivo**. Sin medir qué hace Spotify
-con eso; lo prudente es un id por plataforma (`"Starless"` y
-`"Starless Android"`). El jam lo usa en la ruta de los comandos
+con eso; lo prudente es un id por plataforma (`"Star Music"` y
+`"Star Music Android"`). El jam lo usa en la ruta de los comandos
 (`spclient.rs:2464`), así que el cambio llega hasta ahí.
 
 ## El audio
@@ -397,8 +397,8 @@ Lo que no se sabe y hay que medir:
 
 La `MediaSession` resultó **no** ser otro `imp` de `media_keys.rs`: vive en
 Kotlin (`NowPlayingCenter.kt`), y la página le habla directo por un puente
-(`window.StarlessMedia`), con el mismo `NowPlaying` que recibe Windows. Las
-teclas vuelven a la página como `__starlessMediaKey(...)` y entran al mismo
+(`window.StarMusicMedia`), con el mismo `NowPlaying` que recibe Windows. Las
+teclas vuelven a la página como `__starMusicMediaKey(...)` y entran al mismo
 manejador que `media://key`. Tres cosas medidas en un Galaxy S22:
 
 - **Con la pantalla apagada, la canción siguiente quedaba cargando.** El
@@ -431,7 +431,7 @@ El frontend compila igual; lo que no anda es la forma de usarlo.
 
 La plataforma se decide **al arrancar y no por ancho**: una ventana de
 escritorio angosta no es un teléfono. `@tauri-apps/plugin-os` da la respuesta,
-pero es una dependencia más; un `define` de Vite, como `__STARLESS_CHANNEL__`
+pero es una dependencia más; un `define` de Vite, como `__STAR_MUSIC_CHANNEL__`
 (`vite.config.ts`), lo resuelve sin dependencia, porque la plataforma es un hecho
 del build igual que el canal.
 
@@ -447,14 +447,14 @@ decide en `DESIGN.md`, no acá.
   `"platforms"`: una de escritorio con el updater y la ventana, y una común con
   `core:default` y `opener:default`.
 - **El `identifier` es el nombre del paquete de Android, y es para siempre.**
-  Hoy es `app.starless.desktop` (`tauri.conf.json`). Es un nombre de paquete
+  Hoy es `app.starmusic.desktop` (`tauri.conf.json`). Es un nombre de paquete
   válido, pero dice "desktop". Un `tauri.android.conf.json` lo puede
   sobrescribir sólo para Android; lo que no se puede es cambiarlo después de
   publicar el primer APK: otro nombre es otra app, y quien la tenga instalada no
   recibe la actualización.
 - **La versión no cambia de lugar.** Tauri deriva el `versionCode` de Android de
-  la versión de `tauri.conf.json`, así que `scripts/version.ts` sigue siendo la
-  única fuente y no hay un cuarto manifiesto.
+  la versión de `tauri.conf.json`, que star mueve junto con los otros
+  manifiestos, así que no hay uno más que mantener.
 - **Los íconos.** `scripts/logo.ts` escribe `icons/` e `icons-dev/`. Android
   los quiere como mipmaps dentro de `gen/android/app/src/main/res/`, y la
   distinción entre el ícono de desarrollo y el de la release (`AGENTS.md`)
@@ -470,10 +470,10 @@ decide en `DESIGN.md`, no acá.
   `hmr` en el puerto 1421). El teléfono carga el frontend por la red local, así
   que la trampa del Vite viejo en el puerto 1420 (`AGENTS.md`) aplica igual.
 - **Las sondas.** Todas se prenden con variables de entorno
-  (`STARLESS_SP_*`, `STARLESS_KILL_SESSION`, `STARLESS_STALL_TEST`), y una app
+  (`STAR_MUSIC_SP_*`, `STAR_MUSIC_KILL_SESSION`, `STAR_MUSIC_STALL_TEST`), y una app
   de Android no recibe el entorno de quien la lanza. Para medir desde el
   teléfono hace falta otra puerta: una propiedad de sistema que se lee con
-  `getprop` (`adb shell setprop debug.starless.probe ...`), también detrás de
+  `getprop` (`adb shell setprop debug.starmusic.probe ...`), también detrás de
   `#[cfg(debug_assertions)]`.
 - **El log.** `logging.rs` escribe a un archivo y a stderr; en Android stderr no
   llega a `logcat`. Hasta que haya un logger de Android, el log sólo existe en

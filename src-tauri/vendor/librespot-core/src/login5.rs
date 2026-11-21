@@ -74,7 +74,7 @@ impl Login5Manager {
 
     async fn login5_request(&self, login: Login_method) -> Result<LoginOk, Error> {
         let client_id = match OS {
-            // Starless: "android" too, to match the client token, which
+            // Star Music: "android" too, to match the client token, which
             // `spclient.rs` asks for as Windows.
             "macos" | "windows" | "android" => self.session().client_id(),
             // StoredCredential is used to get an access_token from Session credentials.

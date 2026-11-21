@@ -1,6 +1,6 @@
 //! Las formas que el frontend ve.
 //!
-//! Estos tipos no son de Spotify ni de librespot: son de Starless. Existen desde
+//! Estos tipos no son de Spotify ni de librespot: son de Star Music. Existen desde
 //! antes de que la biblioteca viniera por la Web API y le servían a las dos por
 //! igual, y pasaron intactos por la migración — el frontend nunca se enteró de
 //! que había cambiado de dónde venían los datos.

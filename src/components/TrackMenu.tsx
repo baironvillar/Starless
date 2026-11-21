@@ -169,6 +169,8 @@ export function TrackMenu({
           setPoint(null);
           setOpen((value) => !value);
         }}
+        // Lets a row keep its dots' room open while the menu is up (QueuePanel).
+        aria-expanded={open}
         aria-label={t.trackMenuFor.replace("{name}", track.name)}
         title={t.trackMenu}
         className={`grid shrink-0 place-items-center rounded-pill text-ink-muted transition-all duration-150 hover:bg-white/10 hover:text-ink focus-visible:opacity-100 ${
@@ -330,7 +332,7 @@ export function TrackMenu({
 
             {/*
           The one item that points outside the app, and it is a link the user
-          asked for rather than Starless naming itself after anybody: PRODUCT.md
+          asked for rather than Star Music naming itself after anybody: PRODUCT.md
           forbids the Spotify name in *branding*, and a string this user copied
           on purpose is neither the app's name nor a claim of affiliation. It is
           the same link every client offers, and refusing to be able to share a

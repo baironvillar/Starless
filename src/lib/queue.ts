@@ -174,3 +174,57 @@ export function placeOfSong(remembered: number, visible: Track[], songId: string
   if (remembered >= 0 && visible[remembered]?.id === songId) return remembered;
   return visible.findIndex((item) => item.id === songId);
 }
+
+/**
+ * The queue back in the order it had before shuffle, with the song that is
+ * playing still playing.
+ *
+ * **Turning shuffle off undoes it.** It used to leave the shuffled order in
+ * place, and turning it off and on again only drew another random order: the
+ * playlist's own order was gone until the user played it again from the top.
+ * That is a switch with no "off" — the one thing a switch cannot be.
+ *
+ * **The song that is playing does not move in time, only in the list.** It
+ * keeps sounding; what changes is where it sits, which is its place in the
+ * original order, so what comes next is what came after it in the playlist.
+ *
+ * **What the queue has and the original does not stays right after the song
+ * that is playing.** Those are songs the user put in the queue while shuffle
+ * was on, and they were waiting to be next: restoring the playlist's order is
+ * not a reason to lose them. What the original has and the queue no longer has
+ * is not brought back.
+ *
+ * A list can hold the same song twice; the song that is playing takes the place
+ * of its first copy in the original order.
+ */
+export function unshuffledQueue(shuffled: Track[], original: Track[], at: number): QueueEdit {
+  const current = at >= 0 ? shuffled[at] : undefined;
+  const left = new Map<string, number>();
+  for (const item of shuffled) left.set(item.id, (left.get(item.id) ?? 0) + 1);
+  // The original order, limited to what the queue still holds.
+  const base: Track[] = [];
+  for (const item of original) {
+    const count = left.get(item.id) ?? 0;
+    if (count === 0) continue;
+    left.set(item.id, count - 1);
+    base.push(item);
+  }
+  // Whatever is left over was added while shuffled: kept in the order it had.
+  const extras: Track[] = [];
+  for (let index = 0; index < shuffled.length; index++) {
+    const item = shuffled[index];
+    const count = left.get(item.id) ?? 0;
+    if (count === 0 || index === at) continue;
+    left.set(item.id, count - 1);
+    extras.push(item);
+  }
+  if (!current) return { tracks: [...extras, ...base], at: -1 };
+  const place = base.findIndex((item) => item.id === current.id);
+  // A song that was not in the original was itself added while shuffled: it
+  // keeps playing at the head, and the original order follows it.
+  if (place < 0) return { tracks: [current, ...extras, ...base], at: 0 };
+  return {
+    tracks: [...base.slice(0, place + 1), ...extras, ...base.slice(place + 1)],
+    at: place,
+  };
+}
