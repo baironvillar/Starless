@@ -299,7 +299,7 @@ reporte precargado y apretas "Create". Para probar contra un relay:
 
 ```bash
 # PowerShell
-$env:STAR_MUSIC_REPORT_RELAY = "https://starless-relay.<cuenta>.workers.dev"
+$env:STAR_MUSIC_REPORT_RELAY = "https://star-music-relay.<cuenta>.workers.dev"
 bun run app
 ```
 

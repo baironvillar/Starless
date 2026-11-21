@@ -61,37 +61,6 @@ export async function setPinnedOrder(account: string, ids: string[]): Promise<Li
 }
 
 /**
- * The page's own preferences carried over from their Starless names.
- *
- * **It runs here, at the top of the module, and not in an effect.** The theme
- * and the glass are read before the first frame is painted, so a copy made
- * after the first render would paint the defaults once and then jump. The
- * backend already moved the WebView2 folder these keys live in
- * (`migrate.rs`); this moves the keys inside it. Each one moves only if the new
- * name is empty, and the old one is removed so this does nothing next time.
- */
-function migrateLegacyKeys() {
-  try {
-    const legacy: string[] = [];
-    for (let i = 0; i < window.localStorage.length; i++) {
-      const key = window.localStorage.key(i);
-      if (key?.startsWith("starless:")) legacy.push(key);
-    }
-    for (const key of legacy) {
-      const renamed = `star-music:${key.slice("starless:".length)}`;
-      const value = window.localStorage.getItem(key);
-      if (value !== null && window.localStorage.getItem(renamed) === null) {
-        window.localStorage.setItem(renamed, value);
-      }
-      window.localStorage.removeItem(key);
-    }
-  } catch {
-    // Storage can be unavailable; the defaults are a fine first launch.
-  }
-}
-migrateLegacyKeys();
-
-/**
  * The account's real data, as Spotify sends it.
  *
  * Field names are deliberately left in Spotify's own snake_case. The Rust side

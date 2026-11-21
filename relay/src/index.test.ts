@@ -128,7 +128,7 @@ describe("filing a report", () => {
 
     await worker.fetch(post(crash), environment());
 
-    expect((calls[0].body as { body: string }).body).toContain("<!-- starless-relay -->");
+    expect((calls[0].body as { body: string }).body).toContain("<!-- star-music-relay -->");
   });
 
   test("the token stays in the relay and does not travel with the report", async () => {
@@ -151,7 +151,7 @@ describe("filing a report", () => {
 
     await worker.fetch(post(crash), environment());
 
-    expect(calls[0].headers["user-agent"]).toBe("starless-relay");
+    expect(calls[0].headers["user-agent"]).toBe("star-music-relay");
   });
 
   test("a label the repository does not have does not lose the report", async () => {

@@ -163,14 +163,7 @@ pub fn session_config(client_id: &str) -> SessionConfig {
     config.client_id = client_id.to_string();
     // A phone and a computer on one account are two devices, not one. No
     // space: the jam puts the id in a URL path.
-    //
-    // **It still says Starless, and that is on purpose.** The app was renamed
-    // to Star Music, but this is not a name anyone reads: it is the id Spotify
-    // knows this device by, and the saved credential was issued to it. A new
-    // id is a new device to Spotify — a second entry in the account's device
-    // list, and a stored login that may no longer be accepted. The visible
-    // name in the device list is `soloist::device_name`, and that one moved.
-    config.device_id = if cfg!(mobile) { "Starless-Android" } else { "Starless" }.to_string();
+    config.device_id = if cfg!(mobile) { "StarMusic-Android" } else { "StarMusic" }.to_string();
     // librespot downloads each track into this folder, and its default is
     // unwritable on a phone. See `paths::temp_dir`.
     config.tmp_dir = crate::paths::temp_dir();

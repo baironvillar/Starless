@@ -10,7 +10,7 @@ the static files `astro build` writes. It ships from `main`.
 ## Antes / Before
 
 Hasta noviembre de 2026 se publicaba en dos lugares: en Vercel, en la raíz de
-su dominio, y en GitHub Pages, bajo `/StarMusic` (antes `/Starless`).
+su dominio, y en GitHub Pages, bajo `/StarMusic`.
 `astro.config.mjs` elegía el prefijo leyendo `VERCEL`. Con la mudanza del repo a
 `Starless-org` las dos se dejaron: Pages ya no estaba activado en el repo, y
 Vercel se reemplazó por Cloudflare, donde ya vive el relay.

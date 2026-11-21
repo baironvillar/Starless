@@ -77,7 +77,6 @@ src-tauri/src/
   keycheck.rs             si Spotify le niega las claves de audio a la cuenta, preguntado al entrar
   soloist.rs              Spotify Soloist para esas cuentas: descarga, clave, proceso y WebSocket
   settings.rs             lo que sobrevive a un reinicio
-  migrate.rs              el paso de Starless a Star Music, una vez al arrancar
   logging.rs              el log local con rotación
 relay/                    el Worker que recibe los reportes y crea los issues
 site/                     la landing en Astro; su texto vive en site/src/i18n (i18next)
@@ -1156,28 +1155,7 @@ en ningún proto ni en ninguna issue:
 - **`.agent/` es la copia canónica** de la configuración de agentes. Los shims de
   `.claude/` y `.opencode/` que apuntaban ahí se borraron; para recuperar el
   skill en esas herramientas, `git revert 96cf93c`.
-- **La app se llamaba Starless, y tres cosas siguen llamándose así a
-  propósito.** El 19 de noviembre de 2026 pasó a llamarse Star Music y el repo
-  se mudó a `Starless-org/StarMusic`. El renombre llegó también adentro —el
-  identifier, las carpetas, el log, la clave de Soloist, la entrada de "Iniciar
-  con Windows"—, y `migrate.rs` mueve todo eso **una vez, antes de que nada lea
-  una ruta**. Lo que no se movió, y por qué:
-  - **El `upgradeCode` del MSI** está fijado en `tauri.conf.json` al de
-    Starless (`590aac6e-…`). Tauri lo deriva del `productName`, así que sin
-    fijarlo la actualización no reemplaza a Starless: instala una segunda app
-    al lado. `bunx tauri inspect wix-upgrade-code` muestra los dos.
-  - **El `device_id` de la sesión** (`auth::session_config`) sigue siendo
-    `Starless`: es el id con el que Spotify conoce el equipo, no un nombre que
-    alguien lea.
-  - **El relay** sigue en `starless-relay` con sus marcas `<!-- starless-relay -->`:
-    las builds instaladas mandan sus reportes a esa dirección, y las marcas son
-    las que agrupan los issues que ya existen.
-  **Las betas instaladas antes del cambio no ven la prerelease siguiente.**
-  `is_our_manifest` aceptaba sólo `/baironvillar/Starless/…`, y la API ya
-  contesta con la ruta nueva: el botón dice `invalid_manifest_url`. La línea
-  pública sí actualiza, porque el endpoint de `tauri.conf.json` sigue al
-  redirect de GitHub. Una beta vieja se actualiza a mano, una vez.
-  **El MSI en GitHub se llama `Star.Music_…`**: el bundler lo escribe con
+- **El MSI en GitHub se llama `Star.Music_…`**: el bundler lo escribe con
   espacio y GitHub cambia los espacios por puntos al subirlo.
 
 ## Antes de abrir un PR

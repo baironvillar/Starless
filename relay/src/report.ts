@@ -81,8 +81,8 @@ export function labelsFor(kind: Kind): string[] {
  * from one a person typed on GitHub.
  */
 export function issueBody(report: Report): string {
-  const lines = [report.body.trimEnd(), "", "<!-- starless-relay -->"];
-  if (report.signature) lines.push(`<!-- starless-signature: ${report.signature} -->`);
+  const lines = [report.body.trimEnd(), "", "<!-- star-music-relay -->"];
+  if (report.signature) lines.push(`<!-- star-music-signature: ${report.signature} -->`);
   return lines.join("\n");
 }
 

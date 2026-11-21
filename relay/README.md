@@ -40,7 +40,7 @@ gratuito alcanza de sobra: 100 000 pedidos por día, y esto recibe unos pocos.
 
 1. Entra a <https://github.com/settings/personal-access-tokens/new>
    (**Fine-grained token**, no el clásico).
-2. **Token name:** `starless-relay`.
+2. **Token name:** `star-music-relay`.
 3. **Expiration:** la más larga que te deje. Anota la fecha: cuando venza, los
    reportes empiezan a fallar y hay que repetir este paso y el 5.
 4. **Resource owner:** `Starless-org`, no tu cuenta. El repo es de la
@@ -89,12 +89,12 @@ bun run relay:deploy
 ```
 
 Al terminar imprime la dirección, algo como
-`https://starless-relay.<tu-cuenta>.workers.dev`. Cópiala.
+`https://star-music-relay.<tu-cuenta>.workers.dev`. Cópiala.
 
 ### 7. Probarlo
 
 ```bash
-curl -X POST https://starless-relay.<tu-cuenta>.workers.dev/report \
+curl -X POST https://star-music-relay.<tu-cuenta>.workers.dev/report \
   -H "Content-Type: application/json" \
   -d '{"kind":"other","title":"Prueba del relay","body":"Funciona.","version":"0.0.0"}'
 ```
@@ -131,7 +131,7 @@ tiempo de ejecución: `option_env!("STAR_MUSIC_REPORT_RELAY")` la deja en el
 binario. Para una build de desarrollo con el relay adentro:
 
 ```bash
-STAR_MUSIC_REPORT_RELAY=https://starless-relay.<tu-cuenta>.workers.dev bun run app
+STAR_MUSIC_REPORT_RELAY=https://star-music-relay.<tu-cuenta>.workers.dev bun run app
 ```
 
 Con esa variable, el botón de reportar manda al relay en vez de abrir el

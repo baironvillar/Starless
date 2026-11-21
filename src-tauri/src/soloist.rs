@@ -540,13 +540,6 @@ pub fn stop(app: &AppHandle) {
     }
 }
 
-/// Move the stored key from its Starless name to its Star Music one. Called
-/// once at startup by `migrate::run`, before anything asks whether there is a
-/// key.
-pub fn migrate_key() {
-    key::migrate();
-}
-
 /// Stop Soloist and forget everything that was the account's: the key and the
 /// Connect session. The binary stays — it is the machine's, not the account's.
 pub fn forget(app: &AppHandle) {
@@ -935,9 +928,6 @@ mod key {
     };
 
     const TARGET: &str = "Star Music/soloist-api-key";
-    /// Where the key lived while the app was called Starless. Read once by
-    /// [`migrate`] and then removed.
-    const LEGACY_TARGET: &str = "Starless/soloist-api-key";
 
     fn wide(text: &str) -> Vec<u16> {
         text.encode_utf16().chain(std::iter::once(0)).collect()
@@ -953,19 +943,6 @@ mod key {
 
     pub fn delete() {
         delete_at(TARGET)
-    }
-
-    /// Carry the key over from its Starless name. A person who had paired
-    /// Soloist before the rename keeps it paired: the key is theirs, and
-    /// asking for it again because the app changed its name would be asking
-    /// for something they already gave.
-    pub fn migrate() {
-        let Some(old) = read_at(LEGACY_TARGET) else {
-            return;
-        };
-        if read().is_some() || write(&old).is_ok() {
-            delete_at(LEGACY_TARGET);
-        }
     }
 
     fn write_at(name: &str, value: &str) -> Result<(), String> {
@@ -1019,7 +996,6 @@ mod key {
         None
     }
     pub fn delete() {}
-    pub fn migrate() {}
 }
 
 #[cfg(windows)]
