@@ -61,7 +61,7 @@ futures-util = "0.3"
 # backend lo que la voz usa para sonar.
 rodio = "0.21"
 cpal = "0.16"
-symphonia = { version = "0.5", features = ["mp3"] }
+symphonia = { version = "0.6", features = ["mp3"] }
 
 # Where the librespot credential cache lives. Resolved once, at startup.
 dirs = "6"
