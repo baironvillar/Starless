@@ -1893,12 +1893,18 @@ export function useLikedTracks() {
  */
 export const PLAYLIST_STALE_MS = 5 * 60_000;
 
+export function playlistTracksQuery(playlistId: string) {
+  return {
+    queryKey: keys.playlistTracks(playlistId),
+    queryFn: () => invoke<Track[]>("playlist_tracks", { playlistId }),
+    staleTime: PLAYLIST_STALE_MS,
+  };
+}
+
 export function usePlaylistTracks(playlistId: string | null) {
   return useQuery({
-    queryKey: keys.playlistTracks(playlistId ?? ""),
-    queryFn: () => invoke<Track[]>("playlist_tracks", { playlistId }),
+    ...playlistTracksQuery(playlistId ?? ""),
     enabled: Boolean(playlistId),
-    staleTime: PLAYLIST_STALE_MS,
   });
 }
 
